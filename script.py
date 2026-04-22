@@ -1,3 +1,4 @@
+print("Running latest version 🚀")
 import os
 import json
 import pandas as pd
