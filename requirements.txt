@@ -1,0 +1,6 @@
+pandas
+gspread
+google-auth
+requests
+PyJWT
+openpyxl
