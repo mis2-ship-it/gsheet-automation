@@ -26,5 +26,9 @@ jobs:
       env:
         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       run: |
-        1s -R
+        echo "Current path:"
+        pwd
+        echo "Files list:"
+        ls -R
+        echo "Running script..."
         python ./script.py
