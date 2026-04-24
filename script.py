@@ -11,6 +11,9 @@ from google.oauth2.service_account import Credentials
 
 print("🚀 Script started")
 
+from datetime import datetime
+print("Run Time IST:", datetime.now())
+
 # ---------------- AUTH ---------------- #
 
 API_KEY = os.environ["API_KEY"]
