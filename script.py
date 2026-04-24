@@ -18,7 +18,7 @@ creds = Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 
 # 🔗 Open sheet
-sheet = client.open("YOUR_SHEET_NAME").worksheet("Sheet1")
+sheet = client.open("Master").worksheet("Sheet1")
 
 # 👉 Your data logic
 df = pd.DataFrame({
