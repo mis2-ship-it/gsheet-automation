@@ -12,7 +12,10 @@ from google.oauth2.service_account import Credentials
 print("🚀 Script started")
 
 from datetime import datetime
-print("Run Time IST:", datetime.now())
+import pytz
+
+ist = pytz.timezone('Asia/Kolkata')
+print("Run Time IST:", datetime.now(ist))
 
 # ---------------- AUTH ---------------- #
 
