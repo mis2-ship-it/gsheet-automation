@@ -13,8 +13,8 @@ print("🚀 Script started")
 
 # ---------------- AUTH ---------------- #
 
-API_KEY = os.environ["f9a618f7-c157-4e8f-974e-bcedcc11fc6c"]
-SECRET_KEY = os.environ["xbKr1_ba4wvFc6dImZwA2C1pZiwWnw_NWg8PMf0OawI"]
+API_KEY = os.environ["API_KEY"]
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 def get_token():
     payload = {"iss": API_KEY, "iat": int(time.time())}
