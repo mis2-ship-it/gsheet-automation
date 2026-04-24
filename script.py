@@ -61,7 +61,10 @@ now = datetime.now()
 today = now.strftime("%Y-%m-%d")
 last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
-days = [today, last_week] if now.hour > 11 else [today]
+today = now.strftime("%Y-%m-%d")
+last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+
+days = [today, last_week]
 
 for day in days:
     for b in b_codes:
@@ -89,7 +92,8 @@ for day in days:
 print("Fetched batches:", len(Sales))
 
 if not Sales:
-    raise Exception("❌ No data fetched")
+    print("⚠️ No data fetched yet, skipping this run")
+    exit()
 
 s_df = pd.concat(Sales, ignore_index=True)
 print("Raw data:", s_df.shape)
