@@ -41,14 +41,15 @@ creds = Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 
 spreadsheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
+    "YOUR_GOOGLE_SHEET_LINK_HERE"
 )
 
 print("✅ Connected to Google Sheet")
 
 # ---------------- FETCH BRANCH ---------------- #
 
-b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
+b_url = "https://api.ristaapps.com/v1/branch/list"
+b_resp = requests.get(b_url, headers=headers())
 
 data = b_resp.json()
 if isinstance(data, dict):
@@ -65,7 +66,6 @@ print("🏪 Branch count:", len(branches))
 
 now = datetime.now()
 today = now.strftime("%Y-%m-%d")
-last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
 # ---------------- FETCH SALES ---------------- #
 
@@ -78,15 +78,18 @@ def fetch_sales(day):
 
         while True:
             params = {"branch": b, "day": day}
-
             if last_key:
                 params["lastKey"] = last_key
 
             r = requests.get(
                 "https://api.ristaapps.com/v1/sales/summary",
                 headers=headers(),
-                params=params
+                params=params,
+                timeout=30
             )
+
+            if r.status_code != 200:
+                break
 
             js = r.json()
             data = js.get("data", [])
@@ -102,6 +105,7 @@ def fetch_sales(day):
                 break
 
     if not all_data:
+        print("❌ No data fetched")
         return pd.DataFrame()
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -112,34 +116,59 @@ def fetch_sales(day):
 # ---------------- RUN ---------------- #
 
 today_df = fetch_sales(today)
-lastweek_df = fetch_sales(last_week)
 
 if today_df.empty:
-    print("❌ No data fetched")
+    print("❌ No data")
     exit()
 
-# ---------------- TIME FILTER ---------------- #
+# ---------------- MASTER MAPPING ---------------- #
 
-now_time = datetime.now().time()
+print("\n🔗 Applying Mapping...")
 
+help_ws = spreadsheet.worksheet("Help Sheet")
+
+# Store Type & Region
+data = help_ws.get("G:M")
+branch_master = pd.DataFrame(data[1:], columns=data[0])
+branch_master = branch_master[["Store Name","Ownership","Region"]]
+
+store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
+region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
+
+today_df["Store Type"] = today_df["branchName"].map(store_map)
+today_df["Region"] = today_df["branchName"].map(region_map)
+
+# Source
+source_data = help_ws.get("D:E")
+source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
+source_map = dict(zip(source_master["Channel"], source_master["Source"]))
+
+today_df["Source"] = today_df["channel"].map(source_map)
+
+# Hour
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"])
-lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"])
+today_df["Hour"] = today_df["invoiceDate"].dt.hour
 
-# ❌ TEMP DISABLE FILTER (IMPORTANT)
-# today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
-# lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
+# Fill blanks
+today_df["Store Type"] = today_df["Store Type"].fillna("Unknown")
+today_df["Region"] = today_df["Region"].fillna("Unknown")
+today_df["Source"] = today_df["Source"].fillna("Other")
 
-# ---------------- KPI ---------------- #
+print("✅ Mapping Done")
 
-today_sales = today_df["netAmount"].astype(float).sum()
-lastweek_sales = lastweek_df["netAmount"].astype(float).sum()
+# ---------------- NET SALES (ONLY CLOSED) ---------------- #
 
-growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sales else 0
+today_df["netAmount"] = pd.to_numeric(today_df["netAmount"], errors="coerce").fillna(0)
+today_df["chargeAmount"] = pd.to_numeric(today_df["chargeAmount"], errors="coerce").fillna(0)
 
-summary = pd.DataFrame({
-    "Metric": ["Today Sales", "Last Week Sales", "Growth %"],
-    "Value": [today_sales, lastweek_sales, round(growth, 2)]
-})
+today_df["Net Sales"] = 0
+
+today_df.loc[
+    today_df["status"] == "Closed",
+    "Net Sales"
+] = today_df["netAmount"] + today_df["chargeAmount"]
+
+print("✅ Net Sales Calculated (Closed only)")
 
 # ---------------- PUSH ---------------- #
 
@@ -149,30 +178,25 @@ def push(sheet_name, df):
     try:
         ws = spreadsheet.worksheet(sheet_name)
     except:
-        print(f"⚠️ Creating sheet: {sheet_name}")
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
+        ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="30")
 
-    # ✅ DEBUG (very important)
-    print("Rows going to sheet:", len(df))
-    print(df.head(3))
+    print("Rows:", len(df))
 
-    # ✅ CLEAN DATA
     df = df.fillna("").astype(str)
-
     data = [df.columns.tolist()] + df.values.tolist()
 
-    # ✅ UPDATE FIX
     ws.clear()
     ws.update(
         data,
         value_input_option="USER_ENTERED"
     )
 
-    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
+    print(f"✅ {sheet_name} updated")
 
-print("\n📊 Pushing data...")
+# ---------------- EXECUTE ---------------- #
 
-push("Summary", summary)
+print("\n📊 Pushing Raw Data...")
+
 push("Raw Data", today_df)
 
 print("\n🎉 SUCCESS")
