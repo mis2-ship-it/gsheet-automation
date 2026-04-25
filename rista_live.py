@@ -125,8 +125,9 @@ now_time = datetime.now().time()
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"])
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"])
 
-today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
-lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
+# ❌ TEMP DISABLE FILTER (IMPORTANT)
+# today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
+# lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
 
 # ---------------- KPI ---------------- #
 
@@ -148,14 +149,26 @@ def push(sheet_name, df):
     try:
         ws = spreadsheet.worksheet(sheet_name)
     except:
+        print(f"⚠️ Creating sheet: {sheet_name}")
         ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
 
+    # ✅ DEBUG (very important)
+    print("Rows going to sheet:", len(df))
+    print(df.head(3))
+
+    # ✅ CLEAN DATA
     df = df.fillna("").astype(str)
 
-    ws.clear()
-    ws.update([df.columns.tolist()] + df.values.tolist())
+    data = [df.columns.tolist()] + df.values.tolist()
 
-    print(f"✅ {sheet_name} updated")
+    # ✅ UPDATE FIX
+    ws.clear()
+    ws.update(
+        data,
+        value_input_option="USER_ENTERED"
+    )
+
+    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
 
 print("\n📊 Pushing data...")
 
