@@ -41,7 +41,7 @@ creds = Credentials.from_service_account_info(
 client = gspread.authorize(creds)
 
 spreadsheet = client.open_by_url(
-    "YOUR_GOOGLE_SHEET_LINK_HERE"
+    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit?gid=1217602119#gid=1217602119"
 )
 
 print("✅ Connected to Google Sheet")
