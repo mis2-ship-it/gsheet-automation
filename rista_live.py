@@ -66,6 +66,7 @@ print("🏪 Branch count:", len(branches))
 
 now = datetime.now()
 today = now.strftime("%Y-%m-%d")
+last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
 # ---------------- FETCH SALES ---------------- #
 
@@ -116,10 +117,12 @@ def fetch_sales(day):
 # ---------------- RUN ---------------- #
 
 today_df = fetch_sales(today)
+lastweek_df = fetch_sales(last_week)
 
 if today_df.empty:
-    print("❌ No data")
+    print("❌ No data fetched")
     exit()
+
 
 # ---------------- MASTER MAPPING ---------------- #
 
