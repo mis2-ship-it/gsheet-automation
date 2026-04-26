@@ -158,17 +158,16 @@ print("✅ Mapping Done")
 
 # ---------------- NET SALES (ONLY CLOSED) ---------------- #
 
+
 today_df["netAmount"] = pd.to_numeric(today_df["netAmount"], errors="coerce").fillna(0)
 today_df["chargeAmount"] = pd.to_numeric(today_df["chargeAmount"], errors="coerce").fillna(0)
 
-today_df["Net Sales"] = 0
+today_df["Net Sales"] = (
+    (today_df["netAmount"] + today_df["chargeAmount"])
+    .where(today_df["status"] == "Closed", 0)
+)
 
-today_df.loc[
-    today_df["status"] == "Closed",
-    "Net Sales"
-] = today_df["netAmount"] + today_df["chargeAmount"]
-
-print("✅ Net Sales Calculated (Closed only)")
+print("✅ Net Sales calculated")
 
 # ---------------- PUSH ---------------- #
 
