@@ -40,9 +40,8 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-spreadsheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit?gid=1217602119#gid=1217602119"
-)
+# ✅ Use KEY (stable)
+spreadsheet = client.open_by_key("1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM")
 
 print("✅ Connected to Google Sheet")
 
@@ -106,7 +105,7 @@ def fetch_sales(day):
                 break
 
     if not all_data:
-        print("❌ No data fetched")
+        print(f"❌ No data for {day}")
         return pd.DataFrame()
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -120,11 +119,10 @@ today_df = fetch_sales(today)
 lastweek_df = fetch_sales(last_week)
 
 if today_df.empty:
-    print("❌ No data fetched")
+    print("❌ No today data")
     exit()
 
-
-# ---------------- MASTER MAPPING ---------------- #
+# ---------------- MAPPING ---------------- #
 
 print("\n🔗 Applying Mapping...")
 
@@ -138,39 +136,57 @@ branch_master = branch_master[["Store Name","Ownership","Region"]]
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
-today_df["Store Type"] = today_df["branchName"].map(store_map)
-today_df["Region"] = today_df["branchName"].map(region_map)
-
 # Source
 source_data = help_ws.get("D:E")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
-today_df["Source"] = today_df["channel"].map(source_map)
+# Apply to both
+for df in [today_df, lastweek_df]:
 
-# Hour
-today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"])
-today_df["Hour"] = today_df["invoiceDate"].dt.hour
+    df["Store Type"] = df["branchName"].map(store_map).fillna("Unknown")
+    df["Region"] = df["branchName"].map(region_map).fillna("Unknown")
+    df["Source"] = df["channel"].map(source_map).fillna("Other")
 
-# Fill blanks
-today_df["Store Type"] = today_df["Store Type"].fillna("Unknown")
-today_df["Region"] = today_df["Region"].fillna("Unknown")
-today_df["Source"] = today_df["Source"].fillna("Other")
+    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"])
+    df["Hour"] = df["invoiceDate"].dt.hour
 
 print("✅ Mapping Done")
 
-# ---------------- NET SALES (ONLY CLOSED) ---------------- #
+# ---------------- NET SALES ---------------- #
 
+for df in [today_df, lastweek_df]:
 
-today_df["netAmount"] = pd.to_numeric(today_df["netAmount"], errors="coerce").fillna(0)
-today_df["chargeAmount"] = pd.to_numeric(today_df["chargeAmount"], errors="coerce").fillna(0)
+    df["netAmount"] = pd.to_numeric(df["netAmount"], errors="coerce").fillna(0)
+    df["chargeAmount"] = pd.to_numeric(df["chargeAmount"], errors="coerce").fillna(0)
 
-today_df["Net Sales"] = (
-    (today_df["netAmount"] + today_df["chargeAmount"])
-    .where(today_df["status"] == "Closed", 0)
-)
+    df["Net Sales"] = (
+        (df["netAmount"] + df["chargeAmount"])
+        .where(df["status"] == "Closed", 0)
+    )
 
 print("✅ Net Sales calculated")
+
+# ---------------- SAME TIME FILTER ---------------- #
+
+now_time = datetime.now().time()
+
+today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
+lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
+
+print("⏱ Same time filter applied")
+
+# ---------------- SUMMARY ---------------- #
+
+today_sales = today_df["Net Sales"].sum()
+lastweek_sales = lastweek_df["Net Sales"].sum()
+
+growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sales else 0
+
+summary = pd.DataFrame({
+    "Metric": ["Today Sales", "Last Week Sales", "Growth %"],
+    "Value": [round(today_sales,2), round(lastweek_sales,2), round(growth,2)]
+})
 
 # ---------------- PUSH ---------------- #
 
@@ -188,17 +204,18 @@ def push(sheet_name, df):
     data = [df.columns.tolist()] + df.values.tolist()
 
     ws.clear()
-    ws.update(
-        data,
-        value_input_option="USER_ENTERED"
-    )
+    ws.update(data, value_input_option="USER_ENTERED")
 
     print(f"✅ {sheet_name} updated")
 
 # ---------------- EXECUTE ---------------- #
 
-print("\n📊 Pushing Raw Data...")
+print("\n📊 Pushing data...")
 
+push("Summary", summary)
 push("Raw Data", today_df)
+
+# Optional debug sheet
+# push("Last Week Raw", lastweek_df)
 
 print("\n🎉 SUCCESS")
