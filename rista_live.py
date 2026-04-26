@@ -64,8 +64,8 @@ print("🏪 Branch count:", len(branches))
 
 # ---------------- DATE ---------------- #
 
-now = datetime.now()-1
-today = now.strftime("%Y-%m-%d")-1
+now = datetime.now()
+today = now.strftime("%Y-%m-%d")
 
 # ---------------- FETCH SALES ---------------- #
 
@@ -115,7 +115,7 @@ def fetch_sales(day):
 
 # ---------------- RUN ---------------- #
 
-today_df = fetch_sales(today)-1
+today_df = fetch_sales(today)
 
 if today_df.empty:
     print("❌ No data")
