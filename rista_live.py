@@ -282,12 +282,15 @@ def push(sheet_name, df):
     except:
         ws = spreadsheet.add_worksheet(title=sheet_name, rows="2000", cols="40")
 
-    # ✅ FIX 1: Convert datetime columns
+    # ✅ STEP 1: Convert ALL datetime columns
     for col in df.columns:
-        if "date" in col.lower():
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = df[col].astype(str)
 
-    # ✅ FIX 2: Convert everything to string (safe)
+    # ✅ STEP 2: Handle special values
+    df.replace([float("inf"), float("-inf")], 0, inplace=True)
+
+    # ✅ STEP 3: Final safe conversion
     df = df.fillna("").astype(str)
 
     data = [df.columns.tolist()] + df.values.tolist()
