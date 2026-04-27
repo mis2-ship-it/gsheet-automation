@@ -32,7 +32,7 @@ jobs:
 
       - name: Install deps
         run: |
-          pip install pandas requests PyJWT gspread google-auth
+          pip install pandas requests PyJWT gspread google-auth pytz
 
       - name: Run Script
         env:
