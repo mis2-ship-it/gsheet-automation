@@ -270,13 +270,32 @@ region_analysis = format_df(region_analysis)
 if not brand_analysis.empty:
     brand_analysis = format_df(brand_analysis)
 
+df.replace([float("inf"), float("-inf")], 0, inplace=True)
+
 # ---------------- PUSH ---------------- #
 
-ws = spreadsheet.worksheet("Raw Data")
-ws.clear()
-ws.update([final_df.columns.tolist()] + final_df.astype(str).values.tolist())
+def push(sheet_name, df):
+    print(f"\n📤 Updating sheet: {sheet_name}")
 
-print("📊 Sheets Updated")
+    try:
+        ws = spreadsheet.worksheet(sheet_name)
+    except:
+        ws = spreadsheet.add_worksheet(title=sheet_name, rows="2000", cols="40")
+
+    # ✅ FIX 1: Convert datetime columns
+    for col in df.columns:
+        if "date" in col.lower():
+            df[col] = df[col].astype(str)
+
+    # ✅ FIX 2: Convert everything to string (safe)
+    df = df.fillna("").astype(str)
+
+    data = [df.columns.tolist()] + df.values.tolist()
+
+    ws.clear()
+    ws.update(data, value_input_option="USER_ENTERED")
+
+    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
 
 # ---------------- EMAIL ---------------- #
 
