@@ -157,111 +157,120 @@ final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
 
 # ---------------- MAPPING ---------------- #
 
-print("\n🔗 Applying Mapping...")
-
 help_ws = spreadsheet.worksheet("Help Sheet")
 
-# Store + Region
 branch_data = help_ws.get("G:M")
 branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
-# Source
 source_data = help_ws.get("D:E")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
-
-# Hour
-final_df["Hour"] = final_df["invoiceDate"].dt.hour
-
-print("✅ Mapping Done")
+for df in [today_cut, lastweek_cut]:
+    df["Store Type"] = df["branchName"].map(store_map).fillna("Unknown")
+    df["Region"] = df["branchName"].map(region_map).fillna("Unknown")
+    df["Source"] = df["channel"].map(source_map).fillna("Other")
+    df["Hour"] = df["invoiceDate"].dt.hour
+    df["Date"] = df["invoiceDate"].dt.date
 
 # ---------------- NET SALES ---------------- #
 
-final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
-final_df["chargeAmount"] = pd.to_numeric(final_df["chargeAmount"], errors="coerce").fillna(0)
+for df in [today_cut, lastweek_cut]:
+    df["netAmount"] = pd.to_numeric(df["netAmount"], errors="coerce").fillna(0)
+    df["chargeAmount"] = pd.to_numeric(df["chargeAmount"], errors="coerce").fillna(0)
+    df["Net Sales"] = (
+        (df["netAmount"] + df["chargeAmount"])
+        .where(df["status"] == "Closed", 0)
+    )
 
-final_df["Net Sales"] = (
-    (final_df["netAmount"] + final_df["chargeAmount"])
-    .where(final_df["status"] == "Closed", 0)
-)
+# ---------------- FILTER COCO ---------------- #
 
-print("✅ Net Sales Done")
+today_cut = today_cut[(today_cut["Store Type"] == "COCO") & (today_cut["status"] == "Closed")]
+lastweek_cut = lastweek_cut[(lastweek_cut["Store Type"] == "COCO") & (lastweek_cut["status"] == "Closed")]
 
-# ---------------- FIX COLUMN STRUCTURE ---------------- #
+# ---------------- METRICS ---------------- #
 
-EXPECTED_COLUMNS = [
-    "branchName",
-    "branchCode",
-    "invoiceDate",
-    "channel",
-    "status",
-    "netAmount",
-    "chargeAmount",
-    "customerId",
-    "customerName",
+def compute(df):
+    gross = df.get("grossAmount", pd.Series()).astype(float).sum()
+    disc = abs(df.get("discountAmount", pd.Series()).astype(float).sum())
+    net = df["Net Sales"].sum()
+    txn = len(df)
+    aov = net / txn if txn else 0
+    return gross, disc, net, txn, aov
 
-    # Your derived columns
-    "Date",
-    "Data_Type",
-    "Store Type",
-    "Region",
-    "Source",
-    "Hour",
-    "Net Sales"
-]
+def growth(t, l):
+    return ((t - l) / l * 100) if l else 0
 
-# Add missing columns
-for col in EXPECTED_COLUMNS:
-    if col not in final_df.columns:
-        final_df[col] = ""
+# ---------------- OVERALL ---------------- #
 
-# Keep only required columns in order
-final_df = final_df[EXPECTED_COLUMNS]
+t = compute(today_cut)
+l = compute(lastweek_cut)
 
-print("✅ Column structure fixed")
-
-# ---------------- SUMMARY ---------------- #
-
-today_sales = final_df[final_df["Data_Type"] == "Today"]["Net Sales"].sum()
-lastweek_sales = final_df[final_df["Data_Type"] == "Last Week"]["Net Sales"].sum()
-
-growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sales else 0
-
-summary = pd.DataFrame({
-    "Metric": ["Today Sales", "Last Week Sales", "Growth %"],
-    "Value": [round(today_sales, 2), round(lastweek_sales, 2), round(growth, 2)]
+overall = pd.DataFrame({
+    "Metric": ["Gross", "Discount", "Net Sales", "Transactions", "AOV"],
+    "Last Week": l,
+    "Today": t,
+    "Growth %": [growth(t[i], l[i]) for i in range(5)]
 })
+
+# ---------------- GROUP ANALYSIS ---------------- #
+
+def group_analysis(col):
+    rows = []
+
+    for key in set(today_cut[col]).union(lastweek_cut[col]):
+        t_df = today_cut[today_cut[col] == key]
+        l_df = lastweek_cut[lastweek_cut[col] == key]
+
+        t_val = compute(t_df)
+        l_val = compute(l_df)
+
+        rows.append([
+            key,
+            l_val[2], t_val[2], growth(t_val[2], l_val[2]),
+            l_val[3], t_val[3], growth(t_val[3], l_val[3]),
+            l_val[4], t_val[4], growth(t_val[4], l_val[4])
+        ])
+
+    return pd.DataFrame(rows, columns=[
+        col,
+        "LW Net", "Today Net", "Growth %",
+        "LW Txn", "Today Txn", "Txn Growth %",
+        "LW AOV", "Today AOV", "AOV Growth %"
+    ])
+
+source_analysis = group_analysis("Source")
+region_analysis = group_analysis("Region")
+
+if "brandName" in today_cut.columns:
+    brand_analysis = group_analysis("brandName")
+else:
+    brand_analysis = pd.DataFrame()
 
 # ---------------- PUSH ---------------- #
 
-def push(sheet_name, df):
-    print(f"\n📤 Updating sheet: {sheet_name}")
-
+def push(name, df):
     try:
-        ws = spreadsheet.worksheet(sheet_name)
+        ws = spreadsheet.worksheet(name)
     except:
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows="2000", cols="40")
+        ws = spreadsheet.add_worksheet(title=name, rows="2000", cols="40")
 
     df = df.fillna("").astype(str)
-    data = [df.columns.tolist()] + df.values.tolist()
-
     ws.clear()
-    ws.update(data, value_input_option="USER_ENTERED")
+    ws.update([df.columns.tolist()] + df.values.tolist())
 
-    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
-
-# ---------------- EXECUTE ---------------- #
+    print(f"✅ {name} updated")
 
 print("\n📊 Pushing Data...")
 
-push("Raw Data", final_df)
-push("Summary", summary)
+push("Analysis - Overall", overall)
+push("Analysis - Source", source_analysis)
+push("Analysis - Region", region_analysis)
+
+if not brand_analysis.empty:
+    push("Analysis - Brand", brand_analysis)
 
 print("\n🎉 FINAL SUCCESS")
