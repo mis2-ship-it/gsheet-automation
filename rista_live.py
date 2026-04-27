@@ -48,15 +48,18 @@ print("✅ Connected to Google Sheet")
 
 # ---------------- BUSINESS HOURS CONTROL ---------------- #
 
-now = datetime.now()
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
+now = datetime.now(IST)
+
 current_time = now.time()
 
 start_time = datetime.strptime("08:30", "%H:%M").time()
-end_time = datetime.strptime("23:59", "%H:%M").time()
-early_end = datetime.strptime("05:30", "%H:%M").time()
+end_time = datetime.strptime("05:30", "%H:%M").time()
 
-# ❌ STOP after 5:30 AM → before 8:30 AM
-if current_time > early_end and current_time < start_time:
+# ✅ Business hours: 08:30 AM → next day 05:30 AM
+if not (current_time >= start_time or current_time <= end_time):
     print("⛔ Outside business hours. Exiting...")
     exit()
 
