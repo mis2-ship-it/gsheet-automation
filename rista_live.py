@@ -274,40 +274,26 @@ df.replace([float("inf"), float("-inf")], 0, inplace=True)
 
 # ---------------- PUSH ---------------- #
 
-def push(sheet_name, df):
-    print(f"\n📤 Updating sheet: {sheet_name}")
 
-    try:
-        ws = spreadsheet.worksheet(sheet_name)
-    except:
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows="2000", cols="40")
-
-    # ✅ STEP 1: Convert ALL datetime columns
-    for col in df.columns:
-        if pd.api.types.is_datetime64_any_dtype(df[col]):
-            df[col] = df[col].astype(str)
-
-    # ✅ STEP 2: Handle special values
-    df.replace([float("inf"), float("-inf")], 0, inplace=True)
-   # ✅ STEP 3: Final safe conversion (FIXED)
+# ✅ FINAL SAFE FIX
 
 df = df.copy()
 
-# Convert Timestamp / datetime properly
-for col in df.columns:
-    if "datetime" in str(df[col].dtype) or "timestamp" in str(df[col].dtype):
-        df[col] = df[col].astype(str)
+# Convert ALL values safely (this is the key fix)
+df = df.applymap(lambda x: x.strftime("%Y-%m-%d %H:%M:%S")
+                 if hasattr(x, "strftime") else x)
 
-# Also safely convert any leftover objects (VERY IMPORTANT)
+# Handle NaN
 df = df.fillna("")
-df = df.applymap(lambda x: str(x) if hasattr(x, "isoformat") else x)
 
-data = [df.columns.tolist()] + df.values.tolist()
+data = [df.columns.astype(str).tolist()] + df.astype(str).values.tolist()
 
 ws.clear()
 ws.update(data, value_input_option="USER_ENTERED")
 
 print(f"✅ {sheet_name} updated | Rows: {len(df)}")
+print(df.dtypes)
+print(type(df.iloc[0,0]))
 
 # ---------------- EMAIL ---------------- #
 
