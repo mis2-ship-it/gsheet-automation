@@ -51,8 +51,6 @@ now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 today = now.strftime("%Y-%m-%d")
 last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
-current_time = now.time()
-
 print("🕒 IST Time:", now)
 
 # ---------------- FETCH BRANCH ---------------- #
@@ -127,15 +125,22 @@ if today_df.empty:
 
 # ---------------- TIME FILTER ---------------- #
 
+# ---------------- TIME FILTER (FIXED) ---------------- #
+
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# Today → only till current time
-today_df = today_df[today_df["invoiceDate"].dt.time <= current_time]
+# Convert timezone properly
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
 
-# Last week → FULL DAY (no filter)
+# Get current IST datetime
+now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
-print("⏱ Time filter applied")
+# ✅ Correct filtering
+today_df = today_df[today_df["invoiceDate"] <= now_ist]
+
+print("⏱ Time filter applied correctly")
 
 # ---------------- ADD EXTRA COLUMNS ---------------- #
 
