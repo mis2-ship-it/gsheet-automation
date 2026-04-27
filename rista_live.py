@@ -149,9 +149,11 @@ for df in [today_df, lastweek_df]:
     df["Source"] = df["channel"].map(source_map).fillna("Other")
 
     df["invoiceDate"] = pd.to_datetime(df["invoiceDate"])
-    df["Hour"] = df["invoiceDate"].dt.hour
 
-print("✅ Mapping Done")
+    # ✅ NEW COLUMN
+    df["Date"] = df["invoiceDate"].dt.strftime("%Y-%m-%d")
+
+    df["Hour"] = df["invoiceDate"].dt.hour
 
 # ---------------- NET SALES ---------------- #
 
