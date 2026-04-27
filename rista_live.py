@@ -7,7 +7,6 @@ import pandas as pd
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
-import pytz
 
 print("🚀 Live Script Started")
 
@@ -47,10 +46,12 @@ print("✅ Connected to Google Sheet")
 
 # ---------------- TIME (IST SAFE) ---------------- #
 
-import pytz
+from datetime import datetime, timedelta, timezone
 
-ist = pytz.timezone("Asia/Kolkata")
-now_ist = datetime.now(ist)
+# IST timezone (no pytz needed)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+now_ist = datetime.now(IST)
 
 today = now_ist.strftime("%Y-%m-%d")
 last_week = (now_ist - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -133,18 +134,11 @@ if today_df.empty:
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# ✅ SAFE timezone handling
-if today_df["invoiceDate"].dt.tz is None:
-    today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize("Asia/Kolkata")
-else:
-    today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
+# ✅ Make both timezone-aware (IST)
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
 
-if lastweek_df["invoiceDate"].dt.tz is None:
-    lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize("Asia/Kolkata")
-else:
-    lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
-
-# ✅ FILTER (correct way)
+# ✅ Filter only today till now
 today_df = today_df[today_df["invoiceDate"] <= now_ist]
 
 print("⏱ Time filter applied correctly")
