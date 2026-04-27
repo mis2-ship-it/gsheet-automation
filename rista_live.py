@@ -252,6 +252,10 @@ brand_analysis = group_analysis("brandName") if "brandName" in today_cut.columns
 
 def send_email(overall, source, region, brand):
 
+    print("Email User:", EMAIL_USER)
+    print("To:", EMAIL_TO)
+    print("CC:", EMAIL_CC)
+    
     EMAIL_USER = os.environ["EMAIL_USER"]
     EMAIL_PASS = os.environ["EMAIL_PASS"]
 
