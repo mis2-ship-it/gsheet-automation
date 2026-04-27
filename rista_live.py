@@ -28,10 +28,8 @@ def headers():
 
 # ---------------- GOOGLE ---------------- #
 
-creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
-
 creds = Credentials.from_service_account_info(
-    creds_dict,
+    json.loads(os.environ["GOOGLE_CREDENTIALS"]),
     scopes=[
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
@@ -127,17 +125,15 @@ if today_df.empty:
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# remove timezone mismatch
 today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None)
 lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None)
 
 now_naive = now.replace(tzinfo=None)
-
 today_df = today_df[today_df["invoiceDate"] <= now_naive]
 
 print("⏱ Time filter applied")
 
-# ---------------- ADD DATE + HOUR ---------------- #
+# ---------------- DATE + HOUR ---------------- #
 
 today_df["Date"] = today_df["invoiceDate"].dt.date
 lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.date
@@ -170,6 +166,12 @@ final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 
+# Source grouping
+main_sources = ["Instore", "Swiggy", "Zomato", "Ownly"]
+final_df["Source Group"] = final_df["Source"].apply(
+    lambda x: x if x in main_sources else "Others"
+)
+
 print("✅ Mapping Done")
 
 # ---------------- NET SALES ---------------- #
@@ -195,58 +197,84 @@ def group_analysis(df_today, df_lw, group_col):
 
     t = df_today.groupby(group_col).agg(
         Today_Net=("Net Sales","sum"),
-        Today_Txn=("invoiceNumber","count")
+        Today_Txn=("invoiceNumber","count"),
+        Gross_Today=("grossAmount","sum"),
+        Discount_Today=("discountAmount","sum")
     )
 
     l = df_lw.groupby(group_col).agg(
         LW_Net=("Net Sales","sum"),
-        LW_Txn=("invoiceNumber","count")
+        LW_Txn=("invoiceNumber","count"),
+        Gross_LW=("grossAmount","sum"),
+        Discount_LW=("discountAmount","sum")
     )
 
     merged = t.join(l, how="outer").fillna(0)
 
-    merged["Growth %"] = ((merged["Today_Net"] - merged["LW_Net"]) / merged["LW_Net"].replace(0,1)) * 100
+    merged["Growth %"] = ((merged["Today_Net"] - merged["LW_Net"]) / merged["LW_Net"].replace(0, pd.NA)) * 100
+    merged["Growth %"] = merged["Growth %"].fillna(0)
+
     merged["AOV Today"] = merged["Today_Net"] / merged["Today_Txn"].replace(0,1)
     merged["AOV LW"] = merged["LW_Net"] / merged["LW_Txn"].replace(0,1)
 
+    merged["Dis % Today"] = (merged["Discount_Today"] / merged["Gross_Today"].replace(0,1)) * 100
+    merged["Dis % LW"] = (merged["Discount_LW"] / merged["Gross_LW"].replace(0,1)) * 100
+
     return merged.reset_index()
 
-# ---------------- ANALYSIS ---------------- #
+# ---------------- OVERALL ---------------- #
 
-overall = group_analysis(today_cut.assign(All="All"), lastweek_cut.assign(All="All"), "All")
-source_analysis = group_analysis(today_cut, lastweek_cut, "Source")
+overall = pd.DataFrame({
+    "Metric": ["Gross", "Discount", "Net Sales", "Transactions", "AOV", "Dis %"],
+    "Last Week": [
+        lastweek_cut["grossAmount"].sum(),
+        lastweek_cut["discountAmount"].sum(),
+        lastweek_cut["Net Sales"].sum(),
+        len(lastweek_cut),
+        lastweek_cut["Net Sales"].sum()/max(len(lastweek_cut),1),
+        (lastweek_cut["discountAmount"].sum()/max(lastweek_cut["grossAmount"].sum(),1))*100
+    ],
+    "Today": [
+        today_cut["grossAmount"].sum(),
+        today_cut["discountAmount"].sum(),
+        today_cut["Net Sales"].sum(),
+        len(today_cut),
+        today_cut["Net Sales"].sum()/max(len(today_cut),1),
+        (today_cut["discountAmount"].sum()/max(today_cut["grossAmount"].sum(),1))*100
+    ]
+})
+
+overall["Growth %"] = ((overall["Today"] - overall["Last Week"]) / overall["Last Week"].replace(0,1))*100
+
+# ---------------- OTHER ANALYSIS ---------------- #
+
+source_analysis = group_analysis(today_cut, lastweek_cut, "Source Group")
 region_analysis = group_analysis(today_cut, lastweek_cut, "Region")
 
-if "brandName" in final_df.columns:
-    brand_analysis = group_analysis(today_cut, lastweek_cut, "brandName")
-else:
-    brand_analysis = pd.DataFrame()
+brand_analysis = group_analysis(today_cut, lastweek_cut, "brandName") if "brandName" in final_df.columns else pd.DataFrame()
 
-# ---------------- ROUNDING ---------------- #
+# ---------------- ROUND ---------------- #
 
 def format_df(df):
     for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
         if "Growth" in col:
-            df[col] = pd.to_numeric(df[col], errors="coerce").round(1)
-        elif "Net" in col or "AOV" in col:
-            df[col] = pd.to_numeric(df[col], errors="coerce").round(2)
-    return df
+            df[col] = df[col].round(1)
+        else:
+            df[col] = df[col].round(0)
+    return df.fillna(0)
 
 overall = format_df(overall)
 source_analysis = format_df(source_analysis)
 region_analysis = format_df(region_analysis)
-
 if not brand_analysis.empty:
     brand_analysis = format_df(brand_analysis)
 
 # ---------------- PUSH ---------------- #
 
-def push(sheet_name, df):
-    ws = spreadsheet.worksheet(sheet_name)
-    ws.clear()
-    ws.update([df.columns.tolist()] + df.values.tolist())
-
-push("Raw Data", final_df)
+ws = spreadsheet.worksheet("Raw Data")
+ws.clear()
+ws.update([final_df.columns.tolist()] + final_df.astype(str).values.tolist())
 
 print("📊 Sheets Updated")
 
@@ -254,31 +282,28 @@ print("📊 Sheets Updated")
 
 def style_growth(val):
     try:
-        if float(val) < 0:
-            return "background-color:#ffcccc"
-        else:
-            return "background-color:#ccffcc"
+        return "background-color:#d4edda" if float(val)>=0 else "background-color:#f8d7da"
     except:
         return ""
 
 def styled_html(df):
-    return df.style.applymap(style_growth, subset=[c for c in df.columns if "Growth" in c]).to_html()
+    growth_cols = [c for c in df.columns if "Growth" in c]
+    return df.style.applymap(style_growth, subset=growth_cols).format("{:.0f}").to_html()
 
 def send_email():
-    EMAIL_USER = os.environ.get("EMAIL_USER")
-    EMAIL_PASS = os.environ.get("EMAIL_PASS")
-
-    if not EMAIL_USER or not EMAIL_PASS:
-        print("❌ Email credentials missing")
-        return
-
+    import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
-    import smtplib
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    TO_EMAIL = os.environ.get("TO_EMAIL")
+    CC_EMAIL = os.environ.get("CC_EMAIL")
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
-    msg["To"] = "yourmail@gmail.com"
+    msg["To"] = TO_EMAIL
+    msg["Cc"] = CC_EMAIL
     msg["Subject"] = "Sales Report"
 
     body = f"""
@@ -290,10 +315,14 @@ def send_email():
 
     msg.attach(MIMEText(body, "html"))
 
+    receivers = []
+    if TO_EMAIL: receivers += TO_EMAIL.split(",")
+    if CC_EMAIL: receivers += CC_EMAIL.split(",")
+
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
     server.login(EMAIL_USER, EMAIL_PASS)
-    server.sendmail(EMAIL_USER, ["yourmail@gmail.com"], msg.as_string())
+    server.sendmail(EMAIL_USER, receivers, msg.as_string())
     server.quit()
 
     print("📩 Email Sent")
