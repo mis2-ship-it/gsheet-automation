@@ -122,40 +122,69 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- MAPPING ---------------- #
+# ---------------- MASTER MAPPING + CLEANING ---------------- #
 
 print("\n🔗 Applying Mapping...")
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
-# Store Type & Region
-data = help_ws.get("G:M")
-branch_master = pd.DataFrame(data[1:], columns=data[0])
-branch_master = branch_master[["Store Name","Ownership","Region"]]
+# -------- LOAD MASTER -------- #
+branch_data = help_ws.get("G:M")
+branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 
-store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
-region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
+branch_master = branch_master[["Store Name", "Ownership", "Region"]]
 
-# Source
 source_data = help_ws.get("D:E")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
+
+# -------- CLEAN MASTER DATA -------- #
+branch_master["Store Name"] = branch_master["Store Name"].astype(str).str.strip().str.lower()
+branch_master["Ownership"] = branch_master["Ownership"].astype(str).str.strip()
+branch_master["Region"] = branch_master["Region"].astype(str).str.strip()
+
+source_master["Channel"] = source_master["Channel"].astype(str).str.strip().str.lower()
+source_master["Source"] = source_master["Source"].astype(str).str.strip()
+
+# -------- CREATE MAPS -------- #
+store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
+region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
-# Apply to both
+# -------- APPLY TO BOTH DATASETS -------- #
 for df in [today_df, lastweek_df]:
 
-    df["Store Type"] = df["branchName"].map(store_map).fillna("Unknown")
-    df["Region"] = df["branchName"].map(region_map).fillna("Unknown")
-    df["Source"] = df["channel"].map(source_map).fillna("Other")
+    # -------- CLEAN API DATA -------- #
+    df["branchName"] = df["branchName"].astype(str).str.strip().str.lower()
+    df["channel"] = df["channel"].astype(str).str.strip().str.lower()
 
-    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"])
+    # -------- MAPPING -------- #
+    df["Store Type"] = df["branchName"].map(store_map)
+    df["Region"] = df["branchName"].map(region_map)
+    df["Source"] = df["channel"].map(source_map)
 
-    # ✅ NEW COLUMN
+    # -------- HANDLE MISSING -------- #
+    df["Store Type"] = df["Store Type"].fillna("Missing")
+    df["Region"] = df["Region"].fillna("Missing")
+    df["Source"] = df["Source"].fillna("Missing")
+
+    # -------- DATE HANDLING -------- #
+    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"], errors="coerce")
+
+    # Clean date (for dashboard)
     df["Date"] = df["invoiceDate"].dt.strftime("%Y-%m-%d")
 
+    # Hour extraction
     df["Hour"] = df["invoiceDate"].dt.hour
 
-# ---------------- NET SALES ---------------- #
+print("✅ Mapping Done")
+
+# -------- DEBUG (IMPORTANT) -------- #
+print("Missing Store Type:", today_df["Store Type"].eq("Missing").sum())
+print("Missing Region:", today_df["Region"].eq("Missing").sum())
+print("Missing Source:", today_df["Source"].eq("Missing").sum())
+
+
+# ---------------- NET SALES (ONLY CLOSED) ---------------- #
 
 for df in [today_df, lastweek_df]:
 
@@ -169,6 +198,7 @@ for df in [today_df, lastweek_df]:
 
 print("✅ Net Sales calculated")
 
+
 # ---------------- SAME TIME FILTER ---------------- #
 
 now_time = datetime.now().time()
@@ -177,6 +207,7 @@ today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
 lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
 
 print("⏱ Same time filter applied")
+
 
 # ---------------- SUMMARY ---------------- #
 
@@ -187,37 +218,11 @@ growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sal
 
 summary = pd.DataFrame({
     "Metric": ["Today Sales", "Last Week Sales", "Growth %"],
-    "Value": [round(today_sales,2), round(lastweek_sales,2), round(growth,2)]
+    "Value": [
+        round(today_sales, 2),
+        round(lastweek_sales, 2),
+        round(growth, 2)
+    ]
 })
 
-# ---------------- PUSH ---------------- #
-
-def push(sheet_name, df):
-    print(f"\n📤 Updating sheet: {sheet_name}")
-
-    try:
-        ws = spreadsheet.worksheet(sheet_name)
-    except:
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="30")
-
-    print("Rows:", len(df))
-
-    df = df.fillna("").astype(str)
-    data = [df.columns.tolist()] + df.values.tolist()
-
-    ws.clear()
-    ws.update(data, value_input_option="USER_ENTERED")
-
-    print(f"✅ {sheet_name} updated")
-
-# ---------------- EXECUTE ---------------- #
-
-print("\n📊 Pushing data...")
-
-push("Summary", summary)
-push("Raw Data", today_df)
-
-# Optional debug sheet
-# push("Last Week Raw", lastweek_df)
-
-print("\n🎉 SUCCESS")
+print("📊 Summary Ready")
