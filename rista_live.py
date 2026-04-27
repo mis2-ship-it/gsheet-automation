@@ -259,8 +259,8 @@ def send_email(overall, source, region, brand):
     EMAIL_USER = os.environ["EMAIL_USER"]
     EMAIL_PASS = os.environ["EMAIL_PASS"]
 
-    EMAIL_TO = os.environ["mis2@frozenbottle.in"].split(",")
-    EMAIL_CC = os.environ.get("mis2@frozenbottle.in", "").split(",")
+    EMAIL_TO = os.environ["EMAIL_TO"].split(",")
+    EMAIL_CC = os.environ.get("EMAIL_CC", "").split(",")
 
     subject = f"COCO Sales Update | Today vs Last Week | {now_ist.strftime('%I %p')}"
 
