@@ -36,9 +36,12 @@ jobs:
 
       - name: Run Script
         env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-          API_KEY: ${{ secrets.API_KEY }}
-          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+         API_KEY: ${{ secrets.API_KEY }}
+         SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+         EMAIL_USER: ${{ secrets.EMAIL_USER }}
+         EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
         run: |
           echo "Running script..."
           python rista_live.py
