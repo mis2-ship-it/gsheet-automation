@@ -2,7 +2,9 @@ name: Rista Live to GSheet Hourly
 
 on:
   schedule:
-    - cron: '0 * * * *'
+   - cron: '30 4 * * *'   # 10:00 AM IST
+   - cron: '0 5-18 * * *' # 10AM–11PM hourly IST
+   - cron: '0 0 * * *'    # 5:30 AM IST final run
   workflow_dispatch:
 
 jobs:
