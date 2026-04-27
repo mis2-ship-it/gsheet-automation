@@ -194,6 +194,39 @@ final_df["Net Sales"] = (
 
 print("✅ Net Sales Done")
 
+# ---------------- FIX COLUMN STRUCTURE ---------------- #
+
+EXPECTED_COLUMNS = [
+    "branchName",
+    "branchCode",
+    "invoiceDate",
+    "channel",
+    "status",
+    "netAmount",
+    "chargeAmount",
+    "customerId",
+    "customerName",
+
+    # Your derived columns
+    "Date",
+    "Data_Type",
+    "Store Type",
+    "Region",
+    "Source",
+    "Hour",
+    "Net Sales"
+]
+
+# Add missing columns
+for col in EXPECTED_COLUMNS:
+    if col not in final_df.columns:
+        final_df[col] = ""
+
+# Keep only required columns in order
+final_df = final_df[EXPECTED_COLUMNS]
+
+print("✅ Column structure fixed")
+
 # ---------------- SUMMARY ---------------- #
 
 today_sales = final_df[final_df["Data_Type"] == "Today"]["Net Sales"].sum()
