@@ -8,6 +8,11 @@ from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 
+# 📩 EMAIL IMPORTS
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 print("🚀 Live Script Started")
 
 # ---------------- AUTH ---------------- #
@@ -46,7 +51,7 @@ spreadsheet = client.open_by_url(
 
 print("✅ Connected to Google Sheet")
 
-# ---------------- TIME (IST SAFE) ---------------- #
+# ---------------- TIME ---------------- #
 
 IST = timezone(timedelta(hours=5, minutes=30))
 now_ist = datetime.now(IST)
@@ -59,8 +64,8 @@ print("🕒 IST Time:", now_ist)
 # ---------------- FETCH BRANCH ---------------- #
 
 b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
-
 data = b_resp.json()
+
 if isinstance(data, dict):
     data = data.get("data", [])
 
@@ -74,7 +79,6 @@ print("🏪 Branch count:", len(branches))
 # ---------------- FETCH SALES ---------------- #
 
 def fetch_sales(day):
-    print(f"\n📥 Fetching sales for {day}")
     all_data = []
 
     for b in branches:
@@ -88,8 +92,7 @@ def fetch_sales(day):
             r = requests.get(
                 "https://api.ristaapps.com/v1/sales/summary",
                 headers=headers(),
-                params=params,
-                timeout=30
+                params=params
             )
 
             if r.status_code != 200:
@@ -111,10 +114,7 @@ def fetch_sales(day):
     if not all_data:
         return pd.DataFrame()
 
-    final_df = pd.concat(all_data, ignore_index=True)
-    print("📊 Rows:", final_df.shape)
-
-    return final_df
+    return pd.concat(all_data, ignore_index=True)
 
 # ---------------- RUN ---------------- #
 
@@ -125,35 +125,27 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- TIME FILTER ---------------- #
+# ---------------- TIME CLEAN ---------------- #
 
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# Remove timezone if exists and standardize
-today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None)
-lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None)
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
 
-# Apply IST timezone
-today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(IST)
-lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(IST)
+# ---------------- TIME FILTER ---------------- #
 
-# Filter today till now
-today_df = today_df[today_df["invoiceDate"] <= now_ist]
+start_time = now_ist.replace(hour=8, minute=30, second=0, microsecond=0)
 
-print("⏱ Time filter applied")
+today_cut = today_df[
+    (today_df["invoiceDate"] >= start_time) &
+    (today_df["invoiceDate"] <= now_ist)
+]
 
-# ---------------- ADD DATE ---------------- #
-
-today_df["Date"] = today_df["invoiceDate"].dt.date
-lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.date
-
-# ---------------- MERGE ---------------- #
-
-today_df["Data_Type"] = "Today"
-lastweek_df["Data_Type"] = "Last Week"
-
-final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
+lastweek_cut = lastweek_df[
+    (lastweek_df["invoiceDate"].dt.time >= start_time.time()) &
+    (lastweek_df["invoiceDate"].dt.time <= now_ist.time())
+]
 
 # ---------------- MAPPING ---------------- #
 
@@ -161,6 +153,8 @@ help_ws = spreadsheet.worksheet("Help Sheet")
 
 branch_data = help_ws.get("G:M")
 branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
+
+branch_master["Store Name"] = branch_master["Store Name"].astype(str).str.strip()
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
@@ -170,23 +164,31 @@ source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
 for df in [today_cut, lastweek_cut]:
+    df["branchName"] = df["branchName"].astype(str).str.strip()
+
     df["Store Type"] = df["branchName"].map(store_map).fillna("Unknown")
     df["Region"] = df["branchName"].map(region_map).fillna("Unknown")
     df["Source"] = df["channel"].map(source_map).fillna("Other")
+
     df["Hour"] = df["invoiceDate"].dt.hour
     df["Date"] = df["invoiceDate"].dt.date
+
+print("✅ Mapping Done")
 
 # ---------------- NET SALES ---------------- #
 
 for df in [today_cut, lastweek_cut]:
     df["netAmount"] = pd.to_numeric(df["netAmount"], errors="coerce").fillna(0)
     df["chargeAmount"] = pd.to_numeric(df["chargeAmount"], errors="coerce").fillna(0)
+
     df["Net Sales"] = (
         (df["netAmount"] + df["chargeAmount"])
         .where(df["status"] == "Closed", 0)
     )
 
-# ---------------- FILTER COCO ---------------- #
+print("✅ Net Sales Done")
+
+# ---------------- FILTER ---------------- #
 
 today_cut = today_cut[(today_cut["Store Type"] == "COCO") & (today_cut["status"] == "Closed")]
 lastweek_cut = lastweek_cut[(lastweek_cut["Store Type"] == "COCO") & (lastweek_cut["status"] == "Closed")]
@@ -244,11 +246,48 @@ def group_analysis(col):
 
 source_analysis = group_analysis("Source")
 region_analysis = group_analysis("Region")
+brand_analysis = group_analysis("brandName") if "brandName" in today_cut.columns else pd.DataFrame()
 
-if "brandName" in today_cut.columns:
-    brand_analysis = group_analysis("brandName")
-else:
-    brand_analysis = pd.DataFrame()
+# ---------------- EMAIL FUNCTION ---------------- #
+
+def send_email(overall, source, region, brand):
+
+    EMAIL_USER = os.environ["EMAIL_USER"]
+    EMAIL_PASS = os.environ["EMAIL_PASS"]
+
+    EMAIL_TO = os.environ["EMAIL_TO"].split(",")
+    EMAIL_CC = os.environ.get("EMAIL_CC", "").split(",")
+
+    subject = f"COCO Sales Update | Today vs Last Week | {now_ist.strftime('%I %p')}"
+
+    body = f"""
+    <h2>Overall</h2>{overall.to_html(index=False)}
+    <h2>Source</h2>{source.to_html(index=False)}
+    <h2>Region</h2>{region.to_html(index=False)}
+    <h2>Brand</h2>{brand.to_html(index=False) if not brand.empty else 'No Data'}
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_USER
+    msg["To"] = ", ".join(EMAIL_TO)
+    msg["Cc"] = ", ".join([e for e in EMAIL_CC if e])
+    msg["Subject"] = subject
+
+    msg.attach(MIMEText(body, "html"))
+
+    server = smtplib.SMTP("smtp.gmail.com", 587)
+    server.starttls()
+    server.login(EMAIL_USER, EMAIL_PASS)
+
+    server.sendmail(
+        EMAIL_USER,
+        EMAIL_TO + EMAIL_CC,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    print("📩 Email Sent")
 
 # ---------------- PUSH ---------------- #
 
@@ -262,9 +301,7 @@ def push(name, df):
     ws.clear()
     ws.update([df.columns.tolist()] + df.values.tolist())
 
-    print(f"✅ {name} updated")
-
-print("\n📊 Pushing Data...")
+# ---------------- EXECUTE ---------------- #
 
 push("Analysis - Overall", overall)
 push("Analysis - Source", source_analysis)
@@ -273,4 +310,9 @@ push("Analysis - Region", region_analysis)
 if not brand_analysis.empty:
     push("Analysis - Brand", brand_analysis)
 
-print("\n🎉 FINAL SUCCESS")
+print("📊 Sheets Updated")
+
+# 📧 SEND EMAIL
+send_email(overall, source_analysis, region_analysis, brand_analysis)
+
+print("🎉 FINAL SUCCESS")
