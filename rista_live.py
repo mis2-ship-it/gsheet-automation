@@ -40,28 +40,20 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-spreadsheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
-)
+spreadsheet = client.open_by_key("1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM")
 
 print("✅ Connected to Google Sheet")
 
-# ---------------- BUSINESS HOURS CONTROL ---------------- #
+# ---------------- TIME (IST SAFE) ---------------- #
 
-from datetime import datetime, timedelta, timezone
+now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
-IST = timezone(timedelta(hours=5, minutes=30))
-now = datetime.now(IST)
+today = now.strftime("%Y-%m-%d")
+last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
 current_time = now.time()
 
-start_time = datetime.strptime("08:30", "%H:%M").time()
-end_time = datetime.strptime("05:30", "%H:%M").time()
-
-# ✅ Business hours: 08:30 AM → next day 05:30 AM
-if not (current_time >= start_time or current_time <= end_time):
-    print("⛔ Outside business hours. Exiting...")
-    exit()
+print("🕒 IST Time:", now)
 
 # ---------------- FETCH BRANCH ---------------- #
 
@@ -77,11 +69,6 @@ branches = [
 ]
 
 print("🏪 Branch count:", len(branches))
-
-# ---------------- DATE ---------------- #
-
-today = now.strftime("%Y-%m-%d")
-last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
 # ---------------- FETCH SALES ---------------- #
 
@@ -121,6 +108,7 @@ def fetch_sales(day):
                 break
 
     if not all_data:
+        print(f"❌ No data for {day}")
         return pd.DataFrame()
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -139,25 +127,28 @@ if today_df.empty:
 
 # ---------------- TIME FILTER ---------------- #
 
-# ✅ Today → only till current time
-today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"])
-now_time = datetime.now().time()
-today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
+today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
+lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# ❌ Last week → FULL DAY (no filter)
-lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"])
+# Today → only till current time
+today_df = today_df[today_df["invoiceDate"].dt.time <= current_time]
 
-print("⏱ Time logic applied")
+# Last week → FULL DAY (no filter)
 
-# ---------------- ADD DATE COLUMN ---------------- #
+print("⏱ Time filter applied")
 
-today_df["Date"] = today_df["invoiceDate"].dt.date
-lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.date
+# ---------------- ADD EXTRA COLUMNS ---------------- #
 
-# ---------------- MERGE BOTH ---------------- #
+today_df["Date"] = today_df["invoiceDate"].dt.strftime("%Y-%m-%d")
+lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.strftime("%Y-%m-%d")
+
+today_df["Hour"] = today_df["invoiceDate"].dt.hour
+lastweek_df["Hour"] = lastweek_df["invoiceDate"].dt.hour
 
 today_df["Data_Type"] = "Today"
 lastweek_df["Data_Type"] = "Last Week"
+
+# ---------------- MERGE ---------------- #
 
 final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
 
@@ -171,21 +162,26 @@ help_ws = spreadsheet.worksheet("Help Sheet")
 branch_data = help_ws.get("G:M")
 branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 
+branch_master["Store Name"] = branch_master["Store Name"].str.strip().str.lower()
+
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
 # Source mapping
 source_data = help_ws.get("D:E")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
+
+source_master["Channel"] = source_master["Channel"].str.strip().str.lower()
+
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
 # Apply mapping
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
+final_df["branchName"] = final_df["branchName"].str.strip().str.lower()
+final_df["channel"] = final_df["channel"].str.strip().str.lower()
 
-# Hour
-final_df["Hour"] = final_df["invoiceDate"].dt.hour
+final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Missing")
+final_df["Region"] = final_df["branchName"].map(region_map).fillna("Missing")
+final_df["Source"] = final_df["channel"].map(source_map).fillna("Missing")
 
 print("✅ Mapping Done")
 
@@ -210,7 +206,7 @@ growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sal
 
 summary = pd.DataFrame({
     "Metric": ["Today Sales", "Last Week Sales", "Growth %"],
-    "Value": [round(today_sales,2), round(lastweek_sales,2), round(growth,2)]
+    "Value": [round(today_sales, 2), round(lastweek_sales, 2), round(growth, 2)]
 })
 
 # ---------------- PUSH ---------------- #
