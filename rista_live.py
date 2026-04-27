@@ -252,46 +252,59 @@ brand_analysis = group_analysis("brandName") if "brandName" in today_cut.columns
 
 def send_email(overall, source, region, brand):
 
+    # ✅ ALWAYS define first
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+
+    EMAIL_TO = ["yourmail@gmail.com"]        # 👈 keep simple
+    EMAIL_CC = ["manager@gmail.com"]         # 👈 optional
+
+    # ✅ safety check
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("❌ Email credentials missing")
+        return
+
+    # ✅ NOW you can print
     print("Email User:", EMAIL_USER)
     print("To:", EMAIL_TO)
-    print("CC:", EMAIL_CC)
-    
-    EMAIL_USER = os.environ["EMAIL_USER"]
-    EMAIL_PASS = os.environ["EMAIL_PASS"]
 
-    EMAIL_TO = os.environ["EMAIL_TO"].split(",")
-    EMAIL_CC = os.environ.get("EMAIL_CC", "").split(",")
-
-    subject = f"COCO Sales Update | Today vs Last Week | {now_ist.strftime('%I %p')}"
+    subject = "COCO Sales Alert"
 
     body = f"""
-    <h2>Overall</h2>{overall.to_html(index=False)}
-    <h2>Source</h2>{source.to_html(index=False)}
-    <h2>Region</h2>{region.to_html(index=False)}
-    <h2>Brand</h2>{brand.to_html(index=False) if not brand.empty else 'No Data'}
+    <h3>Overall</h3>{overall.to_html(index=False)}
+    <h3>Source</h3>{source.to_html(index=False)}
+    <h3>Region</h3>{region.to_html(index=False)}
     """
+
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    import smtplib
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
     msg["To"] = ", ".join(EMAIL_TO)
-    msg["Cc"] = ", ".join([e for e in EMAIL_CC if e])
+    msg["Cc"] = ", ".join(EMAIL_CC)
     msg["Subject"] = subject
 
     msg.attach(MIMEText(body, "html"))
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
 
-    server.sendmail(
-        EMAIL_USER,
-        EMAIL_TO + EMAIL_CC,
-        msg.as_string()
-    )
+        server.sendmail(
+            EMAIL_USER,
+            EMAIL_TO + EMAIL_CC,
+            msg.as_string()
+        )
 
-    server.quit()
+        server.quit()
 
-    print("📩 Email Sent")
+        print("📩 Email Sent Successfully")
+
+    except Exception as e:
+        print("❌ Email Error:", e)
 
 # ---------------- PUSH ---------------- #
 
