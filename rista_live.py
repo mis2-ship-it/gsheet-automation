@@ -297,8 +297,8 @@ def send_email():
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = os.environ.get("TO_EMAIL")
-    CC_EMAIL = os.environ.get("CC_EMAIL")
+    TO_EMAIL = os.environ.get("EMAIL_TO")
+    CC_EMAIL = os.environ.get("EMAIL_CC")
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
@@ -325,7 +325,10 @@ def send_email():
     server.sendmail(EMAIL_USER, receivers, msg.as_string())
     server.quit()
 
+    print("TO:", TO_EMAIL)
+    print("CC:", CC_EMAIL)
     print("📩 Email Sent")
+
 
 send_email()
 
