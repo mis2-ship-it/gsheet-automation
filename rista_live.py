@@ -46,12 +46,16 @@ print("✅ Connected to Google Sheet")
 
 # ---------------- TIME (IST SAFE) ---------------- #
 
-now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+import pytz
 
-today = now.strftime("%Y-%m-%d")
-last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+ist = pytz.timezone("Asia/Kolkata")
+now_ist = datetime.now(ist)
 
-print("🕒 IST Time:", now)
+today = now_ist.strftime("%Y-%m-%d")
+last_week = (now_ist - timedelta(days=7)).strftime("%Y-%m-%d")
+
+print("🕒 IST Time:", now_ist)
+
 
 # ---------------- FETCH BRANCH ---------------- #
 
@@ -123,25 +127,26 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- TIME FILTER ---------------- #
-
 # ---------------- TIME FILTER (FIXED) ---------------- #
 
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# Convert timezone properly
-today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
-lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
+# ✅ SAFE timezone handling
+if today_df["invoiceDate"].dt.tz is None:
+    today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize("Asia/Kolkata")
+else:
+    today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
 
-# Get current IST datetime
-now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+if lastweek_df["invoiceDate"].dt.tz is None:
+    lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize("Asia/Kolkata")
+else:
+    lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_convert("Asia/Kolkata")
 
-# ✅ Correct filtering
+# ✅ FILTER (correct way)
 today_df = today_df[today_df["invoiceDate"] <= now_ist]
 
 print("⏱ Time filter applied correctly")
-
 # ---------------- ADD EXTRA COLUMNS ---------------- #
 
 today_df["Date"] = today_df["invoiceDate"].dt.strftime("%Y-%m-%d")
