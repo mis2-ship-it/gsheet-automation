@@ -4,7 +4,7 @@ import time
 import jwt
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -40,24 +40,21 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-spreadsheet = client.open_by_key("1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM")
+spreadsheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
+)
 
 print("✅ Connected to Google Sheet")
 
 # ---------------- TIME (IST SAFE) ---------------- #
 
-from datetime import datetime, timedelta, timezone
-
-# IST timezone (no pytz needed)
 IST = timezone(timedelta(hours=5, minutes=30))
-
 now_ist = datetime.now(IST)
 
 today = now_ist.strftime("%Y-%m-%d")
 last_week = (now_ist - timedelta(days=7)).strftime("%Y-%m-%d")
 
 print("🕒 IST Time:", now_ist)
-
 
 # ---------------- FETCH BRANCH ---------------- #
 
@@ -112,7 +109,6 @@ def fetch_sales(day):
                 break
 
     if not all_data:
-        print(f"❌ No data for {day}")
         return pd.DataFrame()
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -129,31 +125,33 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- TIME FILTER (FIXED) ---------------- #
+# ---------------- TIME FILTER ---------------- #
 
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-# ✅ Make both timezone-aware (IST)
-today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
-lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None).dt.tz_localize(IST)
+# Remove timezone if exists and standardize
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None)
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None)
 
-# ✅ Filter only today till now
+# Apply IST timezone
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(IST)
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(IST)
+
+# Filter today till now
 today_df = today_df[today_df["invoiceDate"] <= now_ist]
 
-print("⏱ Time filter applied correctly")
-# ---------------- ADD EXTRA COLUMNS ---------------- #
+print("⏱ Time filter applied")
 
-today_df["Date"] = today_df["invoiceDate"].dt.strftime("%Y-%m-%d")
-lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.strftime("%Y-%m-%d")
+# ---------------- ADD DATE ---------------- #
 
-today_df["Hour"] = today_df["invoiceDate"].dt.hour
-lastweek_df["Hour"] = lastweek_df["invoiceDate"].dt.hour
+today_df["Date"] = today_df["invoiceDate"].dt.date
+lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.date
+
+# ---------------- MERGE ---------------- #
 
 today_df["Data_Type"] = "Today"
 lastweek_df["Data_Type"] = "Last Week"
-
-# ---------------- MERGE ---------------- #
 
 final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
 
@@ -163,30 +161,24 @@ print("\n🔗 Applying Mapping...")
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
-# Store mapping
+# Store + Region
 branch_data = help_ws.get("G:M")
 branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
-
-branch_master["Store Name"] = branch_master["Store Name"].str.strip().str.lower()
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
-# Source mapping
+# Source
 source_data = help_ws.get("D:E")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
-
-source_master["Channel"] = source_master["Channel"].str.strip().str.lower()
-
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
-# Apply mapping
-final_df["branchName"] = final_df["branchName"].str.strip().str.lower()
-final_df["channel"] = final_df["channel"].str.strip().str.lower()
+final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
+final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
+final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Missing")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Missing")
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Missing")
+# Hour
+final_df["Hour"] = final_df["invoiceDate"].dt.hour
 
 print("✅ Mapping Done")
 
