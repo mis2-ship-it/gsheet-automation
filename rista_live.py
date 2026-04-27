@@ -289,16 +289,25 @@ def push(sheet_name, df):
 
     # ✅ STEP 2: Handle special values
     df.replace([float("inf"), float("-inf")], 0, inplace=True)
+   # ✅ STEP 3: Final safe conversion (FIXED)
 
-    # ✅ STEP 3: Final safe conversion
-    df = df.fillna("").astype(str)
+df = df.copy()
 
-    data = [df.columns.tolist()] + df.values.tolist()
+# Convert Timestamp / datetime properly
+for col in df.columns:
+    if "datetime" in str(df[col].dtype) or "timestamp" in str(df[col].dtype):
+        df[col] = df[col].astype(str)
 
-    ws.clear()
-    ws.update(data, value_input_option="USER_ENTERED")
+# Also safely convert any leftover objects (VERY IMPORTANT)
+df = df.fillna("")
+df = df.applymap(lambda x: str(x) if hasattr(x, "isoformat") else x)
 
-    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
+data = [df.columns.tolist()] + df.values.tolist()
+
+ws.clear()
+ws.update(data, value_input_option="USER_ENTERED")
+
+print(f"✅ {sheet_name} updated | Rows: {len(df)}")
 
 # ---------------- EMAIL ---------------- #
 
