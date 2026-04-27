@@ -40,25 +40,43 @@ creds = Credentials.from_service_account_info(
 
 client = gspread.authorize(creds)
 
-spreadsheet = client.open_by_key("1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM")
+spreadsheet = client.open_by_url(
+    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
+)
 
 print("✅ Connected to Google Sheet")
+
+# ---------------- BUSINESS HOURS CONTROL ---------------- #
+
+now = datetime.now()
+current_time = now.time()
+
+start_time = datetime.strptime("08:30", "%H:%M").time()
+end_time = datetime.strptime("23:59", "%H:%M").time()
+early_end = datetime.strptime("05:30", "%H:%M").time()
+
+# ❌ STOP after 5:30 AM → before 8:30 AM
+if current_time > early_end and current_time < start_time:
+    print("⛔ Outside business hours. Exiting...")
+    exit()
 
 # ---------------- FETCH BRANCH ---------------- #
 
 b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
-data = b_resp.json()
 
+data = b_resp.json()
 if isinstance(data, dict):
     data = data.get("data", [])
 
-branches = [b["branchCode"] for b in data if isinstance(b, dict) and b.get("status") == "Active"]
+branches = [
+    b["branchCode"] for b in data
+    if isinstance(b, dict) and b.get("status") == "Active"
+]
 
 print("🏪 Branch count:", len(branches))
 
 # ---------------- DATE ---------------- #
 
-now = datetime.now()
 today = now.strftime("%Y-%m-%d")
 last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
@@ -100,7 +118,6 @@ def fetch_sales(day):
                 break
 
     if not all_data:
-        print(f"❌ No data for {day}")
         return pd.DataFrame()
 
     final_df = pd.concat(all_data, ignore_index=True)
@@ -117,22 +134,27 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- SAME TIME FILTER ---------------- #
+# ---------------- TIME FILTER ---------------- #
 
-now_time = datetime.now().time()
-
+# ✅ Today → only till current time
 today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"])
+now_time = datetime.now().time()
+today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
+
+# ❌ Last week → FULL DAY (no filter)
 lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"])
 
-today_df = today_df[today_df["invoiceDate"].dt.time <= now_time]
-lastweek_df = lastweek_df[lastweek_df["invoiceDate"].dt.time <= now_time]
+print("⏱ Time logic applied")
 
-# ---------------- ADD DATA TYPE ---------------- #
+# ---------------- ADD DATE COLUMN ---------------- #
 
-today_df["Data Type"] = "Today"
-lastweek_df["Data Type"] = "Last Week"
+today_df["Date"] = today_df["invoiceDate"].dt.date
+lastweek_df["Date"] = lastweek_df["invoiceDate"].dt.date
 
-# ---------------- COMBINE ---------------- #
+# ---------------- MERGE BOTH ---------------- #
+
+today_df["Data_Type"] = "Today"
+lastweek_df["Data_Type"] = "Last Week"
 
 final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
 
@@ -142,30 +164,24 @@ print("\n🔗 Applying Mapping...")
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
+# Store mapping
 branch_data = help_ws.get("G:M")
-branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])[["Store Name","Ownership","Region"]]
+branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 
-source_data = help_ws.get("D:E")
-source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
-
-# CLEAN
-branch_master["Store Name"] = branch_master["Store Name"].str.strip().str.lower()
-source_master["Channel"] = source_master["Channel"].str.strip().str.lower()
-
-final_df["branchName"] = final_df["branchName"].str.strip().str.lower()
-final_df["channel"] = final_df["channel"].str.strip().str.lower()
-
-# MAP
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
+
+# Source mapping
+source_data = help_ws.get("D:E")
+source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Missing")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Missing")
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Missing")
+# Apply mapping
+final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
+final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
+final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 
-# DATE + HOUR
-final_df["Date"] = final_df["invoiceDate"].dt.strftime("%Y-%m-%d")
+# Hour
 final_df["Hour"] = final_df["invoiceDate"].dt.hour
 
 print("✅ Mapping Done")
@@ -180,12 +196,12 @@ final_df["Net Sales"] = (
     .where(final_df["status"] == "Closed", 0)
 )
 
-print("✅ Net Sales calculated")
+print("✅ Net Sales Done")
 
 # ---------------- SUMMARY ---------------- #
 
-today_sales = final_df[final_df["Data Type"] == "Today"]["Net Sales"].sum()
-lastweek_sales = final_df[final_df["Data Type"] == "Last Week"]["Net Sales"].sum()
+today_sales = final_df[final_df["Data_Type"] == "Today"]["Net Sales"].sum()
+lastweek_sales = final_df[final_df["Data_Type"] == "Last Week"]["Net Sales"].sum()
 
 growth = ((today_sales - lastweek_sales) / lastweek_sales * 100) if lastweek_sales else 0
 
@@ -214,9 +230,9 @@ def push(sheet_name, df):
 
 # ---------------- EXECUTE ---------------- #
 
-print("\n📊 Pushing data...")
+print("\n📊 Pushing Data...")
 
-push("Summary", summary)
 push("Raw Data", final_df)
+push("Summary", summary)
 
-print("\n🎉 SUCCESS")
+print("\n🎉 FINAL SUCCESS")
