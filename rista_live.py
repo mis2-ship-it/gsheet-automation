@@ -137,6 +137,20 @@ lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date
 
 print("⏱ Business Date CREATED")
 
+# ---------------- SAME TIME FILTER ---------------- #
+
+current_time = now.time()
+
+today_df = today_df[
+    today_df["invoiceDate"].dt.time <= current_time
+]
+
+lastweek_df = lastweek_df[
+    lastweek_df["invoiceDate"].dt.time <= current_time
+]
+
+print("⏱ Same time filter applied (Today vs Last Week)")
+
 # ---------------- DATE + HOUR ---------------- #
 
 today_df["Date"] = today_df["businessDate"]
@@ -287,7 +301,7 @@ def styled_html(df):
 
     for col in df.columns:
         if col not in growth_cols:
-            df[col] = pd.to_numeric(df[col], errors="ignore")
+            df[col] = pd.to_numeric(df[col], errors="coerce")
             if df[col].dtype != "object":
                 df[col] = df[col].apply(lambda x: f"{x:.2f}")
 
