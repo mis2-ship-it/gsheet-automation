@@ -120,41 +120,37 @@ lastweek_df = fetch_sales(last_week)
 print("📌 TODAY DF COLUMNS:", today_df.columns)
 print("📌 LAST WEEK DF COLUMNS:", lastweek_df.columns)
 
-# ---------------- BUSINESS DATE FIX (SAFE VERSION) ---------------- #
+# ---------------- CREATE BUSINESS DATE ---------------- #
 
-# fallback safety check
-if "businessDate" not in today_df.columns:
-    raise Exception("businessDate not found in today_df")
+# Convert invoiceDate first
+today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
+lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
 
-if "businessDate" not in lastweek_df.columns:
-    raise Exception("businessDate not found in lastweek_df")
+today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None)
+lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None)
 
-# convert safely
-today_df["businessDate"] = pd.to_datetime(today_df["businessDate"], errors="coerce")
-lastweek_df["businessDate"] = pd.to_datetime(lastweek_df["businessDate"], errors="coerce")
+# 🔥 CREATE BUSINESS DATE LOGIC
+def get_business_date(dt):
+    if pd.isna(dt):
+        return pd.NaT
+    # before 5:30 AM → previous day
+    if dt.hour < 5 or (dt.hour == 5 and dt.minute < 30):
+        return (dt - pd.Timedelta(days=1)).date()
+    # after 8:30 AM → same day
+    return dt.date()
 
-# remove timezone
-today_df["businessDate"] = today_df["businessDate"].dt.tz_localize(None)
-lastweek_df["businessDate"] = lastweek_df["businessDate"].dt.tz_localize(None)
+today_df["businessDate"] = today_df["invoiceDate"].apply(get_business_date)
+lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date)
 
-now_naive = now.replace(tzinfo=None)
-
-# remove invalid dates BEFORE filtering
-today_df = today_df.dropna(subset=["businessDate"])
-lastweek_df = lastweek_df.dropna(subset=["businessDate"])
-
-# filter using business date
-today_df = today_df[today_df["businessDate"] <= now_naive]
-
-print("⏱ Business Date filter applied")
+print("⏱ Business Date CREATED")
 
 # ---------------- DATE + HOUR ---------------- #
 
-today_df["Date"] = today_df["businessDate"].dt.date
-lastweek_df["Date"] = lastweek_df["businessDate"].dt.date
+today_df["Date"] = today_df["businessDate"]
+lastweek_df["Date"] = lastweek_df["businessDate"]
 
-today_df["Hour"] = today_df["businessDate"].dt.hour
-lastweek_df["Hour"] = lastweek_df["businessDate"].dt.hour
+today_df["Hour"] = today_df["invoiceDate"].dt.hour
+lastweek_df["Hour"] = lastweek_df["invoiceDate"].dt.hour
 
 # ---------------- MERGE ---------------- #
 
