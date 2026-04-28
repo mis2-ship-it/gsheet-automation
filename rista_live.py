@@ -60,10 +60,7 @@ data = b_resp.json()
 if isinstance(data, dict):
     data = data.get("data", [])
 
-branches = [
-    b["branchCode"] for b in data
-    if isinstance(b, dict) and b.get("status") == "Active"
-]
+branches = [b["branchCode"] for b in data if isinstance(b, dict) and b.get("status") == "Active"]
 
 print("🏪 Branch count:", len(branches))
 
@@ -116,11 +113,8 @@ def fetch_sales(day):
 today_df = fetch_sales(today)
 lastweek_df = fetch_sales(last_week)
 
-print("📌 TODAY DF COLUMNS:", today_df.columns)
-print("📌 LAST WEEK DF COLUMNS:", lastweek_df.columns)
-
 if today_df.empty:
-    print("❌ No today data — exiting")
+    print("❌ No today data")
     exit()
 
 # ---------------- BUSINESS DATE ---------------- #
@@ -170,11 +164,7 @@ region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
 source_data = help_ws.get("D:F")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
-
-# 🔥 Clean column names
 source_master.columns = source_master.columns.str.strip()
-
-print("📌 SOURCE MASTER COLUMNS:", source_master.columns)
 
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
@@ -185,9 +175,7 @@ final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 
 main_sources = ["Instore", "Swiggy", "Zomato", "Ownly"]
-final_df["Source Group"] = final_df["Source"].apply(
-    lambda x: x if x in main_sources else "Others"
-)
+final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
 
 print("✅ Mapping Done")
 
@@ -208,38 +196,64 @@ print("✅ Net Sales Done")
 today_cut = final_df[(final_df["Data_Type"]=="Today") & (final_df["Store Type"]=="COCO") & (final_df["status"]=="Closed")]
 lastweek_cut = final_df[(final_df["Data_Type"]=="Last Week") & (final_df["Store Type"]=="COCO") & (final_df["status"]=="Closed")]
 
-# ---------------- GROUP FUNCTION ---------------- #
+# ---------------- KPI FUNCTION ---------------- #
 
-def group_analysis(df_today, df_lw, group_col):
-    t = df_today.groupby(group_col).agg(
-        Today_Net=("Net Sales","sum"),
-        Today_Txn=("invoiceNumber","count")
-    )
-    l = df_lw.groupby(group_col).agg(
-        LW_Net=("Net Sales","sum"),
-        LW_Txn=("invoiceNumber","count")
-    )
-    merged = t.join(l, how="outer").fillna(0)
-    merged["Growth %"] = ((merged["Today_Net"] - merged["LW_Net"]) / merged["LW_Net"].replace(0,1))*100
-    return merged.reset_index()
+def build_kpi(df_today, df_lw, label_name=None):
+
+    gross_today = df_today["grossAmount"].sum()
+    discount_today = df_today["discountAmount"].sum()
+    net_today = df_today["Net Sales"].sum()
+    txn_today = len(df_today)
+
+    gross_lw = df_lw["grossAmount"].sum()
+    discount_lw = df_lw["discountAmount"].sum()
+    net_lw = df_lw["Net Sales"].sum()
+    txn_lw = len(df_lw)
+
+    aov_today = net_today / max(txn_today, 1)
+    aov_lw = net_lw / max(txn_lw, 1)
+
+    dis_per_today = (discount_today / max(gross_today, 1)) * 100
+    dis_per_lw = (discount_lw / max(gross_lw, 1)) * 100
+
+    df = pd.DataFrame({
+        "Parameters": ["Gross Amount", "Discount", "Net Amount", "Transaction", "AOV", "Discount %"],
+        "Today": [gross_today, discount_today, net_today, txn_today, aov_today, dis_per_today],
+        "Last Week": [gross_lw, discount_lw, net_lw, txn_lw, aov_lw, dis_per_lw]
+    })
+
+    df["Growth %"] = ((df["Today"] - df["Last Week"]) / df["Last Week"].replace(0, 1)) * 100
+    df = df.round(2)
+
+    if label_name:
+        df.insert(0, label_name[0], label_name[1])
+
+    return df
 
 # ---------------- ANALYSIS ---------------- #
 
-overall = pd.DataFrame({
-    "Metric": ["Net Sales", "Transactions"],
-    "Last Week": [lastweek_cut["Net Sales"].sum(), len(lastweek_cut)],
-    "Today": [today_cut["Net Sales"].sum(), len(today_cut)]
-})
-overall["Growth %"] = ((overall["Today"] - overall["Last Week"]) / overall["Last Week"].replace(0,1))*100
+overall = build_kpi(today_cut, lastweek_cut)
 
-source_analysis = group_analysis(today_cut, lastweek_cut, "Source Group")
-region_analysis = group_analysis(today_cut, lastweek_cut, "Region")
-brand_analysis = group_analysis(today_cut, lastweek_cut, "Brand")
+source_analysis = pd.concat([
+    build_kpi(today_cut[today_cut["Source Group"]==s],
+              lastweek_cut[lastweek_cut["Source Group"]==s],
+              ("Source", s))
+    for s in today_cut["Source Group"].dropna().unique()
+], ignore_index=True)
 
-# ---------------- CLEAN INF ---------------- #
+region_analysis = pd.concat([
+    build_kpi(today_cut[today_cut["Region"]==r],
+              lastweek_cut[lastweek_cut["Region"]==r],
+              ("Region", r))
+    for r in today_cut["Region"].dropna().unique()
+], ignore_index=True)
 
-for d in [final_df, overall, source_analysis, region_analysis]:
-    d.replace([float("inf"), float("-inf")], 0, inplace=True)
+brand_analysis = pd.concat([
+    build_kpi(today_cut[today_cut["Brand"]==b],
+              lastweek_cut[lastweek_cut["Brand"]==b],
+              ("Brand", b))
+    for b in today_cut["Brand"].dropna().unique()
+], ignore_index=True)
 
 # ---------------- PUSH ---------------- #
 
@@ -251,11 +265,10 @@ def push(sheet_name, df):
         ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="50")
 
     df = df.fillna("").astype(str)
-
     data = [df.columns.tolist()] + df.values.tolist()
 
     ws.clear()
-    ws.update(data)
+    ws.update(data, value_input_option="USER_ENTERED")
 
     print(f"✅ {sheet_name} updated")
 
@@ -264,46 +277,26 @@ def push(sheet_name, df):
 def styled_html(df):
 
     df = df.copy()
-
-    # 🎯 Identify Growth columns
     growth_cols = [c for c in df.columns if "Growth" in c]
 
-    # 🎯 Apply color formatting
     for col in growth_cols:
-        df[col] = df[col].apply(lambda x: 
-            f'<span style="color:green;font-weight:bold;">{round(float(x),1)}</span>'
-            if pd.notnull(x) and float(x) >= 0 else
-            f'<span style="color:red;font-weight:bold;">{round(float(x),1)}</span>'
-            if pd.notnull(x) else ""
+        df[col] = df[col].apply(lambda x:
+            f'<span style="background:#d4edda">{x:.2f}%</span>' if float(x)>=0
+            else f'<span style="background:#f8d7da">{x:.2f}%</span>'
         )
 
-    # 🎯 Round other numeric columns
     for col in df.columns:
         if col not in growth_cols:
             df[col] = pd.to_numeric(df[col], errors="ignore")
             if df[col].dtype != "object":
-                df[col] = df[col].round(0)
+                df[col] = df[col].apply(lambda x: f"{x:.2f}")
 
-    # 🎯 Convert to HTML
-    html = df.to_html(index=False, escape=False)
+    return df.to_html(index=False, escape=False)
 
-    # 🎨 Add styling
-    html = html.replace(
-        '<table border="1" class="dataframe">',
-        '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;">'
-    )
-
-    html = html.replace(
-        '<th>',
-        '<th style="background-color:#f2f2f2;padding:6px;text-align:center;">'
-    )
-
-    html = html.replace(
-        '<td>',
-        '<td style="padding:6px;text-align:right;">'
-    )
-
-    return html
+def send_email():
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
 
     msg = MIMEMultipart()
     msg["From"] = os.environ["EMAIL_USER"]
@@ -314,6 +307,7 @@ def styled_html(df):
     <h2>Overall</h2>{styled_html(overall)}
     <h2>Source</h2>{styled_html(source_analysis)}
     <h2>Region</h2>{styled_html(region_analysis)}
+    <h2>Brand</h2>{styled_html(brand_analysis)}
     """
 
     msg.attach(MIMEText(body, "html"))
@@ -332,7 +326,8 @@ push("Raw Data", final_df)
 push("Overall", overall)
 push("Source", source_analysis)
 push("Region", region_analysis)
+push("Brand", brand_analysis)
 
 send_email()
 
-print("🎉 FINAL SUCCESS")
+print("🎉 SUCCESS")
