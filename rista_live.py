@@ -278,10 +278,16 @@ def format_df(df):
 overall = format_df(overall)
 source_analysis = format_df(source_analysis)
 region_analysis = format_df(region_analysis)
+
 if not brand_analysis.empty:
     brand_analysis = format_df(brand_analysis)
 
-df.replace([float("inf"), float("-inf")], 0, inplace=True)
+# ✅ ADD FIX HERE
+for d in [final_df, overall, source_analysis, region_analysis]:
+    d.replace([float("inf"), float("-inf")], 0, inplace=True)
+
+if not brand_analysis.empty:
+    brand_analysis.replace([float("inf"), float("-inf")], 0, inplace=True)
 
 # ---------------- PUSH (FINAL SAFE VERSION) ---------------- #
 def push(sheet_name, df):
