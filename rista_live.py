@@ -142,11 +142,14 @@ print("⏱ Business Date CREATED")
 # Get last completed hour
 cutoff_hour = now.hour - 1
 
-# Edge case: if time is before 1 AM
 if cutoff_hour < 0:
     cutoff_hour = 23
 
+print(f"⏱ Using data till {cutoff_hour}:00 hour")
+
 # Apply filter
+# ---------------- APPLY SAME HOUR FILTER ---------------- #
+
 today_df = today_df[
     today_df["invoiceDate"].dt.hour <= cutoff_hour
 ]
@@ -155,7 +158,7 @@ lastweek_df = lastweek_df[
     lastweek_df["invoiceDate"].dt.hour <= cutoff_hour
 ]
 
-print(f"⏱ Data considered till {cutoff_hour}:00 hour (last completed hour)")
+print("⏱ Same hour filter applied for Today & Last Week")
 
 # ---------------- DATE + HOUR ---------------- #
 
@@ -275,6 +278,34 @@ brand_analysis = pd.concat([
     for b in today_cut["Brand"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- HOURLY TREND ---------------- #
+
+hourly_today = today_cut.groupby("Hour").agg(
+    Today_Sales=("Net Sales", "sum")
+)
+
+hourly_lw = lastweek_cut.groupby("Hour").agg(
+    LW_Sales=("Net Sales", "sum")
+)
+
+hourly_analysis = hourly_today.join(hourly_lw, how="outer").fillna(0)
+
+# Growth %
+hourly_analysis["Growth %"] = (
+    (hourly_analysis["Today_Sales"] - hourly_analysis["LW_Sales"])
+    / hourly_analysis["LW_Sales"].replace(0, 1)
+) * 100
+
+# Reset index
+hourly_analysis = hourly_analysis.reset_index()
+
+# Round values
+hourly_analysis["Today_Sales"] = hourly_analysis["Today_Sales"].round(2)
+hourly_analysis["LW_Sales"] = hourly_analysis["LW_Sales"].round(2)
+hourly_analysis["Growth %"] = hourly_analysis["Growth %"].round(2)
+
+print("✅ Hourly Analysis Ready")
+
 # ---------------- PUSH ---------------- #
 
 def push(sheet_name, df):
@@ -338,6 +369,7 @@ def send_email():
     <h2>Source</h2>{styled_html(source_analysis)}
     <h2>Region</h2>{styled_html(region_analysis)}
     <h2>Brand</h2>{styled_html(brand_analysis)}
+    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
     """
 
     msg.attach(MIMEText(body, "html"))
@@ -357,6 +389,7 @@ push("Overall", overall)
 push("Source", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
+push("Hourly Trend", hourly_analysis)
 
 send_email()
 
