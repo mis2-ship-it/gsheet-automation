@@ -137,19 +137,25 @@ lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date
 
 print("⏱ Business Date CREATED")
 
-# ---------------- SAME TIME FILTER ---------------- #
+# ---------------- LAST COMPLETED HOUR FILTER ---------------- #
 
-current_time = now.time()
+# Get last completed hour
+cutoff_hour = now.hour - 1
 
+# Edge case: if time is before 1 AM
+if cutoff_hour < 0:
+    cutoff_hour = 23
+
+# Apply filter
 today_df = today_df[
-    today_df["invoiceDate"].dt.time <= current_time
+    today_df["invoiceDate"].dt.hour <= cutoff_hour
 ]
 
 lastweek_df = lastweek_df[
-    lastweek_df["invoiceDate"].dt.time <= current_time
+    lastweek_df["invoiceDate"].dt.hour <= cutoff_hour
 ]
 
-print("⏱ Same time filter applied (Today vs Last Week)")
+print(f"⏱ Data considered till {cutoff_hour}:00 hour (last completed hour)")
 
 # ---------------- DATE + HOUR ---------------- #
 
