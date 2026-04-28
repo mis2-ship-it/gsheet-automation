@@ -234,14 +234,7 @@ overall["Growth %"] = ((overall["Today"] - overall["Last Week"]) / overall["Last
 
 source_analysis = group_analysis(today_cut, lastweek_cut, "Source Group")
 region_analysis = group_analysis(today_cut, lastweek_cut, "Region")
-
-# ---------------- BRAND ANALYSIS ---------------- #
-
-if "brandName" in final_df.columns:
-    brand_analysis = group_analysis(today_cut, lastweek_cut, "Brand")
-else:
-    print("⚠️ brandName column not found")
-    brand_analysis = pd.DataFrame()
+brand_analysis = group_analysis(today_cut, lastweek_cut, "Brand")
 
 # ---------------- CLEAN INF ---------------- #
 
