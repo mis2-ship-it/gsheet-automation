@@ -168,13 +168,16 @@ branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
-source_data = help_ws.get("D:E")
+source_data = help_ws.get("D:F")   # include Brand column also
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
+
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
+brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))  # NEW
 
 final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
+final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 
 main_sources = ["Instore", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(
@@ -227,6 +230,14 @@ overall["Growth %"] = ((overall["Today"] - overall["Last Week"]) / overall["Last
 source_analysis = group_analysis(today_cut, lastweek_cut, "Source Group")
 region_analysis = group_analysis(today_cut, lastweek_cut, "Region")
 
+# ---------------- BRAND ANALYSIS ---------------- #
+
+if "brandName" in final_df.columns:
+    brand_analysis = group_analysis(today_cut, lastweek_cut, "Brand")
+else:
+    print("⚠️ brandName column not found")
+    brand_analysis = pd.DataFrame()
+
 # ---------------- CLEAN INF ---------------- #
 
 for d in [final_df, overall, source_analysis, region_analysis]:
@@ -235,11 +246,19 @@ for d in [final_df, overall, source_analysis, region_analysis]:
 # ---------------- PUSH ---------------- #
 
 def push(sheet_name, df):
-    ws = spreadsheet.worksheet(sheet_name)
+
+    try:
+        ws = spreadsheet.worksheet(sheet_name)
+    except:
+        ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="50")
+
     df = df.fillna("").astype(str)
+
     data = [df.columns.tolist()] + df.values.tolist()
+
     ws.clear()
     ws.update(data)
+
     print(f"✅ {sheet_name} updated")
 
 # ---------------- EMAIL ---------------- #
