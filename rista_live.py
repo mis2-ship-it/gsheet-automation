@@ -272,28 +272,41 @@ if not brand_analysis.empty:
 
 df.replace([float("inf"), float("-inf")], 0, inplace=True)
 
-# ---------------- PUSH ---------------- #
+# ---------------- PUSH (FINAL SAFE VERSION) ---------------- #
+def push(sheet_name, df):
 
+    ws = sheet.worksheet(sheet_name)
 
-# ✅ FINAL SAFE FIX
+    df = df.copy()
 
-df = df.copy()
+    # 🔥 STEP 1: Convert EVERYTHING safely (no Timestamp can survive)
+    def safe_convert(x):
+        try:
+            if hasattr(x, "strftime"):
+                return x.strftime("%Y-%m-%d %H:%M:%S")
+            return x
+        except:
+            return str(x)
 
-# Convert ALL values safely (this is the key fix)
-df = df.applymap(lambda x: x.strftime("%Y-%m-%d %H:%M:%S")
-                 if hasattr(x, "strftime") else x)
+    df = df.applymap(safe_convert)
 
-# Handle NaN
-df = df.fillna("")
+    # 🔥 STEP 2: Handle NaN / None
+    df = df.fillna("")
 
-data = [df.columns.astype(str).tolist()] + df.astype(str).values.tolist()
+    # 🔥 STEP 3: FORCE STRING FINAL SANITIZATION
+    df = df.astype(str)
 
-ws.clear()
-ws.update(data, value_input_option="USER_ENTERED")
+    data = [df.columns.astype(str).tolist()] + df.values.tolist()
 
-print(f"✅ {sheet_name} updated | Rows: {len(df)}")
-print(df.dtypes)
-print(type(df.iloc[0,0]))
+    ws.clear()
+
+    print(df.dtypes)
+    print(df.head(2))
+    print(type(df.iloc[0,0]))
+
+    ws.update(data, value_input_option="USER_ENTERED")
+
+    print(f"✅ {sheet_name} updated | Rows: {len(df)}")
 
 # ---------------- EMAIL ---------------- #
 
