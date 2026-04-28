@@ -168,11 +168,16 @@ branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 
-source_data = help_ws.get("D:F")   # include Brand column also
+source_data = help_ws.get("D:F")
 source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
 
+# 🔥 Clean column names
+source_master.columns = source_master.columns.str.strip()
+
+print("📌 SOURCE MASTER COLUMNS:", source_master.columns)
+
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
-brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))  # NEW
+brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
 final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
