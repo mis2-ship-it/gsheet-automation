@@ -293,19 +293,29 @@ def styled_html(df):
     df = df.copy()
     growth_cols = [c for c in df.columns if "Growth" in c]
 
-    for col in growth_cols:
-        df[col] = df[col].apply(lambda x:
-            f'<span style="background:#d4edda">{x:.2f}%</span>' if float(x)>=0
-            else f'<span style="background:#f8d7da">{x:.2f}%</span>'
-        )
-
     for col in df.columns:
-        if col not in growth_cols:
+
+        # ✅ Skip text columns (THIS FIXES YOUR ISSUE)
+        if col in ["Parameters", "Source", "Region", "Brand"]:
+            continue
+
+        # 🎯 Growth formatting with color
+        if col in growth_cols:
+            df[col] = df[col].apply(lambda x:
+                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) and float(x) >= 0 else
+                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) else ""
+            )
+
+        # 🎯 Other numeric columns
+        else:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-            if df[col].dtype != "object":
-                df[col] = df[col].apply(lambda x: f"{x:.2f}")
+            df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
 
     return df.to_html(index=False, escape=False)
+
+# ---------------- EMAIL ---------------- #
 
 def send_email():
     import smtplib
