@@ -347,19 +347,21 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
+    # ✅ SUBJECT TIME FIX
+    report_time = now.replace(minute=0, second=0, microsecond=0)
+    if now.minute > 0:
+        report_time = report_time - timedelta(hours=1)
+
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    report_time = now.replace(minute=0, second=0, microsecond=0)
+    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
-# If after hour (like 5:05), show last completed hour
-if now.minute > 0:
-    report_time = report_time - timedelta(hours=1)
-
-msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
-
+    # ✅ EMAIL BODY
     body = f"""
+    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
+
     <h2>Overall</h2>{styled_html(overall)}
 
     <h2>Source</h2>{styled_html(source_analysis)}
@@ -387,7 +389,7 @@ msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p'
     server.sendmail(EMAIL_USER, receivers, msg.as_string())
     server.quit()
 
-    print("📩 Email Sent Successfully")
+    print("📩 Email Sent Successfully")    
     
 # ---------------- EXECUTE ---------------- #
 
