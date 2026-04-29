@@ -270,11 +270,37 @@ lastweek_cut = final_df[
 
 # ---------------- BUSINESS HOUR ---------------- #
 
+# ---------------- BUSINESS HOUR ---------------- #
+
 def map_business_hour(h):
     return h if h >= 8 else h + 24
 
 today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
 lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
+
+
+# ---------------- LAST COMPLETED HOUR ---------------- #
+
+current_hour = now.hour
+
+if current_hour < 8:
+    cutoff_hour = current_hour + 24
+else:
+    cutoff_hour = current_hour - 1   # last completed hour
+
+start_hour = 8
+
+today_cut = today_cut[
+    (today_cut["BusinessHour"] >= start_hour) &
+    (today_cut["BusinessHour"] <= cutoff_hour)
+]
+
+lastweek_cut = lastweek_cut[
+    (lastweek_cut["BusinessHour"] >= start_hour) &
+    (lastweek_cut["BusinessHour"] <= cutoff_hour)
+]
+
+print(f"⏱ Business hours used: {start_hour} to {cutoff_hour}")
 
 # ---------------- KPI FUNCTION ---------------- #
 
