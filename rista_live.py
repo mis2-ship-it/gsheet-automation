@@ -350,10 +350,8 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    # ✅ SUBJECT TIME FIX (last completed hour)
-    report_time = now.replace(minute=0, second=0, microsecond=0)
-    if now.minute > 0:
-        report_time = report_time - timedelta(hours=1)
+# ✅ ROUND DOWN TO CURRENT HOUR (NO MINUS)
+report_time = now.replace(minute=0, second=0, microsecond=0)
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
