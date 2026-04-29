@@ -317,23 +317,26 @@ def styled_html(df):
             df[col] = pd.to_numeric(df[col], errors="coerce")
             df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
 
+    # Convert to HTML
     html = df.to_html(index=False, escape=False)
 
-# 🔥 ADD THIS BLOCK HERE (REPLACE OLD ONE)
-html = html.replace(
-    '<table border="1" class="dataframe">',
-    '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;border:1px solid black;">'
-)
+    # ✅ TABLE BORDER + STYLE (INSIDE FUNCTION)
+    html = html.replace(
+        '<table border="1" class="dataframe">',
+        '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;border:1px solid black;">'
+    )
 
-html = html.replace(
-    '<th>',
-    '<th style="background:#f2f2f2;padding:6px;text-align:center;border:1px solid black;">'
-)
+    html = html.replace(
+        '<th>',
+        '<th style="background:#f2f2f2;padding:6px;text-align:center;border:1px solid black;">'
+    )
 
-html = html.replace(
-    '<td>',
-    '<td style="padding:6px;text-align:right;border:1px solid black;">'
-)
+    html = html.replace(
+        '<td>',
+        '<td style="padding:6px;text-align:right;border:1px solid black;">'
+    )
+
+    return html   # ✅ IMPORTANT
 
 
 def send_email():
@@ -347,7 +350,7 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    # ✅ SUBJECT TIME FIX
+    # ✅ SUBJECT TIME FIX (last completed hour)
     report_time = now.replace(minute=0, second=0, microsecond=0)
     if now.minute > 0:
         report_time = report_time - timedelta(hours=1)
@@ -358,7 +361,7 @@ def send_email():
     msg["Cc"] = CC_EMAIL
     msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
-    # ✅ EMAIL BODY
+    # ✅ BODY
     body = f"""
     <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
 
@@ -389,7 +392,7 @@ def send_email():
     server.sendmail(EMAIL_USER, receivers, msg.as_string())
     server.quit()
 
-    print("📩 Email Sent Successfully")    
+    print("📩 Email Sent Successfully")
     
 # ---------------- EXECUTE ---------------- #
 
