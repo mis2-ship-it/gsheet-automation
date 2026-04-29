@@ -37,10 +37,7 @@ creds = Credentials.from_service_account_info(
 )
 
 client = gspread.authorize(creds)
-
-spreadsheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
-)
+spreadsheet = client.open_by_url("YOUR_GSHEET_URL")
 
 print("✅ Connected to Google Sheet")
 
@@ -56,18 +53,15 @@ print("🕒 IST Time:", now)
 
 b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
 data = b_resp.json()
+data = data.get("data", []) if isinstance(data, dict) else data
 
-if isinstance(data, dict):
-    data = data.get("data", [])
-
-branches = [b["branchCode"] for b in data if isinstance(b, dict) and b.get("status") == "Active"]
+branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
 
 print("🏪 Branch count:", len(branches))
 
 # ---------------- FETCH SALES ---------------- #
 
 def fetch_sales(day):
-    print(f"\n📥 Fetching sales for {day}")
     all_data = []
 
     for b in branches:
@@ -94,19 +88,13 @@ def fetch_sales(day):
             if not data:
                 break
 
-            df = pd.json_normalize(data)
-            all_data.append(df)
+            all_data.append(pd.json_normalize(data))
 
             last_key = js.get("lastKey")
             if not last_key:
                 break
 
-    if not all_data:
-        return pd.DataFrame()
-
-    final_df = pd.concat(all_data, ignore_index=True)
-    print("📊 Rows:", final_df.shape)
-    return final_df
+    return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
 # ---------------- RUN ---------------- #
 
@@ -119,31 +107,22 @@ if today_df.empty:
 
 # ---------------- BUSINESS DATE ---------------- #
 
-today_df["invoiceDate"] = pd.to_datetime(today_df["invoiceDate"], errors="coerce")
-lastweek_df["invoiceDate"] = pd.to_datetime(lastweek_df["invoiceDate"], errors="coerce")
-
-today_df["invoiceDate"] = today_df["invoiceDate"].dt.tz_localize(None)
-lastweek_df["invoiceDate"] = lastweek_df["invoiceDate"].dt.tz_localize(None)
+for df in [today_df, lastweek_df]:
+    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"], errors="coerce").dt.tz_localize(None)
 
 def get_business_date(dt):
     if pd.isna(dt):
         return pd.NaT
-    if dt.hour < 5 or (dt.hour == 5 and dt.minute < 30):
-        return (dt - pd.Timedelta(days=1)).date()
-    return dt.date()
+    return (dt - pd.Timedelta(days=1)).date() if dt.hour < 5 else dt.date()
 
 today_df["businessDate"] = today_df["invoiceDate"].apply(get_business_date)
 lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date)
 
-
 # ---------------- DATE + HOUR ---------------- #
 
-today_df["Date"] = today_df["businessDate"]
-lastweek_df["Date"] = lastweek_df["businessDate"]
-
-today_df["Hour"] = today_df["invoiceDate"].dt.hour
-lastweek_df["Hour"] = lastweek_df["invoiceDate"].dt.hour
-
+for df in [today_df, lastweek_df]:
+    df["Date"] = df["businessDate"]
+    df["Hour"] = df["invoiceDate"].dt.hour
 
 # ---------------- MERGE ---------------- #
 
@@ -156,16 +135,12 @@ final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
-branch_data = help_ws.get("G:M")
-branch_master = pd.DataFrame(branch_data[1:], columns=branch_data[0])
+branch_master = pd.DataFrame(help_ws.get("G:M")[1:], columns=help_ws.get("G:M")[0])
+source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[0])
+source_master.columns = source_master.columns.str.strip()
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
-
-source_data = help_ws.get("D:F")
-source_master = pd.DataFrame(source_data[1:], columns=source_data[0])
-source_master.columns = source_master.columns.str.strip()
-
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
@@ -177,23 +152,6 @@ final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
 
-def get_session(h):
-    if 8 <= h <= 11:
-        return "Breakfast"
-    elif 12 <= h <= 15:
-        return "Lunch"
-    elif 16 <= h <= 19:
-        return "Snacks"
-    elif 20 <= h <= 23:
-        return "Dinner"
-    else:
-        return "Post Dinner"
-
-today_cut["Session"] = today_cut["Hour"].apply(get_session)
-lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
-
-print("✅ Mapping Done")
-
 # ---------------- NET SALES ---------------- #
 
 final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
@@ -204,23 +162,19 @@ final_df["Net Sales"] = (
     .where(final_df["status"] == "Closed", 0)
 )
 
-print("✅ Net Sales Done")
-
-
-# ---------------- FILTER (CREATE FIRST) ---------------- #
+# ---------------- FILTER ---------------- #
 
 today_cut = final_df[
     (final_df["Data_Type"] == "Today") &
     (final_df["Store Type"] == "COCO") &
     (final_df["status"] == "Closed")
-]
+].copy()
 
 lastweek_cut = final_df[
     (final_df["Data_Type"] == "Last Week") &
     (final_df["Store Type"] == "COCO") &
     (final_df["status"] == "Closed")
-]
-
+].copy()
 
 # ---------------- BUSINESS HOUR ---------------- #
 
@@ -230,83 +184,53 @@ def map_business_hour(h):
 today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
 lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
 
-
 # ---------------- TIME FILTER ---------------- #
 
 current_hour = now.hour
+cutoff_hour = current_hour + 24 if current_hour < 8 else current_hour - 1
 
-if current_hour < 8:
-    cutoff_hour = current_hour + 24
-else:
-    cutoff_hour = current_hour - 1
-
-start_hour = 8
-
-today_cut = today_cut[
-    (today_cut["BusinessHour"] >= start_hour) &
-    (today_cut["BusinessHour"] <= cutoff_hour)
-]
-
-lastweek_cut = lastweek_cut[
-    (lastweek_cut["BusinessHour"] >= start_hour) &
-    (lastweek_cut["BusinessHour"] <= cutoff_hour)
-]
-
-print(f"⏱ Business hours used: {start_hour} to {cutoff_hour}")
-
+today_cut = today_cut[(today_cut["BusinessHour"] >= 8) & (today_cut["BusinessHour"] <= cutoff_hour)]
+lastweek_cut = lastweek_cut[(lastweek_cut["BusinessHour"] >= 8) & (lastweek_cut["BusinessHour"] <= cutoff_hour)]
 
 # ---------------- SESSION ---------------- #
 
 def get_session(h):
-    if 8 <= h <= 11:
-        return "Breakfast"
-    elif 12 <= h <= 15:
-        return "Lunch"
-    elif 16 <= h <= 19:
-        return "Snacks"
-    elif 20 <= h <= 23:
-        return "Dinner"
-    else:
-        return "Post Dinner"
+    if 8 <= h <= 11: return "Breakfast"
+    elif 12 <= h <= 15: return "Lunch"
+    elif 16 <= h <= 19: return "Snacks"
+    elif 20 <= h <= 23: return "Dinner"
+    else: return "Post Dinner"
 
 today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
-print("✅ Filter + Time Logic Fixed")
-
 # ---------------- KPI FUNCTION ---------------- #
 
-def build_kpi(df_today, df_lw, label_name=None):
+def build_kpi(df_today, df_lw, label=None):
 
-    gross_today = df_today["grossAmount"].sum()
-    discount_today = df_today["discountAmount"].sum()
-    net_today = df_today["Net Sales"].sum()
-    txn_today = len(df_today)
+    def calc(df):
+        g = df["grossAmount"].sum()
+        d = df["discountAmount"].sum()
+        n = df["Net Sales"].sum()
+        t = len(df)
+        return g, d, n, t
 
-    gross_lw = df_lw["grossAmount"].sum()
-    discount_lw = df_lw["discountAmount"].sum()
-    net_lw = df_lw["Net Sales"].sum()
-    txn_lw = len(df_lw)
+    gt, dt, nt, tt = calc(df_today)
+    gl, dl, nl, tl = calc(df_lw)
 
-    aov_today = net_today / max(txn_today, 1)
-    aov_lw = net_lw / max(txn_lw, 1)
-
-    dis_per_today = (discount_today / max(gross_today, 1)) * 100
-    dis_per_lw = (discount_lw / max(gross_lw, 1)) * 100
-
-    df = pd.DataFrame({
-        "Parameters": ["Gross Amount", "Discount", "Net Amount", "Transaction", "AOV", "Discount %"],
-        "Today": [gross_today, discount_today, net_today, txn_today, aov_today, dis_per_today],
-        "Last Week": [gross_lw, discount_lw, net_lw, txn_lw, aov_lw, dis_per_lw]
+    data = pd.DataFrame({
+        "Parameters": ["Gross Amount","Discount","Net Amount","Transaction","AOV","Discount %"],
+        "Today": [gt, dt, nt, tt, nt/max(tt,1), dt/max(gt,1)*100],
+        "Last Week": [gl, dl, nl, tl, nl/max(tl,1), dl/max(gl,1)*100]
     })
 
-    df["Growth %"] = ((df["Today"] - df["Last Week"]) / df["Last Week"].replace(0, 1)) * 100
-    df = df.round(2)
+    data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0,1))*100
+    data = data.round(2)
 
-    if label_name:
-        df.insert(0, label_name[0], label_name[1])
+    if label:
+        data.insert(0, label[0], label[1])
 
-    return df
+    return data
 
 # ---------------- ANALYSIS ---------------- #
 
@@ -334,137 +258,47 @@ brand_analysis = pd.concat([
 ], ignore_index=True)
 
 session_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Session"]==b],
-              lastweek_cut[lastweek_cut["Session"]==b],
-              ("Session", b))
-    for b in today_cut["Session"].dropna().unique()
+    build_kpi(today_cut[today_cut["Session"]==s],
+              lastweek_cut[lastweek_cut["Session"]==s],
+              ("Session", s))
+    for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
 # ---------------- HOURLY TREND ---------------- #
 
-hourly_today = today_cut.groupby("BusinessHour").agg(
-    Today_Sales=("Net Sales", "sum")
-)
+hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
+hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
 
-hourly_lw = lastweek_cut.groupby("BusinessHour").agg(
-    LW_Sales=("Net Sales", "sum")
-)
+hourly_analysis = pd.DataFrame({
+    "Today": hourly_today,
+    "Last Week": hourly_lw
+}).fillna(0)
 
-hourly_analysis = hourly_today.join(hourly_lw, how="outer").fillna(0)
-
-# Growth
-hourly_analysis["Growth %"] = (
-    (hourly_analysis["Today_Sales"] - hourly_analysis["LW_Sales"])
-    / hourly_analysis["LW_Sales"].replace(0, 1)
-) * 100
+hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
+                               hourly_analysis["Last Week"].replace(0,1))*100
 
 hourly_analysis = hourly_analysis.reset_index()
-
-# 🔥 Convert back to normal hour format
-hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x - 24)
-
-# Sort correctly
+hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
 hourly_analysis = hourly_analysis.sort_values("BusinessHour")
-
-# Format display
-hourly_analysis["Hour"] = hourly_analysis["Hour"].apply(lambda x: f"{int(x):02d}:00")
-
-# Round
-hourly_analysis["Today_Sales"] = hourly_analysis["Today_Sales"].round(2)
-hourly_analysis["LW_Sales"] = hourly_analysis["LW_Sales"].round(2)
-hourly_analysis["Growth %"] = hourly_analysis["Growth %"].round(2)
-
-hourly_analysis = hourly_analysis.drop(columns=["BusinessHour"])
-
-print("✅ Hourly Trend Fixed (Business Hours)")
 
 # ---------------- PUSH ---------------- #
 
-def push(sheet_name, df):
-
+def push(name, df):
     try:
-        ws = spreadsheet.worksheet(sheet_name)
+        ws = spreadsheet.worksheet(name)
     except:
-        ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="50")
-
-    df = df.fillna("").astype(str)
-    data = [df.columns.tolist()] + df.values.tolist()
+        ws = spreadsheet.add_worksheet(title=name, rows="1000", cols="50")
 
     ws.clear()
-    ws.update(data, value_input_option="USER_ENTERED")
-
-    print(f"✅ {sheet_name} updated")
-
-# ---------------- EMAIL ---------------- #
-
-def styled_html(df):
-
-    df = df.copy()
-    growth_cols = [c for c in df.columns if "Growth" in c]
-
-    for col in df.columns:
-
-        # ✅ Skip text columns (THIS FIXES YOUR ISSUE)
-        if col in ["Parameters", "Source", "Region", "Brand"]:
-            continue
-
-        # 🎯 Growth formatting with color
-        if col in growth_cols:
-            df[col] = df[col].apply(lambda x:
-                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) and float(x) >= 0 else
-                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) else ""
-            )
-
-        # 🎯 Other numeric columns
-        else:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
-
-    return df.to_html(index=False, escape=False)
-
-# ---------------- EMAIL ---------------- #
-
-def send_email():
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    msg = MIMEMultipart()
-    msg["From"] = os.environ["EMAIL_USER"]
-    msg["To"] = os.environ["EMAIL_TO"]
-    msg["Subject"] = "Sales Report"
-
-    body = f"""
-    <h2>Overall</h2>{styled_html(overall)}
-    <h2>Source</h2>{styled_html(source_analysis)}
-    <h2>Region</h2>{styled_html(region_analysis)}
-    <h2>Brand</h2>{styled_html(brand_analysis)}
-    <h2>Session</h2>{styled_html(session_analysis)}
-    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
-    """
-
-    msg.attach(MIMEText(body, "html"))
-
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(os.environ["EMAIL_USER"], os.environ["EMAIL_PASS"])
-    server.sendmail(msg["From"], msg["To"].split(","), msg.as_string())
-    server.quit()
-
-    print("📩 Email Sent")
+    ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
 
 # ---------------- EXECUTE ---------------- #
 
-push("Raw Data", final_df)
 push("Overall", overall)
 push("Source", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
-push("session", session_analysis)
-push("Hourly Trend", hourly_analysis)
-
-send_email()
+push("Session", session_analysis)
+push("Hourly", hourly_analysis)
 
 print("🎉 SUCCESS")
