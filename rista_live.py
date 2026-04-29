@@ -357,10 +357,10 @@ def send_email():
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
+    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y')}"
 
     body = f"""
-    <h3>Data Till {(report_time - timedelta(hours=1)).strftime('%I:%M %p')}</h3>
+    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
 
     <h2>Overall</h2>{styled_html(overall)}
 
