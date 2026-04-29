@@ -135,35 +135,6 @@ def get_business_date(dt):
 today_df["businessDate"] = today_df["invoiceDate"].apply(get_business_date)
 lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date)
 
-print("⏱ Business Date CREATED")
-
-# ---------------- BUSINESS TIME WINDOW ---------------- #
-def map_business_hour(h):
-    return h if h >= 8 else h + 24
-
-today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
-lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
-
-current_hour = now.hour
-
-if current_hour < 8:
-    cutoff_hour = current_hour + 24
-else:
-    cutoff_hour = current_hour - 1
-
-start_hour = 8
-
-today_cut = today_cut[
-    (today_cut["BusinessHour"] >= start_hour) &
-    (today_cut["BusinessHour"] <= cutoff_hour)
-]
-
-lastweek_cut = lastweek_cut[
-    (lastweek_cut["BusinessHour"] >= start_hour) &
-    (lastweek_cut["BusinessHour"] <= cutoff_hour)
-]
-
-print(f"⏱ Business hours considered: {start_hour} to {cutoff_hour}")
 
 # ---------------- DATE + HOUR ---------------- #
 
@@ -235,7 +206,8 @@ final_df["Net Sales"] = (
 
 print("✅ Net Sales Done")
 
-# ---------------- FILTER ---------------- #
+
+# ---------------- FILTER (CREATE FIRST) ---------------- #
 
 today_cut = final_df[
     (final_df["Data_Type"] == "Today") &
@@ -249,7 +221,6 @@ lastweek_cut = final_df[
     (final_df["status"] == "Closed")
 ]
 
-print("DEBUG:", type(today_cut))
 
 # ---------------- BUSINESS HOUR ---------------- #
 
@@ -260,7 +231,7 @@ today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
 lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
 
 
-# ---------------- LAST COMPLETED HOUR ---------------- #
+# ---------------- TIME FILTER ---------------- #
 
 current_hour = now.hour
 
@@ -282,6 +253,26 @@ lastweek_cut = lastweek_cut[
 ]
 
 print(f"⏱ Business hours used: {start_hour} to {cutoff_hour}")
+
+
+# ---------------- SESSION ---------------- #
+
+def get_session(h):
+    if 8 <= h <= 11:
+        return "Breakfast"
+    elif 12 <= h <= 15:
+        return "Lunch"
+    elif 16 <= h <= 19:
+        return "Snacks"
+    elif 20 <= h <= 23:
+        return "Dinner"
+    else:
+        return "Post Dinner"
+
+today_cut["Session"] = today_cut["Hour"].apply(get_session)
+lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
+
+print("✅ Filter + Time Logic Fixed")
 
 # ---------------- KPI FUNCTION ---------------- #
 
