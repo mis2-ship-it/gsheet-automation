@@ -338,7 +338,7 @@ def styled_html(df):
 
     return html   # ✅ IMPORTANT
 
-
+    # ----------SEND EMAIL------------------------#
 def send_email():
 
     import smtplib
@@ -350,8 +350,8 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-# ✅ ROUND DOWN TO CURRENT HOUR (NO MINUS)
-report_time = now.replace(minute=0, second=0, microsecond=0)
+    # ✅ SUBJECT TIME (current hour)
+    report_time = now.replace(minute=0, second=0, microsecond=0)
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
@@ -359,9 +359,8 @@ report_time = now.replace(minute=0, second=0, microsecond=0)
     msg["Cc"] = CC_EMAIL
     msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
-    # ✅ BODY
     body = f"""
-    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
+    <h3>Data Till {(report_time - timedelta(hours=1)).strftime('%I:%M %p')}</h3>
 
     <h2>Overall</h2>{styled_html(overall)}
 
