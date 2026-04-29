@@ -249,7 +249,7 @@ lastweek_cut = final_df[
     (final_df["status"] == "Closed")
 ]
 
-# ---------------- BUSINESS HOUR ---------------- #
+print("DEBUG:", type(today_cut))
 
 # ---------------- BUSINESS HOUR ---------------- #
 
@@ -267,7 +267,7 @@ current_hour = now.hour
 if current_hour < 8:
     cutoff_hour = current_hour + 24
 else:
-    cutoff_hour = current_hour - 1   # last completed hour
+    cutoff_hour = current_hour - 1
 
 start_hour = 8
 
