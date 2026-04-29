@@ -222,7 +222,7 @@ final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 
-main_sources = ["Instore", "Swiggy", "Zomato", "Ownly"]
+main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
 
 def get_session(h):
