@@ -319,23 +319,21 @@ def styled_html(df):
 
     html = df.to_html(index=False, escape=False)
 
-    # Table styling
-    html = html.replace(
-        '<table border="1" class="dataframe">',
-        '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;">'
-    )
+# 🔥 ADD THIS BLOCK HERE (REPLACE OLD ONE)
+html = html.replace(
+    '<table border="1" class="dataframe">',
+    '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;border:1px solid black;">'
+)
 
-    html = html.replace(
-        '<th>',
-        '<th style="background:#f2f2f2;padding:6px;text-align:center;">'
-    )
+html = html.replace(
+    '<th>',
+    '<th style="background:#f2f2f2;padding:6px;text-align:center;border:1px solid black;">'
+)
 
-    html = html.replace(
-        '<td>',
-        '<td style="padding:6px;text-align:right;">'
-    )
-
-    return html
+html = html.replace(
+    '<td>',
+    '<td style="padding:6px;text-align:right;border:1px solid black;">'
+)
 
 
 def send_email():
@@ -353,7 +351,13 @@ def send_email():
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    msg["Subject"] = f"📊 Sales Report - {now.strftime('%d %b %Y %I:%M %p')}"
+    report_time = now.replace(minute=0, second=0, microsecond=0)
+
+# If after hour (like 5:05), show last completed hour
+if now.minute > 0:
+    report_time = report_time - timedelta(hours=1)
+
+msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
     body = f"""
     <h2>Overall</h2>{styled_html(overall)}
