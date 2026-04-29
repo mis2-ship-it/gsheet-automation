@@ -137,28 +137,52 @@ lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date
 
 print("⏱ Business Date CREATED")
 
-# ---------------- LAST COMPLETED HOUR FILTER ---------------- #
+# ---------------- LAST COMPLETED HOUR LOGIC ---------------- #
 
-# Get last completed hour
-cutoff_hour = now.hour - 1
+current_hour = now.hour
 
-if cutoff_hour < 0:
-    cutoff_hour = 23
+if current_hour < 8:
+    cutoff_hour = current_hour + 24
+else:
+    cutoff_hour = current_hour - 1   # ✅ LAST COMPLETED HOUR
 
-print(f"⏱ Using data till {cutoff_hour}:00 hour")
+start_hour = 8
 
-# Apply filter
-# ---------------- APPLY SAME HOUR FILTER ---------------- #
-
-today_df = today_df[
-    today_df["invoiceDate"].dt.hour <= cutoff_hour
+today_cut = today_cut[
+    (today_cut["BusinessHour"] >= start_hour) &
+    (today_cut["BusinessHour"] <= cutoff_hour)
 ]
 
-lastweek_df = lastweek_df[
-    lastweek_df["invoiceDate"].dt.hour <= cutoff_hour
+lastweek_cut = lastweek_cut[
+    (lastweek_cut["BusinessHour"] >= start_hour) &
+    (lastweek_cut["BusinessHour"] <= cutoff_hour)
 ]
 
-print("⏱ Same hour filter applied for Today & Last Week")
+print(f"⏱ Business hours used: {start_hour} to {cutoff_hour}")
+
+# ---------------- BUSINESS TIME WINDOW ---------------- #
+
+current_hour = now.hour
+
+# If before 8 AM → still previous business day continuation
+if current_hour < 8:
+    cutoff_hour = current_hour + 24
+else:
+    cutoff_hour = current_hour
+
+start_hour = 8  # business start
+
+today_cut = today_cut[
+    (today_cut["BusinessHour"] >= start_hour) &
+    (today_cut["BusinessHour"] <= cutoff_hour)
+]
+
+lastweek_cut = lastweek_cut[
+    (lastweek_cut["BusinessHour"] >= start_hour) &
+    (lastweek_cut["BusinessHour"] <= cutoff_hour)
+]
+
+print(f"⏱ Business hours considered: {start_hour} to {cutoff_hour}")
 
 # ---------------- DATE + HOUR ---------------- #
 
@@ -167,6 +191,7 @@ lastweek_df["Date"] = lastweek_df["businessDate"]
 
 today_df["Hour"] = today_df["invoiceDate"].dt.hour
 lastweek_df["Hour"] = lastweek_df["invoiceDate"].dt.hour
+
 
 # ---------------- MERGE ---------------- #
 
@@ -200,6 +225,21 @@ final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 main_sources = ["Instore", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
 
+def get_session(h):
+    if 8 <= h <= 11:
+        return "Breakfast"
+    elif 12 <= h <= 15:
+        return "Lunch"
+    elif 16 <= h <= 19:
+        return "Snacks"
+    elif 20 <= h <= 23:
+        return "Dinner"
+    else:
+        return "Post Dinner"
+
+today_cut["Session"] = today_cut["Hour"].apply(get_session)
+lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
+
 print("✅ Mapping Done")
 
 # ---------------- NET SALES ---------------- #
@@ -216,8 +256,25 @@ print("✅ Net Sales Done")
 
 # ---------------- FILTER ---------------- #
 
-today_cut = final_df[(final_df["Data_Type"]=="Today") & (final_df["Store Type"]=="COCO") & (final_df["status"]=="Closed")]
-lastweek_cut = final_df[(final_df["Data_Type"]=="Last Week") & (final_df["Store Type"]=="COCO") & (final_df["status"]=="Closed")]
+today_cut = final_df[
+    (final_df["Data_Type"] == "Today") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastweek_cut = final_df[
+    (final_df["Data_Type"] == "Last Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+# ---------------- BUSINESS HOUR ---------------- #
+
+def map_business_hour(h):
+    return h if h >= 8 else h + 24
+
+today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
+lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
 
 # ---------------- KPI FUNCTION ---------------- #
 
@@ -278,33 +335,50 @@ brand_analysis = pd.concat([
     for b in today_cut["Brand"].dropna().unique()
 ], ignore_index=True)
 
+session_analysis = pd.concat([
+    build_kpi(today_cut[today_cut["Session"]==b],
+              lastweek_cut[lastweek_cut["Session"]==b],
+              ("Session", b))
+    for b in today_cut["Session"].dropna().unique()
+], ignore_index=True)
+
 # ---------------- HOURLY TREND ---------------- #
 
-hourly_today = today_cut.groupby("Hour").agg(
+hourly_today = today_cut.groupby("BusinessHour").agg(
     Today_Sales=("Net Sales", "sum")
 )
 
-hourly_lw = lastweek_cut.groupby("Hour").agg(
+hourly_lw = lastweek_cut.groupby("BusinessHour").agg(
     LW_Sales=("Net Sales", "sum")
 )
 
 hourly_analysis = hourly_today.join(hourly_lw, how="outer").fillna(0)
 
-# Growth %
+# Growth
 hourly_analysis["Growth %"] = (
     (hourly_analysis["Today_Sales"] - hourly_analysis["LW_Sales"])
     / hourly_analysis["LW_Sales"].replace(0, 1)
 ) * 100
 
-# Reset index
 hourly_analysis = hourly_analysis.reset_index()
 
-# Round values
+# 🔥 Convert back to normal hour format
+hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x - 24)
+
+# Sort correctly
+hourly_analysis = hourly_analysis.sort_values("BusinessHour")
+
+# Format display
+hourly_analysis["Hour"] = hourly_analysis["Hour"].apply(lambda x: f"{int(x):02d}:00")
+
+# Round
 hourly_analysis["Today_Sales"] = hourly_analysis["Today_Sales"].round(2)
 hourly_analysis["LW_Sales"] = hourly_analysis["LW_Sales"].round(2)
 hourly_analysis["Growth %"] = hourly_analysis["Growth %"].round(2)
 
-print("✅ Hourly Analysis Ready")
+hourly_analysis = hourly_analysis.drop(columns=["BusinessHour"])
+
+print("✅ Hourly Trend Fixed (Business Hours)")
 
 # ---------------- PUSH ---------------- #
 
@@ -369,6 +443,7 @@ def send_email():
     <h2>Source</h2>{styled_html(source_analysis)}
     <h2>Region</h2>{styled_html(region_analysis)}
     <h2>Brand</h2>{styled_html(brand_analysis)}
+    <h2>Session</h2>{styled_html(session_analysis)}
     <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
     """
 
@@ -389,6 +464,7 @@ push("Overall", overall)
 push("Source", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
+push("session", session_analysis)
 push("Hourly Trend", hourly_analysis)
 
 send_email()
