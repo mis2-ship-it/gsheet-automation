@@ -137,40 +137,21 @@ lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date
 
 print("⏱ Business Date CREATED")
 
-# ---------------- LAST COMPLETED HOUR LOGIC ---------------- #
+# ---------------- BUSINESS TIME WINDOW ---------------- #
+def map_business_hour(h):
+    return h if h >= 8 else h + 24
+
+today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
+lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
 
 current_hour = now.hour
 
 if current_hour < 8:
     cutoff_hour = current_hour + 24
 else:
-    cutoff_hour = current_hour - 1   # ✅ LAST COMPLETED HOUR
+    cutoff_hour = current_hour - 1
 
 start_hour = 8
-
-today_cut = today_cut[
-    (today_cut["BusinessHour"] >= start_hour) &
-    (today_cut["BusinessHour"] <= cutoff_hour)
-]
-
-lastweek_cut = lastweek_cut[
-    (lastweek_cut["BusinessHour"] >= start_hour) &
-    (lastweek_cut["BusinessHour"] <= cutoff_hour)
-]
-
-print(f"⏱ Business hours used: {start_hour} to {cutoff_hour}")
-
-# ---------------- BUSINESS TIME WINDOW ---------------- #
-
-current_hour = now.hour
-
-# If before 8 AM → still previous business day continuation
-if current_hour < 8:
-    cutoff_hour = current_hour + 24
-else:
-    cutoff_hour = current_hour
-
-start_hour = 8  # business start
 
 today_cut = today_cut[
     (today_cut["BusinessHour"] >= start_hour) &
