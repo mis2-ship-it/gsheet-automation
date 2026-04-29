@@ -292,6 +292,99 @@ def push(name, df):
     ws.clear()
     ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
 
+# ---------------- EMAIL ---------------- #
+
+def styled_html(df):
+
+    df = df.copy()
+    growth_cols = [c for c in df.columns if "Growth" in c]
+
+    for col in df.columns:
+
+        # Skip text columns
+        if col in ["Parameters", "Source", "Region", "Brand", "Session", "Hour"]:
+            continue
+
+        # Growth column with color
+        if col in growth_cols:
+            df[col] = df[col].apply(lambda x:
+                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) and float(x) >= 0 else
+                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) else ""
+            )
+        else:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
+
+    html = df.to_html(index=False, escape=False)
+
+    # Table styling
+    html = html.replace(
+        '<table border="1" class="dataframe">',
+        '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;">'
+    )
+
+    html = html.replace(
+        '<th>',
+        '<th style="background:#f2f2f2;padding:6px;text-align:center;">'
+    )
+
+    html = html.replace(
+        '<td>',
+        '<td style="padding:6px;text-align:right;">'
+    )
+
+    return html
+
+
+def send_email():
+
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    TO_EMAIL = os.environ.get("EMAIL_TO")
+    CC_EMAIL = os.environ.get("EMAIL_CC")
+
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_USER
+    msg["To"] = TO_EMAIL
+    msg["Cc"] = CC_EMAIL
+    msg["Subject"] = f"📊 Sales Report - {now.strftime('%d %b %Y %I:%M %p')}"
+
+    body = f"""
+    <h2>Overall</h2>{styled_html(overall)}
+
+    <h2>Source</h2>{styled_html(source_analysis)}
+
+    <h2>Region</h2>{styled_html(region_analysis)}
+
+    <h2>Brand</h2>{styled_html(brand_analysis)}
+
+    <h2>Session</h2>{styled_html(session_analysis)}
+
+    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
+    """
+
+    msg.attach(MIMEText(body, "html"))
+
+    receivers = []
+    if TO_EMAIL:
+        receivers += TO_EMAIL.split(",")
+    if CC_EMAIL:
+        receivers += CC_EMAIL.split(",")
+
+    server = smtplib.SMTP("smtp.gmail.com", 587)
+    server.starttls()
+    server.login(EMAIL_USER, EMAIL_PASS)
+    server.sendmail(EMAIL_USER, receivers, msg.as_string())
+    server.quit()
+
+    print("📩 Email Sent Successfully")
+    
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
@@ -301,4 +394,5 @@ push("Brand", brand_analysis)
 push("Session", session_analysis)
 push("Hourly", hourly_analysis)
 
+send_email()
 print("🎉 SUCCESS")
