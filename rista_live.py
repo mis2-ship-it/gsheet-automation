@@ -247,25 +247,6 @@ def build_kpi(df_today, df_lw, label=None):
         data.insert(0, label[0], label[1])
 
     return data
-# ---------------- BODY SUMMARY ---------------- #
-
-def build_summary(today_cut, lastweek_cut):
-
-    today_sales = today_cut["Net Sales"].sum()
-    lw_sales = lastweek_cut["Net Sales"].sum()
-
-    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
-
-    eod_trend = today_sales + (today_sales * growth / 100)
-
-    df = pd.DataFrame({
-        "Today Sales": [round(today_sales, 2)],
-        "Last Week Sales": [round(lw_sales, 2)],
-        "Growth %": [round(growth, 2)],
-        "EOD Trend": [round(eod_trend, 2)]
-    })
-
-    return df
 
 # ---------------- ANALYSIS ---------------- #
 
@@ -300,6 +281,7 @@ session_analysis = pd.concat([
 ], ignore_index=True)
 
 # ---------------- BRAND SOURCE TREND ---------------- #
+
 brand_source = pd.concat([
     build_kpi(
         today_cut[(today_cut["Brand"] == b) & (today_cut["Source Group"] == s)],
@@ -320,7 +302,6 @@ region_source = pd.concat([
     for r in today_cut["Region"].dropna().unique()
     for s in today_cut["Source Group"].dropna().unique()
 ], ignore_index=True)
-
 
 # ---------------- HOURLY TREND ---------------- #
 
@@ -367,6 +348,26 @@ top_stores = (
 )
 
 top_stores["Net Sales"] = top_stores["Net Sales"].round(2)
+
+# ---------------- BODY SUMMARY ---------------- #
+
+def build_summary(today_cut, lastweek_cut):
+
+    today_sales = today_cut["Net Sales"].sum()
+    lw_sales = lastweek_cut["Net Sales"].sum()
+
+    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
+
+    eod_trend = today_sales + (today_sales * growth / 100)
+
+    df = pd.DataFrame({
+        "Today Sales": [round(today_sales, 2)],
+        "Last Week Sales": [round(lw_sales, 2)],
+        "Growth %": [round(growth, 2)],
+        "EOD Trend": [round(eod_trend, 2)]
+    })
+
+    return df
 
 # ---------------- PUSH ---------------- #
 
