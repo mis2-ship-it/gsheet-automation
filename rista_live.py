@@ -389,25 +389,49 @@ for s in sources:
 
 region_source_pivot = region_source_pivot.round(2)
 
-# Top Stores
+# ---------------- TOP 10 STORES ---------------- #
 
+# ✅ Step 1: Today Sales
+top_stores = (
+    today_cut.groupby("branchName")
+    .agg(Today_Sales=("Net Sales", "sum"))
+    .sort_values("Today_Sales", ascending=False)
+    .head(10)
+)
+
+# ✅ Step 2: Last Week Sales
+lw_store = (
+    lastweek_cut.groupby("branchName")
+    .agg(LW_Sales=("Net Sales", "sum"))
+)
+
+# ✅ Step 3: Join
 top_stores = top_stores.join(lw_store, how="left").fillna(0)
 
-# Growth
+# ✅ Step 4: Growth %
 top_stores["Growth %"] = (
     (top_stores["Today_Sales"] - top_stores["LW_Sales"])
     / top_stores["LW_Sales"].replace(0, 1)
 ) * 100
 
-# ✅ THIS LINE FIXES YOUR ISSUE
+# ✅ Step 5: Reset index (VERY IMPORTANT)
 top_stores = top_stores.reset_index()
 
-# Rename for clarity
+# ✅ Step 6: Rename column
 top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
 
-print(brand_source_pivot.head()) 
-print(region_source_pivot.head()) 
+# Optional
+top_stores = top_stores.round(2)
+
+print("🔍 Brand Source Check")
+print(brand_source.head())
+
+print("🔍 Region Source Check")
+print(region_source.head())
+
+print("🔍 Top Stores Check")
 print(top_stores.head())
+
 
 # ---------------- PUSH ---------------- #
 
