@@ -379,7 +379,7 @@ session_analysis = pd.concat([
 # =========================================================
 
 brand_source = pd.pivot_table(
-    final_df,
+    final_df[final_df["Store Type"] == "COCO"],
     index="Brand",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
@@ -414,7 +414,7 @@ brand_source = brand_source.round(2)
 # =========================================================
 
 region_source = pd.pivot_table(
-    final_df,
+    final_df[final_df["Store Type"] == "COCO"],
     index="Region",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
@@ -507,7 +507,7 @@ def styled_html(df):
     for col in df.columns:
 
         # Skip text columns
-        if col in ["Parameters", "Source", "Region", "Brand", "Session", "Hour"]:
+        if col in ["Parameters", "Source", "Region", "Brand", "Session", "Hour", "Store Name"]:
             continue
 
         # Growth column with color
