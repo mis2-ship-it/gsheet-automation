@@ -247,6 +247,48 @@ def build_kpi(df_today, df_lw, label=None):
         data.insert(0, label[0], label[1])
 
     return data
+# ---------------- HOURLY ANALYSIS ---------------- #
+
+hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
+hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
+
+hourly_analysis = pd.DataFrame({
+    "Today": hourly_today,
+    "Last Week": hourly_lw
+}).fillna(0)
+
+hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
+                               hourly_analysis["Last Week"].replace(0,1))*100
+
+hourly_analysis = hourly_analysis.reset_index()
+hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
+hourly_analysis = hourly_analysis.sort_values("BusinessHour")
+
+# ---------------- HOURLY TREND ---------------- #
+
+hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
+    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
+)
+
+# ---------------- BODY SUMMARY ---------------- #
+
+def build_summary(today_cut, lastweek_cut):
+
+    today_sales = today_cut["Net Sales"].sum()
+    lw_sales = lastweek_cut["Net Sales"].sum()
+
+    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
+
+    eod_trend = today_sales + (today_sales * growth / 100)
+
+    df = pd.DataFrame({
+        "Today Sales": [round(today_sales, 2)],
+        "Last Week Sales": [round(lw_sales, 2)],
+        "Growth %": [round(growth, 2)],
+        "EOD Trend": [round(eod_trend, 2)]
+    })
+
+    return df
 
 # ---------------- ANALYSIS ---------------- #
 
@@ -303,26 +345,6 @@ region_source = pd.concat([
     for s in today_cut["Source Group"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- HOURLY TREND ---------------- #
-
-hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
-    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
-)
-
-hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
-hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
-
-hourly_analysis = pd.DataFrame({
-    "Today": hourly_today,
-    "Last Week": hourly_lw
-}).fillna(0)
-
-hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
-                               hourly_analysis["Last Week"].replace(0,1))*100
-
-hourly_analysis = hourly_analysis.reset_index()
-hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
-hourly_analysis = hourly_analysis.sort_values("BusinessHour")
 
 # ---------------- FORECAST HOURLY ---------------- #
 
@@ -349,25 +371,6 @@ top_stores = (
 
 top_stores["Net Sales"] = top_stores["Net Sales"].round(2)
 
-# ---------------- BODY SUMMARY ---------------- #
-
-def build_summary(today_cut, lastweek_cut):
-
-    today_sales = today_cut["Net Sales"].sum()
-    lw_sales = lastweek_cut["Net Sales"].sum()
-
-    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
-
-    eod_trend = today_sales + (today_sales * growth / 100)
-
-    df = pd.DataFrame({
-        "Today Sales": [round(today_sales, 2)],
-        "Last Week Sales": [round(lw_sales, 2)],
-        "Growth %": [round(growth, 2)],
-        "EOD Trend": [round(eod_trend, 2)]
-    })
-
-    return df
 
 # ---------------- PUSH ---------------- #
 
