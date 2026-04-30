@@ -41,13 +41,26 @@ spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1CVUS-B
 
 print("✅ Connected to Google Sheet")
 
-# ---------------- TIME ---------------- #
+# ---------------- BUSINESS DATE FIX ---------------- #
 
-now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-today = now.strftime("%Y-%m-%d")
-last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+def get_business_day(now):
 
-print("🕒 IST Time:", now)
+    # Before 5:30 AM → previous day
+    if now.hour < 5 or (now.hour == 5 and now.minute < 30):
+        business_day = (now - timedelta(days=1)).date()
+    else:
+        business_day = now.date()
+
+    return business_day
+
+
+business_day = get_business_day(now)
+
+today = business_day.strftime("%Y-%m-%d")
+last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
+
+print("📅 Business Day:", today)
+print("📅 Last Week Day:", last_week)
 
 # ---------------- FETCH BRANCH ---------------- #
 
@@ -231,6 +244,25 @@ def build_kpi(df_today, df_lw, label=None):
         data.insert(0, label[0], label[1])
 
     return data
+# ---------------- BODY SUMMARY ---------------- #
+
+def build_summary(today_cut, lastweek_cut):
+
+    today_sales = today_cut["Net Sales"].sum()
+    lw_sales = lastweek_cut["Net Sales"].sum()
+
+    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
+
+    eod_trend = today_sales + (today_sales * growth / 100)
+
+    df = pd.DataFrame({
+        "Today Sales": [round(today_sales, 2)],
+        "Last Week Sales": [round(lw_sales, 2)],
+        "Growth %": [round(growth, 2)],
+        "EOD Trend": [round(eod_trend, 2)]
+    })
+
+    return df
 
 # ---------------- ANALYSIS ---------------- #
 
@@ -264,7 +296,34 @@ session_analysis = pd.concat([
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- BRAND SOURCE TREND ---------------- #
+brand_source = pd.concat([
+    build_kpi(
+        today_cut[(today_cut["Brand"] == b) & (today_cut["Source Group"] == s)],
+        lastweek_cut[(lastweek_cut["Brand"] == b) & (lastweek_cut["Source Group"] == s)],
+        ("Brand-Source", f"{b} | {s}")
+    )
+    for b in today_cut["Brand"].dropna().unique()
+    for s in today_cut["Source Group"].dropna().unique()
+], ignore_index=True)
+
+# ---------------- Region SOURCE TREND ---------------- #
+region_source = pd.concat([
+    build_kpi(
+        today_cut[(today_cut["Region"] == r) & (today_cut["Source Group"] == s)],
+        lastweek_cut[(lastweek_cut["Region"] == r) & (lastweek_cut["Source Group"] == s)],
+        ("Region-Source", f"{r} | {s}")
+    )
+    for r in today_cut["Region"].dropna().unique()
+    for s in today_cut["Source Group"].dropna().unique()
+], ignore_index=True)
+
+
 # ---------------- HOURLY TREND ---------------- #
+
+hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
+    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
+)
 
 hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
 hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
@@ -280,6 +339,31 @@ hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last
 hourly_analysis = hourly_analysis.reset_index()
 hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
 hourly_analysis = hourly_analysis.sort_values("BusinessHour")
+
+# ---------------- FORECAST HOURLY ---------------- #
+
+forecast_df = hourly_analysis.copy()
+
+report_hour = cutoff_hour
+
+for i in range(len(forecast_df)):
+    if i > report_hour:
+        growth = forecast_df.loc[i, "Growth %"]
+        lw = forecast_df.loc[i, "LW_Sales"]
+
+        forecast_df.loc[i, "Today_Sales"] = lw * (1 + growth/100)
+
+# ---------------- TOP 10 Stores ---------------- #
+
+top_stores = (
+    today_cut.groupby("branchName")["Net Sales"]
+    .sum()
+    .reset_index()
+    .sort_values("Net Sales", ascending=False)
+    .head(10)
+)
+
+top_stores["Net Sales"] = top_stores["Net Sales"].round(2)
 
 # ---------------- PUSH ---------------- #
 
@@ -360,20 +444,28 @@ def send_email():
     msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y')}"
 
     body = f"""
-    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
+<h2>Summary</h2>{styled_html(summary)}
 
-    <h2>Overall</h2>{styled_html(overall)}
+<h2>Overall</h2>{styled_html(overall)}
 
-    <h2>Source</h2>{styled_html(source_analysis)}
+<h2>Source</h2>{styled_html(source_analysis)}
 
-    <h2>Region</h2>{styled_html(region_analysis)}
+<h2>Region</h2>{styled_html(region_analysis)}
 
-    <h2>Brand</h2>{styled_html(brand_analysis)}
+<h2>Brand</h2>{styled_html(brand_analysis)}
 
-    <h2>Session</h2>{styled_html(session_analysis)}
+<h2>Brand x Source</h2>{styled_html(brand_source)}
 
-    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
-    """
+<h2>Region x Source</h2>{styled_html(region_source)}
+
+<h2>Session</h2>{styled_html(session_analysis)}
+
+<h2>Top 10 Stores</h2>{styled_html(top_stores)}
+
+<h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
+
+<h2>Forecast Hourly</h2>{styled_html(forecast_df)}
+"""
 
     msg.attach(MIMEText(body, "html"))
 
