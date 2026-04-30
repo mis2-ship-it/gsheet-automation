@@ -1,9 +1,9 @@
 name: Rista Live to GSheet Hourly
 
 on:
-  schedule:
-    - cron: '30 * * * *'   # ✅ IST hourly
-  workflow_dispatch:
+   schedule:
+     - cron: "*/15 * * * *"
+   workflow_dispatch:
 
 jobs:
   run-script:
