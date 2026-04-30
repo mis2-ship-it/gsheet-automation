@@ -43,8 +43,14 @@ print("✅ Connected to Google Sheet")
 
 # ---------------- TIME ---------------- #
 
-# ✅ FIRST define current IST time
 now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+print("⏰ Auto Trigger Time:", now)   # ✅ ADD HERE
+
+today = now.strftime("%Y-%m-%d")
+last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
+
+print("🕒 IST Time:", now)
 
 # ---------------- BUSINESS DATE FIX ---------------- #
 
