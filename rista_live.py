@@ -49,12 +49,12 @@ now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 # ---------------- BUSINESS DATE FIX ---------------- #
 
 def get_business_day(now):
-    # Before 5:30 AM → previous business day
-    if now.hour < 5 or (now.hour == 5 and now.minute < 30):
+    # Before 6:00 AM → previous business day
+    if now.hour < 6:
         return (now - timedelta(days=1)).date()
     return now.date()
 
-# ✅ THEN use it
+# ✅ Use it
 business_day = get_business_day(now)
 
 today = business_day.strftime("%Y-%m-%d")
@@ -63,6 +63,7 @@ last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
 print("🕒 IST Time:", now)
 print("📅 Business Day:", today)
 print("📅 Last Week:", last_week)
+print(f"🧠 Business Window: {business_day} 09:00 → Next Day 06:00")
 
 # ---------------- FETCH BRANCH ---------------- #
 
