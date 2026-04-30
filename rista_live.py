@@ -293,8 +293,6 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
     lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
 
-
-
 # ---------------- ANALYSIS ---------------- #
 
 overall = build_kpi(today_cut, lastweek_cut)
@@ -327,42 +325,6 @@ session_analysis = pd.concat([
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- BRAND SOURCE TREND ---------------- #
-
-brand_source = pd.concat([
-    build_kpi(
-        today_cut[(today_cut["Brand"] == b) & (today_cut["Source Group"] == s)],
-        lastweek_cut[(lastweek_cut["Brand"] == b) & (lastweek_cut["Source Group"] == s)],
-        ("Brand-Source", f"{b} | {s}")
-    )
-    for b in today_cut["Brand"].dropna().unique()
-    for s in today_cut["Source Group"].dropna().unique()
-], ignore_index=True)
-
-# ---------------- Region SOURCE TREND ---------------- #
-region_source = pd.concat([
-    build_kpi(
-        today_cut[(today_cut["Region"] == r) & (today_cut["Source Group"] == s)],
-        lastweek_cut[(lastweek_cut["Region"] == r) & (lastweek_cut["Source Group"] == s)],
-        ("Region-Source", f"{r} | {s}")
-    )
-    for r in today_cut["Region"].dropna().unique()
-    for s in today_cut["Source Group"].dropna().unique()
-], ignore_index=True)
-
-
-# ---------------- FORECAST HOURLY ---------------- #
-
-forecast_df = hourly_analysis.copy()
-
-report_hour = cutoff_hour
-
-for i in range(len(forecast_df)):
-    if i > report_hour:
-        growth = forecast_df.loc[i, "Growth %"]
-        lw = forecast_df.loc[i, "LW_Sales"]
-
-        forecast_df.loc[i, "Today_Sales"] = lw * (1 + growth/100)
 
 # ---------------- TOP 10 Stores ---------------- #
 
