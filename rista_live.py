@@ -247,6 +247,29 @@ def build_kpi(df_today, df_lw, label=None):
         data.insert(0, label[0], label[1])
 
     return data
+
+# ---------------- SUMMARY ---------------- #
+
+today_total = today_cut["Net Sales"].sum()
+lw_total = lastweek_cut["Net Sales"].sum()
+
+growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
+
+# EOD Projection
+eod_projection = today_total * (1 + (growth / 100))
+
+summary = pd.DataFrame({
+    "Metric": ["Total Sales"],
+    "Today": [today_total],
+    "Last Week": [lw_total],
+    "Growth %": [growth],
+    "EOD Projection": [eod_projection]
+})
+
+summary = summary.round(2)
+
+print("✅ Summary Created")
+
 # ---------------- HOURLY ANALYSIS ---------------- #
 
 hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
@@ -270,25 +293,7 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
     lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
 
-# ---------------- BODY SUMMARY ---------------- #
 
-def build_summary(today_cut, lastweek_cut):
-
-    today_sales = today_cut["Net Sales"].sum()
-    lw_sales = lastweek_cut["Net Sales"].sum()
-
-    growth = ((today_sales - lw_sales) / max(lw_sales, 1)) * 100
-
-    eod_trend = today_sales + (today_sales * growth / 100)
-
-    df = pd.DataFrame({
-        "Today Sales": [round(today_sales, 2)],
-        "Last Week Sales": [round(lw_sales, 2)],
-        "Growth %": [round(growth, 2)],
-        "EOD Trend": [round(eod_trend, 2)]
-    })
-
-    return df
 
 # ---------------- ANALYSIS ---------------- #
 
@@ -382,6 +387,7 @@ def push(name, df):
 
     ws.clear()
     ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
+
 
 # ---------------- EMAIL ---------------- #
 
