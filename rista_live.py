@@ -293,41 +293,52 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
     lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
 
-# ---------------- ANALYSIS ---------------- #
-
-overall = build_kpi(today_cut, lastweek_cut)
-
+# ---------------- SOURCE ---------------- #
 source_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Source Group"]==s],
-              lastweek_cut[lastweek_cut["Source Group"]==s],
-              ("Source", s))
+    build_kpi(
+        today_cut[today_cut["Source Group"] == s],
+        lastweek_cut[lastweek_cut["Source Group"] == s],
+        ("Source", s)
+    )
     for s in today_cut["Source Group"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- REGION ---------------- #
 region_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Region"]==r],
-              lastweek_cut[lastweek_cut["Region"]==r],
-              ("Region", r))
+    build_kpi(
+        today_cut[today_cut["Region"] == r],
+        lastweek_cut[lastweek_cut["Region"] == r],
+        ("Region", r)
+    )
     for r in today_cut["Region"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- BRAND ---------------- #
 brand_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Brand"]==b],
-              lastweek_cut[lastweek_cut["Brand"]==b],
-              ("Brand", b))
+    build_kpi(
+        today_cut[today_cut["Brand"] == b],
+        lastweek_cut[lastweek_cut["Brand"] == b],
+        ("Brand", b)
+    )
     for b in today_cut["Brand"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- SESSION ---------------- #
 session_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Session"]==s],
-              lastweek_cut[lastweek_cut["Session"]==s],
-              ("Session", s))
+    build_kpi(
+        today_cut[today_cut["Session"] == s],
+        lastweek_cut[lastweek_cut["Session"] == s],
+        ("Session", s)
+    )
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
-# Brand source
 
-brand_source_pivot = pd.pivot_table(
+# =========================================================
+# 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
+# =========================================================
+
+brand_source = pd.pivot_table(
     final_df,
     index="Brand",
     columns=["Source Group", "Data_Type"],
@@ -336,32 +347,33 @@ brand_source_pivot = pd.pivot_table(
     fill_value=0
 )
 
-# Flatten columns
-brand_source_pivot.columns = [
-    f"{col[0]} - {col[1]}" for col in brand_source_pivot.columns
+brand_source.columns = [
+    f"{src}_{dtype}" for src, dtype in brand_source.columns
 ]
 
-brand_source_pivot = brand_source_pivot.reset_index()
+brand_source = brand_source.reset_index()
 
-# ✅ ADD GROWTH %
 sources = ["In Store", "Swiggy", "Zomato", "Ownly", "Others"]
 
+# Add Growth %
 for s in sources:
-    today_col = f"{s} - Today"
-    lw_col = f"{s} - Last Week"
+    t = f"{s}_Today"
+    lw = f"{s}_Last Week"
 
-    if today_col in brand_source_pivot.columns and lw_col in brand_source_pivot.columns:
-        brand_source_pivot[f"{s} - Growth %"] = (
-            (brand_source_pivot[today_col] - brand_source_pivot[lw_col])
-            / brand_source_pivot[lw_col].replace(0, 1)
+    if t in brand_source.columns and lw in brand_source.columns:
+        brand_source[f"{s}_Growth %"] = (
+            (brand_source[t] - brand_source[lw])
+            / brand_source[lw].replace(0, 1)
         ) * 100
 
-# Optional rounding
-brand_source_pivot = brand_source_pivot.round(2)
+brand_source = brand_source.round(2)
 
-# Region Source
 
-region_source_pivot = pd.pivot_table(
+# =========================================================
+# 🔥 REGION x SOURCE
+# =========================================================
+
+region_source = pd.pivot_table(
     final_df,
     index="Region",
     columns=["Source Group", "Data_Type"],
@@ -370,28 +382,30 @@ region_source_pivot = pd.pivot_table(
     fill_value=0
 )
 
-region_source_pivot.columns = [
-    f"{col[0]} - {col[1]}" for col in region_source_pivot.columns
+region_source.columns = [
+    f"{src}_{dtype}" for src, dtype in region_source.columns
 ]
 
-region_source_pivot = region_source_pivot.reset_index()
+region_source = region_source.reset_index()
 
-# ✅ ADD GROWTH %
+# Add Growth %
 for s in sources:
-    today_col = f"{s} - Today"
-    lw_col = f"{s} - Last Week"
+    t = f"{s}_Today"
+    lw = f"{s}_Last Week"
 
-    if today_col in region_source_pivot.columns and lw_col in region_source_pivot.columns:
-        region_source_pivot[f"{s} - Growth %"] = (
-            (region_source_pivot[today_col] - region_source_pivot[lw_col])
-            / region_source_pivot[lw_col].replace(0, 1)
+    if t in region_source.columns and lw in region_source.columns:
+        region_source[f"{s}_Growth %"] = (
+            (region_source[t] - region_source[lw])
+            / region_source[lw].replace(0, 1)
         ) * 100
 
-region_source_pivot = region_source_pivot.round(2)
+region_source = region_source.round(2)
 
-# ---------------- TOP 10 STORES ---------------- #
 
-# ✅ Step 1: Today Sales
+# =========================================================
+# 🔥 TOP 10 STORES
+# =========================================================
+
 top_stores = (
     today_cut.groupby("branchName")
     .agg(Today_Sales=("Net Sales", "sum"))
@@ -399,29 +413,27 @@ top_stores = (
     .head(10)
 )
 
-# ✅ Step 2: Last Week Sales
 lw_store = (
     lastweek_cut.groupby("branchName")
     .agg(LW_Sales=("Net Sales", "sum"))
 )
 
-# ✅ Step 3: Join
 top_stores = top_stores.join(lw_store, how="left").fillna(0)
 
-# ✅ Step 4: Growth %
 top_stores["Growth %"] = (
     (top_stores["Today_Sales"] - top_stores["LW_Sales"])
     / top_stores["LW_Sales"].replace(0, 1)
 ) * 100
 
-# ✅ Step 5: Reset index (VERY IMPORTANT)
 top_stores = top_stores.reset_index()
-
-# ✅ Step 6: Rename column
 top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
 
-# Optional
 top_stores = top_stores.round(2)
+
+
+# =========================================================
+# 🔍 DEBUG (CORRECT VARIABLES)
+# =========================================================
 
 print("🔍 Brand Source Check")
 print(brand_source.head())
