@@ -325,18 +325,54 @@ session_analysis = pd.concat([
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
+# ---------------- BRAND x SOURCE ---------------- #
 
-# ---------------- TOP 10 Stores ---------------- #
+brand_source = final_df[
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
 
-top_stores = (
-    today_cut.groupby("branchName")["Net Sales"]
-    .sum()
-    .reset_index()
-    .sort_values("Net Sales", ascending=False)
-    .head(10)
+brand_source_grp = brand_source.groupby(["Brand", "Source Group", "Data_Type"]).agg(
+    Net=("Net Sales", "sum")
+).reset_index()
+
+# Pivot
+brand_source_pivot = brand_source_grp.pivot_table(
+    index=["Brand"],
+    columns=["Source Group", "Data_Type"],
+    values="Net",
+    fill_value=0
 )
 
-top_stores["Net Sales"] = top_stores["Net Sales"].round(2)
+brand_source_pivot = brand_source_pivot.round(2).reset_index()
+
+print("✅ Brand x Source Fixed")
+
+# ---------------- REGION x SOURCE ---------------- #
+
+region_source_grp = brand_source.groupby(["Region", "Source Group", "Data_Type"]).agg(
+    Net=("Net Sales", "sum")
+).reset_index()
+
+region_source_pivot = region_source_grp.pivot_table(
+    index=["Region"],
+    columns=["Source Group", "Data_Type"],
+    values="Net",
+    fill_value=0
+)
+
+region_source_pivot = region_source_pivot.round(2).reset_index()
+
+print("✅ Region x Source Fixed")
+# ---------------- TOP 10 STORES ---------------- #
+
+top_stores = today_cut.groupby("branchName").agg(
+    Revenue=("Net Sales", "sum")
+).reset_index()
+
+top_stores = top_stores.sort_values("Revenue", ascending=False).head(10)
+
+print("✅ Top Stores Ready")
 
 
 # ---------------- PUSH ---------------- #
@@ -410,15 +446,17 @@ def send_email():
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
     # ✅ SUBJECT TIME (current hour)
-    report_time = now.replace(minute=0, second=0, microsecond=0)
+       report_time = now.replace(minute=0, second=0, microsecond=0)
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y')}"
+    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
     body = f"""
+<h3>📊 Data Till {report_time.strftime('%I:%M %p')}</h3>
+
 <h2>Summary</h2>{styled_html(summary)}
 
 <h2>Overall</h2>{styled_html(overall)}
