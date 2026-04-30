@@ -445,8 +445,8 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    # ✅ SUBJECT TIME (current hour)
-       report_time = now.replace(minute=0, second=0, microsecond=0)
+    # ✅ CORRECT INDENTATION (inside function)
+    report_time = now.replace(minute=0, second=0, microsecond=0)
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
@@ -454,31 +454,30 @@ def send_email():
     msg["Cc"] = CC_EMAIL
     msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
 
+    # ✅ BODY
     body = f"""
-<h3>📊 Data Till {report_time.strftime('%I:%M %p')}</h3>
+    <h3>📊 Data Till {report_time.strftime('%I:%M %p')}</h3>
 
-<h2>Summary</h2>{styled_html(summary)}
+    <h2>Summary</h2>{styled_html(summary)}
 
-<h2>Overall</h2>{styled_html(overall)}
+    <h2>Overall</h2>{styled_html(overall)}
 
-<h2>Source</h2>{styled_html(source_analysis)}
+    <h2>Source</h2>{styled_html(source_analysis)}
 
-<h2>Region</h2>{styled_html(region_analysis)}
+    <h2>Region</h2>{styled_html(region_analysis)}
 
-<h2>Brand</h2>{styled_html(brand_analysis)}
+    <h2>Brand</h2>{styled_html(brand_analysis)}
 
-<h2>Brand x Source</h2>{styled_html(brand_source)}
+    <h2>Session</h2>{styled_html(session_analysis)}
 
-<h2>Region x Source</h2>{styled_html(region_source)}
+    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
 
-<h2>Session</h2>{styled_html(session_analysis)}
+    <h2>Brand x Source</h2>{styled_html(brand_source_pivot)}
 
-<h2>Top 10 Stores</h2>{styled_html(top_stores)}
+    <h2>Region x Source</h2>{styled_html(region_source_pivot)}
 
-<h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
-
-<h2>Forecast Hourly</h2>{styled_html(forecast_df)}
-"""
+    <h2>Top 10 Stores</h2>{styled_html(top_stores)}
+    """
 
     msg.attach(MIMEText(body, "html"))
 
