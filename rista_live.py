@@ -562,7 +562,7 @@ def send_email():
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    msg["Subject"] = f"📊 Sales Report - {report_time.strftime('%d %b %Y %I:%M %p')}"
+    msg["Subject"] = f"📊 Live Sales Report - {report_time.strftime('%d %b %Y')}"
 
     # ✅ BODY
     body = f"""
