@@ -325,55 +325,89 @@ session_analysis = pd.concat([
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- BRAND x SOURCE ---------------- #
+# Brand source
 
-brand_source = final_df[
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
+brand_source_pivot = pd.pivot_table(
+    final_df,
+    index="Brand",
+    columns=["Source Group", "Data_Type"],
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+# Flatten columns
+brand_source_pivot.columns = [
+    f"{col[0]} - {col[1]}" for col in brand_source_pivot.columns
 ]
 
-brand_source_grp = brand_source.groupby(["Brand", "Source Group", "Data_Type"]).agg(
-    Net=("Net Sales", "sum")
-).reset_index()
+brand_source_pivot = brand_source_pivot.reset_index()
 
-# Pivot
-brand_source_pivot = brand_source_grp.pivot_table(
-    index=["Brand"],
+# ✅ ADD GROWTH %
+sources = ["In Store", "Swiggy", "Zomato", "Ownly", "Others"]
+
+for s in sources:
+    today_col = f"{s} - Today"
+    lw_col = f"{s} - Last Week"
+
+    if today_col in brand_source_pivot.columns and lw_col in brand_source_pivot.columns:
+        brand_source_pivot[f"{s} - Growth %"] = (
+            (brand_source_pivot[today_col] - brand_source_pivot[lw_col])
+            / brand_source_pivot[lw_col].replace(0, 1)
+        ) * 100
+
+# Optional rounding
+brand_source_pivot = brand_source_pivot.round(2)
+
+# Region Source
+
+region_source_pivot = pd.pivot_table(
+    final_df,
+    index="Region",
     columns=["Source Group", "Data_Type"],
-    values="Net",
+    values="Net Sales",
+    aggfunc="sum",
     fill_value=0
 )
 
-brand_source_pivot = brand_source_pivot.round(2).reset_index()
+region_source_pivot.columns = [
+    f"{col[0]} - {col[1]}" for col in region_source_pivot.columns
+]
 
-print("✅ Brand x Source Fixed")
+region_source_pivot = region_source_pivot.reset_index()
 
-# ---------------- REGION x SOURCE ---------------- #
+# ✅ ADD GROWTH %
+for s in sources:
+    today_col = f"{s} - Today"
+    lw_col = f"{s} - Last Week"
 
-region_source_grp = brand_source.groupby(["Region", "Source Group", "Data_Type"]).agg(
-    Net=("Net Sales", "sum")
-).reset_index()
+    if today_col in region_source_pivot.columns and lw_col in region_source_pivot.columns:
+        region_source_pivot[f"{s} - Growth %"] = (
+            (region_source_pivot[today_col] - region_source_pivot[lw_col])
+            / region_source_pivot[lw_col].replace(0, 1)
+        ) * 100
 
-region_source_pivot = region_source_grp.pivot_table(
-    index=["Region"],
-    columns=["Source Group", "Data_Type"],
-    values="Net",
-    fill_value=0
-)
+region_source_pivot = region_source_pivot.round(2)
 
-region_source_pivot = region_source_pivot.round(2).reset_index()
+# Top Stores
 
-print("✅ Region x Source Fixed")
-# ---------------- TOP 10 STORES ---------------- #
+top_stores = top_stores.join(lw_store, how="left").fillna(0)
 
-top_stores = today_cut.groupby("branchName").agg(
-    Revenue=("Net Sales", "sum")
-).reset_index()
+# Growth
+top_stores["Growth %"] = (
+    (top_stores["Today_Sales"] - top_stores["LW_Sales"])
+    / top_stores["LW_Sales"].replace(0, 1)
+) * 100
 
-top_stores = top_stores.sort_values("Revenue", ascending=False).head(10)
+# ✅ THIS LINE FIXES YOUR ISSUE
+top_stores = top_stores.reset_index()
 
-print("✅ Top Stores Ready")
+# Rename for clarity
+top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
 
+print(brand_source_pivot.head()) 
+print(region_source_pivot.head()) 
+print(top_stores.head())
 
 # ---------------- PUSH ---------------- #
 
@@ -503,6 +537,7 @@ push("Region", region_analysis)
 push("Brand", brand_analysis)
 push("Session", session_analysis)
 push("Hourly", hourly_analysis)
+
 
 send_email()
 print("🎉 SUCCESS")
