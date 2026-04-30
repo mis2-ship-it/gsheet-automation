@@ -293,6 +293,40 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
     lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
 
+# ---------------- OVERALL ANALYSIS ---------------- #
+
+overall = pd.DataFrame({
+    "Parameters": ["Gross Amount", "Discount", "Net Sales", "Transactions", "AOV", "Discount %"],
+
+    "Today": [
+        today_cut["grossAmount"].sum(),
+        today_cut["discountAmount"].sum(),
+        today_cut["Net Sales"].sum(),
+        len(today_cut),
+        today_cut["Net Sales"].sum() / max(len(today_cut), 1),
+        (today_cut["discountAmount"].sum() / max(today_cut["grossAmount"].sum(), 1)) * 100
+    ],
+
+    "Last Week": [
+        lastweek_cut["grossAmount"].sum(),
+        lastweek_cut["discountAmount"].sum(),
+        lastweek_cut["Net Sales"].sum(),
+        len(lastweek_cut),
+        lastweek_cut["Net Sales"].sum() / max(len(lastweek_cut), 1),
+        (lastweek_cut["discountAmount"].sum() / max(lastweek_cut["grossAmount"].sum(), 1)) * 100
+    ]
+})
+
+# Growth %
+overall["Growth %"] = (
+    (overall["Today"] - overall["Last Week"])
+    / overall["Last Week"].replace(0, 1)
+) * 100
+
+overall = overall.round(2)
+
+print("✅ Overall Analysis Created")
+
 # ---------------- SOURCE ---------------- #
 source_analysis = pd.concat([
     build_kpi(
@@ -572,6 +606,9 @@ push("Source", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
 push("Session", session_analysis)
+push("Brand_Source", brand_source)
+push("Region_Source", region_source)
+push("Top_Stores", top_stores)
 push("Hourly", hourly_analysis)
 
 
