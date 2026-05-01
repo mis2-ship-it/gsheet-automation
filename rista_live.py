@@ -261,8 +261,8 @@ growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
 # 🔥 FULL DAY LAST WEEK (IMPORTANT FIX)
 
 lw_full_day = lastweek_df[
-    (full_lw_df["Store Type"]=="COCO") &
-    (full_lw_df["status"]=="Closed")
+    (final_df["Store Type"]=="COCO") &
+    (final_df["status"]=="Closed")
 ]["Net Sales"].sum()
 
 # 🔥 CORRECT EOD
