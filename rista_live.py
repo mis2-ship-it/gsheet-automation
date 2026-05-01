@@ -170,6 +170,9 @@ final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
+print("🔍 DEBUG CHECK")
+print("Columns in lastweek_df:", lastweek_df.columns)
+print("Columns in final_df:", final_df.columns)
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
@@ -255,9 +258,6 @@ else:
         (full_lw_df["Store Type"] == "COCO") &
         (full_lw_df["status"] == "Closed")
     ]["Net Sales"].sum()
-
-    print("Columns in lastweek_df:", lastweek_df.columns)
-    print("Columns in final_df:", final_df.columns)
 
     # ---------------- GROWTH ---------------- #
     growth = ((nt - nl) / max(nl, 1)) * 100
