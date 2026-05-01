@@ -227,6 +227,7 @@ today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # ---------------- KPI FUNCTION ---------------- #
+
 def build_kpi(df_today, df_lw, label=None):
 
     gt = df_today["grossAmount"].sum()
@@ -301,84 +302,41 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
 
 # ---------------- OVERALL ANALYSIS ---------------- #
 
-overall = pd.DataFrame({
-    "Parameters": ["Gross Amount", "Discount", "Net Sales", "Transactions", "AOV", "Discount %"],
+overall = build_kpi(today_cut, lastweek_cut)
 
-    "Today": [
-        today_cut["grossAmount"].sum(),
-        today_cut["discountAmount"].sum(),
-        today_cut["Net Sales"].sum(),
-        len(today_cut),
-        today_cut["Net Sales"].sum() / max(len(today_cut), 1),
-        (today_cut["discountAmount"].sum() / max(today_cut["grossAmount"].sum(), 1)) * 100
-    ],
-
-    "Last Week": [
-        lastweek_cut["grossAmount"].sum(),
-        lastweek_cut["discountAmount"].sum(),
-        lastweek_cut["Net Sales"].sum(),
-        len(lastweek_cut),
-        lastweek_cut["Net Sales"].sum() / max(len(lastweek_cut), 1),
-        (lastweek_cut["discountAmount"].sum() / max(lastweek_cut["grossAmount"].sum(), 1)) * 100
-    ]
-})
-
-# Growth %
-overall["Growth %"] = (
-    (overall["Today"] - overall["Last Week"])
-    / overall["Last Week"].replace(0, 1)
-) * 100
-
-overall = overall.round(2)
-
-print("✅ Overall Analysis Created")
-
-# ---------------- SOURCE ---------------- #
 source_analysis = pd.concat([
-    build_kpi(
-        today_cut[today_cut["Source Group"] == s],
-        lastweek_cut[lastweek_cut["Source Group"] == s],
-        ("Source", s)
-    )
+    build_kpi(today_cut[today_cut["Source Group"]==s],
+              lastweek_cut[lastweek_cut["Source Group"]==s],
+              ("Source", s))
     for s in today_cut["Source Group"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- REGION ---------------- #
 region_analysis = pd.concat([
-    build_kpi(
-        today_cut[today_cut["Region"] == r],
-        lastweek_cut[lastweek_cut["Region"] == r],
-        ("Region", r)
-    )
+    build_kpi(today_cut[today_cut["Region"]==r],
+              lastweek_cut[lastweek_cut["Region"]==r],
+              ("Region", r))
     for r in today_cut["Region"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- BRAND ---------------- #
 brand_analysis = pd.concat([
-    build_kpi(
-        today_cut[today_cut["Brand"] == b],
-        lastweek_cut[lastweek_cut["Brand"] == b],
-        ("Brand", b)
-    )
+    build_kpi(today_cut[today_cut["Brand"]==b],
+              lastweek_cut[lastweek_cut["Brand"]==b],
+              ("Brand", b))
     for b in today_cut["Brand"].dropna().unique()
 ], ignore_index=True)
 
-# ---------------- SESSION ---------------- #
 session_analysis = pd.concat([
-    build_kpi(
-        today_cut[today_cut["Session"] == s],
-        lastweek_cut[lastweek_cut["Session"] == s],
-        ("Session", s)
-    )
+    build_kpi(today_cut[today_cut["Session"]==s],
+              lastweek_cut[lastweek_cut["Session"]==s],
+              ("Session", s))
     for s in today_cut["Session"].dropna().unique()
 ], ignore_index=True)
-
 
 # =========================================================
 # 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
 # =========================================================
 
-brand_source = pd.pivot_table(
+brand_source_pivot = pd.pivot_table(
     final_df,
     index="Brand",
     columns=["Source Group", "Data_Type"],
@@ -387,33 +345,35 @@ brand_source = pd.pivot_table(
     fill_value=0
 )
 
-brand_source.columns = [
-    f"{src}_{dtype}" for src, dtype in brand_source.columns
+# Flatten columns
+brand_source_pivot.columns = [
+    f"{col[0]} - {col[1]}" for col in brand_source_pivot.columns
 ]
 
-brand_source = brand_source.reset_index()
+brand_source_pivot = brand_source_pivot.reset_index()
 
+# ✅ ADD GROWTH %
 sources = ["In Store", "Swiggy", "Zomato", "Ownly", "Others"]
 
-# Add Growth %
 for s in sources:
-    t = f"{s}_Today"
-    lw = f"{s}_Last Week"
+    today_col = f"{s} - Today"
+    lw_col = f"{s} - Last Week"
 
-    if t in brand_source.columns and lw in brand_source.columns:
-        brand_source[f"{s}_Growth %"] = (
-            (brand_source[t] - brand_source[lw])
-            / brand_source[lw].replace(0, 1)
+    if today_col in brand_source_pivot.columns and lw_col in brand_source_pivot.columns:
+        brand_source_pivot[f"{s} - Growth %"] = (
+            (brand_source_pivot[today_col] - brand_source_pivot[lw_col])
+            / brand_source_pivot[lw_col].replace(0, 1)
         ) * 100
 
-brand_source = brand_source.round(2)
+# Optional rounding
+brand_source_pivot = brand_source_pivot.round(2)
 
 
 # =========================================================
 # 🔥 REGION x SOURCE
 # =========================================================
 
-region_source = pd.pivot_table(
+region_source_pivot = pd.pivot_table(
     final_df,
     index="Region",
     columns=["Source Group", "Data_Type"],
@@ -422,24 +382,24 @@ region_source = pd.pivot_table(
     fill_value=0
 )
 
-region_source.columns = [
-    f"{src}_{dtype}" for src, dtype in region_source.columns
+region_source_pivot.columns = [
+    f"{col[0]} - {col[1]}" for col in region_source_pivot.columns
 ]
 
-region_source = region_source.reset_index()
+region_source_pivot = region_source_pivot.reset_index()
 
-# Add Growth %
+# ✅ ADD GROWTH %
 for s in sources:
-    t = f"{s}_Today"
-    lw = f"{s}_Last Week"
+    today_col = f"{s} - Today"
+    lw_col = f"{s} - Last Week"
 
-    if t in region_source.columns and lw in region_source.columns:
-        region_source[f"{s}_Growth %"] = (
-            (region_source[t] - region_source[lw])
-            / region_source[lw].replace(0, 1)
+    if today_col in region_source_pivot.columns and lw_col in region_source_pivot.columns:
+        region_source_pivot[f"{s} - Growth %"] = (
+            (region_source_pivot[today_col] - region_source_pivot[lw_col])
+            / region_source_pivot[lw_col].replace(0, 1)
         ) * 100
 
-region_source = region_source.round(2)
+region_source_pivot = region_source_pivot.round(2)
 
 
 # =========================================================
