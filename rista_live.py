@@ -228,6 +228,8 @@ lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # ---------------- KPI FUNCTION ---------------- #
 
+overall = build_kpi(today_cut, lastweek_cut, lastweek_df)
+
 def build_kpi(df_today, df_lw, full_lw_df, label=None, filter_col=None, filter_val=None):
 
     def calc(df):
