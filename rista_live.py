@@ -228,7 +228,7 @@ lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # ---------------- KPI FUNCTION ---------------- #
 
-overall = build_kpi(today_cut, lastweek_cut, lastweek_df)
+overall = build_kpi(today_cut, lastweek_cut, final_df)
 
 def build_kpi(df_today, df_lw, full_lw_df, label=None, filter_col=None, filter_val=None):
 
@@ -254,20 +254,23 @@ def build_kpi(df_today, df_lw, full_lw_df, label=None, filter_col=None, filter_v
 
     data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0,1))*100
 
-    # ---------------- 🔥 FULL DAY LW ---------------- #
+# ---------------- 🔥 FULL DAY LW ---------------- #
 
-    if filter_col and filter_val:
-        lw_full = full_lw_df[
-            (full_lw_df[filter_col] == filter_val) &
-            (full_lw_df["Store Type"]=="COCO") &
-            (full_lw_df["status"]=="Closed")
-        ]["Net Sales"].sum()
-    else:
-        lw_full = full_lw_df[
-            (full_lw_df["Store Type"]=="COCO") &
-            (full_lw_df["status"]=="Closed")
-        ]["Net Sales"].sum()
+if filter_col and filter_val:
+    lw_full = full_lw_df[
+        (full_lw_df["Data_Type"] == "Last Week") &
+        (full_lw_df[filter_col] == filter_val) &
+        (full_lw_df["Store Type"] == "COCO") &
+        (full_lw_df["status"] == "Closed")
+    ]["Net Sales"].sum()
+else:
+    lw_full = full_lw_df[
+        (full_lw_df["Data_Type"] == "Last Week") &
+        (full_lw_df["Store Type"] == "COCO") &
+        (full_lw_df["status"] == "Closed")
+    ]["Net Sales"].sum()
 
+    print("LW FULL DAY:", lw_full)
     # ---------------- 🔥 EOD PROJECTION ---------------- #
 
     growth_net = (nt - nl) / max(nl, 1)
