@@ -258,25 +258,21 @@ lw_total = lastweek_cut["Net Sales"].sum()
 
 growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
 
-# 🔥 FULL DAY LAST WEEK (IMPORTANT FIX)
-
-lw_full_day = lastweek_df[
-    (final_df["Store Type"]=="COCO") &
-    (final_df["status"]=="Closed")
+lw_full_day = final_df[
+    (final_df["Data_Type"] == "Last Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
 ]["Net Sales"].sum()
 
-# 🔥 CORRECT EOD
 eod_projection = lw_full_day * (1 + (growth / 100))
 
 summary = pd.DataFrame({
     "Metric": ["Total Sales"],
     "Today": [today_total],
-    "Last Week": [lw_total],
+    "Last Week (Till Now)": [lw_total],
     "Growth %": [growth],
     "EOD Projection": [eod_projection]
-})
-
-summary = summary.round(2)
+}).round(2)
 
 print("✅ Summary Created")
 
