@@ -379,7 +379,7 @@ session_analysis = pd.concat([
 # =========================================================
 
 brand_source = pd.pivot_table(
-    final_df[final_df["Store Type"] == "COCO"],
+    final_df,
     index="Brand",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
@@ -414,7 +414,7 @@ brand_source = brand_source.round(2)
 # =========================================================
 
 region_source = pd.pivot_table(
-    final_df[final_df["Store Type"] == "COCO"],
+    final_df,
     index="Region",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
