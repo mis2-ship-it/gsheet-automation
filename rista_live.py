@@ -228,7 +228,7 @@ lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # ---------------- KPI FUNCTION ---------------- #
 
-def build_kpi(df_today, df_lw, label=None):
+def build_kpi(df_today, df_lw, full_lw_df, label=None, filter_col=None, filter_val=None):
 
     def calc(df):
         g = df["grossAmount"].sum()
@@ -240,13 +240,42 @@ def build_kpi(df_today, df_lw, label=None):
     gt, dt, nt, tt = calc(df_today)
     gl, dl, nl, tl = calc(df_lw)
 
+    # ---------------- BASE TABLE ---------------- #
+
     data = pd.DataFrame({
         "Parameters": ["Gross Amount","Discount","Net Amount","Transaction","AOV","Discount %"],
         "Today": [gt, dt, nt, tt, nt/max(tt,1), dt/max(gt,1)*100],
         "Last Week": [gl, dl, nl, tl, nl/max(tl,1), dl/max(gl,1)*100]
     })
 
+    # ---------------- GROWTH ---------------- #
+
     data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0,1))*100
+
+    # ---------------- 🔥 FULL DAY LW ---------------- #
+
+    if filter_col and filter_val:
+        lw_full = full_lw_df[
+            (full_lw_df[filter_col] == filter_val) &
+            (full_lw_df["Store Type"]=="COCO") &
+            (full_lw_df["status"]=="Closed")
+        ]["Net Sales"].sum()
+    else:
+        lw_full = full_lw_df[
+            (full_lw_df["Store Type"]=="COCO") &
+            (full_lw_df["status"]=="Closed")
+        ]["Net Sales"].sum()
+
+    # ---------------- 🔥 EOD PROJECTION ---------------- #
+
+    growth_net = (nt - nl) / max(nl, 1)
+    eod_projection = lw_full * (1 + growth_net)
+
+    # ---------------- ADD EOD ONLY TO NET ---------------- #
+
+    data["EOD Projection"] = ""
+    data.loc[data["Parameters"]=="Net Amount", "EOD Projection"] = round(eod_projection, 2)
+
     data = data.round(2)
 
     if label:
@@ -261,8 +290,14 @@ lw_total = lastweek_cut["Net Sales"].sum()
 
 growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
 
-# EOD Projection
-eod_projection = today_total * (1 + (growth / 100))
+# 🔥 FULL DAY LAST WEEK (IMPORTANT FIX)
+lw_full_day = lastweek_df[
+    (lastweek_df["Store Type"]=="COCO") &
+    (lastweek_df["status"]=="Closed")
+]["Net Sales"].sum()
+
+# 🔥 CORRECT EOD
+eod_projection = lw_full_day * (1 + (growth / 100))
 
 summary = pd.DataFrame({
     "Metric": ["Total Sales"],
