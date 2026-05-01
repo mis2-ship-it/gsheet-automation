@@ -170,9 +170,6 @@ final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
 final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
-print("🔍 DEBUG CHECK")
-print("Columns in lastweek_df:", lastweek_df.columns)
-print("Columns in final_df:", final_df.columns)
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
@@ -230,69 +227,30 @@ today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # ---------------- KPI FUNCTION ---------------- #
+def build_kpi(df_today, df_lw, label=None):
 
-def build_kpi(df_today, df_lw, full_lw_df, filter_col=None, filter_val=None):
+    gt = df_today["grossAmount"].sum()
+    gl = df_lw["grossAmount"].sum()
 
-    def calc(df):
-        g = df["grossAmount"].sum()
-        d = df["discountAmount"].sum()
-        n = df["Net Sales"].sum()
-        t = len(df)
-        return g, d, n, t
+    nt = df_today["Net Sales"].sum()
+    nl = df_lw["Net Sales"].sum()
 
-    gt, dt, nt, tt = calc(df_today)
-    gl, dl, nl, tl = calc(df_lw)
+    tt = len(df_today)
+    tl = len(df_lw)
 
-    # ---------------- 🔥 FULL DAY LW ---------------- #
-
-  if filter_col and filter_val:
-    lw_full = full_lw_df[
-        (full_lw_df["Data_Type"] == "Last Week") &
-        (full_lw_df[filter_col] == filter_val) &
-        (full_lw_df["Store Type"] == "COCO") &
-        (full_lw_df["status"] == "Closed")
-    ]["Net Sales"].sum()
-else:
-    lw_full = full_lw_df[
-        (full_lw_df["Data_Type"] == "Last Week") &
-        (full_lw_df["Store Type"] == "COCO") &
-        (full_lw_df["status"] == "Closed")
-    ]["Net Sales"].sum()
-
-    # ---------------- GROWTH ---------------- #
-    growth = ((nt - nl) / max(nl, 1)) * 100
-
-    # ---------------- EOD PROJECTION ---------------- #
-    eod_projection = lw_full * (1 + growth / 100)
-
-    # ---------------- DATAFRAME ---------------- #
     data = pd.DataFrame({
-        "Parameters": ["Gross Amount", "Discount", "Net Amount", "Transaction", "AOV", "Discount %", "EOD Projection"],
-        "Today": [
-            gt,
-            dt,
-            nt,
-            tt,
-            nt / max(tt, 1),
-            (dt / max(gt, 1)) * 100,
-            eod_projection
-        ],
-        "Last Week": [
-            gl,
-            dl,
-            nl,
-            tl,
-            nl / max(tl, 1),
-            (dl / max(gl, 1)) * 100,
-            lw_full
-        ]
+        "Parameters": ["Gross","Net","Txn","AOV"],
+        "Today": [gt, nt, tt, nt/max(tt,1)],
+        "Last Week": [gl, nl, tl, nl/max(tl,1)]
     })
 
-    data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0, 1)) * 100
-    data = data.round(2)
+    data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0,1))*100
 
-    return data
+    if label:
+        data.insert(0, label[0], label[1])
 
+    return data.round(2)
+    
 # ---------------- SUMMARY ---------------- #
 
 today_total = today_cut["Net Sales"].sum()
@@ -301,6 +259,7 @@ lw_total = lastweek_cut["Net Sales"].sum()
 growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
 
 # 🔥 FULL DAY LAST WEEK (IMPORTANT FIX)
+
 lw_full_day = lastweek_df[
     (full_lw_df["Store Type"]=="COCO") &
     (full_lw_df["status"]=="Closed")
