@@ -241,19 +241,23 @@ def build_kpi(df_today, df_lw, full_lw_df, filter_col=None, filter_val=None):
     gl, dl, nl, tl = calc(df_lw)
 
     # ---------------- 🔥 FULL DAY LW ---------------- #
-    if filter_col and filter_val:
-        lw_full = full_lw_df[
-            (full_lw_df["Data_Type"] == "Last Week") &
-            (full_lw_df[filter_col] == filter_val) &
-            (full_lw_df["Store Type"] == "COCO") &
-            (full_lw_df["status"] == "Closed")
-        ]["Net Sales"].sum()
-    else:
-        lw_full = full_lw_df[
-            (full_lw_df["Data_Type"] == "Last Week") &
-            (full_lw_df["Store Type"] == "COCO") &
-            (full_lw_df["status"] == "Closed")
-        ]["Net Sales"].sum()
+
+  if filter_col and filter_val:
+    lw_full = full_lw_df[
+        (full_lw_df["Data_Type"] == "Last Week") &
+        (full_lw_df[filter_col] == filter_val) &
+        (full_lw_df["Store Type"] == "COCO") &
+        (full_lw_df["status"] == "Closed")
+    ]["Net Sales"].sum()
+else:
+    lw_full = full_lw_df[
+        (full_lw_df["Data_Type"] == "Last Week") &
+        (full_lw_df["Store Type"] == "COCO") &
+        (full_lw_df["status"] == "Closed")
+    ]["Net Sales"].sum()
+
+    print("Columns in lastweek_df:", lastweek_df.columns)
+    print("Columns in final_df:", final_df.columns)
 
     # ---------------- GROWTH ---------------- #
     growth = ((nt - nl) / max(nl, 1)) * 100
@@ -298,8 +302,8 @@ growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
 
 # 🔥 FULL DAY LAST WEEK (IMPORTANT FIX)
 lw_full_day = lastweek_df[
-    (lastweek_df["Store Type"]=="COCO") &
-    (lastweek_df["status"]=="Closed")
+    (full_lw_df["Store Type"]=="COCO") &
+    (full_lw_df["status"]=="Closed")
 ]["Net Sales"].sum()
 
 # 🔥 CORRECT EOD
