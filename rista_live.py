@@ -45,28 +45,23 @@ print("✅ Connected to Google Sheet")
 
 now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
-print("⏰ Auto Trigger Time:", now)   # ✅ ADD HERE
-
-today = now.strftime("%Y-%m-%d")
-last_week = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-
+print("⏰ Auto Trigger Time:", now)
 print("🕒 IST Time:", now)
 
 # ---------------- BUSINESS DATE FIX ---------------- #
 
 def get_business_day(now):
-    # Before 6:00 AM → previous business day
     if now.hour < 6:
         return (now - timedelta(days=1)).date()
     return now.date()
 
-# ✅ Use it
 business_day = get_business_day(now)
 
 today = business_day.strftime("%Y-%m-%d")
 last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
+last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
 
-print("🕒 IST Time:", now)
 print("📅 Business Day:", today)
 print("📅 Last Week:", last_week)
 print(f"🧠 Business Window: {business_day} 09:00 → Next Day 06:00")
@@ -122,10 +117,6 @@ def fetch_sales(day):
 
 today_df = fetch_sales(today)
 lastweek_df = fetch_sales(last_week)
-
-last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
-last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
-
 last2week_df = fetch_sales(last2week)
 lastyear_df = fetch_sales(last_year)
 
@@ -133,30 +124,34 @@ if today_df.empty:
     print("❌ No today data")
     exit()
 
-# ---------------- BUSINESS DATE ---------------- #
+# ---------------- DATE CLEAN ---------------- #
 
-for df in [today_df, lastweek_df]:
+def prepare_dates(df):
+    if df.empty:
+        return df
+
     df["invoiceDate"] = pd.to_datetime(df["invoiceDate"], errors="coerce").dt.tz_localize(None)
 
-def get_business_date(dt):
-    if pd.isna(dt):
-        return pd.NaT
-    return (dt - pd.Timedelta(days=1)).date() if dt.hour < 5 else dt.date()
+    def get_business_date(dt):
+        if pd.isna(dt):
+            return pd.NaT
+        return (dt - pd.Timedelta(days=1)).date() if dt.hour < 5 else dt.date()
 
-today_df["businessDate"] = today_df["invoiceDate"].apply(get_business_date)
-lastweek_df["businessDate"] = lastweek_df["invoiceDate"].apply(get_business_date)
-
-# ---------------- DATE + HOUR ---------------- #
-
-for df in [today_df, lastweek_df]:
+    df["businessDate"] = df["invoiceDate"].apply(get_business_date)
     df["Date"] = df["businessDate"]
     df["Hour"] = df["invoiceDate"].dt.hour
 
-# ---------------- MERGE ---------------- #
+    return df
+
+today_df = prepare_dates(today_df)
+lastweek_df = prepare_dates(lastweek_df)
+last2week_df = prepare_dates(last2week_df)
+lastyear_df = prepare_dates(lastyear_df)
+
+# ---------------- TAGGING ---------------- #
 
 today_df["Data_Type"] = "Today"
 lastweek_df["Data_Type"] = "Last Week"
-
 last2week_df["Data_Type"] = "Last 2 Week"
 lastyear_df["Data_Type"] = "Last Year"
 
@@ -167,13 +162,29 @@ final_df = pd.concat([
     lastyear_df
 ], ignore_index=True)
 
+# ---------------- SAFE COLUMN CHECK ---------------- #
+
+required_cols = ["netAmount", "chargeAmount", "status", "branchName", "channel"]
+for col in required_cols:
+    if col not in final_df.columns:
+        final_df[col] = 0
+
+# ---------------- NET SALES ---------------- #
+
+final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
+final_df["chargeAmount"] = pd.to_numeric(final_df["chargeAmount"], errors="coerce").fillna(0)
+
+final_df["Net Sales"] = (
+    (final_df["netAmount"] + final_df["chargeAmount"])
+    .where(final_df["status"] == "Closed", 0)
+)
+
 # ---------------- MAPPING ---------------- #
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
 branch_master = pd.DataFrame(help_ws.get("G:M")[1:], columns=help_ws.get("G:M")[0])
 source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[0])
-source_master.columns = source_master.columns.str.strip()
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
@@ -188,57 +199,30 @@ final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
 
-# ---------------- NET SALES ---------------- #
-
-final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
-final_df["chargeAmount"] = pd.to_numeric(final_df["chargeAmount"], errors="coerce").fillna(0)
-
-final_df["Net Sales"] = (
-    (final_df["netAmount"] + final_df["chargeAmount"])
-    .where(final_df["status"] == "Closed", 0)
-)
-
 # ---------------- FILTER ---------------- #
 
-today_cut = final_df[
-    (final_df["Data_Type"] == "Today") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-].copy()
-
-lastweek_cut = final_df[
-    (final_df["Data_Type"] == "Last Week") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-].copy()
-
-last2week_cut = final_df[
-    (final_df["Data_Type"] == "Last 2 Week") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-lastyear_cut = final_df[
-    (final_df["Data_Type"] == "Last Year") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
+today_cut = final_df.query('Data_Type=="Today" and `Store Type`=="COCO" and status=="Closed"')
+lastweek_cut = final_df.query('Data_Type=="Last Week" and `Store Type`=="COCO" and status=="Closed"')
+last2week_cut = final_df.query('Data_Type=="Last 2 Week" and `Store Type`=="COCO" and status=="Closed"')
+lastyear_cut = final_df.query('Data_Type=="Last Year" and `Store Type`=="COCO" and status=="Closed"')
 
 # ---------------- BUSINESS HOUR ---------------- #
 
 def map_business_hour(h):
     return h if h >= 8 else h + 24
 
-today_cut["BusinessHour"] = today_cut["Hour"].apply(map_business_hour)
-lastweek_cut["BusinessHour"] = lastweek_cut["Hour"].apply(map_business_hour)
+for df in [today_cut, lastweek_cut]:
+    df["BusinessHour"] = df["Hour"].apply(map_business_hour)
 
 # ---------------- TIME FILTER ---------------- #
 
 current_hour = now.hour
 cutoff_hour = current_hour + 24 if current_hour < 8 else current_hour - 1
 
-today_cut = today_cut[(today_cut["BusinessHour"] >= 8) & (today_cut["BusinessHour"] <= cutoff_hour)]
-lastweek_cut = lastweek_cut[(lastweek_cut["BusinessHour"] >= 8) & (lastweek_cut["BusinessHour"] <= cutoff_hour)]
+today_cut = today_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
+lastweek_cut = lastweek_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
+
+print("✅ Data Prepared Successfully")
 
 # ---------------- SESSION ---------------- #
 
@@ -318,7 +302,11 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
     df["LY Growth %"] = ((df["Today"]-df["Last Year"])/df["Last Year"].replace(0,1))*100
 
     growth = ((nt-nl)/max(nl,1))*100
-    lw_full = nl
+    lw_full = final_df[
+    (final_df["Data_Type"]=="Last Week") &
+    (final_df["Store Type"]=="COCO") &
+    (final_df["status"]=="Closed")
+    ]["Net Sales"].sum()
     eod = lw_full * (1 + growth/100)
 
     df["EOD Projection"] = ""
@@ -475,8 +463,14 @@ print("✅ All Analysis Completed")
 # 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
 # =========================================================
 
+pivot_df = final_df[
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+# ✅ MODIFY THIS LINE
 brand_source_pivot = pd.pivot_table(
-    final_df,
+    pivot_df,
     index="Brand",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
@@ -511,6 +505,11 @@ brand_source_pivot = brand_source_pivot.round(2)
 # =========================================================
 # 🔥 REGION x SOURCE
 # =========================================================
+
+pivot_df = final_df[
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
 
 region_source_pivot = pd.pivot_table(
     final_df,
