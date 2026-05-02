@@ -252,60 +252,46 @@ def get_session(h):
 today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
-# ---------------- KPI FUNCTION ---------------- #
+# =========================================================
+# 🔥 UNIVERSAL SAFE KPI BUILDER
+# =========================================================
 
-def build_kpi(df_today, df_lw, label=None):
+def safe_kpi_builder(df_today, df_lw, col_name, label):
 
-    def calc(df):
-        gross = pd.to_numeric(df.get("grossAmount", 0), errors="coerce").sum()
-        discount = pd.to_numeric(df.get("discountAmount", 0), errors="coerce").sum()
-        net = pd.to_numeric(df.get("Net Sales", 0), errors="coerce").sum()
-        txn = len(df)
+    try:
+        # Safety checks
+        if df_today is None or df_today.empty:
+            print(f"⚠️ {label} skipped (today empty)")
+            return pd.DataFrame()
 
-        return gross, discount, net, txn
+        if col_name not in df_today.columns:
+            print(f"⚠️ {label} skipped (column missing)")
+            return pd.DataFrame()
 
-    gt, dt, nt, tt = calc(df_today)
-    gl, dl, nl, tl = calc(df_lw)
+        unique_vals = df_today[col_name].dropna().unique()
 
-    data = pd.DataFrame({
-        "Parameters": [
-            "Gross Amount",
-            "Discount",
-            "Net Amount",
-            "Transaction",
-            "AOV",
-            "Discount %"
-        ],
-        "Today": [
-            gt,
-            dt,
-            nt,
-            tt,
-            nt / max(tt, 1),
-            (dt / max(gt, 1)) * 100
-        ],
-        "Last Week": [
-            gl,
-            dl,
-            nl,
-            tl,
-            nl / max(tl, 1),
-            (dl / max(gl, 1)) * 100
-        ]
-    })
+        if len(unique_vals) == 0:
+            print(f"⚠️ {label} skipped (no values)")
+            return pd.DataFrame()
 
-    data["Growth %"] = (
-        (data["Today"] - data["Last Week"])
-        / data["Last Week"].replace(0, 1)
-    ) * 100
+        frames = []
 
-    data = data.round(2)
+        for val in unique_vals:
+            temp = build_kpi(
+                df_today[df_today[col_name] == val],
+                df_lw[df_lw[col_name] == val],
+                (label, val)
+            )
+            frames.append(temp)
 
-    if label:
-        data.insert(0, label[0], label[1])
+        if len(frames) > 0:
+            return pd.concat(frames, ignore_index=True)
 
-    return data
+        return pd.DataFrame()
 
+    except Exception as e:
+        print(f"❌ Error in {label} analysis:", e)
+        return pd.DataFrame()
 # ---------------- INSIGHT ENGINE ---------------- #
 
 def generate_insight(overall_df):
@@ -386,7 +372,9 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
     lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
 
-# ---------------- OVERALL ANALYSIS ---------------- #
+# =========================================================
+# 🔥 OVERALL ANALYSIS
+# =========================================================
 
 overall = build_overall_extended(
     today_cut,
@@ -394,65 +382,46 @@ overall = build_overall_extended(
     last2week_cut,
     lastyear_cut
 )
+
 insight_text = generate_insight(overall)
 
 print("🧠 Insight:", insight_text)
 
-source_list = today_cut["Source Group"].dropna().unique()
 
-if len(source_list) > 0:
-    source_analysis = pd.concat([
-        build_kpi(
-            today_cut[today_cut["Source Group"] == s],
-            lastweek_cut[lastweek_cut["Source Group"] == s],
-            ("Source", s)
-        )
-        for s in source_list
-    ], ignore_index=True)
-else:
-    source_analysis = pd.DataFrame()
-    
-region_list = today_cut["Region"].dropna().unique()
+# =========================================================
+# 🔥 ALL ANALYSIS (SAFE & CLEAN)
+# =========================================================
 
-if len(region_list) > 0:
-    region_analysis = pd.concat([
-        build_kpi(
-            today_cut[today_cut["Region"] == r],
-            lastweek_cut[lastweek_cut["Region"] == r],
-            ("Region", r)
-        )
-        for r in region_list
-    ], ignore_index=True)
-else:
-    region_analysis = pd.DataFrame()
+source_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Source Group",
+    "Source"
+)
 
-brand_list = today_cut["Brand"].dropna().unique()
+region_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Region",
+    "Region"
+)
 
-if len(brand_list) > 0:
-    brand_analysis = pd.concat([
-        build_kpi(
-            today_cut[today_cut["Brand"] == b],
-            lastweek_cut[lastweek_cut["Brand"] == b],
-            ("Brand", b)
-        )
-        for b in brand_list
-    ], ignore_index=True)
-else:
-    brand_analysis = pd.DataFrame()
+brand_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Brand",
+    "Brand"
+)
 
-session_list = today_cut["Session"].dropna().unique()
+session_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Session",
+    "Session"
+)
 
-if len(session_list) > 0:
-    session_analysis = pd.concat([
-        build_kpi(
-            today_cut[today_cut["Session"] == s],
-            lastweek_cut[lastweek_cut["Session"] == s],
-            ("Session", s)
-        )
-        for s in session_list
-    ], ignore_index=True)
-else:
-    session_analysis = pd.DataFrame()
+print("✅ All Analysis Completed")
+
 # =========================================================
 # 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
 # =========================================================
@@ -624,6 +593,11 @@ def styled_html(df):
 
     return html   # ✅ IMPORTANT
 
+def safe_table(df, title):
+    if df is None or df.empty:
+        return f"<p>⚠️ No data available for {title}</p>"
+    return styled_html(df)
+
     # ----------SEND EMAIL------------------------#
 def send_email():
 
@@ -657,12 +631,9 @@ def send_email():
     <h2>Overall</h2>{styled_html(overall)}
 
     <h2>Source</h2>{safe_table(source_analysis, "Source")}
-
-    <h2>Region</h2>{styled_html(region_analysis)}
-
-    <h2>Brand</h2>{styled_html(brand_analysis)}
-
-    <h2>Session</h2>{styled_html(session_analysis)}
+    <h2>Region</h2>{safe_table(region_analysis, "Region")}
+    <h2>Brand</h2>{safe_table(brand_analysis, "Brand")}
+    <h2>Session</h2>{safe_table(session_analysis, "Session")}
 
     <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
 
