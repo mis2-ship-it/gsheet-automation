@@ -228,6 +228,21 @@ lastweek_cut = lastweek_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hou
 
 print("✅ Data Prepared Successfully")
 
+# ---------------- APPLY SAME TIME FILTER TO L2W & LY ---------------- #
+
+last2week_cut["BusinessHour"] = last2week_cut["Hour"].apply(map_business_hour)
+lastyear_cut["BusinessHour"] = lastyear_cut["Hour"].apply(map_business_hour)
+
+last2week_cut = last2week_cut[
+    (last2week_cut["BusinessHour"] >= 8) &
+    (last2week_cut["BusinessHour"] <= cutoff_hour)
+]
+
+lastyear_cut = lastyear_cut[
+    (lastyear_cut["BusinessHour"] >= 8) &
+    (lastyear_cut["BusinessHour"] <= cutoff_hour)
+]
+
 # ---------------- SESSION ---------------- #
 
 def get_session(h):
@@ -469,12 +484,21 @@ print("✅ All Analysis Completed")
 # =========================================================
 
 sources = ["In Store", "Swiggy", "Zomato"]
+params = ["Net Sales", "Txn", "Discount %"]
 
 rows = []
 
-for brand in final_df["Brand"].dropna().unique():
+# 👉 Pre-filter once (performance boost)
+base_df = final_df[
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+].copy()
 
-    for param in ["Net Sales", "Txn", "Discount %"]:
+for brand in base_df["Brand"].dropna().unique():
+
+    brand_df = base_df[base_df["Brand"] == brand]
+
+    for param in params:
 
         row = {
             "Brand": brand,
@@ -483,21 +507,20 @@ for brand in final_df["Brand"].dropna().unique():
 
         for s in sources:
 
+            src_df = brand_df[brand_df["Source Group"] == s]
+
             def get_vals(data_type):
-                temp = final_df[
-                    (final_df["Brand"] == brand) &
-                    (final_df["Source Group"] == s) &
-                    (final_df["Data_Type"] == data_type) &
-                    (final_df["Store Type"] == "COCO") &
-                    (final_df["status"] == "Closed")
-                ]
+                temp = src_df[src_df["Data_Type"] == data_type]
 
                 if temp.empty:
                     return 0, 0, 0
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(),1) * 100
+                gross = temp["grossAmount"].sum()
+                disc_amt = temp["discountAmount"].sum()
+
+                disc = (disc_amt / gross * 100) if gross != 0 else 0
 
                 return net, txn, disc
 
@@ -507,61 +530,74 @@ for brand in final_df["Brand"].dropna().unique():
             ly = get_vals("Last Year")
 
             def pick(metric, data):
-                return {
-                    "Net Sales": data[0],
-                    "Txn": data[1],
-                    "Discount %": data[2]
-                }[metric]
+                if metric == "Net Sales":
+                    return data[0]
+                elif metric == "Txn":
+                    return data[1]
+                else:
+                    return data[2]
 
             today_val = pick(param, t)
+            lw_val = pick(param, lw)
+            l2w_val = pick(param, l2w)
+            ly_val = pick(param, ly)
 
-            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw),1)) * 100
-            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w),1)) * 100
-            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly),1)) * 100
+            # 👉 Safe growth calc
+            def growth(a, b):
+                return ((a - b) / b * 100) if b != 0 else 0
 
-            row[f"{s} (Today)"] = round(today_val,2)
-            row[f"{s} LW %"] = round(lw_growth,2)
-            row[f"{s} L2W %"] = round(l2w_growth,2)
-            row[f"{s} YoY %"] = round(ly_growth,2)
+            row[f"{s} (Today)"] = round(today_val, 2)
+            row[f"{s} LW %"] = round(growth(today_val, lw_val), 2)
+            row[f"{s} L2W %"] = round(growth(today_val, l2w_val), 2)
+            row[f"{s} YoY %"] = round(growth(today_val, ly_val), 2)
 
         rows.append(row)
 
 brand_source_pivot = pd.DataFrame(rows)
 
+# 👉 Ensure no blank parameter
+brand_source_pivot["Parameter"] = brand_source_pivot["Parameter"].fillna("Unknown")
+
 print("✅ Brand Source Built")
 
-# =========================================================
-# 🔥 REGION x SOURCE (EXECUTIVE FORMAT)
-# =========================================================
+sources = ["In Store", "Swiggy", "Zomato"]
+params = ["Net Sales", "Txn", "Discount %"]
 
 rows = []
 
-for region in final_df["Region"].dropna().unique():
+# 👉 Pre-filter once (performance boost)
+base_df = final_df[
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+].copy()
 
-    for param in ["Net Sales", "Txn", "Discount %"]:
+for brand in base_df["Brand"].dropna().unique():
+
+    brand_df = base_df[base_df["Brand"] == brand]
+
+    for param in params:
 
         row = {
-            "Region": region,
+            "Brand": brand,
             "Parameter": param
         }
 
         for s in sources:
 
+            src_df = brand_df[brand_df["Source Group"] == s]
+
             def get_vals(data_type):
-                temp = final_df[
-                    (final_df["Region"] == region) &
-                    (final_df["Source Group"] == s) &
-                    (final_df["Data_Type"] == data_type) &
-                    (final_df["Store Type"] == "COCO") &
-                    (final_df["status"] == "Closed")
-                ]
+                temp = src_df[src_df["Data_Type"] == data_type]
 
                 if temp.empty:
                     return 0, 0, 0
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(),1) * 100
+                gross = temp["grossAmount"].sum()
+                disc_amt = temp["discountAmount"].sum()
+
+                disc = (disc_amt / gross * 100) if gross != 0 else 0
 
                 return net, txn, disc
 
@@ -571,28 +607,35 @@ for region in final_df["Region"].dropna().unique():
             ly = get_vals("Last Year")
 
             def pick(metric, data):
-                return {
-                    "Net Sales": data[0],
-                    "Txn": data[1],
-                    "Discount %": data[2]
-                }[metric]
+                if metric == "Net Sales":
+                    return data[0]
+                elif metric == "Txn":
+                    return data[1]
+                else:
+                    return data[2]
 
             today_val = pick(param, t)
+            lw_val = pick(param, lw)
+            l2w_val = pick(param, l2w)
+            ly_val = pick(param, ly)
 
-            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw),1)) * 100
-            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w),1)) * 100
-            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly),1)) * 100
+            # 👉 Safe growth calc
+            def growth(a, b):
+                return ((a - b) / b * 100) if b != 0 else 0
 
-            row[f"{s} (Today)"] = round(today_val,2)
-            row[f"{s} LW %"] = round(lw_growth,2)
-            row[f"{s} L2W %"] = round(l2w_growth,2)
-            row[f"{s} YoY %"] = round(ly_growth,2)
+            row[f"{s} (Today)"] = round(today_val, 2)
+            row[f"{s} LW %"] = round(growth(today_val, lw_val), 2)
+            row[f"{s} L2W %"] = round(growth(today_val, l2w_val), 2)
+            row[f"{s} YoY %"] = round(growth(today_val, ly_val), 2)
 
         rows.append(row)
 
-region_source_pivot = pd.DataFrame(rows)
+brand_source_pivot = pd.DataFrame(rows)
 
-print("✅ Region Source Built")
+# 👉 Ensure no blank parameter
+brand_source_pivot["Parameter"] = brand_source_pivot["Parameter"].fillna("Unknown")
+
+print("✅ Brand Source Built")
 
 # =========================================================
 # 🔥 TOP 10 STORES
