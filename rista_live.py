@@ -253,76 +253,125 @@ today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 # =========================================================
-# 🔥 UNIVERSAL SAFE KPI BUILDER
+# 🔥 KPI FUNCTION
 # =========================================================
 
-def safe_kpi_builder(df_today, df_lw, col_name, label):
+def build_kpi(df_today, df_lw, label=None):
+
+    def calc(df):
+        if df is None or df.empty:
+            return 0,0,0,0
+        return (
+            df["grossAmount"].sum(),
+            df["discountAmount"].sum(),
+            df["Net Sales"].sum(),
+            len(df)
+        )
+
+    gt, dt, nt, tt = calc(df_today)
+    gl, dl, nl, tl = calc(df_lw)
+
+    data = pd.DataFrame({
+        "Parameters": ["Gross","Discount","Net","Txn","AOV","Discount %"],
+        "Today": [gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
+        "Last Week": [gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100]
+    })
+
+    data["Growth %"] = ((data["Today"]-data["Last Week"])/data["Last Week"].replace(0,1))*100
+
+    if label:
+        data.insert(0,label[0],label[1])
+
+    return data.round(2)
+
+# =========================================================
+# 🔥 OVERALL EXTENDED
+# =========================================================
+
+def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
+
+    def calc(df):
+        if df is None or df.empty:
+            return 0,0,0,0
+        return (
+            df["grossAmount"].sum(),
+            df["discountAmount"].sum(),
+            df["Net Sales"].sum(),
+            len(df)
+        )
+
+    gt,dt,nt,tt = calc(today_df)
+    gl,dl,nl,tl = calc(lw_df)
+    g2,d2,n2,t2 = calc(l2w_df)
+    gy,dy,ny,ty = calc(ly_df)
+
+    df = pd.DataFrame({
+        "Parameters":["Gross","Discount","Net","Txn","AOV","Discount %"],
+        "Today":[gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
+        "Last Week":[gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100],
+        "Last 2 Week":[g2,d2,n2,t2,n2/max(t2,1),d2/max(g2,1)*100],
+        "Last Year":[gy,dy,ny,ty,ny/max(ty,1),dy/max(gy,1)*100]
+    })
+
+    df["LW Growth %"] = ((df["Today"]-df["Last Week"])/df["Last Week"].replace(0,1))*100
+    df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"])/df["Last 2 Week"].replace(0,1))*100
+    df["LY Growth %"] = ((df["Today"]-df["Last Year"])/df["Last Year"].replace(0,1))*100
+
+    growth = ((nt-nl)/max(nl,1))*100
+    lw_full = nl
+    eod = lw_full * (1 + growth/100)
+
+    df["EOD Projection"] = ""
+    df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
+
+    return df.round(2)
+
+# =========================================================
+# 🔥 INSIGHT ENGINE
+# =========================================================
+
+def generate_insight(overall):
 
     try:
-        # Safety checks
-        if df_today is None or df_today.empty:
-            print(f"⚠️ {label} skipped (today empty)")
-            return pd.DataFrame()
+        row = overall[overall["Parameters"]=="Net"].iloc[0]
 
-        if col_name not in df_today.columns:
-            print(f"⚠️ {label} skipped (column missing)")
-            return pd.DataFrame()
+        lw = row["LW Growth %"]
+        ly = row["LY Growth %"]
 
-        unique_vals = df_today[col_name].dropna().unique()
+        text = f"{lw:+.1f}% vs LW, {ly:+.1f}% vs LY"
 
-        if len(unique_vals) == 0:
-            print(f"⚠️ {label} skipped (no values)")
-            return pd.DataFrame()
+        if lw>0 and ly<0:
+            text += " → ⚠️ slowdown"
+        elif lw>0 and ly>0:
+            text += " → 🚀 strong growth"
+        elif lw<0:
+            text += " → 🔻 decline"
 
-        frames = []
-
-        for val in unique_vals:
-            temp = build_kpi(
-                df_today[df_today[col_name] == val],
-                df_lw[df_lw[col_name] == val],
-                (label, val)
-            )
-            frames.append(temp)
-
-        if len(frames) > 0:
-            return pd.concat(frames, ignore_index=True)
-
-        return pd.DataFrame()
-
-    except Exception as e:
-        print(f"❌ Error in {label} analysis:", e)
-        return pd.DataFrame()
-# ---------------- INSIGHT ENGINE ---------------- #
-
-def generate_insight(overall_df):
-
-    try:
-        net_row = overall_df[overall_df["Parameters"]=="Net"].iloc[0]
-
-        lw = net_row["LW Growth %"]
-        ly = net_row["LY Growth %"]
-        l2w = net_row["L2W Growth %"]
-
-        insight = f"{lw:+.1f}% vs LW, {ly:+.1f}% vs LY"
-
-        # 🔥 Business logic
-        if lw > 0 and ly < 0:
-            insight += " → ⚠️ Growth vs last week but below last year (Slowdown)"
-        elif lw < 0 and ly < 0:
-            insight += " → 🔻 Consistent decline"
-        elif lw > 0 and ly > 0:
-            insight += " → 🚀 Strong growth"
-        elif lw < 0 and ly > 0:
-            insight += " → ⚠️ Short-term dip but yearly positive"
-
-        # Extra signal
-        if l2w < 0:
-            insight += " | Weak 2-week trend"
-
-        return insight
-
+        return text
     except:
         return "Insight not available"
+
+# =========================================================
+# 🔥 SAFE ANALYSIS BUILDER
+# =========================================================
+
+def safe_kpi_builder(df_today, df_lw, col, label):
+
+    if df_today is None or df_today.empty or col not in df_today.columns:
+        return pd.DataFrame()
+
+    vals = df_today[col].dropna().unique()
+
+    frames = []
+
+    for v in vals:
+        frames.append(build_kpi(
+            df_today[df_today[col]==v],
+            df_lw[df_lw[col]==v],
+            (label,v)
+        ))
+
+    return pd.concat(frames,ignore_index=True) if frames else pd.DataFrame()
 
 # ---------------- SUMMARY ---------------- #
 
