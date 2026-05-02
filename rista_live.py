@@ -526,10 +526,10 @@ top_stores = top_stores.round(2)
 # =========================================================
 
 print("🔍 Brand Source Check")
-print(brand_source.head())
+print(brand_source_pivot.head())
 
 print("🔍 Region Source Check")
-print(region_source.head())
+print(region_source_pivot.head())
 
 print("🔍 Top Stores Check")
 print(top_stores.head())
