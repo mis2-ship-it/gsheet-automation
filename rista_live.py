@@ -123,6 +123,12 @@ def fetch_sales(day):
 today_df = fetch_sales(today)
 lastweek_df = fetch_sales(last_week)
 
+last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
+
+last2week_df = fetch_sales(last2week)
+lastyear_df = fetch_sales(last_year)
+
 if today_df.empty:
     print("❌ No today data")
     exit()
@@ -151,7 +157,15 @@ for df in [today_df, lastweek_df]:
 today_df["Data_Type"] = "Today"
 lastweek_df["Data_Type"] = "Last Week"
 
-final_df = pd.concat([today_df, lastweek_df], ignore_index=True)
+last2week_df["Data_Type"] = "Last 2 Week"
+lastyear_df["Data_Type"] = "Last Year"
+
+final_df = pd.concat([
+    today_df,
+    lastweek_df,
+    last2week_df,
+    lastyear_df
+], ignore_index=True)
 
 # ---------------- MAPPING ---------------- #
 
@@ -197,6 +211,18 @@ lastweek_cut = final_df[
     (final_df["Store Type"] == "COCO") &
     (final_df["status"] == "Closed")
 ].copy()
+
+last2week_cut = final_df[
+    (final_df["Data_Type"] == "Last 2 Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastyear_cut = final_df[
+    (final_df["Data_Type"] == "Last Year") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
 
 # ---------------- BUSINESS HOUR ---------------- #
 
@@ -279,7 +305,39 @@ def build_kpi(df_today, df_lw, label=None):
         data.insert(0, label[0], label[1])
 
     return data
-    
+
+# ---------------- INSIGHT ENGINE ---------------- #
+
+def generate_insight(overall_df):
+
+    try:
+        net_row = overall_df[overall_df["Parameters"]=="Net"].iloc[0]
+
+        lw = net_row["LW Growth %"]
+        ly = net_row["LY Growth %"]
+        l2w = net_row["L2W Growth %"]
+
+        insight = f"{lw:+.1f}% vs LW, {ly:+.1f}% vs LY"
+
+        # 🔥 Business logic
+        if lw > 0 and ly < 0:
+            insight += " → ⚠️ Growth vs last week but below last year (Slowdown)"
+        elif lw < 0 and ly < 0:
+            insight += " → 🔻 Consistent decline"
+        elif lw > 0 and ly > 0:
+            insight += " → 🚀 Strong growth"
+        elif lw < 0 and ly > 0:
+            insight += " → ⚠️ Short-term dip but yearly positive"
+
+        # Extra signal
+        if l2w < 0:
+            insight += " | Weak 2-week trend"
+
+        return insight
+
+    except:
+        return "Insight not available"
+
 # ---------------- SUMMARY ---------------- #
 
 today_total = today_cut["Net Sales"].sum()
@@ -330,7 +388,15 @@ hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
 
 # ---------------- OVERALL ANALYSIS ---------------- #
 
-overall = build_kpi(today_cut, lastweek_cut)
+overall = build_overall_extended(
+    today_cut,
+    lastweek_cut,
+    last2week_cut,
+    lastyear_cut
+)
+insight_text = generate_insight(overall)
+
+print("🧠 Insight:", insight_text)
 
 source_analysis = pd.concat([
     build_kpi(today_cut[today_cut["Source Group"]==s],
@@ -554,9 +620,12 @@ def send_email():
 
     # ✅ BODY
     body = f"""
-    <h3>📊 Data Till {report_time.strftime('%I:%M %p')}</h3>
+    <h2>📊 Executive Summary</h2>
+    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
 
-    <h2>Summary</h2>{styled_html(summary)}
+    <p style="font-size:14px;font-weight:bold;color:#333;">
+    🧠 {insight_text}
+    </p>
 
     <h2>Overall</h2>{styled_html(overall)}
 
