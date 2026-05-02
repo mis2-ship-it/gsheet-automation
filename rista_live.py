@@ -309,7 +309,7 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
     ]["Net Sales"].sum()
     eod = lw_full * (1 + growth/100)
 
-    df["EOD Projection"] = ""
+    df["EOD Projection"] = 0.0
     df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
 
     return df.round(2)
