@@ -582,31 +582,26 @@ brand_source_pivot["Parameter"] = brand_source_pivot["Parameter"].fillna("Unknow
 
 print("✅ Brand Source Built")
 
-sources = ["In Store", "Swiggy", "Zomato"]
-params = ["Net Sales", "Txn", "Discount %"]
+# =========================================================
+# 🔥 REGION x SOURCE (EXECUTIVE FORMAT - FIXED)
+# =========================================================
 
 rows = []
 
-# 👉 Pre-filter once (performance boost)
-base_df = final_df[
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-].copy()
+for region in base_df["Region"].dropna().unique():
 
-for brand in base_df["Brand"].dropna().unique():
-
-    brand_df = base_df[base_df["Brand"] == brand]
+    region_df = base_df[base_df["Region"] == region]
 
     for param in params:
 
         row = {
-            "Brand": brand,
+            "Region": region,
             "Parameter": param
         }
 
         for s in sources:
 
-            src_df = brand_df[brand_df["Source Group"] == s]
+            src_df = region_df[region_df["Source Group"] == s]
 
             def get_vals(data_type):
                 temp = src_df[src_df["Data_Type"] == data_type]
@@ -641,7 +636,6 @@ for brand in base_df["Brand"].dropna().unique():
             l2w_val = pick(param, l2w)
             ly_val = pick(param, ly)
 
-            # 👉 Safe growth calc
             def growth(a, b):
                 return ((a - b) / b * 100) if b != 0 else 0
 
@@ -652,12 +646,11 @@ for brand in base_df["Brand"].dropna().unique():
 
         rows.append(row)
 
-brand_source_pivot = pd.DataFrame(rows)
+region_source_pivot = pd.DataFrame(rows)
 
-# 👉 Ensure no blank parameter
-brand_source_pivot["Parameter"] = brand_source_pivot["Parameter"].fillna("Unknown")
+region_source_pivot["Parameter"] = region_source_pivot["Parameter"].fillna("Unknown")
 
-print("✅ Brand Source Built")
+print("✅ Region Source Built")
 
 # =========================================================
 # 🔥 TOP 10 STORES
