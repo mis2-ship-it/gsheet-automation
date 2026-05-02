@@ -465,38 +465,134 @@ session_analysis = safe_kpi_builder(
 print("✅ All Analysis Completed")
 
 # =========================================================
-# 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
+# 🔥 BRAND x SOURCE (EXECUTIVE FORMAT)
 # =========================================================
 
-brand_source_pivot = pd.pivot_table(
-    final_df[
-        (final_df["Store Type"]=="COCO") &
-        (final_df["status"]=="Closed") &
-        (final_df["Data_Type"].isin(["Today","Last Week"]))
-    ],
-    index="Brand",
-    columns=["Source Group", "Data_Type"],
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
+sources = ["In Store", "Swiggy", "Zomato"]
+
+rows = []
+
+for brand in final_df["Brand"].dropna().unique():
+
+    for param in ["Net Sales", "Txn", "Discount %"]:
+
+        row = {
+            "Brand": brand,
+            "Parameter": param
+        }
+
+        for s in sources:
+
+            def get_vals(data_type):
+                temp = final_df[
+                    (final_df["Brand"] == brand) &
+                    (final_df["Source Group"] == s) &
+                    (final_df["Data_Type"] == data_type) &
+                    (final_df["Store Type"] == "COCO") &
+                    (final_df["status"] == "Closed")
+                ]
+
+                if temp.empty:
+                    return 0, 0, 0
+
+                net = temp["Net Sales"].sum()
+                txn = len(temp)
+                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(),1) * 100
+
+                return net, txn, disc
+
+            t = get_vals("Today")
+            lw = get_vals("Last Week")
+            l2w = get_vals("Last 2 Week")
+            ly = get_vals("Last Year")
+
+            def pick(metric, data):
+                return {
+                    "Net Sales": data[0],
+                    "Txn": data[1],
+                    "Discount %": data[2]
+                }[metric]
+
+            today_val = pick(param, t)
+
+            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw),1)) * 100
+            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w),1)) * 100
+            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly),1)) * 100
+
+            row[f"{s} (Today)"] = round(today_val,2)
+            row[f"{s} LW %"] = round(lw_growth,2)
+            row[f"{s} L2W %"] = round(l2w_growth,2)
+            row[f"{s} YoY %"] = round(ly_growth,2)
+
+        rows.append(row)
+
+brand_source_pivot = pd.DataFrame(rows)
+
+print("✅ Brand Source Built")
+
 # =========================================================
-# 🔥 REGION x SOURCE
+# 🔥 REGION x SOURCE (EXECUTIVE FORMAT)
 # =========================================================
 
-region_source_pivot = pd.pivot_table(
-    final_df[
-        (final_df["Store Type"]=="COCO") &
-        (final_df["status"]=="Closed") &
-        (final_df["Data_Type"].isin(["Today","Last Week"]))
-    ],
-    index="Region",
-    columns=["Source Group", "Data_Type"],
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
+rows = []
 
+for region in final_df["Region"].dropna().unique():
+
+    for param in ["Net Sales", "Txn", "Discount %"]:
+
+        row = {
+            "Region": region,
+            "Parameter": param
+        }
+
+        for s in sources:
+
+            def get_vals(data_type):
+                temp = final_df[
+                    (final_df["Region"] == region) &
+                    (final_df["Source Group"] == s) &
+                    (final_df["Data_Type"] == data_type) &
+                    (final_df["Store Type"] == "COCO") &
+                    (final_df["status"] == "Closed")
+                ]
+
+                if temp.empty:
+                    return 0, 0, 0
+
+                net = temp["Net Sales"].sum()
+                txn = len(temp)
+                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(),1) * 100
+
+                return net, txn, disc
+
+            t = get_vals("Today")
+            lw = get_vals("Last Week")
+            l2w = get_vals("Last 2 Week")
+            ly = get_vals("Last Year")
+
+            def pick(metric, data):
+                return {
+                    "Net Sales": data[0],
+                    "Txn": data[1],
+                    "Discount %": data[2]
+                }[metric]
+
+            today_val = pick(param, t)
+
+            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw),1)) * 100
+            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w),1)) * 100
+            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly),1)) * 100
+
+            row[f"{s} (Today)"] = round(today_val,2)
+            row[f"{s} LW %"] = round(lw_growth,2)
+            row[f"{s} L2W %"] = round(l2w_growth,2)
+            row[f"{s} YoY %"] = round(ly_growth,2)
+
+        rows.append(row)
+
+region_source_pivot = pd.DataFrame(rows)
+
+print("✅ Region Source Built")
 
 # =========================================================
 # 🔥 TOP 10 STORES
