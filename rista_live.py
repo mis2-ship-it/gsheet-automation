@@ -643,9 +643,9 @@ def send_email():
 
     <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
 
-    <h2>Brand x Source</h2>{styled_html(brand_source)}
+    <h2>Brand x Source</h2>{styled_html(brand_source_pivot)}
 
-    <h2>Region x Source</h2>{styled_html(region_source)}
+    <h2>Region x Source</h2>{styled_html(region_source_pivot)}
 
     <h2>Top 10 Stores</h2>{styled_html(top_stores)}
     """
