@@ -117,12 +117,16 @@ def fetch_sales(day):
 
 today_df = fetch_sales(today)
 lastweek_df = fetch_sales(last_week)
-last2week_df = fetch_sales(last2week)
-lastyear_df = fetch_sales(last_year)
 
 if today_df.empty:
     print("❌ No today data")
     exit()
+
+last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
+
+last2week_df = fetch_sales(last2week)
+lastyear_df = fetch_sales(last_year)
 
 # ---------------- DATE CLEAN ---------------- #
 
@@ -345,21 +349,22 @@ def generate_insight(overall):
 
 def safe_kpi_builder(df_today, df_lw, col, label):
 
-    if df_today is None or df_today.empty or col not in df_today.columns:
+    if df_today.empty or col not in df_today.columns:
         return pd.DataFrame()
 
-    vals = df_today[col].dropna().unique()
+    grouped_today = df_today.groupby(col)
+    grouped_lw = df_lw.groupby(col)
 
     frames = []
 
-    for v in vals:
-        frames.append(build_kpi(
-            df_today[df_today[col]==v],
-            df_lw[df_lw[col]==v],
-            (label,v)
-        ))
+    for key in grouped_today.groups.keys():
 
-    return pd.concat(frames,ignore_index=True) if frames else pd.DataFrame()
+        t_df = grouped_today.get_group(key)
+        lw_df = grouped_lw.get_group(key) if key in grouped_lw.groups else pd.DataFrame()
+
+        frames.append(build_kpi(t_df, lw_df, (label, key)))
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 # ---------------- SUMMARY ---------------- #
 
@@ -463,81 +468,34 @@ print("✅ All Analysis Completed")
 # 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
 # =========================================================
 
-pivot_df = final_df[
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-# ✅ MODIFY THIS LINE
 brand_source_pivot = pd.pivot_table(
-    pivot_df,
+    final_df[
+        (final_df["Store Type"]=="COCO") &
+        (final_df["status"]=="Closed") &
+        (final_df["Data_Type"].isin(["Today","Last Week"]))
+    ],
     index="Brand",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
     aggfunc="sum",
     fill_value=0
 )
-
-# Flatten columns
-brand_source_pivot.columns = [
-    f"{col[0]} - {col[1]}" for col in brand_source_pivot.columns
-]
-
-brand_source_pivot = brand_source_pivot.reset_index()
-
-# ✅ ADD GROWTH %
-sources = ["In Store", "Swiggy", "Zomato", "Ownly", "Others"]
-
-for s in sources:
-    today_col = f"{s} - Today"
-    lw_col = f"{s} - Last Week"
-
-    if today_col in brand_source_pivot.columns and lw_col in brand_source_pivot.columns:
-        brand_source_pivot[f"{s} - Growth %"] = (
-            (brand_source_pivot[today_col] - brand_source_pivot[lw_col])
-            / brand_source_pivot[lw_col].replace(0, 1)
-        ) * 100
-
-# Optional rounding
-brand_source_pivot = brand_source_pivot.round(2)
-
-
 # =========================================================
 # 🔥 REGION x SOURCE
 # =========================================================
 
-pivot_df = final_df[
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
 region_source_pivot = pd.pivot_table(
-    final_df,
+    final_df[
+        (final_df["Store Type"]=="COCO") &
+        (final_df["status"]=="Closed") &
+        (final_df["Data_Type"].isin(["Today","Last Week"]))
+    ],
     index="Region",
     columns=["Source Group", "Data_Type"],
     values="Net Sales",
     aggfunc="sum",
     fill_value=0
 )
-
-region_source_pivot.columns = [
-    f"{col[0]} - {col[1]}" for col in region_source_pivot.columns
-]
-
-region_source_pivot = region_source_pivot.reset_index()
-
-# ✅ ADD GROWTH %
-for s in sources:
-    today_col = f"{s} - Today"
-    lw_col = f"{s} - Last Week"
-
-    if today_col in region_source_pivot.columns and lw_col in region_source_pivot.columns:
-        region_source_pivot[f"{s} - Growth %"] = (
-            (region_source_pivot[today_col] - region_source_pivot[lw_col])
-            / region_source_pivot[lw_col].replace(0, 1)
-        ) * 100
-
-region_source_pivot = region_source_pivot.round(2)
 
 
 # =========================================================
