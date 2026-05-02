@@ -78,26 +78,27 @@ print("🏪 Branch count:", len(branches))
 
 # ---------------- FETCH SALES ---------------- #
 
-def fetch_sales(day):
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def fetch_branch_data(branch, day):
     all_data = []
+    last_key = None
 
-    for b in branches:
-        last_key = None
+    while True:
+        params = {"branch": branch, "day": day}
+        if last_key:
+            params["lastKey"] = last_key
 
-        while True:
-            params = {"branch": b, "day": day}
-            if last_key:
-                params["lastKey"] = last_key
-
+        try:
             r = requests.get(
                 "https://api.ristaapps.com/v1/sales/summary",
                 headers=headers(),
                 params=params,
-                timeout=30
+                timeout=20
             )
 
             if r.status_code != 200:
-                break
+                return pd.DataFrame()
 
             js = r.json()
             data = js.get("data", [])
@@ -111,7 +112,28 @@ def fetch_sales(day):
             if not last_key:
                 break
 
+        except:
+            return pd.DataFrame()
+
     return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+
+
+def fetch_sales(day):
+
+    results = []
+
+    # 🔥 THREAD CONTROL (IMPORTANT)
+    max_threads = 10   # safe limit (don’t exceed 15 for API safety)
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        futures = [executor.submit(fetch_branch_data, b, day) for b in branches]
+
+        for future in as_completed(futures):
+            df = future.result()
+            if df is not None and not df.empty:
+                results.append(df)
+
+    return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
 
 # ---------------- RUN ---------------- #
 
