@@ -398,34 +398,61 @@ insight_text = generate_insight(overall)
 
 print("🧠 Insight:", insight_text)
 
-source_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Source Group"]==s],
-              lastweek_cut[lastweek_cut["Source Group"]==s],
-              ("Source", s))
-    for s in today_cut["Source Group"].dropna().unique()
-], ignore_index=True)
+source_list = today_cut["Source Group"].dropna().unique()
 
-region_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Region"]==r],
-              lastweek_cut[lastweek_cut["Region"]==r],
-              ("Region", r))
-    for r in today_cut["Region"].dropna().unique()
-], ignore_index=True)
+if len(source_list) > 0:
+    source_analysis = pd.concat([
+        build_kpi(
+            today_cut[today_cut["Source Group"] == s],
+            lastweek_cut[lastweek_cut["Source Group"] == s],
+            ("Source", s)
+        )
+        for s in source_list
+    ], ignore_index=True)
+else:
+    source_analysis = pd.DataFrame()
+    
+region_list = today_cut["Region"].dropna().unique()
 
-brand_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Brand"]==b],
-              lastweek_cut[lastweek_cut["Brand"]==b],
-              ("Brand", b))
-    for b in today_cut["Brand"].dropna().unique()
-], ignore_index=True)
+if len(region_list) > 0:
+    region_analysis = pd.concat([
+        build_kpi(
+            today_cut[today_cut["Region"] == r],
+            lastweek_cut[lastweek_cut["Region"] == r],
+            ("Region", r)
+        )
+        for r in region_list
+    ], ignore_index=True)
+else:
+    region_analysis = pd.DataFrame()
 
-session_analysis = pd.concat([
-    build_kpi(today_cut[today_cut["Session"]==s],
-              lastweek_cut[lastweek_cut["Session"]==s],
-              ("Session", s))
-    for s in today_cut["Session"].dropna().unique()
-], ignore_index=True)
+brand_list = today_cut["Brand"].dropna().unique()
 
+if len(brand_list) > 0:
+    brand_analysis = pd.concat([
+        build_kpi(
+            today_cut[today_cut["Brand"] == b],
+            lastweek_cut[lastweek_cut["Brand"] == b],
+            ("Brand", b)
+        )
+        for b in brand_list
+    ], ignore_index=True)
+else:
+    brand_analysis = pd.DataFrame()
+
+session_list = today_cut["Session"].dropna().unique()
+
+if len(session_list) > 0:
+    session_analysis = pd.concat([
+        build_kpi(
+            today_cut[today_cut["Session"] == s],
+            lastweek_cut[lastweek_cut["Session"] == s],
+            ("Session", s)
+        )
+        for s in session_list
+    ], ignore_index=True)
+else:
+    session_analysis = pd.DataFrame()
 # =========================================================
 # 🔥 BRAND x SOURCE (CORRECT STRUCTURE + GROWTH)
 # =========================================================
@@ -629,7 +656,7 @@ def send_email():
 
     <h2>Overall</h2>{styled_html(overall)}
 
-    <h2>Source</h2>{styled_html(source_analysis)}
+    <h2>Source</h2>{safe_table(source_analysis, "Source")}
 
     <h2>Region</h2>{styled_html(region_analysis)}
 
