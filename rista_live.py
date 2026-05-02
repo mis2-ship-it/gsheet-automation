@@ -230,27 +230,55 @@ lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
 def build_kpi(df_today, df_lw, label=None):
 
-    gt = df_today["grossAmount"].sum()
-    gl = df_lw["grossAmount"].sum()
+    def calc(df):
+        gross = pd.to_numeric(df.get("grossAmount", 0), errors="coerce").sum()
+        discount = pd.to_numeric(df.get("discountAmount", 0), errors="coerce").sum()
+        net = pd.to_numeric(df.get("Net Sales", 0), errors="coerce").sum()
+        txn = len(df)
 
-    nt = df_today["Net Sales"].sum()
-    nl = df_lw["Net Sales"].sum()
+        return gross, discount, net, txn
 
-    tt = len(df_today)
-    tl = len(df_lw)
+    gt, dt, nt, tt = calc(df_today)
+    gl, dl, nl, tl = calc(df_lw)
 
     data = pd.DataFrame({
-        "Parameters": ["Gross","Net","Txn","AOV"],
-        "Today": [gt, nt, tt, nt/max(tt,1)],
-        "Last Week": [gl, nl, tl, nl/max(tl,1)]
+        "Parameters": [
+            "Gross Amount",
+            "Discount",
+            "Net Amount",
+            "Transaction",
+            "AOV",
+            "Discount %"
+        ],
+        "Today": [
+            gt,
+            dt,
+            nt,
+            tt,
+            nt / max(tt, 1),
+            (dt / max(gt, 1)) * 100
+        ],
+        "Last Week": [
+            gl,
+            dl,
+            nl,
+            tl,
+            nl / max(tl, 1),
+            (dl / max(gl, 1)) * 100
+        ]
     })
 
-    data["Growth %"] = ((data["Today"] - data["Last Week"]) / data["Last Week"].replace(0,1))*100
+    data["Growth %"] = (
+        (data["Today"] - data["Last Week"])
+        / data["Last Week"].replace(0, 1)
+    ) * 100
+
+    data = data.round(2)
 
     if label:
         data.insert(0, label[0], label[1])
 
-    return data.round(2)
+    return data
     
 # ---------------- SUMMARY ---------------- #
 
