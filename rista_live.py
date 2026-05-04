@@ -359,7 +359,7 @@ def prepare_data_cuts(final_df):
 # 📈 OVERALL EXTENDED FUNCTION
 # =========================================================
 
-def build_overall_extended(today_df, lw_df, l2w_df, ly_df, final_df):
+def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
 
     def calc(df):
         if df is None or df.empty:
