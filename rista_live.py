@@ -309,11 +309,57 @@ def build_kpi(df_today, df_lw, label=None):
 
     return data.round(2)
 
+
 # =========================================================
-# 🔥 OVERALL EXTENDED
+# 📅 DATE LOGIC (CRITICAL FIX)
 # =========================================================
 
-def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
+def get_same_weekday_last_year(date):
+    last_year_date = date - pd.DateOffset(years=1)
+    
+    # Align weekday
+    while last_year_date.weekday() != date.weekday():
+        last_year_date += timedelta(days=1)
+    
+    return last_year_date
+
+
+# =========================================================
+# 📊 BUILD DATA CUTS
+# =========================================================
+
+def prepare_data_cuts(final_df):
+
+    final_df["Date"] = pd.to_datetime(final_df["Date"])
+
+    today = final_df["Date"].max()
+
+    # Standard comparisons
+    lw_date = today - timedelta(days=7)
+    l2w_date = today - timedelta(days=14)
+
+    # 🔥 FIXED YoY DATE
+    ly_date = get_same_weekday_last_year(today)
+
+    # Common filter
+    base_filter = (
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    )
+
+    today_df = final_df[(final_df["Date"] == today) & base_filter]
+    lw_df    = final_df[(final_df["Date"] == lw_date) & base_filter]
+    l2w_df   = final_df[(final_df["Date"] == l2w_date) & base_filter]
+    ly_df    = final_df[(final_df["Date"] == ly_date) & base_filter]
+
+    return today_df, lw_df, l2w_df, ly_df, today
+
+
+# =========================================================
+# 📈 OVERALL EXTENDED FUNCTION
+# =========================================================
+
+def build_overall_extended(today_df, lw_df, l2w_df, ly_df, final_df):
 
     def calc(df):
         if df is None or df.empty:
@@ -338,22 +384,48 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
         "Last Year":[gy,dy,ny,ty,ny/max(ty,1),dy/max(gy,1)*100]
     })
 
-    df["LW Growth %"] = ((df["Today"]-df["Last Week"])/df["Last Week"].replace(0,1))*100
-    df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"])/df["Last 2 Week"].replace(0,1))*100
-    df["LY Growth %"] = ((df["Today"]-df["Last Year"])/df["Last Year"].replace(0,1))*100
+    # Growth calculations
+    df["LW Growth %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
+    df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
+    df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
 
-    growth = ((nt-nl)/max(nl,1))*100
+    # =========================================================
+    # 🔮 EOD PROJECTION
+    # =========================================================
+
+    growth = ((nt - nl) / max(nl,1)) * 100
+
     lw_full = final_df[
-    (final_df["Data_Type"]=="Last Week") &
-    (final_df["Store Type"]=="COCO") &
-    (final_df["status"]=="Closed")
+        (final_df["Date"] == lw_df["Date"].max()) &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
     ]["Net Sales"].sum()
+
     eod = lw_full * (1 + growth/100)
 
     df["EOD Projection"] = 0.0
     df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
 
     return df.round(2)
+
+
+# =========================================================
+# 🔥 FINAL EXECUTION
+# =========================================================
+
+# Prepare cuts
+today_df, lw_df, l2w_df, ly_df, today = prepare_data_cuts(final_df)
+
+# Build report
+overall_df = build_overall_extended(
+    today_df,
+    lw_df,
+    l2w_df,
+    ly_df,
+    final_df
+)
+
+print(overall_df)
 
 # =========================================================
 # 🔥 INSIGHT ENGINE
@@ -681,6 +753,34 @@ top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
 
 top_stores = top_stores.round(2)
 
+# =========================================================
+# 🔥 BOTTOM 10 STORES
+# =========================================================
+
+bottom_stores = (
+    today_cut.groupby("branchName")
+    .agg(Today_Sales=("Net Sales", "sum"))
+    .sort_values("Today_Sales", ascending=True)  # 👈 change here
+    .head(10)
+)
+
+lw_store = (
+    lastweek_cut.groupby("branchName")
+    .agg(LW_Sales=("Net Sales", "sum"))
+)
+
+bottom_stores = bottom_stores.join(lw_store, how="left").fillna(0)
+
+bottom_stores["Growth %"] = (
+    (bottom_stores["Today_Sales"] - bottom_stores["LW_Sales"])
+    / bottom_stores["LW_Sales"].replace(0, 1)
+) * 100
+
+bottom_stores = bottom_stores.reset_index()
+bottom_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
+
+bottom_stores = bottom_stores.round(2)
+
 
 # =========================================================
 # 🔍 DEBUG (CORRECT VARIABLES)
@@ -694,6 +794,9 @@ print(region_source_pivot.head())
 
 print("🔍 Top Stores Check")
 print(top_stores.head())
+
+print("🔍 Bottom Stores Check")
+print(bottom_stores.head())
 
 
 # ---------------- PUSH ---------------- #
@@ -803,6 +906,8 @@ def send_email():
     <h2>Region x Source</h2>{styled_html(region_source_pivot)}
 
     <h2>Top 10 Stores</h2>{styled_html(top_stores)}
+
+    <h2>Bottom 10 Stores</h2>{styled_html(bottom_stores)}
     """
 
     msg.attach(MIMEText(body, "html"))
@@ -831,6 +936,7 @@ push("Session", session_analysis)
 push("Brand_Source", brand_source_pivot)
 push("Region_Source", region_source_pivot)
 push("Top_Stores", top_stores)
+push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
 
 
