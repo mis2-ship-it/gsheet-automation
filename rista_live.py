@@ -617,34 +617,33 @@ for brand in base_df["Brand"].dropna().unique():
 
     for param in params:
 
-        row = {
-            "Brand": brand,
-            "Parameter": param
-        }
+        row = {}
+        row["Brand"] = brand
+        row["Parameter"] = str(param)   # force string
 
         for s in sources:
 
             src_df = brand_df[brand_df["Source Group"] == s]
 
-            def get_vals(data_type):
-                temp = src_df[src_df["Data_Type"] == data_type]
+      def get_vals(data_type, base_df):
 
-                if temp.empty:
-                    return 0, 0, 0
+    temp = base_df[
+        (base_df["Source Group"] == s)
+    ]
 
-                net = temp["Net Sales"].sum()
-                txn = len(temp)
-                gross = temp["grossAmount"].sum()
-                disc_amt = temp["discountAmount"].sum()
+    if temp.empty:
+        return 0, 0, 0
 
-                disc = (disc_amt / gross * 100) if gross != 0 else 0
+    net = temp["Net Sales"].sum()
+    txn = len(temp)
+    disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
 
-                return net, txn, disc
+    return net, txn, disc
 
-            t = get_vals("Today")
-            lw = get_vals("Last Week")
-            l2w = get_vals("Last 2 Week")
-            ly = get_vals("Last Year")
+t = get_vals("Today", today_cut[today_cut["Brand"] == brand])
+lw = get_vals("Last Week", lastweek_cut[lastweek_cut["Brand"] == brand])
+l2w = get_vals("Last 2 Week", last2week_cut[last2week_cut["Brand"] == brand])
+ly = get_vals("Last Year", lastyear_cut[lastyear_cut["Brand"] == brand])
 
             def pick(metric, data):
                 if metric == "Net Sales":
@@ -689,34 +688,33 @@ for region in base_df["Region"].dropna().unique():
 
     for param in params:
 
-        row = {
-            "Region": region,
-            "Parameter": param
-        }
+row = {}
+row["Region"] = brand
+row["Parameter"] = str(param)   # force string
 
         for s in sources:
 
             src_df = region_df[region_df["Source Group"] == s]
 
-            def get_vals(data_type):
-                temp = src_df[src_df["Data_Type"] == data_type]
+       def get_vals(data_type, base_df):
 
-                if temp.empty:
-                    return 0, 0, 0
+    temp = base_df[
+        (base_df["Source Group"] == s)
+    ]
 
-                net = temp["Net Sales"].sum()
-                txn = len(temp)
-                gross = temp["grossAmount"].sum()
-                disc_amt = temp["discountAmount"].sum()
+    if temp.empty:
+        return 0, 0, 0
 
-                disc = (disc_amt / gross * 100) if gross != 0 else 0
+    net = temp["Net Sales"].sum()
+    txn = len(temp)
+    disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
 
-                return net, txn, disc
+    return net, txn, disc
 
-            t = get_vals("Today")
-            lw = get_vals("Last Week")
-            l2w = get_vals("Last 2 Week")
-            ly = get_vals("Last Year")
+t = get_vals("Today", today_cut[today_cut["Region"] == region])
+lw = get_vals("Last Week", lastweek_cut[lastweek_cut["Region"] == region])
+l2w = get_vals("Last 2 Week", last2week_cut[last2week_cut["Region"] == region])
+ly = get_vals("Last Year", lastyear_cut[lastyear_cut["Region"] == region])
 
             def pick(metric, data):
                 if metric == "Net Sales":
