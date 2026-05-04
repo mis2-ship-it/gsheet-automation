@@ -365,10 +365,10 @@ def generate_insight(overall):
         row = overall[overall["Parameters"]=="Net"].iloc[0]
 
         lw = row["LW Growth %"]
-        ly = row["L2W Growth %"]
+        l2w = row["L2W Growth %"]
         ly = row["LY Growth %"]
 
-        text = f"{lw:+.1f}% vs LW, {ly:+.1f}% vs L2W, {ly:+.1f}% vs LY"
+        text = f"{lw:+.1f}% vs LW, {l2w:+.1f}% vs L2W, {ly:+.1f}% vs LY"
 
         if lw>0 and ly<0:
             text += " → ⚠️ slowdown"
