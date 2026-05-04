@@ -1,4 +1,4 @@
-name: Cancellation Automation
+name: Run Script
 
 on:
   schedule:
@@ -23,5 +23,6 @@ jobs:
 
       - name: Run Script
         run: python cancellation.py
-        env:
-          RISTA_API_KEY: ${{ secrets.RISTA_API_KEY }}
+        env: 
+         GOOGLE_CREDS: ${{ secrets.GOOGLE_CREDS }}
+         RISTA_API_KEY: ${{ secrets.RISTA_API_KEY }}
