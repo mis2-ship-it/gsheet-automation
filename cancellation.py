@@ -3,10 +3,14 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 import smtplib
 from email.mime.text import MIMEText
+import json
 
+creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
+
+creds = Credentials.from_service_account_info(creds_dict)
 # =========================================================
 # 🔐 CONFIG
 # =========================================================
