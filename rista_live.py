@@ -601,71 +601,59 @@ print("✅ All Analysis Completed")
 # =========================================================
 
 sources = ["In Store", "Swiggy", "Zomato"]
-params = ["Net Sales", "Txn", "Discount %"]
 
 rows = []
 
-# 👉 Pre-filter once (performance boost)
-base_df = final_df[
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-].copy()
+for brand in final_df["Brand"].dropna().unique():
 
-for brand in base_df["Brand"].dropna().unique():
-
-    brand_df = base_df[base_df["Brand"] == brand]
-
-    for param in params:
+    for param in ["Net Sales", "Txn", "Discount %"]:
 
         row = {}
         row["Brand"] = brand
-        row["Parameter"] = str(param)   # force string
+        row["Parameter"] = str(param)
 
         for s in sources:
 
-            src_df = brand_df[brand_df["Source Group"] == s]
+            # ✅ FUNCTION MUST BE INSIDE LOOP (same indent level)
+            def get_vals(base_df):
 
-      def get_vals(data_type, base_df):
+                temp = base_df[
+                    (base_df["Brand"] == brand) &
+                    (base_df["Source Group"] == s)
+                ]
 
-    temp = base_df[
-        (base_df["Source Group"] == s)
-    ]
+                if temp.empty:
+                    return 0, 0, 0
 
-    if temp.empty:
-        return 0, 0, 0
+                net = temp["Net Sales"].sum()
+                txn = len(temp)
+                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
 
-    net = temp["Net Sales"].sum()
-    txn = len(temp)
-    disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+                return net, txn, disc
 
-    return net, txn, disc
-
-t = get_vals("Today", today_cut[today_cut["Brand"] == brand])
-lw = get_vals("Last Week", lastweek_cut[lastweek_cut["Brand"] == brand])
-l2w = get_vals("Last 2 Week", last2week_cut[last2week_cut["Brand"] == brand])
-ly = get_vals("Last Year", lastyear_cut[lastyear_cut["Brand"] == brand])
+            # ✅ USE CUT DATA (time-aligned)
+            t = get_vals(today_cut)
+            lw = get_vals(lastweek_cut)
+            l2w = get_vals(last2week_cut)
+            ly = get_vals(lastyear_cut)
 
             def pick(metric, data):
-                if metric == "Net Sales":
-                    return data[0]
-                elif metric == "Txn":
-                    return data[1]
-                else:
-                    return data[2]
+                return {
+                    "Net Sales": data[0],
+                    "Txn": data[1],
+                    "Discount %": data[2]
+                }[metric]
 
             today_val = pick(param, t)
-            lw_val = pick(param, lw)
-            l2w_val = pick(param, l2w)
-            ly_val = pick(param, ly)
 
-            # 👉 Safe growth calc
-            def growth(a, b):
-                return ((a - b) / b * 100) if b != 0 else 0
+            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw), 1)) * 100
+            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w), 1)) * 100
+            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly), 1)) * 100
 
             row[f"{s} (Today)"] = round(today_val, 2)
-            row[f"{s} LW %"] = round(growth(today_val, lw_val), 2)
-            row[f"{s} L2W %"] = round(growth(today_val, l2w_val), 2)
-            row[f"{s} YoY %"] = round(growth(today_val, ly_val), 2)
+            row[f"{s} LW %"] = round(lw_growth, 2)
+            row[f"{s} L2W %"] = round(l2w_growth, 2)
+            row[f"{s} YoY %"] = round(ly_growth, 2)
 
         rows.append(row)
 
@@ -680,62 +668,60 @@ print("✅ Brand Source Built")
 # 🔥 REGION x SOURCE (EXECUTIVE FORMAT - FIXED)
 # =========================================================
 
+sources = ["In Store", "Swiggy", "Zomato"]
+
 rows = []
 
-for region in base_df["Region"].dropna().unique():
+for region in final_df["Region"].dropna().unique():
 
-    region_df = base_df[base_df["Region"] == region]
+    for param in ["Net Sales", "Txn", "Discount %"]:
 
-    for param in params:
-
-row = {}
-row["Region"] = brand
-row["Parameter"] = str(param)   # force string
+        row = {}
+        row["Region"] = brand
+        row["Parameter"] = str(param)
 
         for s in sources:
 
-            src_df = region_df[region_df["Source Group"] == s]
+            # ✅ FUNCTION MUST BE INSIDE LOOP (same indent level)
+            def get_vals(base_df):
 
-       def get_vals(data_type, base_df):
+                temp = base_df[
+                    (base_df["Region"] == brand) &
+                    (base_df["Source Group"] == s)
+                ]
 
-    temp = base_df[
-        (base_df["Source Group"] == s)
-    ]
+                if temp.empty:
+                    return 0, 0, 0
 
-    if temp.empty:
-        return 0, 0, 0
+                net = temp["Net Sales"].sum()
+                txn = len(temp)
+                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
 
-    net = temp["Net Sales"].sum()
-    txn = len(temp)
-    disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+                return net, txn, disc
 
-    return net, txn, disc
-
-t = get_vals("Today", today_cut[today_cut["Region"] == region])
-lw = get_vals("Last Week", lastweek_cut[lastweek_cut["Region"] == region])
-l2w = get_vals("Last 2 Week", last2week_cut[last2week_cut["Region"] == region])
-ly = get_vals("Last Year", lastyear_cut[lastyear_cut["Region"] == region])
+            # ✅ USE CUT DATA (time-aligned)
+            t = get_vals(today_cut)
+            lw = get_vals(lastweek_cut)
+            l2w = get_vals(last2week_cut)
+            ly = get_vals(lastyear_cut)
 
             def pick(metric, data):
-                if metric == "Net Sales":
-                    return data[0]
-                elif metric == "Txn":
-                    return data[1]
-                else:
-                    return data[2]
+                return {
+                    "Net Sales": data[0],
+                    "Txn": data[1],
+                    "Discount %": data[2]
+                }[metric]
 
             today_val = pick(param, t)
-            lw_val = pick(param, lw)
-            l2w_val = pick(param, l2w)
-            ly_val = pick(param, ly)
 
-            def growth(a, b):
-                return ((a - b) / b * 100) if b != 0 else 0
+            lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw), 1)) * 100
+            l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w), 1)) * 100
+            ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly), 1)) * 100
 
             row[f"{s} (Today)"] = round(today_val, 2)
-            row[f"{s} LW %"] = round(growth(today_val, lw_val), 2)
-            row[f"{s} L2W %"] = round(growth(today_val, l2w_val), 2)
-            row[f"{s} YoY %"] = round(growth(today_val, ly_val), 2)
+            row[f"{s} LW %"] = round(lw_growth, 2)
+            row[f"{s} L2W %"] = round(l2w_growth, 2)
+            row[f"{s} YoY %"] = round(ly_growth, 2)
 
         rows.append(row)
 
