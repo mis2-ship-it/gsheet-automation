@@ -123,13 +123,13 @@ def send_email(to_email, store_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = os.environ.get("EMAIL_TO")
+    TO_EMAIL = os.environ.get("EMAIL_TO-AM")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
     msg = MIMEText(body)
     msg["Subject"] = "Cancellation Alert"
     msg["From"] = "EMAIL_USER"
-    msg["To"] = "EMAIL_TO"
+    msg["To"] = "EMAIL_TO-AM"
 
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
