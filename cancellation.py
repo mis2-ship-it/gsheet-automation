@@ -1,5 +1,6 @@
 import os
 import requests
+from requests_aws4auth import AWS4Auth
 import pandas as pd
 from datetime import datetime, timedelta
 import gspread
@@ -15,7 +16,12 @@ creds = Credentials.from_service_account_info(creds_dict)
 # 🔐 CONFIG
 # =========================================================
 
-RISTA_API_KEY = os.getenv("RISTA_API_KEY")
+RISTA_API_KEY = os.environ.get("API_KEY")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+REGION = "ap-south-1"   # confirm
+SERVICE = "execute-api" # usually this
+
+awsauth = AWS4Auth(RISTA_API_KEY, SECRET_KEY, REGION, SERVICE)
 
 RISTA_URL = "https://api.ristaapps.com/v1/orders"  # confirm endpoint
 
@@ -46,7 +52,7 @@ headers = {
 # 📡 FETCH DATA FROM RISTA
 # =========================================================
 
-response = requests.get(RISTA_URL, headers=headers, params=params)
+response = requests.get(url, auth=awsauth, params=params)
 
 if response.status_code != 200:
     raise Exception(f"API Error: {response.text}")
@@ -56,6 +62,8 @@ data = response.json()
 df = pd.json_normalize(data.get("orders", []))
 
 if df.empty:
+    print(response.status_code)
+    print(response.text)
     print("No data from API")
     exit()
 
