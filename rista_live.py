@@ -413,19 +413,41 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
 # 🔥 FINAL EXECUTION
 # =========================================================
 
-# Prepare cuts
-today_df, lw_df, l2w_df, ly_df, today = prepare_data_cuts(final_df)
+def prepare_data_cuts(final_df):
 
-# Build report
-overall_df = build_overall_extended(
-    today_df,
-    lw_df,
-    l2w_df,
-    ly_df,
-    final_df
-)
+    today_df = final_df[
+        (final_df["Data_Type"] == "Today") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
 
-print(overall_df)
+    lw_df = final_df[
+        (final_df["Data_Type"] == "Last Week") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    l2w_df = final_df[
+        (final_df["Data_Type"] == "Last 2 Week") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    ly_df = final_df[
+        (final_df["Data_Type"] == "Last Year") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    # Business date (safe)
+    today = final_df["Date"].dropna().max()
+
+    return today_df, lw_df, l2w_df, ly_df, today
+
+print("Today rows:", len(today_cut))
+print("LW rows:", len(lastweek_cut))
+print("L2W rows:", len(last2week_cut))
+print("LY rows:", len(lastyear_cut))
 
 # =========================================================
 # 🔥 INSIGHT ENGINE
