@@ -22,7 +22,7 @@ jobs:
         run: pip install pandas requests gspread oauth2client
 
       - name: Install dependencies
-        run: pip install pandas requests gspread google-auth requests-aws4auth
+        run: pip install pandas requests gspread google-auth PyJWT
 
       - name: Run Script
         run: python cancellation.py
