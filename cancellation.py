@@ -111,6 +111,10 @@ final_df = cancel_df.merge(
 )
 # Auto Alert Email
 
+import os
+import smtplib
+from email.mime.text import MIMEText
+
 def send_email(to_email, store_df):
 
     body = "🚨 Cancellation Alert 🚨\n\n"
@@ -124,37 +128,35 @@ def send_email(to_email, store_df):
             "--------------------------\n"
         )
 
-
+    # 🔐 Environment variables
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = os.environ.get("EMAIL_TO-AM")
-    CC_EMAIL = os.environ.get("EMAIL_CC")
+    CC_EMAIL = os.environ.get("EMAIL_CC")  # optional
 
+    # 📧 Email setup
     msg = MIMEText(body)
-    msg["Subject"] = "Cancellation Alert"
-    msg["From"] = "EMAIL_USER"
-    msg["To"] = "EMAIL_TO-AM"
+    msg["Subject"] = "🚨 Cancellation Alert"
+    msg["From"] = EMAIL_USER
+    msg["To"] = to_email
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
-    server.sendmail(EMAIL_USER, receivers, msg.as_string())
-    server.quit()
-            print(f"Mail sent to {to_email}")
+    # Handle CC
+    receivers = [to_email]
+    if CC_EMAIL:
+        msg["Cc"] = CC_EMAIL
+        receivers.append(CC_EMAIL)
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, receivers, msg.as_string())
+        server.quit()
+
+        print(f"✅ Mail sent to {to_email}")
+
     except Exception as e:
-        print(f"Email error: {e}")
-
-# =========================================================
-# 🚀 SEND ALERTS STORE-WISE
-# =========================================================
-
-for store, group in final_df.groupby("branchName"):
-
-    email = group["Team Email"].iloc[0] if "Team Email" in group.columns else None
-
-    if pd.notna(email):
-        send_email(email, group)
-
+        print(f"❌ Email error: {e}")
+        
 # =========================================================
 # 📊 PUSH TO GOOGLE SHEET
 # =========================================================
