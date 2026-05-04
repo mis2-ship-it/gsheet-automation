@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 REGION = "ap-south-1"
 SERVICE = "execute-api"
 
-awsauth = AWS4Auth(ACCESS_KEY, SECRET_KEY, REGION, SERVICE)
+awsauth = AWS4Auth(RISTA_API_KEY, SECRET_KEY, REGION, SERVICE)
 
 RISTA_URL = "https://api.ristaapps.com/v1/orders"
 
