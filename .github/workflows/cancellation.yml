@@ -28,4 +28,6 @@ jobs:
         run: python cancellation.py
         env: 
          GOOGLE_CREDS: ${{ secrets.GOOGLE_CREDS }}
-         RISTA_API_KEY: ${{ secrets.API_KEY }}
+         env:
+         RISTA_ACCESS_KEY: ${{ secrets.RISTA_ACCESS_KEY }}
+         RISTA_SECRET_KEY: ${{ secrets.RISTA_SECRET_KEY }}
