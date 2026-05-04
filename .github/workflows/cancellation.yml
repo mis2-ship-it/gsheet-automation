@@ -1,4 +1,4 @@
-name: Rista Fetch Automation
+name: Cancellation Automation
 
 on:
   schedule:
@@ -22,6 +22,6 @@ jobs:
         run: pip install pandas requests gspread oauth2client
 
       - name: Run Script
-        run: python rista_fetch.py
+        run: python cancellation.py
         env:
           RISTA_API_KEY: ${{ secrets.RISTA_API_KEY }}
