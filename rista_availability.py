@@ -1,74 +1,101 @@
+# =========================================================
+# 🔥 IMPORTS
+# =========================================================
+
 import pandas as pd
 import requests
+import time
 from datetime import datetime, timedelta
+import pytz
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 # =========================================================
-# 🔐 AUTH (UPDATE YOUR FILE)
+# 🔐 CONFIG
+# =========================================================
+
+SHEET_NAME = "Rista_Availability_Report"
+WORKSHEET_NAME = "Hourly_Availability"
+
+# =========================================================
+# 🔐 GOOGLE SHEETS AUTH
+# =========================================================
+
+scope = ["https://www.googleapis.com/auth/spreadsheets"]
+
+creds = Credentials.from_service_account_file(
+    "service_account.json", scopes=scope
+)
+
+client = gspread.authorize(creds)
+
+spreadsheet = client.open(SHEET_NAME)
+
+try:
+    ws = spreadsheet.worksheet(WORKSHEET_NAME)
+except:
+    ws = spreadsheet.add_worksheet(title=WORKSHEET_NAME, rows=1000, cols=50)
+
+# =========================================================
+# 🔐 HEADERS FUNCTION (RISTA AUTH)
 # =========================================================
 
 def headers():
     return {
         "Content-Type": "application/json",
-        "api_key": "YOUR_API_KEY"
+        "X-Api-Key": "YOUR_API_KEY"
     }
 
-# Google Sheet Auth
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
-
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "service_account.json", scope
-)
-client = gspread.authorize(creds)
-
-spreadsheet = client.open("Rista Item Availability")  # NEW SHEET
-
 # =========================================================
-# ⏰ TIME
+# ⏰ TIME (IST)
 # =========================================================
 
-now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+ist = pytz.timezone("Asia/Kolkata")
+now = datetime.now(ist)
 
 print("⏰ Run Time:", now)
 
-today = now.strftime("%Y-%m-%d")
-
 # =========================================================
-# 🏪 FETCH BRANCH (COCO ONLY)
+# 🏪 FETCH COCO STORES
 # =========================================================
 
-b_resp = requests.get(
-    "https://api.ristaapps.com/v1/branch/list",
-    headers=headers()
-)
+def fetch_branches():
+    try:
+        r = requests.get(
+            "https://api.ristaapps.com/v1/branch/list",
+            headers=headers(),
+            timeout=30
+        )
 
-branches_data = b_resp.json().get("data", [])
+        data = r.json().get("data", [])
 
-branch_df = pd.DataFrame(branches_data)
+        df = pd.DataFrame(data)
 
-# 🔥 COCO FILTER (IMPORTANT)
-coco_branches = branch_df[
-    (branch_df["status"] == "Active") &
-    (branch_df["ownership"] == "COCO")
-]
+        # 👉 FILTER COCO ONLY
+        df = df[
+            (df["status"] == "Active") &
+            (df["ownership"] == "COCO")
+        ]
 
-branches = coco_branches["branchCode"].tolist()
+        print("🏪 COCO Stores:", len(df))
 
-print("🏪 COCO Branch Count:", len(branches))
+        return df["branchCode"].tolist()
+
+    except Exception as e:
+        print("❌ Branch Fetch Error:", e)
+        return []
 
 # =========================================================
-# 📦 FETCH ITEM AVAILABILITY
+# 🍽️ FETCH ITEM AVAILABILITY
 # =========================================================
 
 def fetch_availability(branch):
     try:
         r = requests.get(
-            "https://api.ristaapps.com/v1/inventory/itemAvailability",
+            "https://api.ristaapps.com/v1/menu/items",
             headers=headers(),
             params={"branch": branch},
-            timeout=20
+            timeout=30
         )
 
         if r.status_code != 200:
@@ -80,89 +107,95 @@ def fetch_availability(branch):
             return pd.DataFrame()
 
         df = pd.json_normalize(data)
-
-        df["branchCode"] = branch
-        df["timestamp"] = now
+        df["branch"] = branch
 
         return df
 
     except Exception as e:
-        print(f"❌ Error for branch {branch}: {e}")
+        print(f"❌ Error for {branch}:", e)
         return pd.DataFrame()
 
 # =========================================================
-# ⚡ PARALLEL FETCH (FAST)
+# 🚀 FETCH ALL DATA
 # =========================================================
 
-from concurrent.futures import ThreadPoolExecutor
+branches = fetch_branches()
 
-frames = []
+all_data = []
 
-with ThreadPoolExecutor(max_workers=10) as executor:
-    results = executor.map(fetch_availability, branches)
+for b in branches:
+    df = fetch_availability(b)
+    if not df.empty:
+        all_data.append(df)
 
-for res in results:
-    if not res.empty:
-        frames.append(res)
+    time.sleep(0.2)  # prevent rate limit
 
-availability_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-# =========================================================
-# 🧠 PROCESS DATA
-# =========================================================
-
-if availability_df.empty:
+if not all_data:
     print("❌ No availability data")
     exit()
 
-# Normalize fields (based on API structure)
-availability_df["isAvailable"] = availability_df["isAvailable"].fillna(False)
+final_df = pd.concat(all_data, ignore_index=True)
 
-# Summary per store
-summary = availability_df.groupby("branchCode").agg(
-    Total_Items=("itemName", "count"),
-    Available_Items=("isAvailable", "sum")
+print("✅ Data Fetched:", final_df.shape)
+
+# =========================================================
+# 🧠 CLEAN DATA
+# =========================================================
+
+# 👉 Standardize availability column
+if "available" in final_df.columns:
+    final_df["Available_Flag"] = final_df["available"]
+elif "isAvailable" in final_df.columns:
+    final_df["Available_Flag"] = final_df["isAvailable"]
+else:
+    final_df["Available_Flag"] = 1  # fallback
+
+final_df["Available_Flag"] = final_df["Available_Flag"].astype(int)
+
+# =========================================================
+# 📊 BUILD AVAILABILITY METRICS
+# =========================================================
+
+summary = final_df.groupby("branch").agg(
+    Total_Items=("Available_Flag", "count"),
+    Available_Items=("Available_Flag", "sum")
 ).reset_index()
 
+summary["Out_of_Stock"] = (
+    summary["Total_Items"] - summary["Available_Items"]
+)
+
 summary["Availability %"] = (
-    summary["Available_Items"] / summary["Total_Items"] * 100
-).round(2)
+    summary["Available_Items"] / summary["Total_Items"].replace(0,1)
+) * 100
 
-summary["timestamp"] = now
+# Add timestamp
+summary["Run_Time"] = now.strftime("%Y-%m-%d %H:%M")
 
-# =========================================================
-# 📊 ITEM LEVEL (OPTIONAL DETAIL)
-# =========================================================
+summary = summary.round(2)
 
-item_level = availability_df[[
-    "branchCode",
-    "itemName",
-    "isAvailable"
-]].copy()
-
-item_level["timestamp"] = now
+print("✅ Availability Calculated")
 
 # =========================================================
 # 📤 PUSH TO GOOGLE SHEETS
 # =========================================================
 
-def push(sheet_name, df):
+def push(df):
     try:
-        try:
-            ws = spreadsheet.worksheet(sheet_name)
-            ws.clear()
-        except:
-            ws = spreadsheet.add_worksheet(title=sheet_name, rows="1000", cols="20")
-
-        ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
-
-        print(f"✅ Pushed: {sheet_name}")
+        ws.clear()
+        ws.update(
+            [df.columns.tolist()] +
+            df.astype(str).values.tolist()
+        )
+        print("✅ Sheet Updated")
 
     except Exception as e:
-        print(f"❌ Push Error ({sheet_name}):", e)
+        print("❌ Sheet Error:", e)
 
-# Push both
-push("Summary", summary)
-push("Item_Level", item_level)
+push(summary)
 
-print("🚀 Availability Report Completed")
+# =========================================================
+# ✅ DONE
+# =========================================================
+
+print("🚀 Availability Report Completed Successfully")
