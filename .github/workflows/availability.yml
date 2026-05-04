@@ -34,4 +34,4 @@ jobs:
 
         run: |
           echo "Running script..."
-          python rista_live.py
+          python rista_availability.py
