@@ -1,39 +1,38 @@
 import os
+import json
 import requests
-from requests_aws4auth import AWS4Auth
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
+from requests_aws4auth import AWS4Auth
 import gspread
 from google.oauth2.service_account import Credentials
 import smtplib
 from email.mime.text import MIMEText
-import json
+
+# =========================================================
+# 🔐 GOOGLE AUTH (FIXED)
+# =========================================================
 
 creds_dict = json.loads(os.environ["GOOGLE_CREDS"])
-
 creds = Credentials.from_service_account_info(creds_dict)
+
+client = gspread.authorize(creds)
+
 # =========================================================
-# 🔐 CONFIG
+# 🔐 RISTA AUTH (AWS SIGNED)
 # =========================================================
 
 RISTA_API_KEY = os.environ.get("API_KEY")
 SECRET_KEY = os.environ.get("SECRET_KEY")
-REGION = "ap-south-1"   # confirm
-SERVICE = "execute-api" # usually this
+REGION = "ap-south-1"
+SERVICE = "execute-api"
 
-awsauth = AWS4Auth(RISTA_API_KEY, SECRET_KEY, REGION, SERVICE)
+awsauth = AWS4Auth(ACCESS_KEY, SECRET_KEY, REGION, SERVICE)
 
-RISTA_URL = "https://api.ristaapps.com/v1/orders"  # confirm endpoint
-
-GOOGLE_SHEET_NAME = "Cancellation Dashboard"
-RAW_SHEET = "Raw_Data"
-MAPPING_SHEET = "Store_Mapping"
-
-EMAIL_SENDER = "EMAIL_USER"
-EMAIL_PASSWORD = "EMAIL_PASS"
+RISTA_URL = "https://api.ristaapps.com/v1/orders"
 
 # =========================================================
-# 📅 DATE RANGE (TODAY)
+# 📅 DATE
 # =========================================================
 
 today = datetime.now().strftime("%Y-%m-%d")
@@ -43,27 +42,20 @@ params = {
     "to_date": today
 }
 
-headers = {
-    "Authorization": f"Bearer {RISTA_API_KEY}",
-    "Content-Type": "application/json"
-}
-
 # =========================================================
-# 📡 FETCH DATA FROM RISTA
+# 📡 API CALL
 # =========================================================
 
-response = requests.get(url, auth=awsauth, params=params)
+response = requests.get(RISTA_URL, auth=awsauth, params=params)
 
 if response.status_code != 200:
-    raise Exception(f"API Error: {response.text}")
+    print(response.text)
+    raise Exception("API Error")
 
 data = response.json()
-
 df = pd.json_normalize(data.get("orders", []))
 
 if df.empty:
-    print(response.status_code)
-    print(response.text)
     print("No data from API")
     exit()
 
@@ -78,25 +70,16 @@ if cancel_df.empty:
     exit()
 
 # =========================================================
-# 🔁 AVOID DUPLICATES (USE ORDER ID)
+# 📊 GOOGLE SHEETS
 # =========================================================
 
-# Google Sheets Auth
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
+sheet = client.open("Cancellation Dashboard")
+raw_ws = sheet.worksheet("Raw_Data")
+mapping_ws = sheet.worksheet("Store_Mapping")
 
-creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
-client = gspread.authorize(creds)
+existing_df = pd.DataFrame(raw_ws.get_all_records())
 
-sheet = client.open(GOOGLE_SHEET_NAME)
-raw_ws = sheet.worksheet(RAW_SHEET)
-
-# Existing data
-existing_data = raw_ws.get_all_records()
-existing_df = pd.DataFrame(existing_data)
-
+# Remove duplicates
 if not existing_df.empty and "orderId" in existing_df.columns:
     cancel_df = cancel_df[~cancel_df["orderId"].isin(existing_df["orderId"])]
 
@@ -108,7 +91,6 @@ if cancel_df.empty:
 # 🧩 STORE MAPPING
 # =========================================================
 
-mapping_ws = sheet.worksheet(MAPPING_SHEET)
 mapping_df = pd.DataFrame(mapping_ws.get_all_records())
 
 final_df = cancel_df.merge(
@@ -117,13 +99,16 @@ final_df = cancel_df.merge(
     right_on="Store Name",
     how="left"
 )
-# Auto Alert Email
 
-import os
-import smtplib
-from email.mime.text import MIMEText
+# =========================================================
+# 📧 EMAIL FUNCTION
+# =========================================================
 
 def send_email(to_email, store_df):
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    CC_EMAIL = os.environ.get("EMAIL_CC")
 
     body = "🚨 Cancellation Alert 🚨\n\n"
 
@@ -132,23 +117,16 @@ def send_email(to_email, store_df):
             f"Order ID: {row.get('orderId','')}\n"
             f"Store: {row.get('branchName','')}\n"
             f"Time: {row.get('orderTime','')}\n"
-            f"Amount: {row.get('Net Sales','')}\n"
-            "--------------------------\n"
+            f"-----------------------\n"
         )
 
-    # 🔐 Environment variables
-    EMAIL_USER = os.environ.get("EMAIL_USER")
-    EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    CC_EMAIL = os.environ.get("EMAIL_CC")  # optional
-
-    # 📧 Email setup
     msg = MIMEText(body)
     msg["Subject"] = "🚨 Cancellation Alert"
     msg["From"] = EMAIL_USER
     msg["To"] = to_email
 
-    # Handle CC
     receivers = [to_email]
+
     if CC_EMAIL:
         msg["Cc"] = CC_EMAIL
         receivers.append(CC_EMAIL)
@@ -160,33 +138,27 @@ def send_email(to_email, store_df):
         server.sendmail(EMAIL_USER, receivers, msg.as_string())
         server.quit()
 
-        print(f"✅ Mail sent to {to_email}")
+        print(f"Mail sent to {to_email}")
 
     except Exception as e:
-        print(f"❌ Email error: {e}")
-        
-# =========================================================
-# 📊 PUSH TO GOOGLE SHEET
-# =========================================================
-
-# Prepare data
-push_df = final_df.copy()
-
-# Ensure consistent columns
-push_df["Fetched_At"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-# Append to sheet
-rows = push_df.values.tolist()
-
-if raw_ws.row_count == 0:
-    raw_ws.append_row(push_df.columns.tolist())
-
-raw_ws.append_rows(rows)
-
-print("Data pushed to Google Sheets")
+        print(f"Email error: {e}")
 
 # =========================================================
-# ✅ DONE
+# 🚀 SEND ALERTS
 # =========================================================
 
-print("✅ Cancellation Alert Flow Completed")
+for store, group in final_df.groupby("branchName"):
+    email = group["Team Email"].iloc[0] if "Team Email" in group.columns else None
+
+    if pd.notna(email):
+        send_email(email, group)
+
+# =========================================================
+# 📊 PUSH TO SHEET
+# =========================================================
+
+final_df["Fetched_At"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+raw_ws.append_rows(final_df.values.tolist())
+
+print("✅ Completed")
