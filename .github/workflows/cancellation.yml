@@ -21,8 +21,11 @@ jobs:
       - name: Install libs
         run: pip install pandas requests gspread oauth2client
 
+      - name: Install dependencies
+        run: pip install pandas requests gspread google-auth requests-aws4auth
+
       - name: Run Script
         run: python cancellation.py
         env: 
          GOOGLE_CREDS: ${{ secrets.GOOGLE_CREDS }}
-         RISTA_API_KEY: ${{ secrets.RISTA_API_KEY }}
+         RISTA_API_KEY: ${{ secrets.API_KEY }}
