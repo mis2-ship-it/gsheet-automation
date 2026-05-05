@@ -279,14 +279,24 @@ for store, group in final_df.groupby("branchName"):
     except Exception as e:
         print(f"❌ Failed for {store}: {e}")
 # =========================================================
-# 📊 PUSH TO GOOGLE SHEET
+# 📊 PUSH TO GOOGLE SHEET (FINAL FIXED)
 # =========================================================
+
+import numpy as np
 
 final_df["Fetched_At"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-raw_ws.append_rows(final_df.astype(str).values.tolist())
+# 🧹 Clean data BEFORE push
+clean_df = final_df.copy()
 
-print("✅ Data Pushed to Sheet")
+clean_df = clean_df.replace([np.inf, -np.inf], 0)
+clean_df = clean_df.fillna("")
+clean_df = clean_df.astype(str)
+
+# ✅ Push only once
+raw_ws.append_rows(clean_df.values.tolist())
+
+print("✅ Data pushed successfully")
 
 # =========================================================
 # ✅ DONE
