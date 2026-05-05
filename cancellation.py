@@ -192,15 +192,27 @@ def send_email(to_email, store_df):
 
     rows_html = ""
 
-    for _, row in store_df.iterrows():
-        rows_html += f"""
-        <tr>
-            <td>{row.get('orderId','')}</td>
-            <td>{row.get('branchName','')}</td>
-            <td>{row.get('createdDate','')}</td>
-            <td>{row.get('netAmount','')}</td>
-        </tr>
-        """
+for _, row in store_df.iterrows():
+
+    # ✅ Correct field mapping
+    order_id = row.get('invoiceNo') or row.get('billNo') or row.get('orderId','')
+    order_time = row.get('invoiceDate') or row.get('createdDate','')
+    amount = row.get('netAmount', '')
+
+    # ✅ Format time (optional)
+    try:
+        order_time = pd.to_datetime(order_time).strftime("%d-%b %I:%M %p")
+    except:
+        pass
+
+    rows_html += f"""
+    <tr>
+        <td>{order_id}</td>
+        <td>{row.get('branchName','')}</td>
+        <td>{order_time}</td>
+        <td>{amount}</td>
+    </tr>
+    """
 
     body = f"""
     <h2>🚨 Cancellation Alert</h2>
