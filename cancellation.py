@@ -168,6 +168,11 @@ final_df = cancel_df.merge(
     how="left"
 )
 
+existing = pd.DataFrame(raw_ws.get_all_records())
+
+sent_ids = set(existing[existing["emailSent"] == "YES"]["invoiceNumber"])
+
+cancel_df = cancel_df[~cancel_df["invoiceNumber"].isin(sent_ids)]
 # =========================================================
 # 📧 EMAIL FUNCTION (ROBUST VERSION)
 # =========================================================
@@ -257,6 +262,11 @@ def send_email(to_email, store_df):
 
     except Exception as e:
         print(f"❌ Email error for {store_name}: {e}")
+
+row_index = raw_ws.find(invoice_id).row
+
+raw_ws.update_cell(row_index, EMAIL_SENT_COL, "YES")
+raw_ws.update_cell(row_index, STATUS_COL, "SENT")
 # =========================================================
 # 🚀 SEND ALERTS STORE-WISE (SAFE VERSION)
 # =========================================================
