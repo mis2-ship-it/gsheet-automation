@@ -139,8 +139,8 @@ print("🚨 Cancellations Found:", len(cancel_df))
 
 existing = pd.DataFrame(raw_ws.get_all_records())
 
-if not existing.empty and "orderId" in existing.columns:
-    cancel_df = cancel_df[~cancel_df["orderId"].isin(existing["orderId"])]
+if not existing.empty and "invoiceNumber" in existing.columns:
+    cancel_df = cancel_df[~cancel_df["invoiceNumber"].isin(existing["invoiceNumber"])]
 
 if cancel_df.empty:
     print("✅ No new cancellations")
@@ -192,7 +192,7 @@ def send_email(to_email, store_df):
 
     for _, row in store_df.iterrows():
 
-        order_id = row.get('invoiceNo') or row.get('billNo') or row.get('orderId','')
+        order_id = row.get('invoiceNo') or row.get('billNo') or row.get('invoiceNumber','')
         order_time = row.get('invoiceDate') or row.get('createdDate','')
         amount = row.get('netAmount', '')
 
