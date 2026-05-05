@@ -601,7 +601,6 @@ print("✅ All Analysis Completed")
 # =========================================================
 
 sources = ["In Store", "Swiggy", "Zomato"]
-
 rows = []
 
 for brand in final_df["Brand"].dropna().unique():
@@ -610,11 +609,10 @@ for brand in final_df["Brand"].dropna().unique():
 
         row = {}
         row["Brand"] = brand
-        row["Parameter"] = str(param)
+        row["Parameter"] = param
 
         for s in sources:
 
-            # ✅ FUNCTION MUST BE INSIDE LOOP (same indent level)
             def get_vals(base_df):
 
                 temp = base_df[
@@ -627,11 +625,12 @@ for brand in final_df["Brand"].dropna().unique():
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+
+                gross = temp["grossAmount"].sum()
+                disc = (temp["discountAmount"].sum() / gross * 100) if gross != 0 else 0
 
                 return net, txn, disc
 
-            # ✅ USE CUT DATA (time-aligned)
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
@@ -658,8 +657,6 @@ for brand in final_df["Brand"].dropna().unique():
         rows.append(row)
 
 brand_source_pivot = pd.DataFrame(rows)
-
-# 👉 Ensure no blank parameter
 brand_source_pivot["Parameter"] = brand_source_pivot["Parameter"].fillna("Unknown")
 
 print("✅ Brand Source Built")
@@ -669,7 +666,6 @@ print("✅ Brand Source Built")
 # =========================================================
 
 sources = ["In Store", "Swiggy", "Zomato"]
-
 rows = []
 
 for region in final_df["Region"].dropna().unique():
@@ -677,16 +673,15 @@ for region in final_df["Region"].dropna().unique():
     for param in ["Net Sales", "Txn", "Discount %"]:
 
         row = {}
-        row["Region"] = brand
-        row["Parameter"] = str(param)
+        row["Region"] = region   # ✅ FIXED HERE
+        row["Parameter"] = param
 
         for s in sources:
 
-            # ✅ FUNCTION MUST BE INSIDE LOOP (same indent level)
             def get_vals(base_df):
 
                 temp = base_df[
-                    (base_df["Region"] == brand) &
+                    (base_df["Region"] == region) &
                     (base_df["Source Group"] == s)
                 ]
 
@@ -695,11 +690,12 @@ for region in final_df["Region"].dropna().unique():
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+
+                gross = temp["grossAmount"].sum()
+                disc = (temp["discountAmount"].sum() / gross * 100) if gross != 0 else 0
 
                 return net, txn, disc
 
-            # ✅ USE CUT DATA (time-aligned)
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
@@ -726,7 +722,6 @@ for region in final_df["Region"].dropna().unique():
         rows.append(row)
 
 region_source_pivot = pd.DataFrame(rows)
-
 region_source_pivot["Parameter"] = region_source_pivot["Parameter"].fillna("Unknown")
 
 print("✅ Region Source Built")
