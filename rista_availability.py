@@ -189,6 +189,16 @@ else:
 final_df["Available_Flag"] = final_df["Available_Flag"].astype(int)
 
 # =========================================================
+# 🔗 MERGE STORE DETAILS
+# =========================================================
+
+final_df = final_df.merge(
+    help_df,
+    on="branchName",
+    how="left"
+)
+
+# =========================================================
 # 📊 BUILD AVAILABILITY METRICS
 # =========================================================
 
