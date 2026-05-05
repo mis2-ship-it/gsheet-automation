@@ -67,32 +67,59 @@ today = business_day.strftime("%Y-%m-%d")
 print("📅 Business Day:", today)
 
 # =========================================================
-# 📡 FETCH ORDERS (RISTA)
+# 📡 FETCH DATA (BRANCH LEVEL - CORRECT WAY)
 # =========================================================
 
-s_url = "https://api.ristaapps.com/v1/sales/page"
+# 1. Get branches
+b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
+branches_data = b_resp.json()
+branches_data = branches_data.get("data", []) if isinstance(branches_data, dict) else branches_data
 
-params = {
-    "fromDate": today,
-    "toDate": today
-}
+branches = [b["branchCode"] for b in branches_data if b.get("status") == "Active"]
 
-response = requests.get(s_url, headers=headers(), params=params)
+print("🏪 Branch count:", len(branches))
 
-if response.status_code != 200:
-    print(response.text)
-    raise Exception("API Error")
 
-data = response.json()
-orders = data.get("data", [])
+# 2. Fetch sales per branch
+all_data = []
 
-df = pd.json_normalize(orders)
+for branch in branches:
+
+    params = {
+        "branch": branch,
+        "day": today
+    }
+
+    try:
+        r = requests.get(
+            "https://api.ristaapps.com/v1/sales/summary",
+            headers=headers(),
+            params=params,
+            timeout=20
+        )
+
+        if r.status_code != 200:
+            print(f"❌ Error for branch {branch}")
+            continue
+
+        js = r.json()
+        data = js.get("data", [])
+
+        if data:
+            all_data.append(pd.json_normalize(data))
+
+    except Exception as e:
+        print(f"❌ Exception for branch {branch}: {e}")
+
+
+# 3. Combine
+df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
 if df.empty:
-    print("❌ No data")
+    print("❌ No data fetched")
     exit()
 
-print("✅ Orders Fetched:", len(df))
+print("✅ Data fetched:", len(df))
 
 # =========================================================
 # 🔻 FILTER CANCELLED
