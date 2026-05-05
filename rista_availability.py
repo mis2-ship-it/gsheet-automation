@@ -78,31 +78,40 @@ print("⏰ Run Time:", now)
 # ---------------- FETCH BRANCH ---------------- #
 
 def fetch_branches():
-try:
-    b_resp = requests.get(
-        "https://api.ristaapps.com/v1/branch/list",
-        headers=headers(),
-        timeout=30
-    )
+    try:
+        b_resp = requests.get(
+            "https://api.ristaapps.com/v1/branch/list",
+            headers=headers(),
+            timeout=30
+        )
 
-    print("Status Code:", b_resp.status_code)
+        data = b_resp.json()
+        data = data.get("data", []) if isinstance(data, dict) else data
 
-    data = b_resp.json()
-    data = data.get("data", []) if isinstance(data, dict) else data
+        if not data:
+            print("❌ No branches from API")
+            return []
 
-    if not data:
-        print("❌ No branches from API")
+        df = pd.DataFrame(data)
+
+        df["branchCode"] = df["branchCode"].astype(str)
+        help_df["branchCode"] = help_df["branchCode"].astype(str)
+
+        merged = df.merge(help_df, on="branchCode", how="left")
+
+        merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
+
+        merged = merged[
+            merged["Ownership"].str.upper() == "COCO"
+        ]
+
+        print("🏪 COCO Branch count:", len(merged))
+
+        return merged["branchCode"].tolist()
+
+    except Exception as e:
+        print("❌ Branch Fetch Error:", e)
         return []
-
-    df = pd.DataFrame(data)
-
-    # 👉 Clean columns
-    df.columns = df.columns.str.strip()
-    help_df.columns = help_df.columns.str.strip()
-
-    # 👉 Ensure type match
-    df["branchCode"] = df["branchCode"].astype(str)
-    help_df["branchCode"] = help_df["branchCode"].astype(str)
 
     # =====================================================
     # 🔗 MERGE (CORRECTLY INDENTED)
@@ -134,30 +143,30 @@ except Exception as e:
 # =========================================================
 
 def fetch_availability(branch):
-try:
-    r = requests.get(
-        "https://api.ristaapps.com/v1/menu/items",
-        headers=headers(),
-        params={"branch": branch},
-        timeout=30
-    )
+    try:
+        r = requests.get(
+            "https://api.ristaapps.com/v1/menu/items",
+            headers=headers(),
+            params={"branch": branch},
+            timeout=30
+        )
 
-    if r.status_code != 200:
+        if r.status_code != 200:
+            return pd.DataFrame()
+
+        data = r.json().get("data", [])
+
+        if not data:
+            return pd.DataFrame()
+
+        df = pd.json_normalize(data)
+        df["branch"] = branch
+
+        return df
+
+    except Exception as e:
+        print(f"❌ Error for {branch}:", e)
         return pd.DataFrame()
-
-    data = r.json().get("data", [])
-
-    if not data:
-        return pd.DataFrame()
-
-    df = pd.json_normalize(data)
-    df["branch"] = branch
-
-    return df
-
-except Exception as e:
-    print(f"❌ Error for {branch}:", e)
-    return pd.DataFrame()
 
 # =========================================================
 # 🚀 FETCH ALL DATA
