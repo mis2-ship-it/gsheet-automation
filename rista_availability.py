@@ -16,8 +16,9 @@ from google.oauth2.service_account import Credentials
 # 🔐 CONFIG
 # =========================================================
 
-SHEET_NAME = "Rista_Availability_Report"
-WORKSHEET_NAME = "Hourly_Availability"
+client = gspread.authorize(creds)
+spreadsheet = client.open("Rista_Availability_Report")
+raw_ws = spreadsheet.worksheet("Hourly_Availability")
 
 # =========================================================
 # 🔐 GOOGLE SHEETS AUTH
