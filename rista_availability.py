@@ -72,43 +72,36 @@ now = datetime.now(ist)
 
 print("⏰ Run Time:", now)
 
-# =========================================================
-# 🏪 FETCH COCO STORES
-# =========================================================
-
 # ---------------- FETCH BRANCH ---------------- #
 
-b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
+b_resp = requests.get(
+    "https://api.ristaapps.com/v1/branch/list",
+    headers=headers()
+)
+
+print("Status Code:", b_resp.status_code)
+
 data = b_resp.json()
 data = data.get("data", []) if isinstance(data, dict) else data
 
-branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
+if not data:
+    print("❌ No branch data from API")
+    branches = []
+else:
+    print("Sample Branch:", data[:2])
+
+    branches = []
+    for b in data:
+        branch_code = b.get("branchCode")
+
+        # ✅ Flexible status handling
+        status = b.get("status") or b.get("isActive") or "Active"
+
+        if str(status).lower() in ["active", "true", "1"]:
+            branches.append(branch_code)
 
 print("🏪 Branch count:", len(branches))
 
-        # =====================================================
-        # 🔗 MERGE WITH HELP SHEET
-        # =====================================================
-        merged = df.merge(
-            help_df,
-            on="branchCode",
-            how="left"
-        )
-
-        # =====================================================
-        # 🎯 FILTER COCO FROM HELP SHEET
-        # =====================================================
-        merged = merged[
-            merged["Ownership"].str.upper() == "COCO"
-        ]
-
-        print("🏪 COCO Stores:", len(merged))
-
-        return merged["branchName"].tolist()
-
-    except Exception as e:
-        print("❌ Branch Fetch Error:", e)
-        return []
 # =========================================================
 # 🍽️ FETCH ITEM AVAILABILITY
 # =========================================================
