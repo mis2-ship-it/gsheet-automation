@@ -23,10 +23,11 @@ WORKSHEET_NAME = "Hourly_Availability"
 
 scope = ["https://www.googleapis.com/auth/spreadsheets"]
 
-creds = Credentials.from_service_account_file(
-    "service_account.json", scopes=scope
-)
+creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 
+creds = Credentials.from_service_account_info(
+    creds_dict, scopes=scope
+)
 client = gspread.authorize(creds)
 
 spreadsheet = client.open(SHEET_NAME)
