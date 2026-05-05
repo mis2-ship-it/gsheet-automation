@@ -40,13 +40,16 @@ client = gspread.authorize(creds)
 spreadsheet = client.open(SHEET_NAME)
 
 # Open or create worksheet
-try:
-ws = spreadsheet.worksheet(WORKSHEET_NAME)
-except:
-ws = spreadsheet.add_worksheet(
-    title=WORKSHEET_NAME, rows=1000, cols=50
-)
+spreadsheet = client.open_by_key("1umqb0k_G0F-cAzMbrmqSYnEz06-NjmCANWtWEa_NS9w")
 
+try:
+    ws = spreadsheet.worksheet(WORKSHEET_NAME)
+except:
+    ws = spreadsheet.add_worksheet(
+        title=WORKSHEET_NAME,
+        rows=1000,
+        cols=50
+    )
 help_ws = spreadsheet.worksheet("Help_Sheet")
 
 help_df = pd.DataFrame(help_ws.get_all_records())
