@@ -47,6 +47,12 @@ except:
         title=WORKSHEET_NAME, rows=1000, cols=50
     )
 
+help_ws = spreadsheet.worksheet("Help_Sheet")
+
+help_df = pd.DataFrame(help_ws.get_all_records())
+
+print("✅ Help Sheet Loaded:", help_df.shape)
+
 # =========================================================
 # 🔐 HEADERS FUNCTION (RISTA AUTH)
 # =========================================================
@@ -79,23 +85,42 @@ def fetch_branches():
         )
 
         data = r.json().get("data", [])
-
         df = pd.DataFrame(data)
 
-        # 👉 FILTER COCO ONLY
-        df = df[
-            (df["status"] == "Active") &
-            (df["ownership"] == "COCO")
+        if df.empty:
+            print("❌ No branches from API")
+            return []
+
+        print("API Branch Columns:", df.columns.tolist())
+
+        # 👉 Ensure branchName exists
+        if "branchName" not in df.columns:
+            print("❌ branchName missing in API")
+            return []
+
+        # =====================================================
+        # 🔗 MERGE WITH HELP SHEET
+        # =====================================================
+        merged = df.merge(
+            help_df,
+            on="branchName",
+            how="left"
+        )
+
+        # =====================================================
+        # 🎯 FILTER COCO FROM HELP SHEET
+        # =====================================================
+        merged = merged[
+            merged["Ownership"].str.upper() == "COCO"
         ]
 
-        print("🏪 COCO Stores:", len(df))
+        print("🏪 COCO Stores:", len(merged))
 
-        return df["branchCode"].tolist()
+        return merged["branchName"].tolist()
 
     except Exception as e:
         print("❌ Branch Fetch Error:", e)
         return []
-
 # =========================================================
 # 🍽️ FETCH ITEM AVAILABILITY
 # =========================================================
