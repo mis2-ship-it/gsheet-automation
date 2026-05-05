@@ -70,7 +70,7 @@ print("📅 Business Day:", today)
 # 📡 FETCH ORDERS (RISTA)
 # =========================================================
 
-url = "https://api.ristaapps.com/v1/order/list"  # confirm endpoint
+s_url = "https://api.ristaapps.com/v1/sales/page"
 
 params = {
     "fromDate": today,
@@ -98,7 +98,7 @@ print("✅ Orders Fetched:", len(df))
 # 🔻 FILTER CANCELLED
 # =========================================================
 
-cancel_df = df[df["status"].str.lower() == "cancelled"].copy()
+cancel_df = df[df["status"].str.lower().isin(["cancelled", "voided"])].copy()
 
 if cancel_df.empty:
     print("✅ No cancellations")
