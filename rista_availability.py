@@ -74,33 +74,57 @@ print("⏰ Run Time:", now)
 
 # ---------------- FETCH BRANCH ---------------- #
 
-b_resp = requests.get(
-    "https://api.ristaapps.com/v1/branch/list",
-    headers=headers()
-)
+def fetch_branches():
+    try:
+        b_resp = requests.get(
+            "https://api.ristaapps.com/v1/branch/list",
+            headers=headers(),
+            timeout=30
+        )
 
-print("Status Code:", b_resp.status_code)
+        print("Status Code:", b_resp.status_code)
 
-data = b_resp.json()
-data = data.get("data", []) if isinstance(data, dict) else data
+        data = b_resp.json()
+        data = data.get("data", []) if isinstance(data, dict) else data
 
-if not data:
-    print("❌ No branch data from API")
-    branches = []
-else:
-    print("Sample Branch:", data[:2])
+        if not data:
+            print("❌ No branches from API")
+            return []
 
-    branches = []
-    for b in data:
-        branch_code = b.get("branchCode")
+        df = pd.DataFrame(data)
 
-        # ✅ Flexible status handling
-        status = b.get("status") or b.get("isActive") or "Active"
+        # 👉 Clean columns
+        df.columns = df.columns.str.strip()
+        help_df.columns = help_df.columns.str.strip()
 
-        if str(status).lower() in ["active", "true", "1"]:
-            branches.append(branch_code)
+        # 👉 Ensure type match
+        df["branchCode"] = df["branchCode"].astype(str)
+        help_df["branchCode"] = help_df["branchCode"].astype(str)
 
-print("🏪 Branch count:", len(branches))
+        # =====================================================
+        # 🔗 MERGE (CORRECTLY INDENTED)
+        # =====================================================
+        merged = df.merge(
+            help_df,
+            on="branchCode",
+            how="left"
+        )
+
+        # 👉 Handle missing ownership
+        merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
+
+        # 👉 Filter COCO
+        merged = merged[
+            merged["Ownership"].str.upper() == "COCO"
+        ]
+
+        print("🏪 COCO Branch count:", len(merged))
+
+        return merged["branchCode"].tolist()
+
+    except Exception as e:
+        print("❌ Branch Fetch Error:", e)
+        return []
 
 # =========================================================
 # 🍽️ FETCH ITEM AVAILABILITY
