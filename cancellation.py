@@ -291,24 +291,33 @@ for store, group in final_df.groupby("branchName"):
     except Exception as e:
         print(f"❌ Failed for {store}: {e}")
 # =========================================================
-# 📊 PUSH TO GOOGLE SHEET (FINAL FIXED)
+# 📊 REFRESH GOOGLE SHEET WITH HEADERS (FINAL)
 # =========================================================
 
 import numpy as np
 
 final_df["Fetched_At"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# 🧹 Clean data BEFORE push
+# 🧹 Clean data
 clean_df = final_df.copy()
-
 clean_df = clean_df.replace([np.inf, -np.inf], 0)
 clean_df = clean_df.fillna("")
 clean_df = clean_df.astype(str)
 
-# ✅ Push only once
+# =========================================================
+# 🔄 FULL REFRESH (IMPORTANT)
+# =========================================================
+
+# 1. Clear sheet completely
+raw_ws.clear()
+
+# 2. Push header
+raw_ws.append_row(clean_df.columns.tolist())
+
+# 3. Push data
 raw_ws.append_rows(clean_df.values.tolist())
 
-print("✅ Data pushed successfully")
+print("✅ Sheet refreshed with latest data")
 
 # =========================================================
 # ✅ DONE
