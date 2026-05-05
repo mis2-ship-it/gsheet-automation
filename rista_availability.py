@@ -76,34 +76,22 @@ print("⏰ Run Time:", now)
 # 🏪 FETCH COCO STORES
 # =========================================================
 
-def fetch_branches():
-    try:
-        r = requests.get(
-            "https://api.ristaapps.com/v1/branch/list",
-            headers=headers(),
-            timeout=30
-        )
+# ---------------- FETCH BRANCH ---------------- #
 
-        data = r.json().get("data", [])
-        df = pd.DataFrame(data)
+b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
+data = b_resp.json()
+data = data.get("data", []) if isinstance(data, dict) else data
 
-        if df.empty:
-            print("❌ No branches from API")
-            return []
+branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
 
-        print("API Branch Columns:", df.columns.tolist())
-
-        # 👉 Ensure branchName exists
-        if "branchName" not in df.columns:
-            print("❌ branchName missing in API")
-            return []
+print("🏪 Branch count:", len(branches))
 
         # =====================================================
         # 🔗 MERGE WITH HELP SHEET
         # =====================================================
         merged = df.merge(
             help_df,
-            on="branchName",
+            on="branchCode",
             how="left"
         )
 
