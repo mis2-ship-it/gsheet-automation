@@ -150,7 +150,15 @@ if cancel_df.empty:
 # 🧩 STORE MAPPING
 # =========================================================
 
-mapping_df = pd.DataFrame(mapping_ws.get_all_records())
+data = mapping_ws.get_all_values()
+
+headers = data[0]
+rows = data[1:]
+
+# Remove empty headers
+clean_headers = [h if h != "" else f"col_{i}" for i, h in enumerate(headers)]
+
+mapping_df = pd.DataFrame(mapping_ws.get_all_values()[1:], columns=["Store Name", "Email"])
 
 final_df = cancel_df.merge(
     mapping_df,
