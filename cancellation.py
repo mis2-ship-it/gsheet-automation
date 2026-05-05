@@ -192,9 +192,12 @@ def send_email(to_email, store_df):
 
     for _, row in store_df.iterrows():
 
-        order_id = row.get('invoiceNo') or row.get('billNo') or row.get('invoiceNumber','')
-        order_time = row.get('invoiceDate') or row.get('createdDate','')
-        amount = row.get('netAmount', '')
+    store_name = row.get("branchName", "")
+    invoice_id = row.get("invoiceNumber") or row.get("orderId", "")
+    channel = row.get("channel", "")
+    item_name = row.get("itemName", "")
+    qty = row.get("quantity", "")
+    net_amount = row.get("netAmount", "")
 
         try:
             order_time = pd.to_datetime(order_time).strftime("%d-%b %I:%M %p")
@@ -202,12 +205,14 @@ def send_email(to_email, store_df):
             pass
 
         rows_html += f"""
-        <tr>
-            <td>{order_id}</td>
-            <td>{row.get('branchName','')}</td>
-            <td>{order_time}</td>
-            <td>{amount}</td>
-        </tr>
+     <tr>
+        <td>{store_name}</td>
+        <td>{invoice_id}</td>
+        <td>{channel}</td>
+        <td>{item_name}</td>
+        <td>{qty}</td>
+        <td>{net_amount}</td>
+    </tr>
         """
 
     body = f"""
@@ -215,12 +220,14 @@ def send_email(to_email, store_df):
     <p><b>Store:</b> {store_name}</p>
 
     <table border="1" cellpadding="5" cellspacing="0">
-        <tr>
-            <th>Order ID</th>
-            <th>Store</th>
-            <th>Time</th>
-            <th>Amount</th>
-        </tr>
+ <tr>
+    <th>Store Name</th>
+    <th>Invoice Number</th>
+    <th>Channel</th>
+    <th>Item Name</th>
+    <th>Quantity</th>
+    <th>Net Amount</th>
+</tr>
         {rows_html}
     </table>
     """
