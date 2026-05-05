@@ -1,9 +1,9 @@
 name: Run Script
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # every 30 mins
-  workflow_dispatch:
+   schedule:
+     - cron: "*/15 * * * *"
+   workflow_dispatch:
 
 jobs:
   run-script:
@@ -11,26 +11,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.11'
 
-      - name: Install libs
-        run: pip install pandas requests gspread oauth2client
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install dependencies
-        run: pip install pandas requests gspread google-auth PyJWT
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
 
       - name: Run Script
-        run: python cancellation.py
-        env: 
-         GOOGLE_CREDS: ${{ secrets.GOOGLE_CREDS }}
-         env:
-         RISTA_ACCESS_KEY: ${{ secrets.RISTA_ACCESS_KEY }}
-         RISTA_SECRET_KEY: ${{ secrets.RISTA_SECRET_KEY }}
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          API_KEY: ${{ secrets.API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: to_email 
+          EMAIL_CC: ${{ secrets.EMAIL_CC }}
+
+        run: |
+          echo "Running script..."
+          python cancellation.py
