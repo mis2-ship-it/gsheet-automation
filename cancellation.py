@@ -152,23 +152,24 @@ if cancel_df.empty:
 
 data = mapping_ws.get_all_values()
 
-headers = data[0]
+headers = [h.strip() for h in data[0]]
 rows = data[1:]
 
-# Remove empty headers
-clean_headers = [h if h != "" else f"col_{i}" for i, h in enumerate(headers)]
+mapping_df = pd.DataFrame(rows, columns=headers)
 
-mapping_df = pd.DataFrame(mapping_ws.get_all_values()[1:], columns=["Store Name", "Email"])
+mapping_df = mapping_df.replace("", pd.NA)
+
+print("✅ Mapping Ready:", mapping_df.shape)
 
 final_df = cancel_df.merge(
     mapping_df,
     left_on="branchName",
-    right_on="Store Name",
+    right_on="Store Name",   # must match EXACT column name
     how="left"
 )
 
 # =========================================================
-# 📧 EMAIL FUNCTION
+# 📧 EMAIL FUNCTION (ROBUST VERSION)
 # =========================================================
 
 def send_email(to_email, store_df):
@@ -177,27 +178,68 @@ def send_email(to_email, store_df):
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    body = "🚨 Cancellation Alert 🚨\n\n"
+    # ✅ Safety check
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("❌ Missing EMAIL_USER or EMAIL_PASS")
+        return
+
+    # Store name for subject
+    store_name = store_df["branchName"].iloc[0] if "branchName" in store_df.columns else "Store"
+
+    # =====================================================
+    # 🧾 HTML BODY (Better readability)
+    # =====================================================
+
+    rows_html = ""
 
     for _, row in store_df.iterrows():
-        body += (
-            f"Order ID: {row.get('orderId','')}\n"
-            f"Store: {row.get('branchName','')}\n"
-            f"Time: {row.get('createdDate','')}\n"
-            f"Amount: {row.get('netAmount','')}\n"
-            "----------------------\n"
-        )
+        rows_html += f"""
+        <tr>
+            <td>{row.get('orderId','')}</td>
+            <td>{row.get('branchName','')}</td>
+            <td>{row.get('createdDate','')}</td>
+            <td>{row.get('netAmount','')}</td>
+        </tr>
+        """
 
-    msg = MIMEText(body)
-    msg["Subject"] = "🚨 Cancellation Alert"
+    body = f"""
+    <h2>🚨 Cancellation Alert</h2>
+    <p><b>Store:</b> {store_name}</p>
+
+    <table border="1" cellpadding="5" cellspacing="0">
+        <tr>
+            <th>Order ID</th>
+            <th>Store</th>
+            <th>Time</th>
+            <th>Amount</th>
+        </tr>
+        {rows_html}
+    </table>
+    """
+
+    msg = MIMEText(body, "html")
+    msg["Subject"] = f"🚨 Cancellation Alert - {store_name}"
     msg["From"] = EMAIL_USER
     msg["To"] = to_email
 
-    receivers = [to_email]
+    # =====================================================
+    # 📩 RECEIVERS HANDLING
+    # =====================================================
 
+    receivers = []
+
+    # Handle multiple TO emails
+    if to_email:
+        receivers += [e.strip() for e in to_email.split(",") if e.strip()]
+
+    # Handle CC
     if CC_EMAIL:
         msg["Cc"] = CC_EMAIL
-        receivers.append(CC_EMAIL)
+        receivers += [e.strip() for e in CC_EMAIL.split(",") if e.strip()]
+
+    # =====================================================
+    # 📡 SEND MAIL
+    # =====================================================
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
@@ -206,22 +248,36 @@ def send_email(to_email, store_df):
         server.sendmail(EMAIL_USER, receivers, msg.as_string())
         server.quit()
 
-        print(f"📩 Mail sent to {to_email}")
+        print(f"📩 Mail sent for {store_name} → {receivers}")
 
     except Exception as e:
-        print(f"❌ Email error: {e}")
-
+        print(f"❌ Email error for {store_name}: {e}")
 # =========================================================
-# 🚀 SEND ALERTS STORE-WISE
+# 🚀 SEND ALERTS STORE-WISE (SAFE VERSION)
 # =========================================================
 
 for store, group in final_df.groupby("branchName"):
 
-    email = group["Email"].iloc[0] if "Email" in group.columns else None
+    if "Email" not in group.columns:
+        print(f"⚠️ Email column missing for {store}")
+        continue
 
-    if pd.notna(email):
-        send_email(email, group)
+    email = str(group["Email"].iloc[0]).strip()
 
+    # ❌ No email mapped
+    if not email or email.lower() in ["nan", "none"]:
+        print(f"⚠️ No email mapped for store: {store}")
+        continue
+
+    # ✅ Handle multiple emails (comma separated)
+    email_list = [e.strip() for e in email.split(",") if e.strip()]
+
+    try:
+        send_email(",".join(email_list), group)
+        print(f"📩 Alert sent for {store} → {email_list}")
+
+    except Exception as e:
+        print(f"❌ Failed for {store}: {e}")
 # =========================================================
 # 📊 PUSH TO GOOGLE SHEET
 # =========================================================
