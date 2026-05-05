@@ -152,10 +152,10 @@ if cancel_df.empty:
 
 data = mapping_ws.get_all_values()
 
-headers = [h.strip() for h in data[0]]
+sheet_headers = [h.strip() for h in data[0]]
 rows = data[1:]
 
-mapping_df = pd.DataFrame(rows, columns=headers)
+mapping_df = pd.DataFrame(rows, columns=sheet_headers)
 
 mapping_df = mapping_df.replace("", pd.NA)
 
@@ -178,41 +178,37 @@ def send_email(to_email, store_df):
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    # ✅ Safety check
     if not EMAIL_USER or not EMAIL_PASS:
         print("❌ Missing EMAIL_USER or EMAIL_PASS")
         return
 
-    # Store name for subject
     store_name = store_df["branchName"].iloc[0] if "branchName" in store_df.columns else "Store"
 
     # =====================================================
-    # 🧾 HTML BODY (Better readability)
+    # 🧾 BUILD HTML TABLE
     # =====================================================
 
     rows_html = ""
 
-for _, row in store_df.iterrows():
+    for _, row in store_df.iterrows():
 
-    # ✅ Correct field mapping
-    order_id = row.get('invoiceNo') or row.get('billNo') or row.get('orderId','')
-    order_time = row.get('invoiceDate') or row.get('createdDate','')
-    amount = row.get('netAmount', '')
+        order_id = row.get('invoiceNo') or row.get('billNo') or row.get('orderId','')
+        order_time = row.get('invoiceDate') or row.get('createdDate','')
+        amount = row.get('netAmount', '')
 
-    # ✅ Format time (optional)
-    try:
-        order_time = pd.to_datetime(order_time).strftime("%d-%b %I:%M %p")
-    except:
-        pass
+        try:
+            order_time = pd.to_datetime(order_time).strftime("%d-%b %I:%M %p")
+        except:
+            pass
 
-    rows_html += f"""
-    <tr>
-        <td>{order_id}</td>
-        <td>{row.get('branchName','')}</td>
-        <td>{order_time}</td>
-        <td>{amount}</td>
-    </tr>
-    """
+        rows_html += f"""
+        <tr>
+            <td>{order_id}</td>
+            <td>{row.get('branchName','')}</td>
+            <td>{order_time}</td>
+            <td>{amount}</td>
+        </tr>
+        """
 
     body = f"""
     <h2>🚨 Cancellation Alert</h2>
@@ -234,24 +230,14 @@ for _, row in store_df.iterrows():
     msg["From"] = EMAIL_USER
     msg["To"] = to_email
 
-    # =====================================================
-    # 📩 RECEIVERS HANDLING
-    # =====================================================
-
     receivers = []
 
-    # Handle multiple TO emails
     if to_email:
         receivers += [e.strip() for e in to_email.split(",") if e.strip()]
 
-    # Handle CC
     if CC_EMAIL:
         msg["Cc"] = CC_EMAIL
         receivers += [e.strip() for e in CC_EMAIL.split(",") if e.strip()]
-
-    # =====================================================
-    # 📡 SEND MAIL
-    # =====================================================
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
