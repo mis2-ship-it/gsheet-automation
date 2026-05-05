@@ -15,10 +15,8 @@ from google.oauth2.service_account import Credentials
 # =========================================================
 # 🔐 CONFIG
 # =========================================================
-
-client = gspread.authorize(creds)
-spreadsheet = client.open("Rista_Availability_Report")
-raw_ws = spreadsheet.worksheet("Hourly_Availability")
+SHEET_NAME = "Rista_Availability_Report"
+WORKSHEET_NAME = "Hourly_Availability"
 
 # =========================================================
 # 🔐 GOOGLE SHEETS AUTH
@@ -26,19 +24,25 @@ raw_ws = spreadsheet.worksheet("Hourly_Availability")
 
 scope = ["https://www.googleapis.com/auth/spreadsheets"]
 
+# 👉 Load from GitHub Secret
 creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 
 creds = Credentials.from_service_account_info(
     creds_dict, scopes=scope
 )
+
 client = gspread.authorize(creds)
 
+# Open spreadsheet
 spreadsheet = client.open(SHEET_NAME)
 
+# Open or create worksheet
 try:
     ws = spreadsheet.worksheet(WORKSHEET_NAME)
 except:
-    ws = spreadsheet.add_worksheet(title=WORKSHEET_NAME, rows=1000, cols=50)
+    ws = spreadsheet.add_worksheet(
+        title=WORKSHEET_NAME, rows=1000, cols=50
+    )
 
 # =========================================================
 # 🔐 HEADERS FUNCTION (RISTA AUTH)
