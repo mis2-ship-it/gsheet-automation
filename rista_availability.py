@@ -7,7 +7,7 @@ import requests
 import time
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
@@ -15,6 +15,7 @@ from google.oauth2.service_account import Credentials
 # =========================================================
 # 🔐 CONFIG
 # =========================================================
+
 SHEET_NAME = "Rista_Availability_Report"
 WORKSHEET_NAME = "Hourly_Availability"
 
@@ -23,23 +24,18 @@ WORKSHEET_NAME = "Hourly_Availability"
 # =========================================================
 
 scope = [
-"https://www.googleapis.com/auth/spreadsheets",
-"https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
 ]
 
-# 👉 Load from GitHub Secret
 creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS"])
 
 creds = Credentials.from_service_account_info(
-creds_dict, scopes=scope
+    creds_dict, scopes=scope
 )
 
 client = gspread.authorize(creds)
 
-# Open spreadsheet
-spreadsheet = client.open(SHEET_NAME)
-
-# Open or create worksheet
 spreadsheet = client.open_by_key("1umqb0k_G0F-cAzMbrmqSYnEz06-NjmCANWtWEa_NS9w")
 
 try:
@@ -50,24 +46,24 @@ except:
         rows=1000,
         cols=50
     )
-help_ws = spreadsheet.worksheet("Help_Sheet")
 
+help_ws = spreadsheet.worksheet("Help_Sheet")
 help_df = pd.DataFrame(help_ws.get_all_records())
 
 print("✅ Help Sheet Loaded:", help_df.shape)
 
 # =========================================================
-# 🔐 HEADERS FUNCTION (RISTA AUTH)
+# 🔐 HEADERS
 # =========================================================
 
 def headers():
-return {
-    "Content-Type": "application/json",
-    "X-Api-Key": "YOUR_API_KEY"
-}
+    return {
+        "Content-Type": "application/json",
+        "X-Api-Key": os.environ["RISTA_API_KEY"]
+    }
 
 # =========================================================
-# ⏰ TIME (IST)
+# ⏰ TIME
 # =========================================================
 
 ist = pytz.timezone("Asia/Kolkata")
@@ -75,17 +71,19 @@ now = datetime.now(ist)
 
 print("⏰ Run Time:", now)
 
-# ---------------- FETCH BRANCH ---------------- #
+# =========================================================
+# 🏪 FETCH BRANCHES
+# =========================================================
 
 def fetch_branches():
     try:
-        b_resp = requests.get(
+        r = requests.get(
             "https://api.ristaapps.com/v1/branch/list",
             headers=headers(),
             timeout=30
         )
 
-        data = b_resp.json()
+        data = r.json()
         data = data.get("data", []) if isinstance(data, dict) else data
 
         if not data:
@@ -112,31 +110,6 @@ def fetch_branches():
     except Exception as e:
         print("❌ Branch Fetch Error:", e)
         return []
-
-    # =====================================================
-    # 🔗 MERGE (CORRECTLY INDENTED)
-    # =====================================================
-    merged = df.merge(
-        help_df,
-        on="branchCode",
-        how="left"
-    )
-
-    # 👉 Handle missing ownership
-    merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
-
-    # 👉 Filter COCO
-    merged = merged[
-        merged["Ownership"].str.upper() == "COCO"
-    ]
-
-    print("🏪 COCO Branch count:", len(merged))
-
-    return merged["branchCode"].tolist()
-
-except Exception as e:
-    print("❌ Branch Fetch Error:", e)
-    return []
 
 # =========================================================
 # 🍽️ FETCH ITEM AVAILABILITY
@@ -177,15 +150,14 @@ branches = fetch_branches()
 all_data = []
 
 for b in branches:
-df = fetch_availability(b)
-if not df.empty:
-    all_data.append(df)
-
-time.sleep(0.2)  # prevent rate limit
+    df = fetch_availability(b)
+    if not df.empty:
+        all_data.append(df)
+    time.sleep(0.2)
 
 if not all_data:
-print("❌ No availability data")
-exit()
+    print("❌ No availability data")
+    exit()
 
 final_df = pd.concat(all_data, ignore_index=True)
 
@@ -195,13 +167,12 @@ print("✅ Data Fetched:", final_df.shape)
 # 🧠 CLEAN DATA
 # =========================================================
 
-# 👉 Standardize availability column
 if "available" in final_df.columns:
-final_df["Available_Flag"] = final_df["available"]
+    final_df["Available_Flag"] = final_df["available"]
 elif "isAvailable" in final_df.columns:
-final_df["Available_Flag"] = final_df["isAvailable"]
+    final_df["Available_Flag"] = final_df["isAvailable"]
 else:
-final_df["Available_Flag"] = 1  # fallback
+    final_df["Available_Flag"] = 1
 
 final_df["Available_Flag"] = final_df["Available_Flag"].astype(int)
 
@@ -209,30 +180,32 @@ final_df["Available_Flag"] = final_df["Available_Flag"].astype(int)
 # 🔗 MERGE STORE DETAILS
 # =========================================================
 
+final_df["branch"] = final_df["branch"].astype(str)
+
 final_df = final_df.merge(
-help_df,
-on="branchName",
-how="left"
+    help_df,
+    left_on="branch",
+    right_on="branchCode",
+    how="left"
 )
 
 # =========================================================
-# 📊 BUILD AVAILABILITY METRICS
+# 📊 BUILD METRICS
 # =========================================================
 
-summary = final_df.groupby("branch").agg(
-Total_Items=("Available_Flag", "count"),
-Available_Items=("Available_Flag", "sum")
+summary = final_df.groupby(
+    ["branch", "Store_Name", "Ownership"]
+).agg(
+    Total_Items=("Available_Flag", "count"),
+    Available_Items=("Available_Flag", "sum")
 ).reset_index()
 
-summary["Out_of_Stock"] = (
-summary["Total_Items"] - summary["Available_Items"]
-)
+summary["Out_of_Stock"] = summary["Total_Items"] - summary["Available_Items"]
 
 summary["Availability %"] = (
-summary["Available_Items"] / summary["Total_Items"].replace(0,1)
+    summary["Available_Items"] / summary["Total_Items"].replace(0, 1)
 ) * 100
 
-# Add timestamp
 summary["Run_Time"] = now.strftime("%Y-%m-%d %H:%M")
 
 summary = summary.round(2)
@@ -244,21 +217,17 @@ print("✅ Availability Calculated")
 # =========================================================
 
 def push(df):
-try:
-    ws.clear()
-    ws.update(
-        [df.columns.tolist()] +
-        df.astype(str).values.tolist()
-    )
-    print("✅ Sheet Updated")
+    try:
+        ws.clear()
+        ws.update(
+            [df.columns.tolist()] +
+            df.astype(str).values.tolist()
+        )
+        print("✅ Sheet Updated")
 
-except Exception as e:
-    print("❌ Sheet Error:", e)
+    except Exception as e:
+        print("❌ Sheet Error:", e)
 
 push(summary)
-
-# =========================================================
-# ✅ DONE
-# =========================================================
 
 print("🚀 Availability Report Completed Successfully")
