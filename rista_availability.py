@@ -67,7 +67,15 @@ except:
 help_ws = spreadsheet.worksheet("Help_Sheet")
 help_df = pd.DataFrame(help_ws.get_all_records())
 
-print("✅ Help Sheet Loaded:", help_df.shape)
+# Clean column names
+help_df.columns = (
+    help_df.columns
+    .str.strip()
+    .str.replace(" ", "")
+)
+
+print("Help Sheet Columns:", help_df.columns.tolist())
+
 
 # =========================================================
 # ⏰ TIME
