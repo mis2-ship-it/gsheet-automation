@@ -175,7 +175,7 @@ def prepare_dates(df):
 today_df = prepare_dates(today_df)
 lastweek_df = prepare_dates(lastweek_df)
 last2week_df = prepare_dates(last2week_df)
-month_on_month_df = prepare_dates(month_on_month)
+month_on_month_df = prepare_dates(month_on_month_df)
 lastyear_df = prepare_dates(lastyear_df)
 
 # ---------------- TAGGING ---------------- #
@@ -260,6 +260,7 @@ print("✅ Data Prepared Successfully")
 # ---------------- APPLY SAME TIME FILTER TO L2W & LY ---------------- #
 
 last2week_cut["BusinessHour"] = last2week_cut["Hour"].apply(map_business_hour)
+month_on_month_cut["BusinessHour"] = month_on_month_cut["Hour"].apply(map_business_hour)
 lastyear_cut["BusinessHour"] = lastyear_cut["Hour"].apply(map_business_hour)
 
 last2week_cut = last2week_cut[
@@ -267,7 +268,7 @@ last2week_cut = last2week_cut[
     (last2week_cut["BusinessHour"] <= cutoff_hour)
 ]
 
-month_on_month_cut = last2week_cut[
+month_on_month_cut = month_on_month_cut[
     (month_on_month_cut["BusinessHour"] >= 8) &
     (month_on_month_cut["BusinessHour"] <= cutoff_hour)
 ]
@@ -334,39 +335,6 @@ def get_same_weekday_last_year(date):
         last_year_date += timedelta(days=1)
     
     return last_year_date
-
-
-# =========================================================
-# 📊 BUILD DATA CUTS
-# =========================================================
-
-def prepare_data_cuts(final_df):
-
-    final_df["Date"] = pd.to_datetime(final_df["Date"])
-
-    today = final_df["Date"].max()
-
-    # Standard comparisons
-    lw_date = today - timedelta(days=7)
-    l2w_date = today - timedelta(days=14)
-    mom_date = today - timedelta(days=28)
-
-    # 🔥 FIXED YoY DATE
-    ly_date = today - timedelta(days=364)
-
-    # Common filter
-    base_filter = (
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    )
-
-    today_df = final_df[(final_df["Date"] == today) & base_filter]
-    lw_df    = final_df[(final_df["Date"] == lw_date) & base_filter]
-    l2w_df   = final_df[(final_df["Date"] == l2w_date) & base_filter]
-    mom_df   = final_df[(final_df["Date"] == mom_date) & base_filter]
-    ly_df    = final_df[(final_df["Date"] == ly_date) & base_filter]
-
-    return today_df, lw_df, l2w_df, mom_df, ly_df, today
 
 
 # =========================================================
@@ -470,7 +438,7 @@ def prepare_data_cuts(final_df):
 print("Today rows:", len(today_cut))
 print("LW rows:", len(lastweek_cut))
 print("L2W rows:", len(last2week_cut))
-print("MoM rows:", len(mom_cut))
+print("MoM rows:", len(month_on_month_cut))
 print("LY rows:", len(lastyear_cut))
 
 # =========================================================
@@ -660,6 +628,7 @@ for brand in final_df["Brand"].dropna().unique():
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
+            mom = get_vals(month_on_month_cut)
             ly = get_vals(lastyear_cut)
 
             def pick(metric, data):
@@ -673,11 +642,13 @@ for brand in final_df["Brand"].dropna().unique():
 
             lw_growth = ((today_val - pick(param, lw)) / max(pick(param, lw), 1)) * 100
             l2w_growth = ((today_val - pick(param, l2w)) / max(pick(param, l2w), 1)) * 100
+            mom_growth = ((today_val - pick(param, mom)) / max(pick(param, mom), 1)) * 100
             ly_growth = ((today_val - pick(param, ly)) / max(pick(param, ly), 1)) * 100
 
             row[f"{s} (Today)"] = round(today_val, 2)
             row[f"{s} LW %"] = round(lw_growth, 2)
             row[f"{s} L2W %"] = round(l2w_growth, 2)
+            row[f"{s} MoM %"] = round(mom_growth, 2)
             row[f"{s} YoY %"] = round(ly_growth, 2)
 
         rows.append(row)
