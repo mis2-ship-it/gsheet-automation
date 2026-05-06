@@ -111,12 +111,26 @@ print("🏪 Branch count:", len(branches))
 
 # COCO Stores
 
-help_df["branchcode"] = help_df["branchcode"].astype(str)
+help_df["branchcode"] = (
+    help_df["branchcode"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
 
+# Normalize API branches
 branches = [
-    b for b in branches
-    if b in help_df[help_df["Ownership"] == "COCO"]["branchcode"].tolist()
+    str(b).strip().upper()
+    for b in branches
 ]
+
+# COCO branch list
+coco_branches = help_df[
+    help_df["Ownership"].str.upper() == "COCO"
+]["branchcode"].tolist()
+
+# Filter only COCO
+branches = [b for b in branches if b in coco_branches]
 
 print("🏪 COCO Branch count:", len(branches))
 
@@ -150,6 +164,33 @@ def fetch_availability(branch):
     except Exception as e:
         print(f"❌ Error for {branch}:", e)
         return pd.DataFrame()
+
+# =========================================================
+# 🚀 FETCH ALL DATA
+# =========================================================
+
+all_data = []
+
+for b in branches:
+
+    df = fetch_availability(b)
+
+    if not df.empty:
+        all_data.append(df)
+
+    time.sleep(0.2)
+
+# =========================================================
+# ✅ CHECK DATA EXISTS
+# =========================================================
+
+if not all_data:
+    print("❌ No availability data fetched")
+    exit()
+
+final_df = pd.concat(all_data, ignore_index=True)
+
+print("✅ Data Fetched:", final_df.shape)
 
 # =========================================================
 # 🧠 CLEAN DATA
