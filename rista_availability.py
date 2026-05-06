@@ -95,24 +95,23 @@ b_resp = requests.get(
 )
 
 data = b_resp.json()
+branch_data = data.get("data", []) if isinstance(data, dict) else data
 
-if isinstance(data, dict):
-    branch_data = data.get("data", [])
-else:
-    branch_data = data
+branches = []
 
-branches = [
-    b.get("branchcode")
-    for b in branch_data
-    if b.get("status") == "Active"
-]
+for b in branch_data:
+    if b.get("status") == "Active":
+        code = b.get("branchCode")   # ✅ correct key
+
+        if code:
+            branches.append(str(code).strip().upper())
 
 print("🏪 Branch count:", len(branches))
 
 # COCO Stores
 
-help_df["branchcode"] = (
-    help_df["branchcode"]
+help_df["branchCode"] = (
+    help_df["branchCode"]
     .astype(str)
     .str.strip()
     .str.upper()
@@ -127,8 +126,9 @@ branches = [
 # COCO branch list
 coco_branches = help_df[
     help_df["Ownership"].str.upper() == "COCO"
-]["branchcode"].tolist()
+]["branchCode"].tolist()
 
+print("RAW API SAMPLE:", branch_data[:5])
 print("Sample API branches:", branches[:10])
 print("Sample Help Sheet COCO:", coco_branches[:10])
 
@@ -224,7 +224,7 @@ final_df["branch"] = final_df["branch"].astype(str)
 final_df = final_df.merge(
     help_df,
     left_on="branch",
-    right_on="branchcode",
+    right_on="branchCode",
     how="left"
 )
 
