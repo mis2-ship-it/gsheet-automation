@@ -63,9 +63,22 @@ print("📅 Business Day:", today)
 # 📡 FETCH DATA
 # =========================================================
 b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=api_headers())
-branches = [b["branchCode"] for b in b_resp.json().get("data", []) if b.get("status") == "Active"]
+data = b_resp.json()
+
+# Handle both dict & list response
+if isinstance(data, dict):
+    branch_data = data.get("data", [])
+else:
+    branch_data = data
+
+branches = [
+    b.get("branchCode")
+    for b in branch_data
+    if b.get("status") == "Active"
+]
 
 print("🏪 Branch count:", len(branches))
+
 
 all_data = []
 
