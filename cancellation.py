@@ -106,7 +106,7 @@ for branch in branches:
         if r.status_code != 200:
            print(f"❌ API Error {branch}: {r.status_code}")
            print(r.text)
-            continue
+           continue
 
         js = r.json()
         data = js.get("data", []) if isinstance(js, dict) else js
@@ -116,7 +116,8 @@ for branch in branches:
 
     except Exception as e:
         print(f"❌ Error for branch {branch}: {e}")
-
+        continue
+        
 # Combine
 if not all_data:
     print("❌ No data fetched")
