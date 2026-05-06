@@ -83,7 +83,7 @@ print("⏰ Run Time:", now)
 # =========================================================
 b_resp = requests.get(
     "https://api.ristaapps.com/v1/branch/list",
-    headers=headers()
+    headers=api_headers()
 )
 
 data = b_resp.json()
