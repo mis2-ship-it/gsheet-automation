@@ -101,6 +101,17 @@ branches = [
 
 print("🏪 Branch count:", len(branches))
 
+# COCO Stores
+
+help_df["branchCode"] = help_df["branchCode"].astype(str)
+
+branches = [
+    b for b in branches
+    if b in help_df[help_df["Ownership"] == "COCO"]["branchCode"].tolist()
+]
+
+print("🏪 COCO Branch count:", len(branches))
+
 # =========================================================
 # 🍽️ FETCH AVAILABILITY
 # =========================================================
@@ -131,28 +142,6 @@ def fetch_availability(branch):
     except Exception as e:
         print(f"❌ Error for {branch}:", e)
         return pd.DataFrame()
-
-# =========================================================
-# 🚀 FETCH ALL DATA
-# =========================================================
-
-branches = fetch_branches()
-
-all_data = []
-
-for b in branches:
-    df = fetch_availability(b)
-    if not df.empty:
-        all_data.append(df)
-    time.sleep(0.2)
-
-if not all_data:
-    print("❌ No availability data")
-    exit()
-
-final_df = pd.concat(all_data, ignore_index=True)
-
-print("✅ Data Fetched:", final_df.shape)
 
 # =========================================================
 # 🧠 CLEAN DATA
