@@ -62,7 +62,7 @@ print("✅ Google Connected")
 now = datetime.utcnow() + timedelta(hours=5, minutes=30)
 
 def get_business_day(now):
-return (now - timedelta(days=1)).date() if now.hour < 6 else now.date()
+    return (now - timedelta(days=1)).date() if now.hour < 6 else now.date()
 
 today = get_business_day(now).strftime("%Y-%m-%d")
 print("📅 Business Day:", today)
@@ -75,9 +75,9 @@ data = b_resp.json()
 
 # Handle both dict & list response
 if isinstance(data, dict):
-branch_data = data.get("data", [])
+   branch_data = data.get("data", [])
 else:
-branch_data = data
+   branch_data = data
 
 branches = [
 b.get("branchCode")
@@ -100,9 +100,9 @@ timeout=20
 )
 
 if r.status_code == 200:
-data = r.json().get("data", [])
+   data = r.json().get("data", [])
 if data:
-all_data.append(pd.json_normalize(data))
+   all_data.append(pd.json_normalize(data))
 
 except Exception as e:
 print(f"❌ Error for {branch}: {e}")
@@ -110,10 +110,10 @@ print(f"❌ Error for {branch}: {e}")
 df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
 
 if df.empty:
-print("❌ No data fetched")
-exit()
+   print("❌ No data fetched")
+   exit()
 
-print("✅ Data fetched:", len(df))
+   print("✅ Data fetched:", len(df))
 
 # =========================================================
 # 🔁 STANDARDIZE COLUMN
@@ -131,10 +131,10 @@ df["invoiceNumber"] = df["invoiceNumber"].astype(str)
 cancel_df = df[df["status"].str.lower().isin(["cancelled", "voided"])].copy()
 
 if cancel_df.empty:
-print("✅ No cancellations")
-exit()
+   print("✅ No cancellations")
+   exit()
 
-print("🚨 Cancellations Found:", len(cancel_df))
+   print("🚨 Cancellations Found:", len(cancel_df))
 
 # =========================================================
 # 🔁 REMOVE DUPLICATES (NO REPEAT ALERTS)
@@ -171,9 +171,9 @@ final_df["channel"] = "Unknown"
 # =========================================================
 def send_email(to_email, store_df):
 
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS")
-CC_EMAIL = os.environ.get("EMAIL_CC")
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    CC_EMAIL = os.environ.get("EMAIL_CC")
 
 rows_html = ""
 
