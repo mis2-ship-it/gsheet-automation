@@ -19,8 +19,11 @@ API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 
 def get_token():
-payload = {"iss": API_KEY, "iat": int(time.time())}
-return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    payload = {
+        "iss": API_KEY,
+        "iat": int(time.time())
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 def api_headers():
 return {
