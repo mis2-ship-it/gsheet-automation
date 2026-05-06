@@ -155,6 +155,9 @@ final_df = cancel_df.merge(
     how="left"
 )
 
+if "channel" not in final_df.columns:
+    final_df["channel"] = "Unknown"
+
 # =========================================================
 # 📧 EMAIL FUNCTION
 # =========================================================
@@ -176,16 +179,15 @@ for _, row in store_df.iterrows():
     qty = row.get("quantity", "")
     net_amount = row.get("netAmount", "")
 
-    rows_html += f"""
-    <tr>
-        <td>{store_name}</td>
-        <td>{invoice_id}</td>
-        <td>{channel}</td>
-        <td>{item_name}</td>
-        <td>{qty}</td>
-        <td>{net_amount}</td>
-    </tr>
-    """
+   rows_html += f"""
+<tr>
+    <td>{row.get('orderId') or row.get('invoiceNo') or ''}</td>
+    <td>{row.get('branchName','')}</td>
+    <td>{row.get('channel','Unknown')}</td>
+    <td>{row.get('createdDate') or row.get('invoiceDate') or ''}</td>
+    <td>{row.get('netAmount') or row.get('Net Sales') or ''}</td>
+</tr>
+"""
 
     body = f"""
     <h3>🚨 Cancellation Alert</h3>
