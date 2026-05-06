@@ -102,7 +102,7 @@ else:
     branch_data = data
 
 branches = [
-    b.get("branchCode")
+    b.get("branchcode")
     for b in branch_data
     if b.get("status") == "Active"
 ]
@@ -111,11 +111,11 @@ print("🏪 Branch count:", len(branches))
 
 # COCO Stores
 
-help_df["branchCode"] = help_df["branchCode"].astype(str)
+help_df["branchcode"] = help_df["branchcode"].astype(str)
 
 branches = [
     b for b in branches
-    if b in help_df[help_df["Ownership"] == "COCO"]["branchCode"].tolist()
+    if b in help_df[help_df["Ownership"] == "COCO"]["branchcode"].tolist()
 ]
 
 print("🏪 COCO Branch count:", len(branches))
@@ -173,7 +173,7 @@ final_df["branch"] = final_df["branch"].astype(str)
 final_df = final_df.merge(
     help_df,
     left_on="branch",
-    right_on="branchCode",
+    right_on="branchcode",
     how="left"
 )
 
