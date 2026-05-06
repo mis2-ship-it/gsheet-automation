@@ -154,17 +154,25 @@ def send_email(to_email, store_df):
 
     rows_html = ""
 
-    for _, row in store_df.iterrows():
-        rows_html += f"""
-        <tr>
-            <td>{row.get("branchName","")}</td>
-            <td>{row.get("invoiceNumber","")}</td>
-            <td>{row.get("channel","")}</td>
-            <td>{row.get("itemName","")}</td>
-            <td>{row.get("quantity","")}</td>
-            <td>{row.get("netAmount","")}</td>
-        </tr>
-        """
+for _, row in store_df.iterrows():
+
+    store_name = row.get("branchName", "")
+    invoice_id = row.get("invoiceNumber", "")
+    channel = row.get("channel", "")
+    item_name = row.get("itemName", "")
+    qty = row.get("quantity", "")
+    net_amount = row.get("netAmount", "")
+
+    rows_html += f"""
+    <tr>
+        <td>{store_name}</td>
+        <td>{invoice_id}</td>
+        <td>{channel}</td>
+        <td>{item_name}</td>
+        <td>{qty}</td>
+        <td>{net_amount}</td>
+    </tr>
+    """
 
     body = f"""
     <h3>🚨 Cancellation Alert</h3>
