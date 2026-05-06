@@ -101,20 +101,38 @@ def fetch_branches():
 
         df = pd.DataFrame(data)
 
-        df["branchCode"] = df["branchCode"].astype(str)
-        help_df["branchCode"] = help_df["branchCode"].astype(str)
+        print("Branch Columns:", df.columns.tolist())
 
-        merged = df.merge(help_df, on="branchCode", how="left")
+# Detect correct column
+if "branchCode" in df.columns:
+    key_col = "branchCode"
+elif "code" in df.columns:
+    key_col = "code"
+elif "branchId" in df.columns:
+    key_col = "branchId"
+else:
+    print("❌ No valid branch column found")
+    return []
 
-        merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
+df[key_col] = df[key_col].astype(str)
+help_df["branchCode"] = help_df["branchCode"].astype(str)
 
-        merged = merged[
-            merged["Ownership"].str.upper() == "COCO"
-        ]
+merged = df.merge(
+    help_df,
+    left_on=key_col,
+    right_on="branchCode",
+    how="left"
+)
 
-        print("🏪 COCO Branch count:", len(merged))
+merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
 
-        return merged["branchCode"].tolist()
+merged = merged[
+    merged["Ownership"].str.upper() == "COCO"
+]
+
+print("🏪 COCO Branch count:", len(merged))
+
+return merged[key_col].tolist()
 
     except Exception as e:
         print("❌ Branch Fetch Error:", e)
