@@ -59,7 +59,7 @@ print("✅ Help Sheet Loaded:", help_df.shape)
 def headers():
     return {
         "Content-Type": "application/json",
-        "X-Api-Key": os.environ["RISTA_API_KEY"]
+        "X-Api-Key": os.environ["API_KEY"]
     }
 
 # =========================================================
