@@ -15,9 +15,13 @@ print("🚀 Cancellation Script Started")
 # =========================================================
 # 🔐 AUTH
 # =========================================================
+import jwt
+import time
+
 API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 
+# ✅ Generate token
 def get_token():
     payload = {
         "iss": API_KEY,
@@ -25,12 +29,13 @@ def get_token():
     }
     return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-def api_headers():
-return {
-"x-api-key": API_KEY,
-"x-api-token": get_token(),
-"content-type": "application/json"
-}
+# ✅ Headers for API
+def headers():
+    return {
+        "x-api-key": API_KEY,
+        "x-api-token": get_token(),
+        "content-type": "application/json"
+    }
 
 # =========================================================
 # 🔐 GOOGLE SHEETS
