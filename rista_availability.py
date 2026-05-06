@@ -79,64 +79,27 @@ now = datetime.now(ist)
 print("⏰ Run Time:", now)
 
 # =========================================================
-# 🏪 FETCH BRANCHES
+# 📡 FETCH BRANCHES
 # =========================================================
-
-def fetch_branches():
-    try:
-        r = requests.get(
-            "https://api.ristaapps.com/v1/branch/list",
-            headers=api_headers(),
-            timeout=30
-        )
-
-        print("Branch API Status:", r.status_code)
-
-        data = r.json()
-        data = data.get("data", []) if isinstance(data, dict) else data
-
-        if not data:
-            print("❌ No branches from API")
-            return []
-
-        df = pd.DataFrame(data)
-
-        print("Branch Columns:", df.columns.tolist())
-
-# Detect correct column
-if "branchCode" in df.columns:
-    key_col = "branchCode"
-elif "code" in df.columns:
-    key_col = "code"
-elif "branchId" in df.columns:
-    key_col = "branchId"
-else:
-    print("❌ No valid branch column found")
-    return []
-
-df[key_col] = df[key_col].astype(str)
-help_df["branchCode"] = help_df["branchCode"].astype(str)
-
-merged = df.merge(
-    help_df,
-    left_on=key_col,
-    right_on="branchCode",
-    how="left"
+b_resp = requests.get(
+    "https://api.ristaapps.com/v1/branch/list",
+    headers=headers()
 )
 
-merged["Ownership"] = merged["Ownership"].fillna("UNKNOWN")
+data = b_resp.json()
 
-merged = merged[
-    merged["Ownership"].str.upper() == "COCO"
+if isinstance(data, dict):
+    branch_data = data.get("data", [])
+else:
+    branch_data = data
+
+branches = [
+    b.get("branchCode")
+    for b in branch_data
+    if b.get("status") == "Active"
 ]
 
-print("🏪 COCO Branch count:", len(merged))
-
-return merged[key_col].tolist()
-
-    except Exception as e:
-        print("❌ Branch Fetch Error:", e)
-        return []
+print("🏪 Branch count:", len(branches))
 
 # =========================================================
 # 🍽️ FETCH AVAILABILITY
