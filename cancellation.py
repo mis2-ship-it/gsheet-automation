@@ -94,17 +94,18 @@ for branch in branches:
     try:
         params = {
             "branch": branch,
-            "day": today
+            "businessday": today
         }
 
         r = requests.get(
-            "https://api.ristaapps.com/v1/orders",
+            "https://api.ristaapps.com/v1/sales",
             headers=headers(),
             params=params,
             timeout=20
         )
-
         if r.status_code != 200:
+           print(f"❌ API Error {branch}: {r.status_code}")
+           print(r.text)
             continue
 
         js = r.json()
