@@ -7,16 +7,37 @@ import requests
 import time
 import json
 import os
+import jwt
 from datetime import datetime
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
 
 # =========================================================
+# 🔐 API AUTH (RISTA JWT)
+# =========================================================
+
+API_KEY = os.environ["API_KEY"]
+SECRET_KEY = os.environ["SECRET_KEY"]
+
+def get_token():
+    payload = {
+        "iss": API_KEY,
+        "iat": int(time.time())
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def api_headers():
+    return {
+        "x-api-key": API_KEY,
+        "x-api-token": get_token(),
+        "content-type": "application/json"
+    }
+
+# =========================================================
 # 🔐 CONFIG
 # =========================================================
 
-SHEET_NAME = "Rista_Availability_Report"
 WORKSHEET_NAME = "Hourly_Availability"
 
 # =========================================================
@@ -41,34 +62,13 @@ spreadsheet = client.open_by_key("1umqb0k_G0F-cAzMbrmqSYnEz06-NjmCANWtWEa_NS9w")
 try:
     ws = spreadsheet.worksheet(WORKSHEET_NAME)
 except:
-    ws = spreadsheet.add_worksheet(
-        title=WORKSHEET_NAME,
-        rows=1000,
-        cols=50
-    )
+    ws = spreadsheet.add_worksheet(WORKSHEET_NAME, 1000, 50)
 
 help_ws = spreadsheet.worksheet("Help_Sheet")
 help_df = pd.DataFrame(help_ws.get_all_records())
 
 print("✅ Help Sheet Loaded:", help_df.shape)
 
-# =========================================================
-# 🔐 HEADERS
-# =========================================================
-
-API_KEY = os.environ["API_KEY"]
-SECRET_KEY = os.environ["SECRET_KEY"]
-
-def get_token():
-    payload = {"iss": API_KEY, "iat": int(time.time())}
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-
-def api_headers():
-    return {
-        "x-api-key": API_KEY,
-        "x-api-token": get_token(),
-        "content-type": "application/json"
-    }
 # =========================================================
 # ⏰ TIME
 # =========================================================
@@ -86,9 +86,11 @@ def fetch_branches():
     try:
         r = requests.get(
             "https://api.ristaapps.com/v1/branch/list",
-            headers=headers(),
+            headers=api_headers(),
             timeout=30
         )
+
+        print("Branch API Status:", r.status_code)
 
         data = r.json()
         data = data.get("data", []) if isinstance(data, dict) else data
@@ -119,19 +121,20 @@ def fetch_branches():
         return []
 
 # =========================================================
-# 🍽️ FETCH ITEM AVAILABILITY
+# 🍽️ FETCH AVAILABILITY
 # =========================================================
 
 def fetch_availability(branch):
     try:
         r = requests.get(
             "https://api.ristaapps.com/v1/menu/items",
-            headers=headers(),
+            headers=api_headers(),
             params={"branch": branch},
             timeout=30
         )
 
         if r.status_code != 200:
+            print(f"❌ API Fail for {branch}: {r.status_code}")
             return pd.DataFrame()
 
         data = r.json().get("data", [])
@@ -197,7 +200,7 @@ final_df = final_df.merge(
 )
 
 # =========================================================
-# 📊 BUILD METRICS
+# 📊 SUMMARY
 # =========================================================
 
 summary = final_df.groupby(
@@ -220,7 +223,7 @@ summary = summary.round(2)
 print("✅ Availability Calculated")
 
 # =========================================================
-# 📤 PUSH TO GOOGLE SHEETS
+# 📤 PUSH
 # =========================================================
 
 def push(df):
