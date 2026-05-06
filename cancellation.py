@@ -211,7 +211,10 @@ def send_email(to_email, store_df):
     body = f"""
     <h2>🚨 Cancellation Alert</h2>
     <p><b>Store:</b> {store_df['branchName'].iloc[0]}</p>
-
+    
+    <p style="color:red; font-weight:bold;">
+    ⚠️ Please check and update the reason for cancellation immediately.
+    </p>
     <table border="1" cellpadding="5" cellspacing="0">
         <tr>
             <th>Order ID</th>
@@ -248,17 +251,36 @@ def send_email(to_email, store_df):
         print(f"❌ Email error: {e}")
 
 # =========================================================
-# 🚀 SEND ALERTS
+# 🚀 SEND ALERTS (TEAM + REGION MANAGER)
 # =========================================================
 for store, group in final_df.groupby("branchName"):
 
-    email = str(group["Email"].iloc[0]).strip() if "Email" in group.columns else ""
+    # Team email
+    team_email = str(group["Email"].iloc[0]).strip() if "Email" in group.columns else ""
 
-    if not email or email.lower() == "nan":
+    # Region Manager email
+    rm_email = str(group["Region Manager Email"].iloc[0]).strip() if "Region Manager Email" in group.columns else ""
+
+    receivers = []
+
+    # Add team email
+    if team_email and team_email.lower() != "nan":
+        receivers.append(team_email)
+
+    # Add RM email
+    if rm_email and rm_email.lower() != "nan":
+        receivers.append(rm_email)
+
+    # Remove duplicates
+    receivers = list(set(receivers))
+
+    if not receivers:
         print(f"⚠️ No email mapped for store: {store}")
         continue
 
-    send_email(email, group)
+    send_email(",".join(receivers), group)
+
+    print(f"📩 Alert sent for {store} → {receivers}")
 
 # =========================================================
 # 📊 SAVE TO SHEET
