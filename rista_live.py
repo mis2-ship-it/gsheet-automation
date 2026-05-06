@@ -60,7 +60,8 @@ business_day = get_business_day(now)
 today = business_day.strftime("%Y-%m-%d")
 last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
 last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
-last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
+month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
 
 print("📅 Business Day:", today)
 print("📅 Last Week:", last_week)
@@ -145,9 +146,11 @@ if today_df.empty:
     exit()
 
 last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
-last_year = (business_day - timedelta(days=365)).strftime("%Y-%m-%d")
+month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
 
 last2week_df = fetch_sales(last2week)
+month_on_month_df = fetch_sales(month_on_month)
 lastyear_df = fetch_sales(last_year)
 
 # ---------------- DATE CLEAN ---------------- #
@@ -172,6 +175,7 @@ def prepare_dates(df):
 today_df = prepare_dates(today_df)
 lastweek_df = prepare_dates(lastweek_df)
 last2week_df = prepare_dates(last2week_df)
+month_on_month_df = prepare_dates(month_on_month)
 lastyear_df = prepare_dates(lastyear_df)
 
 # ---------------- TAGGING ---------------- #
@@ -179,12 +183,14 @@ lastyear_df = prepare_dates(lastyear_df)
 today_df["Data_Type"] = "Today"
 lastweek_df["Data_Type"] = "Last Week"
 last2week_df["Data_Type"] = "Last 2 Week"
+month_on_month_df["Data_Type"] = "Last Month"
 lastyear_df["Data_Type"] = "Last Year"
 
 final_df = pd.concat([
     today_df,
     lastweek_df,
     last2week_df,
+    month_on_month_df,
     lastyear_df
 ], ignore_index=True)
 
@@ -230,6 +236,7 @@ final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sou
 today_cut = final_df.query('Data_Type=="Today" and `Store Type`=="COCO" and status=="Closed"')
 lastweek_cut = final_df.query('Data_Type=="Last Week" and `Store Type`=="COCO" and status=="Closed"')
 last2week_cut = final_df.query('Data_Type=="Last 2 Week" and `Store Type`=="COCO" and status=="Closed"')
+month_on_month_cut = final_df.query('Data_Type=="Last Month" and `Store Type`=="COCO" and status=="Closed"')
 lastyear_cut = final_df.query('Data_Type=="Last Year" and `Store Type`=="COCO" and status=="Closed"')
 
 # ---------------- BUSINESS HOUR ---------------- #
@@ -258,6 +265,11 @@ lastyear_cut["BusinessHour"] = lastyear_cut["Hour"].apply(map_business_hour)
 last2week_cut = last2week_cut[
     (last2week_cut["BusinessHour"] >= 8) &
     (last2week_cut["BusinessHour"] <= cutoff_hour)
+]
+
+month_on_month_cut = last2week_cut[
+    (month_on_month_cut["BusinessHour"] >= 8) &
+    (month_on_month_cut["BusinessHour"] <= cutoff_hour)
 ]
 
 lastyear_cut = lastyear_cut[
@@ -337,9 +349,10 @@ def prepare_data_cuts(final_df):
     # Standard comparisons
     lw_date = today - timedelta(days=7)
     l2w_date = today - timedelta(days=14)
+    mom_date = today - timedelta(days=28)
 
     # 🔥 FIXED YoY DATE
-    ly_date = get_same_weekday_last_year(today)
+    ly_date = today - timedelta(days=364)
 
     # Common filter
     base_filter = (
@@ -350,16 +363,17 @@ def prepare_data_cuts(final_df):
     today_df = final_df[(final_df["Date"] == today) & base_filter]
     lw_df    = final_df[(final_df["Date"] == lw_date) & base_filter]
     l2w_df   = final_df[(final_df["Date"] == l2w_date) & base_filter]
+    mom_df   = final_df[(final_df["Date"] == mom_date) & base_filter]
     ly_df    = final_df[(final_df["Date"] == ly_date) & base_filter]
 
-    return today_df, lw_df, l2w_df, ly_df, today
+    return today_df, lw_df, l2w_df, mom_df, ly_df, today
 
 
 # =========================================================
 # 📈 OVERALL EXTENDED FUNCTION
 # =========================================================
 
-def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
+def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
 
     def calc(df):
         if df is None or df.empty:
@@ -374,6 +388,7 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
     gt,dt,nt,tt = calc(today_df)
     gl,dl,nl,tl = calc(lw_df)
     g2,d2,n2,t2 = calc(l2w_df)
+    gm,dm,nm,tm = calc(mom_df)
     gy,dy,ny,ty = calc(ly_df)
 
     df = pd.DataFrame({
@@ -381,12 +396,14 @@ def build_overall_extended(today_df, lw_df, l2w_df, ly_df):
         "Today":[gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
         "Last Week":[gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100],
         "Last 2 Week":[g2,d2,n2,t2,n2/max(t2,1),d2/max(g2,1)*100],
+        "Last Month":[gm,dm,nm,tm,nm/max(tm,1),dm/max(gm,1)*100],
         "Last Year":[gy,dy,ny,ty,ny/max(ty,1),dy/max(gy,1)*100]
     })
 
     # Growth calculations
     df["LW Growth %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
     df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
+    df["MoM Growth %"] = ((df["Today"]-df["Last Month"]) / df["Last Month"].replace(0,1)) * 100
     df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
 
     # =========================================================
@@ -433,6 +450,12 @@ def prepare_data_cuts(final_df):
         (final_df["status"] == "Closed")
     ].copy()
 
+    mom_df = final_df[
+        (final_df["Data_Type"] == "Last Month") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
     ly_df = final_df[
         (final_df["Data_Type"] == "Last Year") &
         (final_df["Store Type"] == "COCO") &
@@ -442,11 +465,12 @@ def prepare_data_cuts(final_df):
     # Business date (safe)
     today = final_df["Date"].dropna().max()
 
-    return today_df, lw_df, l2w_df, ly_df, today
+    return today_df, lw_df, l2w_df, mom_df, ly_df, today
 
 print("Today rows:", len(today_cut))
 print("LW rows:", len(lastweek_cut))
 print("L2W rows:", len(last2week_cut))
+print("MoM rows:", len(mom_cut))
 print("LY rows:", len(lastyear_cut))
 
 # =========================================================
@@ -460,9 +484,10 @@ def generate_insight(overall):
 
         lw = row["LW Growth %"]
         l2w = row["L2W Growth %"]
+        mom = row["MoM Growth %"]
         ly = row["LY Growth %"]
 
-        text = f"{lw:+.1f}% vs LW, {l2w:+.1f}% vs L2W, {ly:+.1f}% vs LY"
+        text = f"{lw:+.1f}% vs LW, {l2w:+.1f}% vs L2W, {mom:+.1f}% vs MoM, {ly:+.1f}% vs LY"
 
         if lw>0 and ly<0:
             text += " → ⚠️ slowdown"
@@ -554,6 +579,7 @@ overall = build_overall_extended(
     today_cut,
     lastweek_cut,
     last2week_cut,
+    mom_cut,
     lastyear_cut
 )
 
