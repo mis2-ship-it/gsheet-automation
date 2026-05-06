@@ -129,8 +129,18 @@ coco_branches = help_df[
     help_df["Ownership"].str.upper() == "COCO"
 ]["branchcode"].tolist()
 
+print("Sample API branches:", branches[:10])
+print("Sample Help Sheet COCO:", coco_branches[:10])
+
 # Filter only COCO
-branches = [b for b in branches if b in coco_branches]
+# Normalize everything properly
+def clean(x):
+    return str(x).strip().upper()
+
+branches = [clean(b) for b in branches]
+coco_branches = [clean(b) for b in coco_branches]
+
+branches = list(set(branches) & set(coco_branches))
 
 print("🏪 COCO Branch count:", len(branches))
 
