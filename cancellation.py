@@ -86,44 +86,46 @@ branches = [
 print("🏪 Branch count:", len(branches))
 
 # =========================================================
-# 📡 FETCH ORDERS
+# 📡 FETCH SALES DATA
 # =========================================================
-all_data = []
+df_list = []
 
 for branch in branches:
     try:
         params = {
             "branch": branch,
-            "businessday": today
+            "day": today
         }
 
         r = requests.get(
             "https://api.ristaapps.com/v1/sales",
             headers=headers(),
             params=params,
-            timeout=20
+            timeout=30
         )
-        if r.status_code != 200:
-           print(f"❌ API Error {branch}: {r.status_code}")
-           print(r.text)
-           continue
 
-        js = r.json()
-        data = js.get("data", []) if isinstance(js, dict) else js
+        if r.status_code != 200:
+            print(f"❌ API Error {branch}: {r.status_code}")
+            print(r.text)
+            continue
+
+        resp = r.json()
+
+        data = resp.get("data", []) if isinstance(resp, dict) else resp
 
         if data:
-            all_data.append(pd.json_normalize(data))
+            df_list.append(pd.json_normalize(data))
 
     except Exception as e:
-        print(f"❌ Error for branch {branch}: {e}")
-        continue
-        
-# Combine
-if not all_data:
+        print(f"❌ Error {branch}: {e}")
+
+# Combine all
+if not df_list:
     print("❌ No data fetched")
     exit()
 
-df = pd.concat(all_data, ignore_index=True)
+df = pd.concat(df_list, ignore_index=True)
+
 print("✅ Data fetched:", len(df))
 
 # =========================================================
