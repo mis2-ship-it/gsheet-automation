@@ -141,7 +141,9 @@ df["invoiceNumber"] = df["invoiceNumber"].astype(str)
 # =========================================================
 # 🔻 FILTER CANCELLED
 # =========================================================
-cancel_df = df[df["status"].str.lower().isin(["cancelled", "voided"])].copy()
+cancel_df = df[
+    df["status"].astype(str).str.lower().isin(["cancelled", "voided"])
+].copy()
 
 if cancel_df.empty:
     print("✅ No cancellations")
@@ -230,9 +232,9 @@ def send_email(to_email, store_df):
     msg = MIMEText(body, "html")
     msg["Subject"] = f"🚨 Cancellation Alert - {store_df['branchName'].iloc[0]}"
     msg["From"] = EMAIL_USER
-    msg["To"] = to_email
-
-    receivers = [to_email]
+    to_list = [e.strip() for e in to_email.split(",") if e.strip()]
+    msg["To"] = ", ".join(to_list)
+    receivers = to_list.copy()
 
     if CC_EMAIL:
         msg["Cc"] = CC_EMAIL
@@ -282,6 +284,70 @@ for store, group in final_df.groupby("branchName"):
 
     print(f"📩 Alert sent for {store} → {receivers}")
 
+
+# =========================================================
+# 📧 SUMMARY EMAIL (ONLY CC)
+# =========================================================
+def send_summary_email(summary_df):
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    CC_EMAIL = os.environ.get("EMAIL_CC")
+
+    if not CC_EMAIL:
+        print("❌ No CC email configured")
+        return
+
+    # Convert dataframe to HTML
+    table_html = summary_df.to_html(index=False, border=1)
+
+    body = f"""
+    <h2>📊 Store-Level Cancellation Summary</h2>
+
+    <p><b>Channel-wise cancellation count</b></p>
+
+    {table_html}
+
+    <br>
+    <p style="color:red;"><b>⚠️ Please review high cancellation stores.</b></p>
+    """
+
+    msg = MIMEText(body, "html")
+    msg["Subject"] = "📊 Cancellation Summary Report"
+    msg["From"] = EMAIL_USER
+    msg["To"] = CC_EMAIL   # sending only to CC list
+
+    receivers = [e.strip() for e in CC_EMAIL.split(",") if e.strip()]
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, receivers, msg.as_string())
+        server.quit()
+
+        print(f"📩 Summary mail sent → {receivers}")
+
+    except Exception as e:
+        print(f"❌ Summary email error: {e}")
+
+# =========================================================
+# 📊 CHANNEL-WISE SUMMARY
+# =========================================================
+summary_df = (
+    final_df
+    .groupby(["branchName", "channel"])
+    .size()
+    .unstack(fill_value=0)
+    .reset_index()
+)
+
+# Total column
+summary_df = summary_df.sort_values(by="Total", ascending=False)
+
+print("📊 Summary तैयार")
+
+        
 # =========================================================
 # 📊 SAVE TO SHEET
 # =========================================================
@@ -291,7 +357,14 @@ final_df["status_flag"] = "SENT"
 
 clean_df = final_df.replace([np.inf, -np.inf], 0).fillna("").astype(str)
 
-raw_ws.append_rows(clean_df.values.tolist())
+if raw_ws.row_count == 1:
+    raw_ws.append_row(clean_df.columns.tolist())
 
 print("✅ Data appended to sheet")
 print("🎉 Flow Completed")
+
+
+# =========================================================
+# 📤 SEND SUMMARY MAIL
+# =========================================================
+send_summary_email(summary_df)
