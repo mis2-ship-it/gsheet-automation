@@ -547,7 +547,7 @@ overall = build_overall_extended(
     today_cut,
     lastweek_cut,
     last2week_cut,
-    mom_cut,
+    month_on_month_cut,
     lastyear_cut
 )
 
