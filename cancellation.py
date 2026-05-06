@@ -165,58 +165,60 @@ def send_email(to_email, store_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-
-    store_name = store_df["branchName"].iloc[0]
+    CC_EMAIL = os.environ.get("EMAIL_CC")
 
     rows_html = ""
 
-for _, row in store_df.iterrows():
-
-    store_name = row.get("branchName", "")
-    invoice_id = row.get("invoiceNumber", "")
-    channel = row.get("channel", "")
-    item_name = row.get("itemName", "")
-    qty = row.get("quantity", "")
-    net_amount = row.get("netAmount", "")
-
-   rows_html += f"""
-<tr>
-    <td>{row.get('orderId') or row.get('invoiceNo') or ''}</td>
-    <td>{row.get('branchName','')}</td>
-    <td>{row.get('channel','Unknown')}</td>
-    <td>{row.get('createdDate') or row.get('invoiceDate') or ''}</td>
-    <td>{row.get('netAmount') or row.get('Net Sales') or ''}</td>
-</tr>
-"""
+    # ✅ LOOP START
+    for _, row in store_df.iterrows():
+        rows_html += f"""
+        <tr>
+            <td>{row.get('orderId') or row.get('invoiceNo') or ''}</td>
+            <td>{row.get('branchName','')}</td>
+            <td>{row.get('channel','Unknown')}</td>
+            <td>{row.get('createdDate') or row.get('invoiceDate') or ''}</td>
+            <td>{row.get('netAmount') or row.get('Net Sales') or ''}</td>
+        </tr>
+        """
+    # ✅ LOOP END (alignment same as 'for')
 
     body = f"""
-    <h3>🚨 Cancellation Alert</h3>
-    <p><b>Store:</b> {store_name}</p>
-    <table border="1" cellpadding="5">
+    <h2>🚨 Cancellation Alert</h2>
+
+    <table border="1" cellpadding="5" cellspacing="0">
         <tr>
-            <th>Store Name</th>
-            <th>Invoice Number</th>
+            <th>Order ID</th>
+            <th>Store</th>
             <th>Channel</th>
-            <th>Item Name</th>
-            <th>Quantity</th>
-            <th>Net Amount</th>
+            <th>Time</th>
+            <th>Amount</th>
         </tr>
         {rows_html}
     </table>
     """
 
     msg = MIMEText(body, "html")
-    msg["Subject"] = f"🚨 Cancellation Alert - {store_name}"
+    msg["Subject"] = "🚨 Cancellation Alert"
     msg["From"] = EMAIL_USER
     msg["To"] = to_email
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
-    server.sendmail(EMAIL_USER, to_email.split(","), msg.as_string())
-    server.quit()
+    receivers = [to_email]
 
-    print(f"📩 Sent: {store_name}")
+    if CC_EMAIL:
+        msg["Cc"] = CC_EMAIL
+        receivers.append(CC_EMAIL)
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, receivers, msg.as_string())
+        server.quit()
+
+        print(f"📩 Mail sent to {to_email}")
+
+    except Exception as e:
+        print(f"❌ Email error: {e}")
 
 # =========================================================
 # 🚀 SEND ALERTS
