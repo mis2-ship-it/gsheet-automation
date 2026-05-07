@@ -885,7 +885,6 @@ def send_email():
     msg["Subject"] = f"📊 Live Sales Report - {report_time.strftime('%d %b %Y')}"
 
     # ✅ BODY
-    ```python id="m4j6hb"
 body = f"""
 
 <div style="
