@@ -92,9 +92,15 @@ df_list = []
 
 for branch in branches:
     try:
+
+        from_time = (
+        datetime.utcnow() - timedelta(minutes=10)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+
         params = {
-            "branch": branch,
-            "day": today
+           "branch": branch,
+           "day": today,
+           "fromDate": from_time
         }
 
         r = requests.get(
