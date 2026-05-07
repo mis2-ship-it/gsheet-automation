@@ -391,7 +391,3 @@ print("✅ Data appended to sheet")
 print("🎉 Flow Completed")
 
 
-# =========================================================
-# 📤 SEND SUMMARY MAIL
-# =========================================================
-send_summary_email(summary_df)
