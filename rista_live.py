@@ -841,7 +841,9 @@ def styled_html(df):
         '''
         <table style="
             border-collapse:collapse;
-            width:100%;
+            table-layout:auto;
+            width:auto;
+            min-width:100%;
             font-family:Arial;
             font-size:12px;
             background:white;
