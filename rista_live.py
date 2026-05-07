@@ -828,7 +828,8 @@ def styled_html(df):
             continue
 
         # Growth column with color
-        if col in growth_cols:
+# Growth column with color
+if col in growth_cols:
 
     def color_growth(x):
 
@@ -844,10 +845,14 @@ def styled_html(df):
             return ""
 
     df[col] = df[col].apply(color_growth)
-    
-        else:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-            df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
+
+else:
+
+    df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    df[col] = df[col].apply(
+        lambda x: f"{x:.2f}" if pd.notnull(x) else ""
+    )
 
     # Convert to HTML
     html = df.to_html(index=False, escape=False)
