@@ -224,7 +224,7 @@ def send_email(to_email, store_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    CC_EMAIL = os.environ.get("EMAIL_CC")
+ 
 
     rows_html = ""
 
@@ -265,9 +265,6 @@ def send_email(to_email, store_df):
     msg["To"] = ", ".join(to_list)
     receivers = to_list.copy()
 
-    if CC_EMAIL:
-        msg["Cc"] = CC_EMAIL
-        receivers.append(CC_EMAIL)
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
@@ -321,7 +318,7 @@ def send_summary_email(summary_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    CC_EMAIL = os.environ.get("EMAIL_CC")
+    CC_EMAIL = os.environ.get("EMAIL_CCOPS")
 
     if not CC_EMAIL:
         print("❌ No CC email configured")
