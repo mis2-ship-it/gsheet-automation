@@ -869,15 +869,6 @@ def styled_html(df):
             lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
         )
 
-        # ---------------- NORMAL NUMBER ---------------- #
-
-        else:
-
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-            df[col] = df[col].apply(
-                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
-            )
 
     # ---------------- HTML TABLE ---------------- #
 
