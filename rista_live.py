@@ -914,7 +914,6 @@ def styled_html(df):
 
     return html
 
-            df[col] = df[col].apply(color_growth)
 
         # ---------------------------------
         # Numeric columns
