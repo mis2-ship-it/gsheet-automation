@@ -593,6 +593,8 @@ print("✅ All Analysis Completed")
 # =========================================================
 # 🔥 BRAND x SOURCE (EXECUTIVE FORMAT)
 # =========================================================
+sources = ["In Store", "Swiggy", "Zomato"]
+params = ["Net Sales", "Txn", "Discount %"]
 
 rows = []
 
