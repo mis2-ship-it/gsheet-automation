@@ -829,95 +829,46 @@ def styled_html(df):
         "Brand",
         "Session",
         "Hour",
-        "Store Name",
-        "Parameter"
+        "Store Name"
     ]
-
-    # ---------------- FORMAT ---------------- #
 
     for col in df.columns:
 
-        # TEXT COLUMN
+        # Skip text columns
         if col in text_cols:
             continue
 
-        # ---------------- GROWTH COLOR ---------------- #
+        # ---------------- GROWTH COLUMNS ---------------- #
 
-           # Growth column with color
-    if col in growth_cols:
+        if col in growth_cols:
 
-        def color_growth(x):
+            def color_growth(x):
 
-            try:
+                try:
 
-                val = float(str(x).replace("%", "").strip())
+                    val = float(str(x).replace("%", "").strip())
 
-                bg = "#d4edda" if val >= 0 else "#f8d7da"
+                    bg = "#d4edda" if val >= 0 else "#f8d7da"
 
-                return f'<span style="background:{bg};padding:4px 8px;border-radius:4px;display:inline-block;">{val:.2f}%</span>'
+                    return f'''
+                    <span style="
+                        background:{bg};
+                        padding:4px 8px;
+                        border-radius:4px;
+                        display:inline-block;
+                        min-width:70px;
+                        text-align:center;
+                    ">
+                    {val:.2f}%
+                    </span>
+                    '''
 
-            except:
-                return ""
+                except:
+                    return ""
 
-        df[col] = df[col].apply(color_growth)
+            df[col] = df[col].apply(color_growth)
 
-    else:
-
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        df[col] = df[col].apply(
-            lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
-        )
-
-
-    # ---------------- HTML TABLE ---------------- #
-
-    html = df.to_html(index=False, escape=False)
-
-    html = html.replace(
-        '<table border="1" class="dataframe">',
-        '''
-        <table style="
-        border-collapse:collapse;
-        font-family:Arial;
-        font-size:12px;
-        width:100%;
-        border:1px solid #dcdcdc;
-        background:white;
-        ">
-        '''
-    )
-
-    html = html.replace(
-        '<th>',
-        '''
-        <th style="
-        background:#1f4e78;
-        color:white;
-        padding:8px;
-        text-align:center;
-        border:1px solid #dcdcdc;
-        ">
-        '''
-    )
-
-    html = html.replace(
-        '<td>',
-        '''
-        <td style="
-        padding:6px;
-        text-align:right;
-        border:1px solid #dcdcdc;
-        ">
-        '''
-    )
-
-    return html
-
-
-        # ---------------------------------
-        # Numeric columns
-        # ---------------------------------
+        # ---------------- NORMAL COLUMNS ---------------- #
 
         else:
 
@@ -927,24 +878,18 @@ def styled_html(df):
                 lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
             )
 
-    # ---------------------------------
-    # Convert HTML
-    # ---------------------------------
+    # ---------------- HTML TABLE ---------------- #
 
     html = df.to_html(index=False, escape=False)
-
-    # ---------------------------------
-    # Table Styling
-    # ---------------------------------
 
     html = html.replace(
         '<table border="1" class="dataframe">',
         '''
         <table style="
             border-collapse:collapse;
+            width:100%;
             font-family:Arial;
             font-size:12px;
-            width:100%;
             background:white;
         ">
         '''
@@ -956,7 +901,7 @@ def styled_html(df):
         <th style="
             background:#1f4e78;
             color:white;
-            padding:8px;
+            padding:10px;
             border:1px solid #d9d9d9;
             text-align:center;
         ">
@@ -967,7 +912,7 @@ def styled_html(df):
         '<td>',
         '''
         <td style="
-            padding:6px;
+            padding:8px;
             border:1px solid #e5e5e5;
             text-align:right;
         ">
@@ -975,8 +920,6 @@ def styled_html(df):
     )
 
     return html
-
-
 # ---------------- SAFE TABLE ---------------- #
 
 def safe_table(df, title):
