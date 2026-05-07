@@ -885,31 +885,185 @@ def send_email():
     msg["Subject"] = f"📊 Live Sales Report - {report_time.strftime('%d %b %Y')}"
 
     # ✅ BODY
-    body = f"""
-    <h2>📊 Executive Summary</h2>
-    <h3>Data Till {report_time.strftime('%I:%M %p')}</h3>
+    ```python id="m4j6hb"
+body = f"""
 
-    <p style="font-size:14px;font-weight:bold;color:#333;">
-    🧠 {insight_text}
-    </p>
+<div style="
+font-family:Arial;
+background:#f4f6f9;
+padding:20px;
+">
 
-    <h2>Overall</h2>{styled_html(overall)}
+<h1 style="color:#1f2937;">
+📊 LIVE SALES DASHBOARD
+</h1>
 
-    <h2>Source</h2>{safe_table(source_analysis, "Source")}
-    <h2>Region</h2>{safe_table(region_analysis, "Region")}
-    <h2>Brand</h2>{safe_table(brand_analysis, "Brand")}
-    <h2>Session</h2>{safe_table(session_analysis, "Session")}
+<p style="font-size:14px;color:#555;">
+🕒 Data Till:
+<b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+</p>
 
-    <h2>Hourly Trend</h2>{styled_html(hourly_analysis)}
+<hr>
 
-    <h2>Brand x Source</h2>{styled_html(brand_source_pivot)}
+<!-- ================= KPI CARDS ================= -->
 
-    <h2>Region x Source</h2>{styled_html(region_source_pivot)}
+<table width="100%" cellspacing="10">
+<tr>
 
-    <h2>Top 10 Stores</h2>{styled_html(top_stores)}
+<td style="
+background:white;
+padding:15px;
+border-radius:10px;
+text-align:center;
+box-shadow:0 1px 4px rgba(0,0,0,0.1);
+">
+<h3>💰 Net Sales</h3>
+<h1>₹ {today_total:,.0f}</h1>
+<p style="color:{'green' if growth >= 0 else 'red'};">
+{growth:.1f}% vs LW
+</p>
+</td>
 
-    <h2>Bottom 10 Stores</h2>{styled_html(bottom_stores)}
-    """
+<td style="
+background:white;
+padding:15px;
+border-radius:10px;
+text-align:center;
+box-shadow:0 1px 4px rgba(0,0,0,0.1);
+">
+<h3>🔮 EOD Projection</h3>
+<h1>₹ {eod_projection:,.0f}</h1>
+</td>
+
+<td style="
+background:white;
+padding:15px;
+border-radius:10px;
+text-align:center;
+box-shadow:0 1px 4px rgba(0,0,0,0.1);
+">
+<h3>🧾 Transactions</h3>
+<h1>{len(today_cut):,}</h1>
+</td>
+
+</tr>
+</table>
+
+<!-- ================= INSIGHT ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>🧠 Executive Insight</h2>
+
+<p style="
+font-size:16px;
+font-weight:bold;
+color:#111827;
+">
+{insight_text}
+</p>
+
+</div>
+
+<!-- ================= OVERALL ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>📈 Overall KPI</h2>
+
+{styled_html(overall)}
+
+</div>
+
+<!-- ================= REGION ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>🌍 Region Performance</h2>
+
+{styled_html(region_source_pivot)}
+
+</div>
+
+<!-- ================= BRAND ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>🏷️ Brand Performance</h2>
+
+{styled_html(brand_source_pivot)}
+
+</div>
+
+<!-- ================= HOURLY ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>⏰ Hourly Trend</h2>
+
+{styled_html(hourly_analysis)}
+
+</div>
+
+<!-- ================= TOP STORES ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>🏆 Top Stores</h2>
+
+{styled_html(top_stores)}
+
+</div>
+
+<!-- ================= BOTTOM STORES ================= -->
+
+<div style="
+background:white;
+padding:15px;
+border-radius:10px;
+margin-top:20px;
+">
+
+<h2>⚠️ Bottom Stores</h2>
+
+{styled_html(bottom_stores)}
+
+</div>
+
+</div>
+"""
+```
+
 
     msg.attach(MIMEText(body, "html"))
 
