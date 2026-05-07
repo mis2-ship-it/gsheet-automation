@@ -100,11 +100,16 @@ branch_data = data.get("data", []) if isinstance(data, dict) else data
 branches = []
 
 for b in branch_data:
-    if b.get("status") == "Active":
-        code = b.get("branchCode")   # ✅ correct key
+    if b.get("status") != "Active":
+        continue
 
-        if code:
-            branches.append(str(code).strip().upper())
+    code = b.get("branchCode")
+
+    channels = [c.get("name","") for c in b.get("channels", [])]
+
+    # only include branches with required channel
+    if "Swiggy Frozen Bottle" in channels or "Zomato Frozen Bottle" in channels:
+        branches.append(code)
 
 print("🏪 Branch count:", len(branches))
 
@@ -157,8 +162,12 @@ def fetch_availability(branch):
             timeout=30
         )
 
+        if r.status_code == 403:
+            print(f"🚫 Access denied: {branch}")
+            return pd.DataFrame()
+
         if r.status_code != 200:
-            print(f"❌ API Fail for {branch}: {r.status_code}")
+            print(f"❌ API Fail {branch}: {r.status_code}")
             return pd.DataFrame()
 
         data = r.json().get("data", [])
@@ -172,7 +181,7 @@ def fetch_availability(branch):
         return df
 
     except Exception as e:
-        print(f"❌ Error for {branch}:", e)
+        print(f"❌ Error {branch}:", e)
         return pd.DataFrame()
 
 # =========================================================
