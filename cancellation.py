@@ -152,17 +152,40 @@ if cancel_df.empty:
 print("🚨 Cancellations Found:", len(cancel_df))
 
 # =========================================================
-# 🔁 REMOVE DUPLICATES
+# 🔁 REMOVE DUPLICATES (IMPORTANT FIX)
 # =========================================================
+
 try:
-    existing = pd.DataFrame(raw_ws.get_all_records())
-except:
-    existing = pd.DataFrame()
+    existing_data = raw_ws.get_all_values()
 
-if not existing.empty and "invoiceNumber" in existing.columns:
-    sent_ids = set(existing["invoiceNumber"].astype(str))
-    cancel_df = cancel_df[~cancel_df["invoiceNumber"].isin(sent_ids)]
+    if len(existing_data) > 1:
 
+        existing_headers = existing_data[0]
+
+        # Find invoice column safely
+        if "invoiceNumber" in existing_headers:
+
+            invoice_idx = existing_headers.index("invoiceNumber")
+
+            sent_ids = set()
+
+            for row in existing_data[1:]:
+
+                try:
+                    if len(row) > invoice_idx:
+                        sent_ids.add(str(row[invoice_idx]).strip())
+                except:
+                    pass
+
+            # Remove already alerted orders
+            cancel_df = cancel_df[
+                ~cancel_df["invoiceNumber"].astype(str).isin(sent_ids)
+            ]
+
+except Exception as e:
+    print("⚠️ Duplicate check skipped:", e)
+
+# Final validation
 if cancel_df.empty:
     print("✅ No new cancellations")
     exit()
@@ -338,14 +361,15 @@ summary_df = (
     final_df
     .groupby(["branchName", "channel"])
     .size()
-    .unstack(fill_value=0)
-    .reset_index()
+    .reset_index(name="Cancel_Count")
 )
 
-# Total column
-summary_df = summary_df.sort_values(by="Total", ascending=False)
+print(summary_df.head())
 
-print("📊 Summary तैयार")
+# =========================================================
+# 📤 SEND SUMMARY MAIL
+# =========================================================
+send_summary_email(summary_df)
 
         
 # =========================================================
