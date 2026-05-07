@@ -593,23 +593,27 @@ print("✅ All Analysis Completed")
 # =========================================================
 # 🔥 BRAND x SOURCE (EXECUTIVE FORMAT)
 # =========================================================
-row = {
-    "Brand": brand,
-    "Source": s,
-    "Parameter": param
-}
+sources = ["In Store", "Swiggy", "Zomato"]
 
-for brand in sorted(today_cut["Brand"].dropna().unique()):
+rows = []
 
+for brand in final_df["Brand"].dropna().unique():
 
     for s in sources:
 
-        for param in params:
+        for param in ["Net Sales", "Txn", "Discount %"]:
 
-            def get_vals(df):
-                temp = df[
-                    (df["Brand"] == brand) &
-                    (df["Source Group"] == s)
+            row = {
+                "Brand": brand,
+                "Source": s,
+                "Parameter": param
+            }
+
+            def get_vals(base_df):
+
+                temp = base_df[
+                    (base_df["Brand"] == brand) &
+                    (base_df["Source Group"] == s)
                 ]
 
                 if temp.empty:
@@ -617,7 +621,13 @@ for brand in sorted(today_cut["Brand"].dropna().unique()):
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+
+                gross = temp["grossAmount"].sum()
+
+                disc = (
+                    temp["discountAmount"].sum() / gross * 100
+                    if gross != 0 else 0
+                )
 
                 return net, txn, disc
 
@@ -626,17 +636,26 @@ for brand in sorted(today_cut["Brand"].dropna().unique()):
             l2w = get_vals(last2week_cut)
 
             def pick(metric, data):
+
                 return {
                     "Net Sales": data[0],
                     "Txn": data[1],
                     "Discount %": data[2]
                 }[metric]
 
-            today_val = pick(param, t)
-            lw_val = pick(param, lw)
-            l2w_val = pick(param, l2w)
+            row["Today"] = round(pick(param, t), 2)
+            row["Last Week"] = round(pick(param, lw), 2)
+            row["Last 2 Week"] = round(pick(param, l2w), 2)
 
-            growth = ((today_val - lw_val) / max(lw_val, 1)) * 100
+            row["Growth %"] = round(
+                (
+                    (pick(param, t) - pick(param, lw))
+                    / max(abs(pick(param, lw)), 1)
+                ) * 100,
+                2
+            )
+
+            rows.append(row)
 
 brand_source_pivot = pd.DataFrame(rows)
 
@@ -644,22 +663,27 @@ brand_source_pivot = pd.DataFrame(rows)
 # 🔥 REGION x SOURCE (EXECUTIVE FORMAT - FIXED)
 # =========================================================
 
-row = {
-    "Region": region,
-    "Source": s,
-    "Parameter": param
-}
+sources = ["In Store", "Swiggy", "Zomato"]
 
-for region in sorted(today_cut["Region"].dropna().unique()):
+rows = []
+
+for region in final_df["Region"].dropna().unique():
 
     for s in sources:
 
-        for param in params:
+        for param in ["Net Sales", "Txn", "Discount %"]:
 
-            def get_vals(df):
-                temp = df[
-                    (df["Region"] == region) &
-                    (df["Source Group"] == s)
+            row = {
+                "Region": region,
+                "Source": s,
+                "Parameter": param
+            }
+
+            def get_vals(base_df):
+
+                temp = base_df[
+                    (base_df["Region"] == region) &
+                    (base_df["Source Group"] == s)
                 ]
 
                 if temp.empty:
@@ -667,7 +691,13 @@ for region in sorted(today_cut["Region"].dropna().unique()):
 
                 net = temp["Net Sales"].sum()
                 txn = len(temp)
-                disc = temp["discountAmount"].sum() / max(temp["grossAmount"].sum(), 1) * 100
+
+                gross = temp["grossAmount"].sum()
+
+                disc = (
+                    temp["discountAmount"].sum() / gross * 100
+                    if gross != 0 else 0
+                )
 
                 return net, txn, disc
 
@@ -676,18 +706,26 @@ for region in sorted(today_cut["Region"].dropna().unique()):
             l2w = get_vals(last2week_cut)
 
             def pick(metric, data):
+
                 return {
                     "Net Sales": data[0],
                     "Txn": data[1],
                     "Discount %": data[2]
                 }[metric]
 
-            today_val = pick(param, t)
-            lw_val = pick(param, lw)
-            l2w_val = pick(param, l2w)
+            row["Today"] = round(pick(param, t), 2)
+            row["Last Week"] = round(pick(param, lw), 2)
+            row["Last 2 Week"] = round(pick(param, l2w), 2)
 
-            growth = ((today_val - lw_val) / max(lw_val, 1)) * 100
+            row["Growth %"] = round(
+                (
+                    (pick(param, t) - pick(param, lw))
+                    / max(abs(pick(param, lw)), 1)
+                ) * 100,
+                2
+            )
 
+            rows.append(row)
 
 region_source_pivot = pd.DataFrame(rows)
 
