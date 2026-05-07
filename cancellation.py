@@ -399,14 +399,26 @@ send_summary_email(summary_df)
 # =========================================================
 # 📊 SAVE TO SHEET
 # =========================================================
+
 final_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 final_df["emailSent"] = "YES"
 final_df["status_flag"] = "SENT"
 
-clean_df = final_df.replace([np.inf, -np.inf], 0).fillna("").astype(str)
+clean_df = (
+    final_df
+    .replace([np.inf, -np.inf], 0)
+    .fillna("")
+    .astype(str)
+)
 
-if raw_ws.row_count == 1:
+existing_values = raw_ws.get_all_values()
+
+# Add headers once
+if not existing_values:
     raw_ws.append_row(clean_df.columns.tolist())
+
+# Append data
+raw_ws.append_rows(clean_df.values.tolist())
 
 print("✅ Data appended to sheet")
 print("🎉 Flow Completed")
