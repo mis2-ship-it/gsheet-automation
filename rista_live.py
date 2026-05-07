@@ -843,22 +843,31 @@ def styled_html(df):
 
         # ---------------- GROWTH COLOR ---------------- #
 
-        if col in growth_cols:
+           # Growth column with color
+    if col in growth_cols:
 
-            def color_growth(x):
+        def color_growth(x):
 
-                try:
+            try:
 
-                    val = float(str(x).replace("%", "").strip())
+                val = float(str(x).replace("%", "").strip())
 
-                    bg = "#d4edda" if val >= 0 else "#f8d7da"
+                bg = "#d4edda" if val >= 0 else "#f8d7da"
 
-                    return f'<span style="background:{bg};padding:4px 8px;border-radius:4px;display:inline-block;">{val:.2f}%</span>'
-                    
-                except:
-                    return ""
+                return f'<span style="background:{bg};padding:4px 8px;border-radius:4px;display:inline-block;">{val:.2f}%</span>'
 
-            df[col] = df[col].apply(color_growth)
+            except:
+                return ""
+
+        df[col] = df[col].apply(color_growth)
+
+    else:
+
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        df[col] = df[col].apply(
+            lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+        )
 
         # ---------------- NORMAL NUMBER ---------------- #
 
