@@ -601,15 +601,6 @@ row = {
 
 for brand in sorted(today_cut["Brand"].dropna().unique()):
 
-    rows.append({
-        "Brand": brand,
-        "Source": "",
-        "Parameter": "",
-        "Today": "",
-        "Last Week": "",
-        "Last 2 Week": "",
-        "Growth %": ""
-    })
 
     for s in sources:
 
