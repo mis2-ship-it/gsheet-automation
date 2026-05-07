@@ -842,31 +842,13 @@ def styled_html(df):
 
         if col in growth_cols:
 
-            def color_growth(x):
-
-                try:
-
-                    val = float(str(x).replace("%", "").strip())
-
-                    bg = "#d4edda" if val >= 0 else "#f8d7da"
-
-                    return f'''
-                    <span style="
-                        background:{bg};
-                        padding:4px 8px;
-                        border-radius:4px;
-                        display:inline-block;
-                        min-width:70px;
-                        text-align:center;
-                    ">
-                    {val:.2f}%
-                    </span>
-                    '''
-
-                except:
-                    return ""
-
-            df[col] = df[col].apply(color_growth)
+            df[col] = df[col].apply(
+                lambda x:
+                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) and str(x).strip() != "" and float(x) >= 0 else
+                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
+                if pd.notnull(x) and str(x).strip() != "" else ""
+            )
 
         # ---------------- NORMAL COLUMNS ---------------- #
 
