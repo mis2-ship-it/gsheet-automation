@@ -824,63 +824,97 @@ def styled_html(df):
 
     text_cols = [
         "Parameters",
-        "Parameter",
         "Source",
         "Region",
         "Brand",
         "Session",
         "Hour",
-        "Store Name"
+        "Store Name",
+        "Parameter"
     ]
+
+    # ---------------- FORMAT ---------------- #
 
     for col in df.columns:
 
-        # ---------------------------------
-        # Skip text columns
-        # ---------------------------------
-
+        # TEXT COLUMN
         if col in text_cols:
             continue
 
-        # ---------------------------------
-        # Growth Columns
-        # ---------------------------------
+        # ---------------- GROWTH COLOR ---------------- #
 
-        if "Growth" in col or "%" in col:
+        if col in growth_cols:
 
             def color_growth(x):
 
                 try:
+
                     val = float(x)
 
                     if val >= 0:
-                        return f'''
-                        <span style="
-                            background:#d4edda;
-                            color:#155724;
-                            padding:4px 8px;
-                            border-radius:4px;
-                            font-weight:bold;
-                        ">
-                        {val:.2f}%
-                        </span>
-                        '''
+                        return f'<span style="background:#d4edda;padding:4px;border-radius:4px;">{val:.2f}%</span>'
 
                     else:
-                        return f'''
-                        <span style="
-                            background:#f8d7da;
-                            color:#721c24;
-                            padding:4px 8px;
-                            border-radius:4px;
-                            font-weight:bold;
-                        ">
-                        {val:.2f}%
-                        </span>
-                        '''
+                        return f'<span style="background:#f8d7da;padding:4px;border-radius:4px;">{val:.2f}%</span>'
 
                 except:
                     return ""
+
+            df[col] = df[col].apply(color_growth)
+
+        # ---------------- NORMAL NUMBER ---------------- #
+
+        else:
+
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            df[col] = df[col].apply(
+                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+            )
+
+    # ---------------- HTML TABLE ---------------- #
+
+    html = df.to_html(index=False, escape=False)
+
+    html = html.replace(
+        '<table border="1" class="dataframe">',
+        '''
+        <table style="
+        border-collapse:collapse;
+        font-family:Arial;
+        font-size:12px;
+        width:100%;
+        border:1px solid #dcdcdc;
+        background:white;
+        ">
+        '''
+    )
+
+    html = html.replace(
+        '<th>',
+        '''
+        <th style="
+        background:#1f4e78;
+        color:white;
+        padding:8px;
+        text-align:center;
+        border:1px solid #dcdcdc;
+        ">
+        '''
+    )
+
+    html = html.replace(
+        '<td>',
+        '''
+        <td style="
+        padding:6px;
+        text-align:right;
+        border:1px solid #dcdcdc;
+        ">
+        '''
+    )
+
+    return html
 
             df[col] = df[col].apply(color_growth)
 
