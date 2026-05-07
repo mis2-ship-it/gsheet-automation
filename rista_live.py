@@ -829,12 +829,22 @@ def styled_html(df):
 
         # Growth column with color
         if col in growth_cols:
-            df[col] = df[col].apply(lambda x:
-                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) and float(x) >= 0 else
-                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) else ""
-            )
+
+    def color_growth(x):
+
+        try:
+            val = float(x)
+
+            if val >= 0:
+                return f'<span style="background:#d4edda;padding:4px;">{val:.2f}%</span>'
+            else:
+                return f'<span style="background:#f8d7da;padding:4px;">{val:.2f}%</span>'
+
+        except:
+            return ""
+
+    df[col] = df[col].apply(color_growth)
+    
         else:
             df[col] = pd.to_numeric(df[col], errors="coerce")
             df[col] = df[col].apply(lambda x: f"{x:.2f}" if pd.notnull(x) else "")
