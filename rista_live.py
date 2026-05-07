@@ -849,14 +849,12 @@ def styled_html(df):
 
                 try:
 
-                    val = float(x)
+                    val = float(str(x).replace("%", "").strip())
 
-                    if val >= 0:
-                        return f'<span style="background:#d4edda;padding:4px;border-radius:4px;">{val:.2f}%</span>'
+                    bg = "#d4edda" if val >= 0 else "#f8d7da"
 
-                    else:
-                        return f'<span style="background:#f8d7da;padding:4px;border-radius:4px;">{val:.2f}%</span>'
-
+                    return f'<span style="background:{bg};padding:4px 8px;border-radius:4px;display:inline-block;">{val:.2f}%</span>'
+                    
                 except:
                     return ""
 
