@@ -148,7 +148,7 @@ df["invoiceNumber"] = df["invoiceNumber"].astype(str)
 # 🔻 FILTER CANCELLED
 # =========================================================
 cancel_df = df[
-    df["status"].astype(str).str.lower().isin(["cancelled", "voided"])
+    df["status"].astype(str).str.lower().isin(["voided"])
 ].copy()
 
 if cancel_df.empty:
