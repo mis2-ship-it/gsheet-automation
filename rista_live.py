@@ -1061,7 +1061,6 @@ margin-top:20px;
 
 </div>
 """
-```
 
 
     msg.attach(MIMEText(body, "html"))
