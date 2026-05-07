@@ -819,72 +819,149 @@ def push(name, df):
 def styled_html(df):
 
     df = df.copy()
+
     growth_cols = [c for c in df.columns if "Growth" in c]
+
+    text_cols = [
+        "Parameters",
+        "Parameter",
+        "Source",
+        "Region",
+        "Brand",
+        "Session",
+        "Hour",
+        "Store Name"
+    ]
 
     for col in df.columns:
 
+        # ---------------------------------
         # Skip text columns
-        if col in ["Parameters", "Source", "Region", "Brand", "Session", "Hour", "Store Name"]:
+        # ---------------------------------
+
+        if col in text_cols:
             continue
 
-        # Growth column with color
-# Growth column with color
-if col in growth_cols:
+        # ---------------------------------
+        # Growth Columns
+        # ---------------------------------
 
-    def color_growth(x):
+        if "Growth" in col or "%" in col:
 
-        try:
-            val = float(x)
+            def color_growth(x):
 
-            if val >= 0:
-                return f'<span style="background:#d4edda;padding:4px;">{val:.2f}%</span>'
-            else:
-                return f'<span style="background:#f8d7da;padding:4px;">{val:.2f}%</span>'
+                try:
+                    val = float(x)
 
-        except:
-            return ""
+                    if val >= 0:
+                        return f'''
+                        <span style="
+                            background:#d4edda;
+                            color:#155724;
+                            padding:4px 8px;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                        {val:.2f}%
+                        </span>
+                        '''
 
-    df[col] = df[col].apply(color_growth)
+                    else:
+                        return f'''
+                        <span style="
+                            background:#f8d7da;
+                            color:#721c24;
+                            padding:4px 8px;
+                            border-radius:4px;
+                            font-weight:bold;
+                        ">
+                        {val:.2f}%
+                        </span>
+                        '''
 
-else:
+                except:
+                    return ""
 
-    df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = df[col].apply(color_growth)
 
-    df[col] = df[col].apply(
-        lambda x: f"{x:.2f}" if pd.notnull(x) else ""
-    )
+        # ---------------------------------
+        # Numeric columns
+        # ---------------------------------
 
-    # Convert to HTML
+        else:
+
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            df[col] = df[col].apply(
+                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+            )
+
+    # ---------------------------------
+    # Convert HTML
+    # ---------------------------------
+
     html = df.to_html(index=False, escape=False)
 
-    # ✅ TABLE BORDER + STYLE (INSIDE FUNCTION)
+    # ---------------------------------
+    # Table Styling
+    # ---------------------------------
+
     html = html.replace(
         '<table border="1" class="dataframe">',
-        '<table style="border-collapse:collapse;font-family:Arial;font-size:12px;border:1px solid black;">'
+        '''
+        <table style="
+            border-collapse:collapse;
+            font-family:Arial;
+            font-size:12px;
+            width:100%;
+            background:white;
+        ">
+        '''
     )
 
     html = html.replace(
         '<th>',
-        '<th style="background:#f2f2f2;padding:6px;text-align:center;border:1px solid black;">'
+        '''
+        <th style="
+            background:#1f4e78;
+            color:white;
+            padding:8px;
+            border:1px solid #d9d9d9;
+            text-align:center;
+        ">
+        '''
     )
 
     html = html.replace(
         '<td>',
-        '<td style="padding:6px;text-align:right;border:1px solid black;">'
+        '''
+        <td style="
+            padding:6px;
+            border:1px solid #e5e5e5;
+            text-align:right;
+        ">
+        '''
     )
 
-    return html   # ✅ IMPORTANT
+    return html
+
+
+# ---------------- SAFE TABLE ---------------- #
 
 def safe_table(df, title):
+
     if df is None or df.empty:
         return f"<p>⚠️ No data available for {title}</p>"
+
     return styled_html(df)
 
-    # ----------SEND EMAIL------------------------#
+
+# ---------------- SEND EMAIL ---------------- #
 
 def send_email():
 
     import smtplib
+
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
@@ -893,13 +970,22 @@ def send_email():
     TO_EMAIL = os.environ.get("EMAIL_TO")
     CC_EMAIL = os.environ.get("EMAIL_CC")
 
-    report_time = now.replace(minute=0, second=0, microsecond=0)
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
 
     msg = MIMEMultipart()
+
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
     msg["Cc"] = CC_EMAIL
-    msg["Subject"] = f"📊 Live Sales Report - {report_time.strftime('%d %b %Y')}"
+
+    msg["Subject"] = (
+        f"📊 Live Sales Dashboard - "
+        f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+    )
 
     # =====================================================
     # EMAIL BODY
@@ -908,45 +994,73 @@ def send_email():
     body = f"""
 
     <div style="
-    font-family:Arial;
-    background:#f4f6f9;
-    padding:20px;
+        font-family:Arial;
+        background:#f4f6f9;
+        padding:20px;
     ">
 
-    <h1>📊 LIVE SALES DASHBOARD</h1>
+        <h1 style="color:#1f4e78;">
+            📊 LIVE SALES DASHBOARD
+        </h1>
 
-    <p>
-    🕒 Data Till:
-    <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
-    </p>
+        <p>
+            🕒 Data Till:
+            <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+        </p>
 
-    <h2>🧠 Executive Insight</h2>
-    <p>{insight_text}</p>
+        <div style="
+            background:white;
+            padding:15px;
+            border-radius:8px;
+            margin-bottom:20px;
+        ">
 
-    <h2>📈 Overall KPI</h2>
-    {styled_html(overall)}
+            <h2>🧠 Executive Insight</h2>
 
-    <h2>🌍 Region Performance</h2>
-    {styled_html(region_source_pivot)}
+            <p style="
+                font-size:15px;
+                font-weight:bold;
+                color:#333;
+            ">
+                {insight_text}
+            </p>
 
-    <h2>🏷️ Brand Performance</h2>
-    {styled_html(brand_source_pivot)}
+        </div>
 
-    <h2>⏰ Hourly Trend</h2>
-    {styled_html(hourly_analysis)}
+        <h2>📈 Overall KPI</h2>
+        {styled_html(overall)}
 
-    <h2>🏆 Top Stores</h2>
-    {styled_html(top_stores)}
+        <br><br>
 
-    <h2>⚠️ Bottom Stores</h2>
-    {styled_html(bottom_stores)}
+        <h2>🌍 Region Performance</h2>
+        {styled_html(region_source_pivot)}
+
+        <br><br>
+
+        <h2>🏷️ Brand Performance</h2>
+        {styled_html(brand_source_pivot)}
+
+        <br><br>
+
+        <h2>⏰ Hourly Trend</h2>
+        {styled_html(hourly_analysis)}
+
+        <br><br>
+
+        <h2>🏆 Top Stores</h2>
+        {styled_html(top_stores)}
+
+        <br><br>
+
+        <h2>⚠️ Bottom Stores</h2>
+        {styled_html(bottom_stores)}
 
     </div>
 
     """
 
     # =====================================================
-    # ATTACH HTML
+    # ATTACH EMAIL
     # =====================================================
 
     msg.attach(MIMEText(body, "html"))
@@ -959,11 +1073,18 @@ def send_email():
     if CC_EMAIL:
         receivers += CC_EMAIL.split(",")
 
+    # =====================================================
+    # SMTP
+    # =====================================================
+
     server = smtplib.SMTP("smtp.gmail.com", 587)
 
     server.starttls()
 
-    server.login(EMAIL_USER, EMAIL_PASS)
+    server.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
 
     server.sendmail(
         EMAIL_USER,
