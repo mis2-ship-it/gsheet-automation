@@ -158,40 +158,61 @@ if cancel_df.empty:
 print("🚨 Cancellations Found:", len(cancel_df))
 
 # =========================================================
-# 🔁 REMOVE DUPLICATES (IMPORTANT FIX)
+# 🔁 REMOVE DUPLICATES (FINAL FIX)
 # =========================================================
 
 try:
-    existing_data = raw_ws.get_all_values()
 
-    if len(existing_data) > 1:
+    existing_values = raw_ws.get_all_values()
 
-        existing_headers = existing_data[0]
+    sent_ids = set()
 
-        # Find invoice column safely
-        if "invoiceNumber" in existing_headers:
+    if len(existing_values) > 1:
 
-            invoice_idx = existing_headers.index("invoiceNumber")
+        headers_sheet = [
+            str(h).strip()
+            for h in existing_values[0]
+        ]
 
-            sent_ids = set()
+        if "invoiceNumber" in headers_sheet:
 
-            for row in existing_data[1:]:
+            invoice_idx = headers_sheet.index("invoiceNumber")
+
+            for row in existing_values[1:]:
 
                 try:
+
                     if len(row) > invoice_idx:
-                        sent_ids.add(str(row[invoice_idx]).strip())
+
+                        invoice = str(row[invoice_idx]).strip()
+
+                        if invoice and invoice.lower() != "nan":
+                            sent_ids.add(invoice)
+
                 except:
                     pass
 
-            # Remove already alerted orders
-            cancel_df = cancel_df[
-                ~cancel_df["invoiceNumber"].astype(str).isin(sent_ids)
-            ]
+    # Clean invoiceNumber before compare
+    cancel_df["invoiceNumber"] = (
+        cancel_df["invoiceNumber"]
+        .astype(str)
+        .str.strip()
+    )
+
+    before_count = len(cancel_df)
+
+    cancel_df = cancel_df[
+        ~cancel_df["invoiceNumber"].isin(sent_ids)
+    ]
+
+    after_count = len(cancel_df)
+
+    print(f"🛑 Duplicate Removed: {before_count - after_count}")
 
 except Exception as e:
-    print("⚠️ Duplicate check skipped:", e)
+    print("⚠️ Duplicate check issue:", e)
 
-# Final validation
+# Final check
 if cancel_df.empty:
     print("✅ No new cancellations")
     exit()
