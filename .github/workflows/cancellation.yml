@@ -30,7 +30,7 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
           EMAIL_TO: to_email 
-          EMAIL_CC: ${{ secrets.EMAIL_CC }}
+          EMAIL_CC: ${{ secrets.EMAIL_CCOPS }}
 
         run: |
           echo "Running script..."
