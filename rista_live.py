@@ -593,10 +593,11 @@ print("✅ All Analysis Completed")
 # =========================================================
 # 🔥 BRAND x SOURCE (EXECUTIVE FORMAT)
 # =========================================================
-sources = ["In Store", "Swiggy", "Zomato"]
-params = ["Net Sales", "Txn", "Discount %"]
-
-rows = []
+row = {
+    "Brand": brand,
+    "Source": s,
+    "Parameter": param
+}
 
 for brand in sorted(today_cut["Brand"].dropna().unique()):
 
@@ -646,39 +647,19 @@ for brand in sorted(today_cut["Brand"].dropna().unique()):
 
             growth = ((today_val - lw_val) / max(lw_val, 1)) * 100
 
-            rows.append({
-                "Brand": "",
-                "Source": s,
-                "Parameter": param,
-                "Today": round(today_val, 2),
-                "Last Week": round(lw_val, 2),
-                "Last 2 Week": round(l2w_val, 2),
-                "Growth %": round(growth, 2)
-            })
-
 brand_source_pivot = pd.DataFrame(rows)
 
 # =========================================================
 # 🔥 REGION x SOURCE (EXECUTIVE FORMAT - FIXED)
 # =========================================================
 
-sources = ["In Store", "Swiggy", "Zomato"]
-params = ["Net Sales", "Txn", "Discount %"]
-
-rows = []
+row = {
+    "Region": region,
+    "Source": s,
+    "Parameter": param
+}
 
 for region in sorted(today_cut["Region"].dropna().unique()):
-
-    # 🔥 REGION HEADER ROW
-    rows.append({
-        "Region": region,
-        "Source": "",
-        "Parameter": "",
-        "Today": "",
-        "Last Week": "",
-        "Last 2 Week": "",
-        "Growth %": ""
-    })
 
     for s in sources:
 
@@ -716,15 +697,6 @@ for region in sorted(today_cut["Region"].dropna().unique()):
 
             growth = ((today_val - lw_val) / max(lw_val, 1)) * 100
 
-            rows.append({
-                "Region": "",
-                "Source": s,
-                "Parameter": param,
-                "Today": round(today_val, 2),
-                "Last Week": round(lw_val, 2),
-                "Last 2 Week": round(l2w_val, 2),
-                "Growth %": round(growth, 2)
-            })
 
 region_source_pivot = pd.DataFrame(rows)
 
