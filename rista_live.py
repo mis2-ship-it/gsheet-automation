@@ -1025,7 +1025,83 @@ def styled_html(df):
                 lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
             )
 
-    # ---------------- HTML TABLE ---------------- #
+ # ---------------- HTML TABLE ---------------- #
+
+def styled_html(df):
+
+    df = df.copy()
+
+    growth_cols = [c for c in df.columns if "Growth" in c]
+
+    text_cols = [
+        "Parameters",
+        "Parameter",
+        "Source",
+        "Region",
+        "Brand",
+        "Session",
+        "Hour",
+        "Store Name"
+    ]
+
+    # =====================================================
+    # FORMAT COLUMNS
+    # =====================================================
+
+    for col in df.columns:
+
+        # ---------------- TEXT COLUMNS ---------------- #
+
+        if col in text_cols:
+
+            df[col] = df[col].fillna("")
+
+            continue
+
+        # ---------------- GROWTH COLUMNS ---------------- #
+
+        if col in growth_cols:
+
+            def color_growth(x):
+
+                try:
+
+                    val = float(str(x).replace("%", "").replace(",", "").strip())
+
+                    bg = "#d4edda" if val >= 0 else "#f8d7da"
+
+                    return f'''
+                    <span style="
+                        background:{bg};
+                        padding:4px 8px;
+                        border-radius:4px;
+                        display:inline-block;
+                        min-width:70px;
+                        text-align:center;
+                        font-weight:bold;
+                    ">
+                    {val:.2f}%
+                    </span>
+                    '''
+
+                except:
+                    return ""
+
+            df[col] = df[col].apply(color_growth)
+
+        # ---------------- NORMAL NUMBER COLUMNS ---------------- #
+
+        else:
+
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            df[col] = df[col].apply(
+                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+            )
+
+    # =====================================================
+    # HTML TABLE
+    # =====================================================
 
     html = df.to_html(index=False, escape=False)
 
@@ -1034,7 +1110,6 @@ def styled_html(df):
         '''
         <table style="
             border-collapse:collapse;
-            table-layout:auto;
             width:auto;
             min-width:100%;
             font-family:Arial;
@@ -1050,9 +1125,10 @@ def styled_html(df):
         <th style="
             background:#1f4e78;
             color:white;
-            padding:10px;
+            padding:8px;
             border:1px solid #d9d9d9;
             text-align:center;
+            white-space:nowrap;
         ">
         '''
     )
@@ -1061,14 +1137,17 @@ def styled_html(df):
         '<td>',
         '''
         <td style="
-            padding:8px;
+            padding:6px;
             border:1px solid #e5e5e5;
             text-align:right;
+            white-space:nowrap;
         ">
         '''
     )
 
     return html
+
+
 # ---------------- SAFE TABLE ---------------- #
 
 def safe_table(df, title):
@@ -1183,7 +1262,7 @@ def send_email():
     """
 
     # =====================================================
-    # ATTACH EMAIL
+    # ATTACH HTML
     # =====================================================
 
     msg.attach(MIMEText(body, "html"))
@@ -1196,18 +1275,11 @@ def send_email():
     if CC_EMAIL:
         receivers += CC_EMAIL.split(",")
 
-    # =====================================================
-    # SMTP
-    # =====================================================
-
     server = smtplib.SMTP("smtp.gmail.com", 587)
 
     server.starttls()
 
-    server.login(
-        EMAIL_USER,
-        EMAIL_PASS
-    )
+    server.login(EMAIL_USER, EMAIL_PASS)
 
     server.sendmail(
         EMAIL_USER,
