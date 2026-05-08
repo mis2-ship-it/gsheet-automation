@@ -591,49 +591,78 @@ session_analysis = safe_kpi_builder(
 print("✅ All Analysis Completed")
 
 # =========================================================
-# 🔥 BRAND x SOURCE (EXECUTIVE FORMAT)
+# 🔥 BRAND x SOURCE (COCO ONLY)
 # =========================================================
+
 sources = ["In Store", "Swiggy", "Zomato"]
 
-rows = []
+brand_rows = []
 
-for brand in final_df["Brand"].dropna().unique():
+for brand in sorted(final_df["Brand"].dropna().unique()):
+
+    # ---------------------------------------------
+    # BRAND HEADER
+    # ---------------------------------------------
+
+    brand_rows.append({
+        "Brand": f"📌 {brand}",
+        "Source": "",
+        "Parameter": "",
+        "Today": "",
+        "Last Week": "",
+        "Last 2 Week": "",
+        "Last Month": "",
+        "Last Year": "",
+        "Growth %": "",
+        "Insight": ""
+    })
+
+    # ---------------------------------------------
+    # SOURCE LOOP
+    # ---------------------------------------------
 
     for s in sources:
 
         for param in ["Net Sales", "Txn", "Discount %"]:
-
-            row = {
-                "Brand": brand,
-                "Source": s,
-                "Parameter": param
-            }
 
             def get_vals(base_df):
 
                 temp = base_df[
                     (base_df["Brand"] == brand) &
-                    (base_df["Source Group"] == s)
+                    (base_df["Source Group"] == s) &
+                    (base_df["Store Type"] == "COCO") &
+                    (base_df["status"] == "Closed")
                 ]
 
                 if temp.empty:
                     return 0, 0, 0
 
                 net = temp["Net Sales"].sum()
+
                 txn = len(temp)
 
                 gross = temp["grossAmount"].sum()
 
                 disc = (
-                    temp["discountAmount"].sum() / gross * 100
-                    if gross != 0 else 0
-                )
+                    temp["discountAmount"].sum()
+                    / max(gross, 1)
+                ) * 100
 
                 return net, txn, disc
+
+            # ----------------------------
+            # GET VALUES
+            # ----------------------------
 
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
+            mom = get_vals(mom_cut)
+            ly = get_vals(lastyear_cut)
+
+            # ----------------------------
+            # PICK PARAMETER
+            # ----------------------------
 
             def pick(metric, data):
 
@@ -643,67 +672,149 @@ for brand in final_df["Brand"].dropna().unique():
                     "Discount %": data[2]
                 }[metric]
 
-            row["Today"] = round(pick(param, t), 2)
-            row["Last Week"] = round(pick(param, lw), 2)
-            row["Last 2 Week"] = round(pick(param, l2w), 2)
+            today_val = pick(param, t)
+            lw_val = pick(param, lw)
+            l2w_val = pick(param, l2w)
+            mom_val = pick(param, mom)
+            ly_val = pick(param, ly)
 
-            row["Growth %"] = round(
-                (
-                    (pick(param, t) - pick(param, lw))
-                    / max(abs(pick(param, lw)), 1)
-                ) * 100,
-                2
-            )
+            # ----------------------------
+            # GROWTH
+            # ----------------------------
 
-            rows.append(row)
+            growth = (
+                (today_val - lw_val)
+                / max(abs(lw_val), 1)
+            ) * 100
 
-brand_source_pivot = pd.DataFrame(rows)
+            # ----------------------------
+            # INSIGHT
+            # ----------------------------
+
+            if growth >= 15:
+                insight = "🚀 Strong growth"
+
+            elif growth >= 5:
+                insight = "🟢 Healthy growth"
+
+            elif growth <= -15:
+                insight = "🔻 Major decline"
+
+            elif growth <= -5:
+                insight = "⚠️ Mild decline"
+
+            else:
+                insight = "➖ Stable"
+
+            # ----------------------------
+            # FINAL ROW
+            # ----------------------------
+
+            brand_rows.append({
+
+                "Brand": brand,
+
+                "Source": s,
+
+                "Parameter": param,
+
+                "Today": round(today_val, 2),
+
+                "Last Week": round(lw_val, 2),
+
+                "Last 2 Week": round(l2w_val, 2),
+
+                "Last Month": round(mom_val, 2),
+
+                "Last Year": round(ly_val, 2),
+
+                "Growth %": round(growth, 2),
+
+                "Insight": insight
+            })
 
 # =========================================================
-# 🔥 REGION x SOURCE (EXECUTIVE FORMAT - FIXED)
+# FINAL DATAFRAME
+# =========================================================
+
+brand_source_pivot = pd.DataFrame(brand_rows)
+
+print("✅ Brand Source Built")
+
+
+# =========================================================
+# 🔥 REGION x SOURCE (COCO ONLY)
 # =========================================================
 
 sources = ["In Store", "Swiggy", "Zomato"]
 
-rows = []
+region_rows = []
 
-for region in final_df["Region"].dropna().unique():
+for region in sorted(final_df["Region"].dropna().unique()):
+
+    # ---------------------------------------------
+    # REGION HEADER
+    # ---------------------------------------------
+
+    region_rows.append({
+        "Region": f"📌 {region}",
+        "Source": "",
+        "Parameter": "",
+        "Today": "",
+        "Last Week": "",
+        "Last 2 Week": "",
+        "Last Month": "",
+        "Last Year": "",
+        "Growth %": "",
+        "Insight": ""
+    })
+
+    # ---------------------------------------------
+    # SOURCE LOOP
+    # ---------------------------------------------
 
     for s in sources:
 
         for param in ["Net Sales", "Txn", "Discount %"]:
 
-            row = {
-                "Region": region,
-                "Source": s,
-                "Parameter": param
-            }
-
             def get_vals(base_df):
 
                 temp = base_df[
                     (base_df["Region"] == region) &
-                    (base_df["Source Group"] == s)
+                    (base_df["Source Group"] == s) &
+                    (base_df["Store Type"] == "COCO") &
+                    (base_df["status"] == "Closed")
                 ]
 
                 if temp.empty:
                     return 0, 0, 0
 
                 net = temp["Net Sales"].sum()
+
                 txn = len(temp)
 
                 gross = temp["grossAmount"].sum()
 
                 disc = (
-                    temp["discountAmount"].sum() / gross * 100
-                    if gross != 0 else 0
-                )
+                    temp["discountAmount"].sum()
+                    / max(gross, 1)
+                ) * 100
 
                 return net, txn, disc
+
+            # ----------------------------
+            # GET VALUES
+            # ----------------------------
 
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
+            mom = get_vals(mom_cut)
+            ly = get_vals(lastyear_cut)
+
+            # ----------------------------
+            # PICK PARAMETER
+            # ----------------------------
 
             def pick(metric, data):
 
@@ -713,21 +824,74 @@ for region in final_df["Region"].dropna().unique():
                     "Discount %": data[2]
                 }[metric]
 
-            row["Today"] = round(pick(param, t), 2)
-            row["Last Week"] = round(pick(param, lw), 2)
-            row["Last 2 Week"] = round(pick(param, l2w), 2)
+            today_val = pick(param, t)
+            lw_val = pick(param, lw)
+            l2w_val = pick(param, l2w)
+            mom_val = pick(param, mom)
+            ly_val = pick(param, ly)
 
-            row["Growth %"] = round(
-                (
-                    (pick(param, t) - pick(param, lw))
-                    / max(abs(pick(param, lw)), 1)
-                ) * 100,
-                2
-            )
+            # ----------------------------
+            # GROWTH
+            # ----------------------------
 
-            rows.append(row)
+            growth = (
+                (today_val - lw_val)
+                / max(abs(lw_val), 1)
+            ) * 100
 
-region_source_pivot = pd.DataFrame(rows)
+            # ----------------------------
+            # INSIGHT
+            # ----------------------------
+
+            if growth >= 15:
+                insight = "🚀 Strong growth"
+
+            elif growth >= 5:
+                insight = "🟢 Healthy growth"
+
+            elif growth <= -15:
+                insight = "🔻 Major decline"
+
+            elif growth <= -5:
+                insight = "⚠️ Mild decline"
+
+            else:
+                insight = "➖ Stable"
+
+            # ----------------------------
+            # FINAL ROW
+            # ----------------------------
+
+            region_rows.append({
+
+                "Region": region,
+
+                "Source": s,
+
+                "Parameter": param,
+
+                "Today": round(today_val, 2),
+
+                "Last Week": round(lw_val, 2),
+
+                "Last 2 Week": round(l2w_val, 2),
+
+                "Last Month": round(mom_val, 2),
+
+                "Last Year": round(ly_val, 2),
+
+                "Growth %": round(growth, 2),
+
+                "Insight": insight
+            })
+
+# =========================================================
+# FINAL DATAFRAME
+# =========================================================
+
+region_source_pivot = pd.DataFrame(region_rows)
+
+print("✅ Region Source Built")
 
 # =========================================================
 # 🔥 TOP 10 STORES
