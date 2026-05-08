@@ -598,7 +598,14 @@ sources = ["In Store", "Swiggy", "Zomato"]
 
 brand_rows = []
 
-for brand in sorted(final_df["Brand"].dropna().unique()):
+brand_list = [
+    "Frozen Bottle",
+    "Madno",
+    "Boba Bar",
+    "Lubov"
+]
+
+for brand in brand_list:
 
     # ---------------------------------------------
     # BRAND HEADER
@@ -750,7 +757,14 @@ sources = ["In Store", "Swiggy", "Zomato"]
 
 region_rows = []
 
-for region in sorted(final_df["Region"].dropna().unique()):
+region_list = [
+    "KA",
+    "MH",
+    "TN",
+    "Kerela"
+]
+
+for region in region_list:
 
     # ---------------------------------------------
     # REGION HEADER
