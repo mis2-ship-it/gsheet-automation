@@ -1025,7 +1025,7 @@ def styled_html(df):
                 lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
             )
 
- # ---------------- HTML TABLE ---------------- #
+# ---------------- HTML TABLE ---------------- #
 
 def styled_html(df):
 
@@ -1041,11 +1041,12 @@ def styled_html(df):
         "Brand",
         "Session",
         "Hour",
-        "Store Name"
+        "Store Name",
+        "Insight"
     ]
 
     # =====================================================
-    # FORMAT COLUMNS
+    # FORMAT DATA
     # =====================================================
 
     for col in df.columns:
@@ -1054,13 +1055,11 @@ def styled_html(df):
 
         if col in text_cols:
 
-            df[col] = df[col].fillna("")
-
-            continue
+            df[col] = df[col].fillna("").astype(str)
 
         # ---------------- GROWTH COLUMNS ---------------- #
 
-        if col in growth_cols:
+        elif col in growth_cols:
 
             def color_growth(x):
 
@@ -1070,19 +1069,22 @@ def styled_html(df):
 
                     bg = "#d4edda" if val >= 0 else "#f8d7da"
 
-                    return f'''
-                    <span style="
-                        background:{bg};
-                        padding:4px 8px;
-                        border-radius:4px;
-                        display:inline-block;
-                        min-width:70px;
-                        text-align:center;
-                        font-weight:bold;
-                    ">
-                    {val:.2f}%
-                    </span>
-                    '''
+                    color = "#155724" if val >= 0 else "#721c24"
+
+                    return (
+                        f'<span style="'
+                        f'background:{bg};'
+                        f'color:{color};'
+                        f'padding:4px 8px;'
+                        f'border-radius:4px;'
+                        f'font-weight:bold;'
+                        f'display:inline-block;'
+                        f'min-width:70px;'
+                        f'text-align:center;'
+                        f'">'
+                        f'{val:.2f}%'
+                        f'</span>'
+                    )
 
                 except:
                     return ""
@@ -1100,24 +1102,36 @@ def styled_html(df):
             )
 
     # =====================================================
-    # HTML TABLE
+    # CONVERT HTML
     # =====================================================
 
-    html = df.to_html(index=False, escape=False)
+    html = df.to_html(
+        index=False,
+        escape=False,
+        border=0
+    )
+
+    # =====================================================
+    # TABLE STYLE
+    # =====================================================
 
     html = html.replace(
-        '<table border="1" class="dataframe">',
+        '<table class="dataframe">',
         '''
         <table style="
             border-collapse:collapse;
-            width:auto;
-            min-width:100%;
+            width:100%;
             font-family:Arial;
             font-size:12px;
             background:white;
+            table-layout:auto;
         ">
         '''
     )
+
+    # =====================================================
+    # HEADER STYLE
+    # =====================================================
 
     html = html.replace(
         '<th>',
@@ -1132,6 +1146,10 @@ def styled_html(df):
         ">
         '''
     )
+
+    # =====================================================
+    # CELL STYLE
+    # =====================================================
 
     html = html.replace(
         '<td>',
