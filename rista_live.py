@@ -657,7 +657,7 @@ for brand in sorted(final_df["Brand"].dropna().unique()):
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
-            mom = get_vals(mom_cut)
+            mom = get_vals(month_on_month_cut)
             ly = get_vals(lastyear_cut)
 
             # ----------------------------
@@ -809,7 +809,7 @@ for region in sorted(final_df["Region"].dropna().unique()):
             t = get_vals(today_cut)
             lw = get_vals(lastweek_cut)
             l2w = get_vals(last2week_cut)
-            mom = get_vals(mom_cut)
+            mom = get_vals(month_on_month_cut)
             ly = get_vals(lastyear_cut)
 
             # ----------------------------
