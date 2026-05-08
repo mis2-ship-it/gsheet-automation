@@ -239,6 +239,29 @@ if "channel" not in final_df.columns:
 print("✅ Mapping Ready:", final_df.shape)
 
 # =========================================================
+# 🧾 CANCELLATION REASON
+# =========================================================
+
+possible_reason_cols = [
+    "cancelReason",
+    "cancellationReason",
+    "voidReason",
+    "reason"
+]
+
+reason_col = None
+
+for col in possible_reason_cols:
+    if col in final_df.columns:
+        reason_col = col
+        break
+
+if reason_col:
+    final_df["Cancel_Reason"] = final_df[reason_col].fillna("Unknown")
+else:
+    final_df["Cancel_Reason"] = "Unknown"
+
+# =========================================================
 # 📧 EMAIL FUNCTION
 # =========================================================
 def send_email(to_email, store_df):
@@ -257,6 +280,7 @@ def send_email(to_email, store_df):
             <td>{row.get('channel','Unknown')}</td>
             <td>{row.get('createdDate') or row.get('invoiceDate') or ''}</td>
             <td>{row.get('netAmount') or row.get('Net Sales') or ''}</td>
+            <td>{row.get('Cancel_Reason','Unknown')}</td>
         </tr>
         """
 
@@ -274,6 +298,7 @@ def send_email(to_email, store_df):
             <th>Channel</th>
             <th>Time</th>
             <th>Amount</th>
+            <th>Reason</th>
         </tr>
         {rows_html}
     </table>
@@ -379,13 +404,15 @@ def send_summary_email(summary_df):
         print(f"❌ Summary email error: {e}")
 
 # =========================================================
-# 📊 CHANNEL-WISE SUMMARY
+# 📊 CHANNEL + REASON SUMMARY
 # =========================================================
+
 summary_df = (
     final_df
-    .groupby(["branchName", "channel"])
+    .groupby(["channel", "Cancel_Reason", "branchName"])
     .size()
     .reset_index(name="Cancel_Count")
+    .sort_values(by="Cancel_Count", ascending=False)
 )
 
 print(summary_df.head())
@@ -418,7 +445,16 @@ if not existing_values:
     raw_ws.append_row(clean_df.columns.tolist())
 
 # Append data
-raw_ws.append_rows(clean_df.values.tolist())
+# Save only required tracking columns
+tracking_df = clean_df[[
+    "invoiceNumber",
+    "branchName",
+    "channel",
+    "Cancel_Reason",
+    "createdAt"
+]]
+
+raw_ws.append_rows(tracking_df.values.tolist())
 
 print("✅ Data appended to sheet")
 print("🎉 Flow Completed")
