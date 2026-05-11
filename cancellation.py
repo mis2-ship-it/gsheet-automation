@@ -158,61 +158,64 @@ if cancel_df.empty:
 print("🚨 Cancellations Found:", len(cancel_df))
 
 # =========================================================
-# 🔁 REMOVE DUPLICATES (FINAL FIX)
+# 🔁 REMOVE DUPLICATE ALERTS
 # =========================================================
 
 try:
+    existing_data = raw_ws.get_all_values()
 
-    existing_values = raw_ws.get_all_values()
+    if len(existing_data) > 1:
 
-    sent_ids = set()
+        existing_headers = existing_data[0]
 
-    if len(existing_values) > 1:
+        existing_df = pd.DataFrame(
+            existing_data[1:],
+            columns=existing_headers
+        )
 
-        headers_sheet = [
-            str(h).strip()
-            for h in existing_values[0]
-        ]
-
-        if "invoiceNumber" in headers_sheet:
-
-            invoice_idx = headers_sheet.index("invoiceNumber")
-
-            for row in existing_values[1:]:
-
-                try:
-
-                    if len(row) > invoice_idx:
-
-                        invoice = str(row[invoice_idx]).strip()
-
-                        if invoice and invoice.lower() != "nan":
-                            sent_ids.add(invoice)
-
-                except:
-                    pass
-
-    # Clean invoiceNumber before compare
-    cancel_df["invoiceNumber"] = (
-        cancel_df["invoiceNumber"]
-        .astype(str)
-        .str.strip()
-    )
-
-    before_count = len(cancel_df)
-
-    cancel_df = cancel_df[
-        ~cancel_df["invoiceNumber"].isin(sent_ids)
-    ]
-
-    after_count = len(cancel_df)
-
-    print(f"🛑 Duplicate Removed: {before_count - after_count}")
+    else:
+        existing_df = pd.DataFrame()
 
 except Exception as e:
-    print("⚠️ Duplicate check issue:", e)
+    print("⚠️ Existing sheet read error:", e)
+    existing_df = pd.DataFrame()
 
-# Final check
+# =========================================================
+# 📌 EXISTING SENT IDS
+# =========================================================
+
+sent_ids = set()
+
+if (
+    not existing_df.empty and
+    "invoiceNumber" in existing_df.columns
+):
+
+    sent_ids = set(
+        existing_df["invoiceNumber"]
+        .astype(str)
+        .str.strip()
+        .unique()
+    )
+
+print(f"📌 Existing Sent IDs: {len(sent_ids)}")
+
+# =========================================================
+# 🚫 REMOVE ALREADY SENT ORDERS
+# =========================================================
+
+cancel_df["invoiceNumber"] = (
+    cancel_df["invoiceNumber"]
+    .astype(str)
+    .str.strip()
+)
+
+cancel_df = cancel_df[
+    ~cancel_df["invoiceNumber"].isin(sent_ids)
+]
+
+print(f"🆕 New Cancellations: {len(cancel_df)}")
+
 if cancel_df.empty:
     print("✅ No new cancellations")
     exit()
@@ -424,39 +427,47 @@ send_summary_email(summary_df)
 
         
 # =========================================================
-# 📊 SAVE TO SHEET
+# 📊 SAVE ALERT HISTORY
 # =========================================================
 
 final_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 final_df["emailSent"] = "YES"
-final_df["status_flag"] = "SENT"
 
-clean_df = (
-    final_df
-    .replace([np.inf, -np.inf], 0)
-    .fillna("")
-    .astype(str)
-)
-
-existing_values = raw_ws.get_all_values()
-
-# Add headers once
-if not existing_values:
-    raw_ws.append_row(clean_df.columns.tolist())
-
-# Append data
-# Save only required tracking columns
-tracking_df = clean_df[[
+# Only tracking columns
+tracking_df = final_df[[
     "invoiceNumber",
     "branchName",
     "channel",
     "Cancel_Reason",
     "createdAt"
-]]
+]].copy()
 
-raw_ws.append_rows(tracking_df.values.tolist())
+tracking_df = (
+    tracking_df
+    .replace([np.inf, -np.inf], 0)
+    .fillna("")
+    .astype(str)
+)
 
-print("✅ Data appended to sheet")
+# =========================================================
+# 🧾 ADD HEADER IF SHEET EMPTY
+# =========================================================
+
+existing_rows = raw_ws.get_all_values()
+
+if len(existing_rows) == 0:
+    raw_ws.append_row(tracking_df.columns.tolist())
+
+# =========================================================
+# ➕ APPEND DATA
+# =========================================================
+
+raw_ws.append_rows(
+    tracking_df.values.tolist(),
+    value_input_option="USER_ENTERED"
+)
+
+print("✅ Tracking data saved")
 print("🎉 Flow Completed")
 
 
