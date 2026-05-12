@@ -102,6 +102,7 @@ if not Sales:
     exit()
 
 s_df = pd.concat(Sales, ignore_index=True)
+print(s_df.columns.tolist())
 print("Raw data:", s_df.shape)
 
 # ---------------- TRANSFORM ---------------- #
@@ -131,26 +132,164 @@ print("After explode:", final_df.shape)
 
 reqcolumns = final_df[
     [
-        "branchName","brandName","invoiceNumber","invoiceDay","invoiceDate",
-        "sessionLabel","channel","chargeAmount","status",
-        "item_longName","item_shortName","item_variants",
-        "item_skuCode","item_categoryName","item_brandName",
-        "item_quantity","item_unitPrice","item_discountAmount",
-        "item_grossAmount","item_netAmount","item_baseNetAmount",
-        "disCode_name"
+        # ---------------- BASIC ---------------- #
+
+        "branchCode",
+        "branchName",
+        "brandName",
+
+        "invoiceNumber",
+        "invoiceDay",
+        "invoiceDate",
+
+        "sessionLabel",
+        "channel",
+        "source",
+
+        "status",
+
+        # ---------------- CUSTOMER / ORDER ---------------- #
+
+        "customerName",
+        "customerPhoneNumber",
+
+        # ---------------- DELIVERY ---------------- #
+
+        "deliveryPartner",
+        "deliveryStatus",
+
+        # ---------------- PAYMENT ---------------- #
+
+        "paymentMode",
+
+        # ---------------- SALES ---------------- #
+
+        "grossAmount",
+        "discountAmount",
+        "chargeAmount",
+        "netAmount",
+        "roundOffAmount",
+        "taxAmount",
+
+        # ---------------- ORDER LEVEL ---------------- #
+
+        "totalQuantity",
+        "billLevelDiscount",
+        "packingCharge",
+        "deliveryCharge",
+
+        # ---------------- ITEM ---------------- #
+
+        "item_longName",
+        "item_shortName",
+        "item_variants",
+
+        "item_skuCode",
+        "item_categoryName",
+        "item_brandName",
+
+        "item_quantity",
+        "item_unitPrice",
+
+        "item_discountAmount",
+        "item_grossAmount",
+        "item_netAmount",
+        "item_baseNetAmount",
+
+        # ---------------- DISCOUNT ---------------- #
+
+        "disCode_name",
+
+        # ---------------- KOT ---------------- #
+
+        "kotNumber",
+        "kotStatus",
+        "kotDate",
+
+        # ---------------- CANCEL ---------------- #
+
+        "cancelReason",
+        "cancelledBy",
+
+        # ---------------- TIMINGS ---------------- #
+
+        "createdAt",
+        "updatedAt"
     ]
 ]
 
 reqcolumns = reqcolumns.rename(columns={
+
+    "branchCode": "Branch Code",
+    "branchName": "Store Name",
+    "brandName": "Brand",
+
+    "invoiceNumber": "Invoice No",
+    "invoiceDay": "Business Date",
+    "invoiceDate": "Invoice Date",
+
+    "sessionLabel": "Session",
+    "channel": "Channel",
+    "source": "Source",
+
+    "status": "Order Status",
+
+    "customerName": "Customer Name",
+    "customerPhoneNumber": "Customer Phone",
+
+    "deliveryPartner": "Delivery Partner",
+    "deliveryStatus": "Delivery Status",
+
+    "paymentMode": "Payment Mode",
+
+    "grossAmount": "Gross Sales",
+    "discountAmount": "Discount",
+    "chargeAmount": "Charges",
+    "netAmount": "Net Sales",
+
+    "roundOffAmount": "Round Off",
+    "taxAmount": "Tax",
+
+    "totalQuantity": "Total Qty",
+    "billLevelDiscount": "Bill Discount",
+
+    "packingCharge": "Packing Charge",
+    "deliveryCharge": "Delivery Charge",
+
     "item_skuCode": "SKU Code",
-    "item_shortName": "Item Group Name",
+
+    "item_shortName": "Item Group",
     "item_longName": "Item Name",
+
+    "item_variants": "Variant",
+
     "item_categoryName": "Category",
-    "item_quantity": "Quantity",
+    "item_brandName": "Item Brand",
+
+    "item_quantity": "Item Qty",
+
     "item_unitPrice": "Unit Price",
-    "item_discountAmount": "Discount Amount",
-    "item_grossAmount": "Gross Amount",
-    "item_netAmount": "Net Amount"
+
+    "item_discountAmount": "Item Discount",
+
+    "item_grossAmount": "Item Gross",
+
+    "item_netAmount": "Item Net",
+
+    "item_baseNetAmount": "Base Net",
+
+    "disCode_name": "Discount Name",
+
+    "kotNumber": "KOT No",
+    "kotStatus": "KOT Status",
+    "kotDate": "KOT Time",
+
+    "cancelReason": "Cancel Reason",
+    "cancelledBy": "Cancelled By",
+
+    "createdAt": "Created At",
+    "updatedAt": "Updated At"
+
 })
 
 reqcolumns["invoiceDate"] = pd.to_datetime(reqcolumns["invoiceDate"]).dt.tz_localize(None)
