@@ -415,6 +415,7 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
     return df.round(2)
 
 
+
 # =========================================================
 # 🔥 FINAL EXECUTION
 # =========================================================
@@ -575,6 +576,259 @@ overall = build_overall_extended(
 insight_text = generate_insight(overall)
 
 print("🧠 Insight:", insight_text)
+
+# =========================================================
+# 🔥 BRAND ANALYSIS
+# =========================================================
+
+brand_rows = []
+
+brands = sorted(today_cut["Brand"].dropna().unique())
+
+for brand in brands:
+
+    t = today_cut[today_cut["Brand"] == brand]
+    lw = lastweek_cut[lastweek_cut["Brand"] == brand]
+
+    t_rev = t["Net Sales"].sum()
+    lw_rev = lw["Net Sales"].sum()
+
+    growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+    t_gross = t["grossAmount"].sum()
+    lw_gross = lw["grossAmount"].sum()
+
+    t_disc = (t["discountAmount"].sum() / max(t_gross, 1)) * 100
+    lw_disc = (lw["discountAmount"].sum() / max(lw_gross, 1)) * 100
+
+    disc_change = t_disc - lw_disc
+
+    brand_rows.append({
+        "Brand": brand,
+        "Today Rev": round(t_rev, 2),
+        "LW Rev": round(lw_rev, 2),
+        "Growth %": round(growth, 2),
+        "Today Dis %": round(t_disc, 2),
+        "LW Dis %": round(lw_disc, 2),
+        "Dis Change %": round(disc_change, 2)
+    })
+
+brand_summary = pd.DataFrame(brand_rows)
+
+print("✅ Brand Summary Created")
+
+# =========================================================
+# 🔥 BRAND x SOURCE
+# =========================================================
+
+brand_source_rows = []
+
+sources = ["In Store", "Swiggy", "Zomato"]
+
+brands_required = ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
+
+for brand in brands_required:
+
+    # BRAND HEADER
+    brand_source_rows.append({
+        "Brand": brand,
+        "Source": "",
+        "Today Rev": "",
+        "LW Rev": "",
+        "Growth %": "",
+        "Today Dis %": "",
+        "LW Dis %": "",
+        "Dis Change %": ""
+    })
+
+    for source in sources:
+
+        t = today_cut[
+            (today_cut["Brand"] == brand) &
+            (today_cut["Source Group"] == source)
+        ]
+
+        lw = lastweek_cut[
+            (lastweek_cut["Brand"] == brand) &
+            (lastweek_cut["Source Group"] == source)
+        ]
+
+        t_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        lw_disc = (
+            lw["discountAmount"].sum()
+            / max(lw["grossAmount"].sum(), 1)
+        ) * 100
+
+        disc_change = t_disc - lw_disc
+
+        brand_source_rows.append({
+            "Brand": "",
+            "Source": source,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Dis Change %": round(disc_change, 2)
+        })
+
+brand_source_analysis = pd.DataFrame(brand_source_rows)
+
+print("✅ Brand Source Analysis Created")
+
+# =========================================================
+# 🔥 REGION x SOURCE
+# =========================================================
+
+region_source_rows = []
+
+regions_required = ["KA", "MH", "TN", "Kerela"]
+
+for region in regions_required:
+
+    region_source_rows.append({
+        "Region": region,
+        "Source": "",
+        "Today Rev": "",
+        "LW Rev": "",
+        "Growth %": "",
+        "Today Dis %": "",
+        "LW Dis %": "",
+        "Dis Change %": ""
+    })
+
+    for source in sources:
+
+        t = today_cut[
+            (today_cut["Region"] == region) &
+            (today_cut["Source Group"] == source)
+        ]
+
+        lw = lastweek_cut[
+            (lastweek_cut["Region"] == region) &
+            (lastweek_cut["Source Group"] == source)
+        ]
+
+        t_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        lw_disc = (
+            lw["discountAmount"].sum()
+            / max(lw["grossAmount"].sum(), 1)
+        ) * 100
+
+        disc_change = t_disc - lw_disc
+
+        region_source_rows.append({
+            "Region": "",
+            "Source": source,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Dis Change %": round(disc_change, 2)
+        })
+
+region_source_analysis = pd.DataFrame(region_source_rows)
+
+print("✅ Region Source Analysis Created")
+
+# =========================================================
+# 🔥 SESSION ANALYSIS
+# =========================================================
+
+sessions = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner"]
+
+# ---------------- BRAND SESSION ---------------- #
+
+brand_session = pd.pivot_table(
+    today_cut,
+    index="Brand",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_brand_session = pd.pivot_table(
+    lastweek_cut,
+    index="Brand",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in brand_session.columns:
+        brand_session[s] = 0
+
+    if s not in lw_brand_session.columns:
+        lw_brand_session[s] = 0
+
+    brand_session[f"{s} Growth %"] = (
+        (brand_session[s] - lw_brand_session[s])
+        / lw_brand_session[s].replace(0, 1)
+    ) * 100
+
+brand_session = brand_session.reset_index()
+
+print("✅ Brand Session Analysis Created")
+
+# ---------------- REGION SESSION ---------------- #
+
+region_session = pd.pivot_table(
+    today_cut,
+    index="Region",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_region_session = pd.pivot_table(
+    lastweek_cut,
+    index="Region",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in region_session.columns:
+        region_session[s] = 0
+
+    if s not in lw_region_session.columns:
+        lw_region_session[s] = 0
+
+    region_session[f"{s} Growth %"] = (
+        (region_session[s] - lw_region_session[s])
+        / lw_region_session[s].replace(0, 1)
+    ) * 100
+
+region_session = region_session.reset_index()
+
+print("✅ Region Session Analysis Created")
 
 
 # =========================================================
@@ -1014,53 +1268,10 @@ def push(name, df):
     ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
 
 
-# ---------------- EMAIL ---------------- #
 
-def styled_html(df):
-
-    df = df.copy()
-
-    growth_cols = [c for c in df.columns if "Growth" in c]
-
-    text_cols = [
-        "Parameters",
-        "Source",
-        "Region",
-        "Brand",
-        "Session",
-        "Hour",
-        "Store Name"
-    ]
-
-    for col in df.columns:
-
-        # Skip text columns
-        if col in text_cols:
-            continue
-
-        # ---------------- GROWTH COLUMNS ---------------- #
-
-        if col in growth_cols:
-
-            df[col] = df[col].apply(
-                lambda x:
-                f'<span style="background:#d4edda;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) and str(x).strip() != "" and float(x) >= 0 else
-                f'<span style="background:#f8d7da;padding:4px;">{float(x):.2f}%</span>'
-                if pd.notnull(x) and str(x).strip() != "" else ""
-            )
-
-        # ---------------- NORMAL COLUMNS ---------------- #
-
-        else:
-
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-            df[col] = df[col].apply(
-                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
-            )
-
-# ---------------- HTML TABLE ---------------- #
+# =====================================================
+# FINAL HTML TABLE
+# =====================================================
 
 def styled_html(df):
 
@@ -1081,7 +1292,7 @@ def styled_html(df):
     ]
 
     # =====================================================
-    # FORMAT DATA
+    # FORMAT
     # =====================================================
 
     for col in df.columns:
@@ -1096,35 +1307,36 @@ def styled_html(df):
 
         elif col in growth_cols:
 
-            def color_growth(x):
+            def growth_format(x):
 
                 try:
+
+                    if str(x).strip() == "":
+                        return ""
 
                     val = float(str(x).replace("%", "").replace(",", "").strip())
 
                     bg = "#d4edda" if val >= 0 else "#f8d7da"
-
                     color = "#155724" if val >= 0 else "#721c24"
 
                     return (
-                        f'<span style="'
+                        f'<div style="'
                         f'background:{bg};'
                         f'color:{color};'
                         f'padding:4px 8px;'
                         f'border-radius:4px;'
                         f'font-weight:bold;'
-                        f'display:inline-block;'
-                        f'min-width:70px;'
                         f'text-align:center;'
+                        f'white-space:nowrap;'
                         f'">'
                         f'{val:.2f}%'
-                        f'</span>'
+                        f'</div>'
                     )
 
                 except:
                     return ""
 
-            df[col] = df[col].apply(color_growth)
+            df[col] = df[col].apply(growth_format)
 
         # ---------------- NORMAL NUMBER COLUMNS ---------------- #
 
@@ -1137,7 +1349,7 @@ def styled_html(df):
             )
 
     # =====================================================
-    # CONVERT HTML
+    # HTML CONVERT
     # =====================================================
 
     html = df.to_html(
@@ -1155,11 +1367,11 @@ def styled_html(df):
         '''
         <table style="
             border-collapse:collapse;
-            width:100%;
+            width:auto;
+            min-width:100%;
             font-family:Arial;
             font-size:12px;
             background:white;
-            table-layout:auto;
         ">
         '''
     )
@@ -1199,7 +1411,6 @@ def styled_html(df):
     )
 
     return html
-
 
 # ---------------- SAFE TABLE ---------------- #
 
@@ -1286,6 +1497,29 @@ def send_email():
         {styled_html(overall)}
 
         <br><br>
+
+        <h2>🏷️ Brand Summary</h2>
+        {styled_html(brand_summary)}
+        
+        <br><br>
+        
+        <h2>🏷️ Brand Source Analysis</h2>
+        {styled_html(brand_source_analysis)}
+        
+        <br><br>
+        
+        <h2>🌍 Region Source Analysis</h2>
+        {styled_html(region_source_analysis)}
+        
+        <br><br>
+        
+        <h2>🍽️ Brand Session Analysis</h2>
+        {styled_html(brand_session)}
+        
+        <br><br>
+        
+        <h2>🌍 Region Session Analysis</h2>
+        {styled_html(region_session)}
 
         <h2>🌍 Region Performance</h2>
         {styled_html(region_source_pivot)}
