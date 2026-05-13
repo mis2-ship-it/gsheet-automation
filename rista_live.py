@@ -37,9 +37,30 @@ creds = Credentials.from_service_account_info(
 )
 
 client = gspread.authorize(creds)
-spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit")
+sheet_url = "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
 
-print("✅ Connected to Google Sheet")
+retry = 5
+
+for i in range(retry):
+
+    try:
+
+        spreadsheet = client.open_by_url(sheet_url)
+
+        print("✅ Connected to Google Sheet")
+
+        break
+
+    except Exception as e:
+
+        print(f"⚠️ Google Sheet connection failed ({i+1}/{retry})")
+        print(str(e))
+
+        time.sleep(10)
+
+else:
+
+    raise Exception("❌ Failed to connect Google Sheet after retries")
 
 # ---------------- TIME ---------------- #
 
