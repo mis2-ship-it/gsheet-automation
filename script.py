@@ -127,79 +127,60 @@ final_df = pd.concat(
 )
 
 print("After explode:", final_df.shape)
+print(final_df.columns.tolist())
 
 # ---------------- SELECT COLUMNS ---------------- #
 
 reqcolumns = final_df[
     [
-        # ---------------- BASIC ---------------- #
-
-        "branchCode",
         "branchName",
         "brandName",
-
         "invoiceNumber",
         "invoiceDay",
         "invoiceDate",
-
         "sessionLabel",
         "channel",
-        "source",
-
+    
         "status",
-
-        # ---------------- CUSTOMER / ORDER ---------------- #
-
-        "customerName",
-        "customerPhoneNumber",
-
-        # ---------------- DELIVERY ---------------- #
-
-        "deliveryPartner",
-        "deliveryStatus",
-
-        # ---------------- PAYMENT ---------------- #
-
-        "paymentMode",
-
-        # ---------------- SALES ---------------- #
-
+    
         "grossAmount",
         "discountAmount",
         "chargeAmount",
         "netAmount",
-        "roundOffAmount",
-        "taxAmount",
+    
+        # CUSTOMER
+        "customer.name",
+        "customer.phoneNumber",
+    
+        # DELIVERY
+        "deliveryBy.name",
+        "delivery.mode",
+    
+        # SOURCE
+        "sourceInfo.source",
+    
+        # STATUS
+        "statusInfo.reason",
+        "statusInfo.remarks",
+    
+        # TIMESTAMPS
+        "createdDate",
+        "modifiedDate",
 
-        # ---------------- ORDER LEVEL ---------------- #
-
-        "totalQuantity",
-        "billLevelDiscount",
-        "packingCharge",
-        "deliveryCharge",
-
-        # ---------------- ITEM ---------------- #
-
+    # ITEM DETAILS
         "item_longName",
         "item_shortName",
-        "item_variants",
-
         "item_skuCode",
         "item_categoryName",
         "item_brandName",
-
         "item_quantity",
         "item_unitPrice",
-
         "item_discountAmount",
         "item_grossAmount",
         "item_netAmount",
-        "item_baseNetAmount",
 
-        # ---------------- DISCOUNT ---------------- #
-
-        "disCode_name",
-
+        # DISCOUNT
+        "disCode_name"
         # ---------------- KOT ---------------- #
 
         "kotNumber",
@@ -220,65 +201,34 @@ reqcolumns = final_df[
 
 reqcolumns = reqcolumns.rename(columns={
 
-    "branchCode": "Branch Code",
-    "branchName": "Store Name",
-    "brandName": "Brand",
+    "customer.name": "Customer Name",
+    "customer.phoneNumber": "Customer Phone",
 
-    "invoiceNumber": "Invoice No",
-    "invoiceDay": "Business Date",
-    "invoiceDate": "Invoice Date",
+    "deliveryBy.name": "Delivery Partner",
+    "delivery.mode": "Delivery Mode",
 
-    "sessionLabel": "Session",
-    "channel": "Channel",
-    "source": "Source",
+    "sourceInfo.source": "Order Source",
 
-    "status": "Order Status",
+    "statusInfo.reason": "Cancel Reason",
+    "statusInfo.remarks": "Cancel Remarks",
 
-    "customerName": "Customer Name",
-    "customerPhoneNumber": "Customer Phone",
+    "createdDate": "Created At",
+    "modifiedDate": "Updated At",
 
-    "deliveryPartner": "Delivery Partner",
-    "deliveryStatus": "Delivery Status",
-
-    "paymentMode": "Payment Mode",
-
-    "grossAmount": "Gross Sales",
-    "discountAmount": "Discount",
-    "chargeAmount": "Charges",
-    "netAmount": "Net Sales",
-
-    "roundOffAmount": "Round Off",
-    "taxAmount": "Tax",
-
-    "totalQuantity": "Total Qty",
-    "billLevelDiscount": "Bill Discount",
-
-    "packingCharge": "Packing Charge",
-    "deliveryCharge": "Delivery Charge",
-
-    "item_skuCode": "SKU Code",
-
-    "item_shortName": "Item Group",
     "item_longName": "Item Name",
-
-    "item_variants": "Variant",
-
+    "item_shortName": "Item Group Name",
+    "item_skuCode": "SKU Code",
     "item_categoryName": "Category",
     "item_brandName": "Item Brand",
 
-    "item_quantity": "Item Qty",
-
+    "item_quantity": "Quantity",
     "item_unitPrice": "Unit Price",
 
-    "item_discountAmount": "Item Discount",
+    "item_discountAmount": "Discount Amount",
+    "item_grossAmount": "Gross Amount",
+    "item_netAmount": "Net Amount",
 
-    "item_grossAmount": "Item Gross",
-
-    "item_netAmount": "Item Net",
-
-    "item_baseNetAmount": "Base Net",
-
-    "disCode_name": "Discount Name",
+    "disCode_name": "Discount Name"
 
     "kotNumber": "KOT No",
     "kotStatus": "KOT Status",
