@@ -110,18 +110,19 @@ for branch in branches:
         # 📡 API CALL
         # =====================================================
         r = requests.get(
-            "https://api.ristaapps.com/v1/sales/page",
-            headers=headers(),
-            params={
-                "branch": branch,
-                "fromDate": from_time_str,
-                "toDate": to_time_str,
-                "page": 1,
-                "pageSize": 500,
-                "sort": "desc"
-            },
-            timeout=30
-        )
+        "https://api.ristaapps.com/v1/sales/page",
+        headers=headers(),
+        params={
+            "branch": branch,
+            "day": today,
+            "fromDate": from_time_str,
+            "toDate": to_time_str,
+            "page": 1,
+            "pageSize": 500,
+            "sort": "desc"
+        },
+        timeout=30
+    )
 
         # =====================================================
         # ❌ STATUS CHECK
