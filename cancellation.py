@@ -104,11 +104,17 @@ for branch in branches:
         }
 
         r = requests.get(
-            "https://api.ristaapps.com/v1/sales",
-            headers=headers(),
-            params=params,
-            timeout=30
-        )
+        "https://api.ristaapps.com/v1/sales/page",
+        headers=headers(),
+        params={
+            "branch": branch,
+            "day": today,
+            "page": 1,
+            "pageSize": 500
+            "sort": "desc"
+        },
+        timeout=30
+    )
 
         if r.status_code != 200:
             print(f"❌ API Error {branch}: {r.status_code}")
@@ -117,7 +123,10 @@ for branch in branches:
 
         resp = r.json()
 
-        data = resp.get("data", []) if isinstance(resp, dict) else resp
+        if isinstance(resp, dict):
+            data = resp.get("data", {}).get("rows", [])
+        else:
+            data = []
 
         if data:
             df_list.append(pd.json_normalize(data))
