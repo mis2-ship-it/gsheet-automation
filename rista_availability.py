@@ -156,7 +156,7 @@ print("🏪 COCO Branch count:", len(branches))
 def fetch_availability(branch):
     try:
         r = requests.get(
-            "https://api.ristaapps.com/v1/menu/items",
+            "https://api.ristaapps.com/v1/catelog",
             headers=api_headers(),
             params={"branch": branch},
             timeout=30
