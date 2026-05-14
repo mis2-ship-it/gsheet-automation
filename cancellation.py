@@ -150,7 +150,7 @@ for branch in branches:
 
                     data = resp["data"].get("rows", [])
 
-                elif isinstance(resp["data"], list"):
+                elif isinstance(resp["data"], list):
 
                     data = resp["data"]
 
