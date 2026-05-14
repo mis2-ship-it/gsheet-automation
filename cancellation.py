@@ -86,148 +86,222 @@ branches = [
 print("🏪 Branch count:", len(branches))
 
 # =========================================================
-# 📡 FETCH SALES DATA
+# 📡 FETCH SALES DATA (LATEST 5 MINUTES)
 # =========================================================
 df_list = []
 
 for branch in branches:
+
     try:
 
-        from_time = (
-        datetime.utcnow() - timedelta(minutes=10)
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        # =====================================================
+        # ⏰ LAST 5 MINUTES WINDOW
+        # =====================================================
+        to_time = datetime.utcnow()
 
-        params = {
-           "branch": branch,
-           "day": today,
-           "fromDate": from_time
-        }
+        from_time = to_time - timedelta(minutes=5)
 
+        from_time_str = from_time.strftime("%Y-%m-%d %H:%M:%S")
+        to_time_str = to_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        print(f"🔍 Fetching {branch} | {from_time_str} → {to_time_str}")
+
+        # =====================================================
+        # 📡 API CALL
+        # =====================================================
         r = requests.get(
-        "https://api.ristaapps.com/v1/sales/page",
-        headers=headers(),
-        params={
-            "branch": branch,
-            "day": today,
-            "page": 1,
-            "pageSize": 500,
-            "sort": "desc"
-        },
-        timeout=30
-    )
+            "https://api.ristaapps.com/v1/sales/page",
+            headers=headers(),
+            params={
+                "branch": branch,
+                "fromDate": from_time_str,
+                "toDate": to_time_str,
+                "page": 1,
+                "pageSize": 500,
+                "sort": "desc"
+            },
+            timeout=30
+        )
 
+        # =====================================================
+        # ❌ STATUS CHECK
+        # =====================================================
         if r.status_code != 200:
+
             print(f"❌ API Error {branch}: {r.status_code}")
             print(r.text)
+
             continue
 
+        # =====================================================
+        # 📦 RESPONSE
+        # =====================================================
         resp = r.json()
 
-        if isinstance(resp, dict):
-            data = resp.get("data", {}).get("rows", [])
-        else:
-            data = []
+        data = []
 
+        # CASE 1 → DICT RESPONSE
+        if isinstance(resp, dict):
+
+            # /sales/page format
+            if "data" in resp:
+
+                if isinstance(resp["data"], dict):
+
+                    data = resp["data"].get("rows", [])
+
+                elif isinstance(resp["data"], list"):
+
+                    data = resp["data"]
+
+        # CASE 2 → LIST RESPONSE
+        elif isinstance(resp, list):
+
+            data = resp
+
+        # =====================================================
+        # 📊 DATAFRAME
+        # =====================================================
         if data:
-            df_list.append(pd.json_normalize(data))
+
+            temp_df = pd.json_normalize(data)
+
+            # Add branchName if missing
+            if "branchName" not in temp_df.columns:
+
+                temp_df["branchName"] = branch
+
+            df_list.append(temp_df)
+
+            print(f"✅ {branch} → {len(temp_df)} rows")
+
+        else:
+
+            print(f"⚠️ No data → {branch}")
 
     except Exception as e:
+
         print(f"❌ Error {branch}: {e}")
 
-# Combine all
+# =========================================================
+# 🔗 COMBINE ALL DATA
+# =========================================================
 if not df_list:
+
     print("❌ No data fetched")
     exit()
 
 df = pd.concat(df_list, ignore_index=True)
 
-print("✅ Data fetched:", len(df))
+print("✅ Total rows fetched:", len(df))
 
 # =========================================================
-# 🔁 STANDARDIZE COLUMN
+# 🔻 FILTER CANCELLED ONLY
 # =========================================================
-df.rename(columns={
-    "invoiceNo": "invoiceNumber",
-    "orderId": "invoiceNumber"
-}, inplace=True)
+status_col = None
 
-df["invoiceNumber"] = df["invoiceNumber"].astype(str)
+possible_status_cols = [
+    "status",
+    "orderStatus",
+    "invoiceStatus"
+]
 
-# =========================================================
-# 🔻 FILTER CANCELLED
-# =========================================================
-cancel_df = df[
-    df["status"].astype(str).str.lower().isin(["voided"])
-].copy()
+for col in possible_status_cols:
 
-if cancel_df.empty:
-    print("✅ No cancellations")
+    if col in df.columns:
+
+        status_col = col
+        break
+
+if not status_col:
+
+    print("❌ Status column not found")
+    print(df.columns.tolist())
     exit()
 
-print("🚨 Cancellations Found:", len(cancel_df))
+cancel_df = df[
+    df[status_col]
+    .astype(str)
+    .str.lower()
+    .isin(["cancelled", "voided", "cancel"])
+].copy()
+
+print("🚨 Cancellation Found:", len(cancel_df))
 
 # =========================================================
-# 🔁 REMOVE DUPLICATE ALERTS
+# 🔁 STANDARDIZE INVOICE NUMBER
 # =========================================================
+invoice_col = None
 
-try:
-    existing_data = raw_ws.get_all_values()
+possible_invoice_cols = [
+    "invoiceNumber",
+    "invoiceNo",
+    "orderId",
+    "billNo"
+]
 
-    if len(existing_data) > 1:
+for col in possible_invoice_cols:
 
-        existing_headers = existing_data[0]
+    if col in cancel_df.columns:
 
-        existing_df = pd.DataFrame(
-            existing_data[1:],
-            columns=existing_headers
-        )
+        invoice_col = col
+        break
 
-    else:
-        existing_df = pd.DataFrame()
+if not invoice_col:
 
-except Exception as e:
-    print("⚠️ Existing sheet read error:", e)
-    existing_df = pd.DataFrame()
-
-# =========================================================
-# 📌 EXISTING SENT IDS
-# =========================================================
-
-sent_ids = set()
-
-if (
-    not existing_df.empty and
-    "invoiceNumber" in existing_df.columns
-):
-
-    sent_ids = set(
-        existing_df["invoiceNumber"]
-        .astype(str)
-        .str.strip()
-        .unique()
-    )
-
-print(f"📌 Existing Sent IDs: {len(sent_ids)}")
-
-# =========================================================
-# 🚫 REMOVE ALREADY SENT ORDERS
-# =========================================================
+    print("❌ Invoice column not found")
+    print(cancel_df.columns.tolist())
+    exit()
 
 cancel_df["invoiceNumber"] = (
-    cancel_df["invoiceNumber"]
+    cancel_df[invoice_col]
     .astype(str)
     .str.strip()
 )
 
-cancel_df = cancel_df[
-    ~cancel_df["invoiceNumber"].isin(sent_ids)
-]
+# =========================================================
+# 🚫 REMOVE DUPLICATE ALERTS
+# =========================================================
+try:
 
-print(f"🆕 New Cancellations: {len(cancel_df)}")
+    existing = pd.DataFrame(raw_ws.get_all_records())
 
+except:
+
+    existing = pd.DataFrame()
+
+if (
+    not existing.empty
+    and "invoiceNumber" in existing.columns
+):
+
+    existing["invoiceNumber"] = (
+        existing["invoiceNumber"]
+        .astype(str)
+        .str.strip()
+    )
+
+    sent_ids = set(existing["invoiceNumber"])
+
+    before_count = len(cancel_df)
+
+    cancel_df = cancel_df[
+        ~cancel_df["invoiceNumber"].isin(sent_ids)
+    ]
+
+    after_count = len(cancel_df)
+
+    print(f"🚫 Duplicate removed: {before_count - after_count}")
+
+# =========================================================
+# ✅ FINAL CHECK
+# =========================================================
 if cancel_df.empty:
+
     print("✅ No new cancellations")
     exit()
+
+print("✅ New cancellations:", len(cancel_df))
 
 # =========================================================
 # 🧩 STORE MAPPING
