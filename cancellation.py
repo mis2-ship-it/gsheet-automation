@@ -110,7 +110,7 @@ for branch in branches:
             "branch": branch,
             "day": today,
             "page": 1,
-            "pageSize": 500
+            "pageSize": 500,
             "sort": "desc"
         },
         timeout=30
