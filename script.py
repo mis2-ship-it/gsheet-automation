@@ -140,86 +140,59 @@ reqcolumns = final_df[
         "invoiceDate",
         "sessionLabel",
         "channel",
-    
-        "status",
-    
-        "grossAmount",
-        "discountAmount",
         "chargeAmount",
-        "netAmount",
-    
-        # CUSTOMER
-        "customer.name",
-        "customer.phoneNumber",
-    
-        # DELIVERY
-        "deliveryBy.name",
-        "delivery.mode",
-    
-        # SOURCE
-        "sourceInfo.source",
-    
-        # STATUS
-        "statusInfo.reason",
-        "statusInfo.remarks",
-    
-        # TIMESTAMPS
-        "createdDate",
-        "modifiedDate",
+        "status",
 
-    # ITEM DETAILS
         "item_longName",
         "item_shortName",
+        "item_variants",
         "item_skuCode",
         "item_categoryName",
         "item_brandName",
+
         "item_quantity",
         "item_unitPrice",
         "item_discountAmount",
         "item_grossAmount",
         "item_netAmount",
+        "item_baseNetAmount",
 
-        # DISCOUNT
-        "disCode_name"
-        # ---------------- KOT ---------------- #
+        "disCode_name",
 
-        "kotNumber",
-        "kotStatus",
-        "kotDate",
+        # DELIVERY
+        "delivery.name",
+        "delivery.mode",
+        "deliveryBy.name",
 
-        # ---------------- CANCEL ---------------- #
+        # CUSTOMER
+        "customer.name",
+        "customer.phoneNumber",
 
-        "cancelReason",
-        "cancelledBy",
+        # SOURCE
+        "sourceInfo.source",
+        "sourceInfo.companyName",
 
-        # ---------------- TIMINGS ---------------- #
+        # KOT
+        "item_kotNumber",
+        "item_kotStatus",
+        "item_kotTimestamp",
 
-        "createdAt",
-        "updatedAt"
+        # CANCEL
+        "statusInfo.reason",
+        "statusInfo.remarks",
+
+        # DATE
+        "createdDate",
+        "modifiedDate"
     ]
 ]
 
 reqcolumns = reqcolumns.rename(columns={
 
-    "customer.name": "Customer Name",
-    "customer.phoneNumber": "Customer Phone",
-
-    "deliveryBy.name": "Delivery Partner",
-    "delivery.mode": "Delivery Mode",
-
-    "sourceInfo.source": "Order Source",
-
-    "statusInfo.reason": "Cancel Reason",
-    "statusInfo.remarks": "Cancel Remarks",
-
-    "createdDate": "Created At",
-    "modifiedDate": "Updated At",
-
-    "item_longName": "Item Name",
-    "item_shortName": "Item Group Name",
     "item_skuCode": "SKU Code",
+    "item_shortName": "Item Group Name",
+    "item_longName": "Item Name",
     "item_categoryName": "Category",
-    "item_brandName": "Item Brand",
 
     "item_quantity": "Quantity",
     "item_unitPrice": "Unit Price",
@@ -228,18 +201,25 @@ reqcolumns = reqcolumns.rename(columns={
     "item_grossAmount": "Gross Amount",
     "item_netAmount": "Net Amount",
 
-    "disCode_name": "Discount Name",
+    "delivery.name": "Delivery Partner",
+    "delivery.mode": "Delivery Mode",
+    "deliveryBy.name": "Rider Name",
 
-    "kotNumber": "KOT No",
-    "kotStatus": "KOT Status",
-    "kotDate": "KOT Time",
+    "customer.name": "Customer Name",
+    "customer.phoneNumber": "Customer Phone",
 
-    "cancelReason": "Cancel Reason",
-    "cancelledBy": "Cancelled By",
+    "sourceInfo.source": "Aggregator Source",
+    "sourceInfo.companyName": "Aggregator Company",
 
-    "createdAt": "Created At",
-    "updatedAt": "Updated At"
+    "item_kotNumber": "KOT Number",
+    "item_kotStatus": "KOT Status",
+    "item_kotTimestamp": "KOT Time",
 
+    "statusInfo.reason": "Cancel Reason",
+    "statusInfo.remarks": "Cancel Remarks",
+
+    "createdDate": "Created At",
+    "modifiedDate": "Updated At"
 })
 
 reqcolumns["invoiceDate"] = pd.to_datetime(reqcolumns["invoiceDate"]).dt.tz_localize(None)
