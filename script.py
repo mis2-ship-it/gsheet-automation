@@ -228,7 +228,7 @@ reqcolumns = reqcolumns.rename(columns={
     "item_grossAmount": "Gross Amount",
     "item_netAmount": "Net Amount",
 
-    "disCode_name": "Discount Name"
+    "disCode_name": "Discount Name",
 
     "kotNumber": "KOT No",
     "kotStatus": "KOT Status",
