@@ -215,6 +215,20 @@ final_df = pd.concat([
     lastyear_df
 ], ignore_index=True)
 
+# ================================
+# 📌 SAFE COLUMN FIX (IMPORTANT)
+# ================================
+
+if "channel" not in final_df.columns:
+    final_df["channel"] = "Unknown"
+
+if "branchName" not in final_df.columns:
+    final_df["branchName"] = "Unknown"
+
+# ---------------- MAPPING ---------------- #
+
+final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
+final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 # ---------------- SAFE COLUMN CHECK ---------------- #
 
 required_cols = ["netAmount", "chargeAmount", "status", "branchName", "channel"]
