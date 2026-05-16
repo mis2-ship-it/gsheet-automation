@@ -1745,10 +1745,10 @@ push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
 
 for am_email, stores in am_store_map.items():
-    send_am_mail(am_email, stores)
+    send_am_mail(am_email)
 
 for tm_email, stores in tm_store_map.items():
-    send_tm_mail(tm_email, stores)
+    send_tm_mail(tm_email)
 
 
 send_email()        # Full dashboard
