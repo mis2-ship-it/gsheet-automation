@@ -330,6 +330,14 @@ def get_session(h):
 today_cut["Session"] = today_cut["Hour"].apply(get_session)
 lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
 
+def add_session(df):
+    if "Session" not in df.columns:
+        df["Session"] = df["Hour"].apply(get_session)
+    return df
+
+
+final_df = add_session(final_df)
+
 # =========================================================
 # 🔥 KPI FUNCTION
 # =========================================================
@@ -1397,7 +1405,10 @@ def send_am_mail():
     for am_email, stores in am_store_map.items():
 
         df_today = filter_store_data(stores)
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)]
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+
+        if "Session" not in df_lw.columns:
+            df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
         store_df = store_kpi(df_today)
         session_df = session_report(df_today, df_lw)
@@ -1456,7 +1467,10 @@ def send_tm_mail():
             (final_df["status"] == "Closed")
         ]
 
-        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)]
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+
+        if "Session" not in df_lw.columns:
+            df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
         store_df = store_kpi(df_today)
         session_df = session_report(df_today, df_lw)
