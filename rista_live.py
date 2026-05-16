@@ -1402,24 +1402,21 @@ def send_am_mail():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    for am_email, stores in am_store_map.items():
+    for am_email, store_list in am_store_map.items():
 
-        df_today = filter_store_data(stores)
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+        if not am_email or am_email.strip() == "":
+            continue
 
-        if "Session" not in df_lw.columns:
-            df_lw["Session"] = df_lw["Hour"].apply(get_session)
+        df_today = filter_store_data(store_list)
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(store_list)].copy()
 
-        store_df = store_kpi(df_today)
-        session_df = session_report(df_today, df_lw)
-        brand_df = brand_report(df_today, df_lw)
-
-        source_df = df_today.groupby(["Source Group","branchName"])["Net Sales"].sum().reset_index()
+        df_today = add_session(df_today)
+        df_lw = add_session(df_lw)
 
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = f"📊 AM Store Report - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = "📊 AM Store Report" - {now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
         <div style="font-family:Arial">
@@ -1444,7 +1441,7 @@ def send_am_mail():
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, am_email, msg.as_string())
+        server.sendmail(EMAIL_USER, [am_email], msg.as_string())
         server.quit()
 
         print("📩 AM Mail Sent →", am_email)
@@ -1459,29 +1456,21 @@ def send_tm_mail():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    for tm_email, regions in tm_region_map.items():
+    for tm_email, region_list in tm_region_map.items():
 
-        df_today = final_df[
-            (final_df["Region"].isin(regions)) &
-            (final_df["Store Type"] == "COCO") &
-            (final_df["status"] == "Closed")
-        ]
+        if not tm_email or tm_email.strip() == "":
+            continue
 
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+        df_today = final_df[final_df["Region"].isin(region_list)].copy()
+        df_lw = lastweek_cut[lastweek_cut["Region"].isin(region_list)].copy()
 
-        if "Session" not in df_lw.columns:
-            df_lw["Session"] = df_lw["Hour"].apply(get_session)
-
-        store_df = store_kpi(df_today)
-        session_df = session_report(df_today, df_lw)
-        brand_df = brand_report(df_today, df_lw)
-
-        source_df = df_today.groupby(["Source Group","branchName"])["Net Sales"].sum().reset_index()
+        df_today = add_session(df_today)
+        df_lw = add_session(df_lw)
 
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = f"📊 TM Region Report - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = "📊 TM Region Report" - {now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
         <div style="font-family:Arial">
@@ -1506,10 +1495,8 @@ def send_tm_mail():
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, tm_email, msg.as_string())
+        server.sendmail(EMAIL_USER, [tm_email], msg.as_string())
         server.quit()
-
-        print("📩 TM Mail Sent →", tm_email)
 
 # ---------------- EXECUTE ---------------- #
 
