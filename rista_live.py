@@ -1411,33 +1411,69 @@ def send_am_mail():
         if not am_email or am_email.strip() == "":
             continue
 
-        df_today = filter_store_data(store_list)
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(store_list)].copy()
+        # =====================================================
+        # 📌 STORE DATA (THIS WAS MISSING)
+        # =====================================================
 
-        df_today = add_session(df_today)
-        df_lw = add_session(df_lw)
+        store_df = final_df[
+            (final_df["branchName"].isin(store_list)) &
+            (final_df["Store Type"] == "COCO") &
+            (final_df["status"] == "Closed")
+        ].copy()
 
+        lw_df = lastweek_cut[
+            lastweek_cut["branchName"].isin(store_list)
+        ].copy()
+
+        # FIX: ensure session exists
+        if "Session" not in store_df.columns:
+            store_df["Session"] = store_df["Hour"].apply(get_session)
+
+        if "Session" not in lw_df.columns:
+            lw_df["Session"] = lw_df["Hour"].apply(get_session)
+
+        # =====================================================
+        # 📌 BUILD REPORTS
+        # =====================================================
+
+        store_summary = build_kpi(store_df, lw_df)
+
+        session_summary = store_df.groupby(["branchName", "Session"])["Net Sales"].sum().reset_index()
+
+        brand_summary = store_df.groupby("Brand").agg(
+            Today_Rev=("Net Sales", "sum"),
+            Today_Dis=("discountAmount", "sum")
+        ).reset_index()
+
+        source_summary = store_df.groupby("Source Group").agg(
+            Today_Rev=("Net Sales", "sum")
+        ).reset_index()
+        
+        #Email.....
+        
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = "📊 AM Store Report-{now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = f"📊 AM Store Report - {now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
-        <div style="font-family:Arial">
+        <h2>Store Wise Sales Report</h2>
+        {styled_html(store_summary)}
 
-        <h2>📊 Store Wise Sales Report</h2>
-        {styled_html(store_df)}
+        <br><br>
 
-        <h2>🍽 Session Sales Report</h2>
-        {styled_html(session_df)}
+        <h2>Store Wise Session Report</h2>
+        {styled_html(session_summary)}
 
-        <h2>🏷 Brand Sales Report</h2>
-        {styled_html(brand_df)}
+        <br><br>
 
-        <h2>📦 Source Sales Report</h2>
-        {styled_html(source_df)}
+        <h2>Brand Report</h2>
+        {styled_html(brand_summary)}
 
-        </div>
+        <br><br>
+
+        <h2>Source Report</h2>
+        {styled_html(source_summary)}
         """
 
         msg.attach(MIMEText(body, "html"))
@@ -1469,33 +1505,69 @@ def send_tm_mail():
         if not tm_email or tm_email.strip() == "":
             continue
 
-        df_today = final_df[final_df["Region"].isin(region_list)].copy()
-        df_lw = lastweek_cut[lastweek_cut["Region"].isin(region_list)].copy()
+        # =====================================================
+        # 📌 STORE DATA (THIS WAS MISSING)
+        # =====================================================
 
-        df_today = add_session(df_today)
-        df_lw = add_session(df_lw)
+        store_df = final_df[
+            (final_df["branchName"].isin(store_list)) &
+            (final_df["Store Type"] == "COCO") &
+            (final_df["status"] == "Closed")
+        ].copy()
 
+        lw_df = lastweek_cut[
+            lastweek_cut["branchName"].isin(store_list)
+        ].copy()
+
+        # FIX: ensure session exists
+        if "Session" not in store_df.columns:
+            store_df["Session"] = store_df["Hour"].apply(get_session)
+
+        if "Session" not in lw_df.columns:
+            lw_df["Session"] = lw_df["Hour"].apply(get_session)
+
+        # =====================================================
+        # 📌 BUILD REPORTS
+        # =====================================================
+
+        store_summary = build_kpi(store_df, lw_df)
+
+        session_summary = store_df.groupby(["branchName", "Session"])["Net Sales"].sum().reset_index()
+
+        brand_summary = store_df.groupby("Brand").agg(
+            Today_Rev=("Net Sales", "sum"),
+            Today_Dis=("discountAmount", "sum")
+        ).reset_index()
+
+        source_summary = store_df.groupby("Source Group").agg(
+            Today_Rev=("Net Sales", "sum")
+        ).reset_index()
+        
+        #Email.....
+        
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = "📊 TM Region Report - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = f"📊 TM Store Report - {now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
-        <div style="font-family:Arial">
+        <h2>Store Wise Sales Report</h2>
+        {styled_html(store_summary)}
 
-        <h2>📊 Store Wise Sales Report</h2>
-        {styled_html(store_df)}
+        <br><br>
 
-        <h2>🍽 Session Sales Report</h2>
-        {styled_html(session_df)}
+        <h2>Store Wise Session Report</h2>
+        {styled_html(session_summary)}
 
-        <h2>🏷 Brand Sales Report</h2>
-        {styled_html(brand_df)}
+        <br><br>
 
-        <h2>📦 Source Sales Report</h2>
-        {styled_html(source_df)}
+        <h2>Brand Report</h2>
+        {styled_html(brand_summary)}
 
-        </div>
+        <br><br>
+
+        <h2>Source Report</h2>
+        {styled_html(source_summary)}
         """
 
         msg.attach(MIMEText(body, "html"))
