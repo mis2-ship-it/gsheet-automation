@@ -225,10 +225,7 @@ if "channel" not in final_df.columns:
 if "branchName" not in final_df.columns:
     final_df["branchName"] = "Unknown"
 
-# ---------------- MAPPING ---------------- #
 
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
-final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 # ---------------- SAFE COLUMN CHECK ---------------- #
 
 required_cols = ["netAmount", "chargeAmount", "status", "branchName", "channel"]
@@ -292,6 +289,11 @@ tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip() != ""}
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
+
+# ---------------- MAPPING ---------------- #
+
+final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
+final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
 
 # ---------------- FILTER ---------------- #
 
