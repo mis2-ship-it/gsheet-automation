@@ -1439,39 +1439,74 @@ def send_email():
 
     print("📩 Email Sent Successfully")
 
+# ================================
+# 📌 ROLE DASHBOARD ENGINE
+# ================================
+
+def build_role_scope(role, identifier):
+
+    if role == "AM":
+        stores = am_store_map.get(identifier, [])
+        df_today = final_df[final_df["branchName"].isin(stores)].copy()
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+        return df_today, df_lw, stores, None
+
+    elif role == "TM":
+        regions = tm_region_map.get(identifier, [])
+        df_today = final_df[final_df["Region"].isin(regions)].copy()
+        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)].copy()
+        return df_today, df_lw, None, regions
+
+    else:
+        return pd.DataFrame(), pd.DataFrame(), None, None
+
 # =====================================================
 # 📩 AM MAIL
 # =====================================================
 
-def send_am_mail(am_email, stores):
+def send_am_mail():
 
     import smtplib
-
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-    for am_email, store_list in am_store_map.items():
+    def calc_store_metrics(t, l):
 
-        if not am_email or am_email.strip() == "":
+        t_rev = t["Net Sales"].sum()
+        l_rev = l["Net Sales"].sum()
+
+        growth = ((t_rev - l_rev) / max(l_rev, 1)) * 100
+
+        t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
+        l_disc = (l["discountAmount"].sum() / max(l["grossAmount"].sum(), 1)) * 100
+
+        return {
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(l_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(l_disc, 2),
+            "Change %": round(t_disc - l_disc, 2)
+        }
+
+    for am_email, stores in am_store_map.items():
+
+        if not am_email:
             continue
 
-        am_email = am_row["AM Mail"]   # your loop variable
-    
-        stores = am_store_map.get(am_email, [])
-    
         df_today = final_df[final_df["branchName"].isin(stores)].copy()
         df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
 
+        # ✅ SAFE SESSION FIX
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
         # =====================================================
-        # 📊 STORE WISE DASHBOARD
+        # STORE DASHBOARD
         # =====================================================
-
         store_rows = []
 
         for store in stores:
@@ -1487,16 +1522,15 @@ def send_am_mail(am_email, stores):
         store_df = pd.DataFrame(store_rows)
 
         # =====================================================
-        # 📊 SESSION WISE (NO STORE NAME)
+        # SESSION DASHBOARD
         # =====================================================
-
         session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
 
         # =====================================================
-        # 📊 BRAND WISE (HEADER PER BRAND)
+        # BRAND DASHBOARD
         # =====================================================
+        brand_blocks = []
 
-        brand_dfs = []
         for brand in df_today["Brand"].dropna().unique():
 
             b_t = df_today[df_today["Brand"] == brand]
@@ -1515,17 +1549,17 @@ def send_am_mail(am_email, stores):
                 m["Store Name"] = store
                 rows.append(m)
 
-            brand_dfs.append(
-                pd.concat([pd.DataFrame([{"Brand": brand}]), pd.DataFrame(rows)])
-            )
+            if rows:
+                brand_blocks.append(pd.DataFrame([{"Brand": brand}]))
+                brand_blocks.append(pd.DataFrame(rows))
 
-        brand_df = pd.concat(brand_dfs, ignore_index=True)
+        brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
 
         # =====================================================
-        # 📊 SOURCE WISE (HEADER PER SOURCE)
+        # SOURCE DASHBOARD
         # =====================================================
+        source_blocks = []
 
-        source_dfs = []
         for source in ["In Store", "Swiggy", "Zomato"]:
 
             s_t = df_today[df_today["Source Group"] == source]
@@ -1544,38 +1578,41 @@ def send_am_mail(am_email, stores):
                 m["Store Name"] = store
                 rows.append(m)
 
-            source_dfs.append(
-                pd.concat([pd.DataFrame([{"Source": source}]), pd.DataFrame(rows)])
-            )
+            if rows:
+                source_blocks.append(pd.DataFrame([{"Source": source}]))
+                source_blocks.append(pd.DataFrame(rows))
 
-        source_df = pd.concat(source_dfs, ignore_index=True)
+        source_df = pd.concat(source_blocks, ignore_index=True) if source_blocks else pd.DataFrame()
 
         # =====================================================
-        # 📧 EMAIL
+        # EMAIL
         # =====================================================
-
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = f"📊 AM Sales Dashboard - {report_time.strftime('%d %b %Y %I:%M %p')}"
+
+        msg["Subject"] = (
+            f"📊 AM Sales Dashboard - "
+            f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+        )
 
         body = f"""
-        <h2>📊 Store Wise Dashboard</h2>
+        <h2>🏪 Store Wise Report</h2>
         {styled_html(store_df)}
 
         <br><br>
 
-        <h2>📈 Session Dashboard</h2>
+        <h2>🍽 Session Report</h2>
         {styled_html(session_df)}
 
         <br><br>
 
-        <h2>🏷️ Brand Dashboard</h2>
+        <h2>🏷 Brand Report</h2>
         {styled_html(brand_df)}
 
         <br><br>
 
-        <h2>📦 Source Dashboard</h2>
+        <h2>📦 Source Report</h2>
         {styled_html(source_df)}
         """
 
@@ -1593,38 +1630,49 @@ def send_am_mail(am_email, stores):
 # 📩 TM MAIL
 # =====================================================
 
-def send_tm_mail(tm_email, stores):
+def send_tm_mail():
 
     import smtplib
-
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-    for tm_email, region_list in tm_region_map.items():
+    def calc_store_metrics(t, l):
 
-        if not tm_email or tm_email.strip() == "":
+        t_rev = t["Net Sales"].sum()
+        l_rev = l["Net Sales"].sum()
+
+        growth = ((t_rev - l_rev) / max(l_rev, 1)) * 100
+
+        t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
+        l_disc = (l["discountAmount"].sum() / max(l["grossAmount"].sum(), 1)) * 100
+
+        return {
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(l_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(l_disc, 2),
+            "Change %": round(t_disc - l_disc, 2)
+        }
+
+    for tm_email, regions in tm_region_map.items():
+
+        if not tm_email:
             continue
-            
-        tm_email = am_row["TM Mail"]   # your loop variable
-    
-        stores = tm_store_map.get(tm_email, [])
-    
-        df_today = final_df[final_df["branchName"].isin(stores)].copy()
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+
+        df_today = final_df[final_df["Region"].isin(regions)].copy()
+        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)].copy()
 
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
-        # =====================================================
-        # 📊 STORE WISE DASHBOARD
-        # =====================================================
-
+        # STORE DASHBOARD
         store_rows = []
 
-        for store in stores:
+        for store in df_today["branchName"].unique():
 
             t = df_today[df_today["branchName"] == store]
             l = df_lw[df_lw["branchName"] == store]
@@ -1636,96 +1684,41 @@ def send_tm_mail(tm_email, stores):
 
         store_df = pd.DataFrame(store_rows)
 
-        # =====================================================
-        # 📊 SESSION WISE (NO STORE NAME)
-        # =====================================================
-
+        # SESSION
         session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
 
-        # =====================================================
-        # 📊 BRAND WISE (HEADER PER BRAND)
-        # =====================================================
+        # BRAND
+        brand_df = df_today.groupby("Brand")["Net Sales"].sum().reset_index()
 
-        brand_dfs = []
-        for brand in df_today["Brand"].dropna().unique():
-
-            b_t = df_today[df_today["Brand"] == brand]
-            b_l = df_lw[df_lw["Brand"] == brand]
-
-            rows = []
-
-            for store in stores:
-                t = b_t[b_t["branchName"] == store]
-                l = b_l[b_l["branchName"] == store]
-
-                if t.empty and l.empty:
-                    continue
-
-                m = calc_store_metrics(t, l)
-                m["Store Name"] = store
-                rows.append(m)
-
-            brand_dfs.append(
-                pd.concat([pd.DataFrame([{"Brand": brand}]), pd.DataFrame(rows)])
-            )
-
-        brand_df = pd.concat(brand_dfs, ignore_index=True)
-
-        # =====================================================
-        # 📊 SOURCE WISE (HEADER PER SOURCE)
-        # =====================================================
-
-        source_dfs = []
-        for source in ["In Store", "Swiggy", "Zomato"]:
-
-            s_t = df_today[df_today["Source Group"] == source]
-            s_l = df_lw[df_lw["Source Group"] == source]
-
-            rows = []
-
-            for store in stores:
-                t = s_t[s_t["branchName"] == store]
-                l = s_l[s_l["branchName"] == store]
-
-                if t.empty and l.empty:
-                    continue
-
-                m = calc_store_metrics(t, l)
-                m["Store Name"] = store
-                rows.append(m)
-
-            source_dfs.append(
-                pd.concat([pd.DataFrame([{"Source": source}]), pd.DataFrame(rows)])
-            )
-
-        source_df = pd.concat(source_dfs, ignore_index=True)
-
-        # =====================================================
-        # 📧 EMAIL
-        # =====================================================
+        # SOURCE
+        source_df = df_today.groupby("Source Group")["Net Sales"].sum().reset_index()
 
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = f"📊 AM Sales Dashboard - {report_time.strftime('%d %b %Y %I:%M %p')}"
+
+        msg["Subject"] = (
+            f"📊 TM Sales Dashboard - "
+            f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+        )
 
         body = f"""
-        <h2>📊 Store Wise Dashboard</h2>
+        <h2>🏪 Store Wise Report</h2>
         {styled_html(store_df)}
 
         <br><br>
 
-        <h2>📈 Session Dashboard</h2>
+        <h2>🍽 Session Report</h2>
         {styled_html(session_df)}
 
         <br><br>
 
-        <h2>🏷️ Brand Dashboard</h2>
+        <h2>🏷 Brand Report</h2>
         {styled_html(brand_df)}
 
         <br><br>
 
-        <h2>📦 Source Dashboard</h2>
+        <h2>📦 Source Report</h2>
         {styled_html(source_df)}
         """
 
