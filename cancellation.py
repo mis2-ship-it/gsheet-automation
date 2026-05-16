@@ -205,6 +205,7 @@ possible_status_cols = [
     "status",
     "orderStatus",
     "invoiceStatus"
+    "statusInfo.reason"
 ]
 
 for col in possible_status_cols:
@@ -224,7 +225,7 @@ cancel_df = df[
     df[status_col]
     .astype(str)
     .str.lower()
-    .isin(["cancelled", "voided", "cancel"])
+    .isin(["voided", "cancel"])
 ].copy()
 
 print("🚨 Cancellation Found:", len(cancel_df))
@@ -334,6 +335,7 @@ possible_reason_cols = [
     "cancellationReason",
     "voidReason",
     "reason"
+    "statusInfo.reason"
 ]
 
 reason_col = None
