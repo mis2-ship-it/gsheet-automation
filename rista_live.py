@@ -244,6 +244,24 @@ region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
+# =====================================================
+# 📌 AM + TM MAPPING
+# =====================================================
+
+help_ws = spreadsheet.worksheet("Help Sheet")
+help_data = help_ws.get_all_records()
+
+help_df = pd.DataFrame(help_data)
+
+# Clean columns (safe)
+help_df.columns = [c.strip() for c in help_df.columns]
+
+# ---------------- AM MAP ---------------- #
+am_store_map = help_df.groupby("AM Mail")["Store Name"].apply(list).to_dict()
+
+# ---------------- TM MAP (Region wise) ---------------- #
+tm_region_map = help_df.groupby("TM Mail")["Region"].apply(list).to_dict()
+
 final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
 final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
 final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
@@ -463,6 +481,120 @@ print("L2W rows:", len(last2week_cut))
 print("MoM rows:", len(month_on_month_cut))
 print("LY rows:", len(lastyear_cut))
 
+# =====================================================
+# 📌 STORE FILTER
+# =====================================================
+
+def filter_store_data(store_list):
+    return final_df[
+        (final_df["branchName"].isin(store_list)) &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+
+# =====================================================
+# 📌 STORE KPI TABLE
+# =====================================================
+
+def store_kpi(df):
+    grouped = df.groupby("branchName")
+
+    rows = []
+
+    for store, g in grouped:
+
+        lw = lastweek_cut[lastweek_cut["branchName"] == store]
+
+        t_rev = g["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+        t_disc = (g["discountAmount"].sum() / max(g["grossAmount"].sum(), 1)) * 100
+        lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
+
+        rows.append({
+            "Store Name": store,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Changes %": round(t_disc - lw_disc, 2)
+        })
+
+    return pd.DataFrame(rows)
+
+# =====================================================
+# 📌 SESSION REPORT
+# =====================================================
+
+def session_report(df, lw_df):
+    out = []
+
+    for store in df["branchName"].unique():
+
+        s_df = df[df["branchName"] == store]
+        s_lw = lw_df[lw_df["branchName"] == store]
+
+        for session in ["Breakfast","Lunch","Snacks","Dinner","Post Dinner"]:
+
+            t = s_df[s_df["Session"] == session]["Net Sales"].sum()
+            lw = s_lw[s_lw["Session"] == session]["Net Sales"].sum()
+
+            growth = ((t - lw) / max(lw, 1)) * 100
+
+            out.append({
+                "Store Name": store,
+                "Session": session,
+                "Today Rev": round(t, 2),
+                "LW Rev": round(lw, 2),
+                "Growth %": round(growth, 2)
+            })
+
+    return pd.DataFrame(out)
+
+
+# =====================================================
+# 📌 BRAND REPORT
+# =====================================================
+
+def brand_report(df, lw_df):
+    rows = []
+
+    for store in df["branchName"].unique():
+
+        s_df = df[df["branchName"] == store]
+        s_lw = lw_df[lw_df["branchName"] == store]
+
+        for brand in s_df["Brand"].unique():
+
+            t = s_df[s_df["Brand"] == brand]
+            lw = s_lw[s_lw["Brand"] == brand]
+
+            t_rev = t["Net Sales"].sum()
+            lw_rev = lw["Net Sales"].sum()
+
+            growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+            t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
+            lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
+
+            rows.append({
+                "Store Name": store,
+                "Brand": brand,
+                "Today Rev": round(t_rev, 2),
+                "LW Rev": round(lw_rev, 2),
+                "Growth %": round(growth, 2),
+                "Today Dis %": round(t_disc, 2),
+                "LW Dis %": round(lw_disc, 2),
+                "Changes %": round(t_disc - lw_disc, 2)
+            })
+
+    return pd.DataFrame(rows)
+
+
 # =========================================================
 # 🔥 INSIGHT ENGINE
 # =========================================================
@@ -512,6 +644,8 @@ def safe_kpi_builder(df_today, df_lw, col, label):
         frames.append(build_kpi(t_df, lw_df, (label, key)))
 
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
 
 # ---------------- SUMMARY ---------------- #
 
@@ -947,7 +1081,7 @@ def push(name, df):
     ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
 
 
-
+        
 # =====================================================
 # FINAL HTML TABLE
 # =====================================================
@@ -1249,7 +1383,119 @@ def send_email():
 
     print("📩 Email Sent Successfully")
 
-    
+# =====================================================
+# 📩 AM MAIL
+# =====================================================
+
+def send_am_mail():
+
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    for am_email, stores in am_store_map.items():
+
+        df_today = filter_store_data(stores)
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)]
+
+        store_df = store_kpi(df_today)
+        session_df = session_report(df_today, df_lw)
+        brand_df = brand_report(df_today, df_lw)
+
+        source_df = df_today.groupby(["Source Group","branchName"])["Net Sales"].sum().reset_index()
+
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = am_email
+        msg["Subject"] = f"📊 AM Store Report - {now.strftime('%d %b %Y %I:%M')}"
+
+        body = f"""
+        <div style="font-family:Arial">
+
+        <h2>📊 Store Wise Sales Report</h2>
+        {styled_html(store_df)}
+
+        <h2>🍽 Session Sales Report</h2>
+        {styled_html(session_df)}
+
+        <h2>🏷 Brand Sales Report</h2>
+        {styled_html(brand_df)}
+
+        <h2>📦 Source Sales Report</h2>
+        {styled_html(source_df)}
+
+        </div>
+        """
+
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, am_email, msg.as_string())
+        server.quit()
+
+        print("📩 AM Mail Sent →", am_email)
+
+# =====================================================
+# 📩 TM MAIL
+# =====================================================
+
+def send_tm_mail():
+
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    for tm_email, regions in tm_region_map.items():
+
+        df_today = final_df[
+            (final_df["Region"].isin(regions)) &
+            (final_df["Store Type"] == "COCO") &
+            (final_df["status"] == "Closed")
+        ]
+
+        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)]
+
+        store_df = store_kpi(df_today)
+        session_df = session_report(df_today, df_lw)
+        brand_df = brand_report(df_today, df_lw)
+
+        source_df = df_today.groupby(["Source Group","branchName"])["Net Sales"].sum().reset_index()
+
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = tm_email
+        msg["Subject"] = f"📊 TM Region Report - {now.strftime('%d %b %Y %I:%M')}"
+
+        body = f"""
+        <div style="font-family:Arial">
+
+        <h2>📊 Store Wise Sales Report</h2>
+        {styled_html(store_df)}
+
+        <h2>🍽 Session Sales Report</h2>
+        {styled_html(session_df)}
+
+        <h2>🏷 Brand Sales Report</h2>
+        {styled_html(brand_df)}
+
+        <h2>📦 Source Sales Report</h2>
+        {styled_html(source_df)}
+
+        </div>
+        """
+
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, tm_email, msg.as_string())
+        server.quit()
+
+        print("📩 TM Mail Sent →", tm_email)
+
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
@@ -1262,5 +1508,8 @@ push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
 
 
-send_email()
-print("🎉 SUCCESS")
+send_email()        # Full dashboard
+send_am_mail()      # AM targeted
+send_tm_mail()      # TM targeted
+
+print("🎉 ALL EMAILS SENT SUCCESSFULLY")
