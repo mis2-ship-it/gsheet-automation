@@ -1399,8 +1399,12 @@ def send_email():
 def send_am_mail():
 
     import smtplib
+
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
     for am_email, store_list in am_store_map.items():
 
@@ -1453,8 +1457,12 @@ def send_am_mail():
 def send_tm_mail():
 
     import smtplib
+
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
     for tm_email, region_list in tm_region_map.items():
 
