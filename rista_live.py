@@ -1416,7 +1416,7 @@ def send_am_mail():
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = "📊 AM Store Report" - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = "📊 AM Store Report- "{now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
         <div style="font-family:Arial">
@@ -1470,7 +1470,7 @@ def send_tm_mail():
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = "📊 TM Region Report" - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = "📊 TM Region Report -"{now.strftime('%d %b %Y %I:%M')}"
 
         body = f"""
         <div style="font-family:Arial">
