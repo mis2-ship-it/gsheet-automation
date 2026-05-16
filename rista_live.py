@@ -254,19 +254,27 @@ region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
 source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
-# =====================================================
-# 📌 AM + TM MAPPING
-# =====================================================
+# ---------------- SAFE HELP SHEET LOAD ---------------- #
 
-# ---------------- AM MAP ---------------- #
+help_values = help_ws.get_all_values()
+headers = help_values[0]
+rows = help_values[1:]
+
+help_df = pd.DataFrame(rows, columns=headers)
+
+help_df.columns = help_df.columns.astype(str).str.strip()
+
+# ---------------- CLEAN EMAIL MAPS ---------------- #
+
+# AM: email -> stores
 am_store_map = help_df.groupby("AM Mail")["Store Name"].apply(list).to_dict()
 
+# TM: email -> regions
 tm_region_map = help_df.groupby("TM Mail")["Region"].apply(list).to_dict()
 
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
-final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
+# remove blanks (IMPORTANT FIX)
+am_store_map = {k:v for k,v in am_store_map.items() if str(k).strip() != ""}
+tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip() != ""}
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
@@ -370,6 +378,28 @@ def build_kpi(df_today, df_lw, label=None):
 
     return data.round(2)
 
+#Store Metrics
+
+def calc_store_metrics(df, lw_df):
+
+    def agg(d):
+        return (
+            d["Net Sales"].sum(),
+            d["grossAmount"].sum(),
+            d["discountAmount"].sum()
+        )
+
+    t_net, t_gross, t_disc = agg(df)
+    l_net, l_gross, l_disc = agg(lw_df)
+
+    return {
+        "Today Rev": t_net,
+        "LW Rev": l_net,
+        "Growth %": (t_net - l_net) / max(l_net, 1) * 100,
+        "Today Dis %": (t_disc / max(t_gross,1)) * 100,
+        "LW Dis %": (l_disc / max(l_gross,1)) * 100,
+        "Changes %": ((t_disc / max(t_gross,1)) - (l_disc / max(l_gross,1))) * 100
+    }
 
 # =========================================================
 # 📅 DATE LOGIC (CRITICAL FIX)
@@ -1411,69 +1441,126 @@ def send_am_mail():
         if not am_email or am_email.strip() == "":
             continue
 
-        # =====================================================
-        # 📌 STORE DATA (THIS WAS MISSING)
-        # =====================================================
-
-        store_df = final_df[
-            (final_df["branchName"].isin(store_list)) &
-            (final_df["Store Type"] == "COCO") &
-            (final_df["status"] == "Closed")
+        df_today = final_df[
+            final_df["branchName"].isin(stores)
         ].copy()
 
-        lw_df = lastweek_cut[
-            lastweek_cut["branchName"].isin(store_list)
+        df_lw = lastweek_cut[
+            lastweek_cut["branchName"].isin(stores)
         ].copy()
 
-        # FIX: ensure session exists
-        if "Session" not in store_df.columns:
-            store_df["Session"] = store_df["Hour"].apply(get_session)
-
-        if "Session" not in lw_df.columns:
-            lw_df["Session"] = lw_df["Hour"].apply(get_session)
+        df_today["Session"] = df_today["Hour"].apply(get_session)
+        df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
         # =====================================================
-        # 📌 BUILD REPORTS
+        # 📊 STORE WISE DASHBOARD
         # =====================================================
 
-        store_summary = build_kpi(store_df, lw_df)
+        store_rows = []
 
-        session_summary = store_df.groupby(["branchName", "Session"])["Net Sales"].sum().reset_index()
+        for store in stores:
 
-        brand_summary = store_df.groupby("Brand").agg(
-            Today_Rev=("Net Sales", "sum"),
-            Today_Dis=("discountAmount", "sum")
-        ).reset_index()
+            t = df_today[df_today["branchName"] == store]
+            l = df_lw[df_lw["branchName"] == store]
 
-        source_summary = store_df.groupby("Source Group").agg(
-            Today_Rev=("Net Sales", "sum")
-        ).reset_index()
-        
-        #Email.....
-        
+            m = calc_store_metrics(t, l)
+            m["Store Name"] = store
+
+            store_rows.append(m)
+
+        store_df = pd.DataFrame(store_rows)
+
+        # =====================================================
+        # 📊 SESSION WISE (NO STORE NAME)
+        # =====================================================
+
+        session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
+
+        # =====================================================
+        # 📊 BRAND WISE (HEADER PER BRAND)
+        # =====================================================
+
+        brand_dfs = []
+        for brand in df_today["Brand"].dropna().unique():
+
+            b_t = df_today[df_today["Brand"] == brand]
+            b_l = df_lw[df_lw["Brand"] == brand]
+
+            rows = []
+
+            for store in stores:
+                t = b_t[b_t["branchName"] == store]
+                l = b_l[b_l["branchName"] == store]
+
+                if t.empty and l.empty:
+                    continue
+
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+
+            brand_dfs.append(
+                pd.concat([pd.DataFrame([{"Brand": brand}]), pd.DataFrame(rows)])
+            )
+
+        brand_df = pd.concat(brand_dfs, ignore_index=True)
+
+        # =====================================================
+        # 📊 SOURCE WISE (HEADER PER SOURCE)
+        # =====================================================
+
+        source_dfs = []
+        for source in ["In Store", "Swiggy", "Zomato"]:
+
+            s_t = df_today[df_today["Source Group"] == source]
+            s_l = df_lw[df_lw["Source Group"] == source]
+
+            rows = []
+
+            for store in stores:
+                t = s_t[s_t["branchName"] == store]
+                l = s_l[s_l["branchName"] == store]
+
+                if t.empty and l.empty:
+                    continue
+
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+
+            source_dfs.append(
+                pd.concat([pd.DataFrame([{"Source": source}]), pd.DataFrame(rows)])
+            )
+
+        source_df = pd.concat(source_dfs, ignore_index=True)
+
+        # =====================================================
+        # 📧 EMAIL
+        # =====================================================
+
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = f"📊 AM Store Report - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = f"📊 AM Dashboard - {now.strftime('%d %b %Y %H:%M')}"
 
         body = f"""
-        <h2>Store Wise Sales Report</h2>
-        {styled_html(store_summary)}
+        <h2>📊 Store Wise Dashboard</h2>
+        {styled_html(store_df)}
 
         <br><br>
 
-        <h2>Store Wise Session Report</h2>
-        {styled_html(session_summary)}
+        <h2>📈 Session Dashboard</h2>
+        {styled_html(session_df)}
 
         <br><br>
 
-        <h2>Brand Report</h2>
-        {styled_html(brand_summary)}
+        <h2>🏷️ Brand Dashboard</h2>
+        {styled_html(brand_df)}
 
         <br><br>
 
-        <h2>Source Report</h2>
-        {styled_html(source_summary)}
+        <h2>📦 Source Dashboard</h2>
+        {styled_html(source_df)}
         """
 
         msg.attach(MIMEText(body, "html"))
@@ -1504,70 +1591,127 @@ def send_tm_mail():
 
         if not tm_email or tm_email.strip() == "":
             continue
-
-        # =====================================================
-        # 📌 STORE DATA (THIS WAS MISSING)
-        # =====================================================
-
-        store_df = final_df[
-            (final_df["branchName"].isin(store_list)) &
-            (final_df["Store Type"] == "COCO") &
-            (final_df["status"] == "Closed")
+            
+        df_today = final_df[
+            final_df["branchName"].isin(stores)
         ].copy()
 
-        lw_df = lastweek_cut[
-            lastweek_cut["branchName"].isin(store_list)
+        df_lw = lastweek_cut[
+            lastweek_cut["branchName"].isin(stores)
         ].copy()
 
-        # FIX: ensure session exists
-        if "Session" not in store_df.columns:
-            store_df["Session"] = store_df["Hour"].apply(get_session)
-
-        if "Session" not in lw_df.columns:
-            lw_df["Session"] = lw_df["Hour"].apply(get_session)
+        df_today["Session"] = df_today["Hour"].apply(get_session)
+        df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
         # =====================================================
-        # 📌 BUILD REPORTS
+        # 📊 STORE WISE DASHBOARD
         # =====================================================
 
-        store_summary = build_kpi(store_df, lw_df)
+        store_rows = []
 
-        session_summary = store_df.groupby(["branchName", "Session"])["Net Sales"].sum().reset_index()
+        for store in stores:
 
-        brand_summary = store_df.groupby("Brand").agg(
-            Today_Rev=("Net Sales", "sum"),
-            Today_Dis=("discountAmount", "sum")
-        ).reset_index()
+            t = df_today[df_today["branchName"] == store]
+            l = df_lw[df_lw["branchName"] == store]
 
-        source_summary = store_df.groupby("Source Group").agg(
-            Today_Rev=("Net Sales", "sum")
-        ).reset_index()
-        
-        #Email.....
-        
+            m = calc_store_metrics(t, l)
+            m["Store Name"] = store
+
+            store_rows.append(m)
+
+        store_df = pd.DataFrame(store_rows)
+
+        # =====================================================
+        # 📊 SESSION WISE (NO STORE NAME)
+        # =====================================================
+
+        session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
+
+        # =====================================================
+        # 📊 BRAND WISE (HEADER PER BRAND)
+        # =====================================================
+
+        brand_dfs = []
+        for brand in df_today["Brand"].dropna().unique():
+
+            b_t = df_today[df_today["Brand"] == brand]
+            b_l = df_lw[df_lw["Brand"] == brand]
+
+            rows = []
+
+            for store in stores:
+                t = b_t[b_t["branchName"] == store]
+                l = b_l[b_l["branchName"] == store]
+
+                if t.empty and l.empty:
+                    continue
+
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+
+            brand_dfs.append(
+                pd.concat([pd.DataFrame([{"Brand": brand}]), pd.DataFrame(rows)])
+            )
+
+        brand_df = pd.concat(brand_dfs, ignore_index=True)
+
+        # =====================================================
+        # 📊 SOURCE WISE (HEADER PER SOURCE)
+        # =====================================================
+
+        source_dfs = []
+        for source in ["In Store", "Swiggy", "Zomato"]:
+
+            s_t = df_today[df_today["Source Group"] == source]
+            s_l = df_lw[df_lw["Source Group"] == source]
+
+            rows = []
+
+            for store in stores:
+                t = s_t[s_t["branchName"] == store]
+                l = s_l[s_l["branchName"] == store]
+
+                if t.empty and l.empty:
+                    continue
+
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+
+            source_dfs.append(
+                pd.concat([pd.DataFrame([{"Source": source}]), pd.DataFrame(rows)])
+            )
+
+        source_df = pd.concat(source_dfs, ignore_index=True)
+
+        # =====================================================
+        # 📧 EMAIL
+        # =====================================================
+
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = f"📊 TM Store Report - {now.strftime('%d %b %Y %I:%M')}"
+        msg["Subject"] = f"📊 TM Dashboard - {now.strftime('%d %b %Y %H')}"
 
         body = f"""
-        <h2>Store Wise Sales Report</h2>
-        {styled_html(store_summary)}
+        <h2>📊 Store Wise Dashboard</h2>
+        {styled_html(store_df)}
 
         <br><br>
 
-        <h2>Store Wise Session Report</h2>
-        {styled_html(session_summary)}
+        <h2>📈 Session Dashboard</h2>
+        {styled_html(session_df)}
 
         <br><br>
 
-        <h2>Brand Report</h2>
-        {styled_html(brand_summary)}
+        <h2>🏷️ Brand Dashboard</h2>
+        {styled_html(brand_df)}
 
         <br><br>
 
-        <h2>Source Report</h2>
-        {styled_html(source_summary)}
+        <h2>📦 Source Dashboard</h2>
+        {styled_html(source_df)}
         """
 
         msg.attach(MIMEText(body, "html"))
@@ -1577,6 +1721,9 @@ def send_tm_mail():
         server.login(EMAIL_USER, EMAIL_PASS)
         server.sendmail(EMAIL_USER, [tm_email], msg.as_string())
         server.quit()
+
+        print("📩 TM Mail Sent →", tm_email)
+
 
 # ---------------- EXECUTE ---------------- #
 
