@@ -1458,13 +1458,12 @@ def send_am_mail():
         if not am_email or am_email.strip() == "":
             continue
 
-        df_today = final_df[
-            final_df["branchName"].isin(stores)
-        ].copy()
-
-        df_lw = lastweek_cut[
-            lastweek_cut["branchName"].isin(stores)
-        ].copy()
+        am_email = am_row["AM Mail"]   # your loop variable
+    
+        stores = am_store_map.get(am_email, [])
+    
+        df_today = final_df[final_df["branchName"].isin(stores)].copy()
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
 
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
@@ -1609,13 +1608,12 @@ def send_tm_mail():
         if not tm_email or tm_email.strip() == "":
             continue
             
-        df_today = final_df[
-            final_df["branchName"].isin(stores)
-        ].copy()
-
-        df_lw = lastweek_cut[
-            lastweek_cut["branchName"].isin(stores)
-        ].copy()
+        tm_email = am_row["AM Mail"]   # your loop variable
+    
+        stores = tm_store_map.get(tm_email, [])
+    
+        df_today = final_df[final_df["branchName"].isin(stores)].copy()
+        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
 
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
@@ -1752,6 +1750,12 @@ push("Session", session_analysis)
 push("Top_Stores", top_stores)
 push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
+
+for am_email, stores in am_store_map.items():
+    send_am_mail(am_email, stores)
+
+for tm_email, stores in tm_store_map.items():
+    send_tm_mail(tm_email, stores)
 
 
 send_email()        # Full dashboard
