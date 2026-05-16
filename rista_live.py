@@ -273,6 +273,13 @@ brand_map = dict(zip(help_df.get("Channel", []), help_df.get("Brand", [])))
 
 # ---------------- AM / TM ---------------- #
 
+help_df.columns = help_df.columns.astype(str).str.strip()
+
+required_cols = ["AM Mail", "TM Mail", "Store Name", "Region"]
+for c in required_cols:
+    if c not in help_df.columns:
+        help_df[c] = ""
+        
 am_store_map = help_df.groupby("AM Mail")["Store Name"].apply(list).to_dict()
 tm_region_map = help_df.groupby("TM Mail")["Region"].apply(list).to_dict()
 
@@ -280,6 +287,7 @@ am_store_map = {k:v for k,v in am_store_map.items() if str(k).strip()}
 tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip()}
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
+
 
 
 # ---------------- FINAL DF MAPPING ---------------- #
@@ -1743,12 +1751,6 @@ push("Session", session_analysis)
 push("Top_Stores", top_stores)
 push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
-
-for am_email, stores in am_store_map.items():
-    send_am_mail(am_email)
-
-for tm_email, stores in tm_store_map.items():
-    send_tm_mail(tm_email)
 
 
 send_email()        # Full dashboard
