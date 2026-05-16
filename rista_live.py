@@ -1443,7 +1443,7 @@ def send_email():
 # 📩 AM MAIL
 # =====================================================
 
-def send_am_mail():
+def send_am_mail(am_email, stores):
 
     import smtplib
 
@@ -1593,7 +1593,7 @@ def send_am_mail():
 # 📩 TM MAIL
 # =====================================================
 
-def send_tm_mail():
+def send_tm_mail(tm_email, stores):
 
     import smtplib
 
@@ -1608,7 +1608,7 @@ def send_tm_mail():
         if not tm_email or tm_email.strip() == "":
             continue
             
-        tm_email = am_row["AM Mail"]   # your loop variable
+        tm_email = am_row["TM Mail"]   # your loop variable
     
         stores = tm_store_map.get(tm_email, [])
     
