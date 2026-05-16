@@ -236,6 +236,16 @@ final_df["Net Sales"] = (
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
+help_values = help_ws.get_all_values()
+
+headers = help_values[0]
+rows = help_values[1:]
+
+help_df = pd.DataFrame(rows, columns=headers)
+
+# clean headers
+help_df.columns = [str(c).strip() for c in help_df.columns]
+
 branch_master = pd.DataFrame(help_ws.get("G:M")[1:], columns=help_ws.get("G:M")[0])
 source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[0])
 
@@ -248,18 +258,9 @@ brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 # 📌 AM + TM MAPPING
 # =====================================================
 
-help_ws = spreadsheet.worksheet("Help Sheet")
-help_data = help_ws.get_all_records()
-
-help_df = pd.DataFrame(help_data)
-
-# Clean columns (safe)
-help_df.columns = [c.strip() for c in help_df.columns]
-
 # ---------------- AM MAP ---------------- #
 am_store_map = help_df.groupby("AM Mail")["Store Name"].apply(list).to_dict()
 
-# ---------------- TM MAP (Region wise) ---------------- #
 tm_region_map = help_df.groupby("TM Mail")["Region"].apply(list).to_dict()
 
 final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
