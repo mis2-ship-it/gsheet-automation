@@ -1478,8 +1478,12 @@ def send_am_mail():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
+
+    from datetime import datetime
+    report_time = datetime.now()
 
     def calc_store_metrics(t, l):
 
@@ -1644,8 +1648,12 @@ def send_tm_mail():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
+
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
+
+    from datetime import datetime
+    report_time = datetime.now()
 
     def calc_store_metrics(t, l):
 
