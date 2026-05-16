@@ -1541,7 +1541,9 @@ def send_am_mail():
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
-        msg["Subject"] = f"📊 AM Dashboard - {now.strftime('%d %b %Y %H:%M')}"
+        msg["Subject"] = (
+        f"📊 AM Sales Dashboard - "
+        f"{report_time.strftime('%d %b %Y %I:%M %p')}"
 
         body = f"""
         <h2>📊 Store Wise Dashboard</h2>
@@ -1692,7 +1694,9 @@ def send_tm_mail():
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
-        msg["Subject"] = f"📊 TM Dashboard - {now.strftime('%d %b %Y %H')}"
+        msg["Subject"] = (
+        f"📊 TM Sales Dashboard - "
+        f"{report_time.strftime('%d %b %Y %I:%M %p')}"
 
         body = f"""
         <h2>📊 Store Wise Dashboard</h2>
