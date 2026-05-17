@@ -1628,9 +1628,48 @@ def send_am_mail():
         store_df = pd.DataFrame(store_rows)
 
         # =====================================================
-        # SESSION DASHBOARD
+        # SESSION DASHBOARD (STORE WISE)
         # =====================================================
-        session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
+        
+        session_rows = []
+        
+        session_order = [
+            "Breakfast",
+            "Lunch",
+            "Snacks",
+            "Dinner",
+            "Post Dinner"
+        ]
+        
+        for store in stores:
+        
+            t_store = df_today[df_today["branchName"] == store]
+            l_store = df_lw[df_lw["branchName"] == store]
+        
+            row = {"Store Name": store}
+        
+            # Session sales
+            for s in session_order:
+                row[s] = round(
+                    t_store[t_store["Session"] == s]["Net Sales"].sum(), 2
+                )
+        
+            # Total revenue
+            today_rev = t_store["Net Sales"].sum()
+            lw_rev = l_store["Net Sales"].sum()
+        
+            growth = (
+                ((today_rev - lw_rev) / lw_rev * 100)
+                if lw_rev > 0 else 0
+            )
+        
+            row["Today Rev"] = round(today_rev, 2)
+            row["LW Rev"] = round(lw_rev, 2)
+            row["Growth %"] = round(growth, 2)
+        
+            session_rows.append(row)
+        
+        session_df = pd.DataFrame(session_rows)
 
         # =====================================================
         # BRAND DASHBOARD
@@ -1797,8 +1836,49 @@ def send_tm_mail():
 
         store_df = pd.DataFrame(store_rows)
 
-        # SESSION BOARD
-        session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
+        # =====================================================
+        # SESSION DASHBOARD (STORE WISE)
+        # =====================================================
+        
+        session_rows = []
+        
+        session_order = [
+            "Breakfast",
+            "Lunch",
+            "Snacks",
+            "Dinner",
+            "Post Dinner"
+        ]
+        
+        for store in stores:
+        
+            t_store = df_today[df_today["branchName"] == store]
+            l_store = df_lw[df_lw["branchName"] == store]
+        
+            row = {"Store Name": store}
+        
+            # Session sales
+            for s in session_order:
+                row[s] = round(
+                    t_store[t_store["Session"] == s]["Net Sales"].sum(), 2
+                )
+        
+            # Total revenue
+            today_rev = t_store["Net Sales"].sum()
+            lw_rev = l_store["Net Sales"].sum()
+        
+            growth = (
+                ((today_rev - lw_rev) / lw_rev * 100)
+                if lw_rev > 0 else 0
+            )
+        
+            row["Today Rev"] = round(today_rev, 2)
+            row["LW Rev"] = round(lw_rev, 2)
+            row["Growth %"] = round(growth, 2)
+        
+            session_rows.append(row)
+        
+        session_df = pd.DataFrame(session_rows)
 
         # Brand Board
         brand_blocks = []
