@@ -1826,21 +1826,22 @@ def send_tm_mail():
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
 
-        # =====================================================
+
         # STORE DASHBOARD
-        # =====================================================
         store_rows = []
-
+        
+        stores = df_today["branchName"].dropna().unique()
+        
         for store in stores:
-
+        
             t = df_today[df_today["branchName"] == store]
             l = df_lw[df_lw["branchName"] == store]
-
+        
             m = calc_store_metrics(t, l)
             m["Store Name"] = store
-
+        
             store_rows.append(m)
-
+        
         store_df = pd.DataFrame(store_rows)
 
         # =====================================================
