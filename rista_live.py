@@ -1576,8 +1576,11 @@ def send_am_mail():
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-    from datetime import datetime
-    report_time = datetime.now()
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
 
     def calc_store_metrics(t, l):
 
@@ -1785,8 +1788,12 @@ def send_tm_mail():
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-    from datetime import datetime
-    report_time = datetime.now()
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
 
     def calc_store_metrics(t, l):
 
