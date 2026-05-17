@@ -816,6 +816,46 @@ brand_summary = pd.DataFrame(brand_rows)
 print("✅ Brand Summary Created")
 
 # =========================================================
+# 🔥 Source ANALYSIS
+# =========================================================
+
+source_rows = []
+
+sources = sorted(today_cut["Source"].dropna().unique())
+
+for source in sources:
+
+    t = today_cut[today_cut["Source"] == source]
+    lw = lastweek_cut[lastweek_cut["Source"] == source]
+
+    t_rev = t["Net Sales"].sum()
+    lw_rev = lw["Net Sales"].sum()
+
+    growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+    t_gross = t["grossAmount"].sum()
+    lw_gross = lw["grossAmount"].sum()
+
+    t_disc = (t["discountAmount"].sum() / max(t_gross, 1)) * 100
+    lw_disc = (lw["discountAmount"].sum() / max(lw_gross, 1)) * 100
+
+    disc_change = t_disc - lw_disc
+
+    source_rows.append({
+        "Source": source,
+        "Today Rev": round(t_rev, 2),
+        "LW Rev": round(lw_rev, 2),
+        "Growth %": round(growth, 2),
+        "Today Dis %": round(t_disc, 2),
+        "LW Dis %": round(lw_disc, 2),
+        "Dis Change %": round(disc_change, 2)
+    })
+
+source_summary = pd.DataFrame(source_rows)
+
+print("✅ Source Summary Created")
+
+# =========================================================
 # 🔥 BRAND x SOURCE
 # =========================================================
 
@@ -990,6 +1030,43 @@ for s in sessions:
 brand_session = brand_session.reset_index()
 
 print("✅ Brand Session Analysis Created")
+
+# ---------------- Source SESSION ---------------- #
+
+source_session = pd.pivot_table(
+    today_cut,
+    index="Source",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_source_session = pd.pivot_table(
+    lastweek_cut,
+    index="Source",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in source_session.columns:
+        source_session[s] = 0
+
+    if s not in lw_source_session.columns:
+        lw_source_session[s] = 0
+
+    source_session[f"{s} Growth %"] = (
+        (source_session[s] - lw_source_session[s])
+        / lw_source_session[s].replace(0, 1)
+    ) * 100
+
+source_session = source_session.reset_index()
+
+print("✅ Source Session Analysis Created")
 
 # ---------------- REGION SESSION ---------------- #
 
@@ -1379,6 +1456,11 @@ def send_email():
         {styled_html(brand_summary)}
         
         <br><br>
+
+        <h2>🏷️ Source Summary</h2>
+        {styled_html(source_summary)}
+        
+        <br><br>
         
         <h2>🏷️ Brand Source Analysis</h2>
         {styled_html(brand_source_analysis)}
@@ -1397,6 +1479,11 @@ def send_email():
         
         <h2>🌍 Region Session Analysis</h2>
         {styled_html(region_session)}
+
+        <br><br>
+
+        <h2>🌍 Source Session Analysis</h2>
+        {styled_html(Source_session)}
 
         <br><br>
 
@@ -1468,6 +1555,13 @@ def build_role_scope(role, identifier):
     else:
         return pd.DataFrame(), pd.DataFrame(), None, None
 
+# ================================
+# CLEAN PERIOD FILTERING
+# ================================
+
+today_df_clean = final_df[final_df["Data_Type"] == "Today"].copy()
+lw_df_clean = final_df[final_df["Data_Type"] == "Last Week"].copy()
+
 # =====================================================
 # 📩 AM MAIL
 # =====================================================
@@ -1509,8 +1603,8 @@ def send_am_mail():
         if not am_email:
             continue
 
-        df_today = final_df[final_df["branchName"].isin(stores)].copy()
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+        df_today = today_df_clean[today_df_clean["branchName"].isin(stores)].copy()
+        df_lw = lw_df_clean[lw_df_clean["branchName"].isin(stores)].copy()
 
         # ✅ SAFE SESSION FIX
         df_today["Session"] = df_today["Hour"].apply(get_session)
@@ -1542,58 +1636,58 @@ def send_am_mail():
         # BRAND DASHBOARD
         # =====================================================
         brand_blocks = []
-
+        
         for brand in df_today["Brand"].dropna().unique():
-
+        
             b_t = df_today[df_today["Brand"] == brand]
             b_l = df_lw[df_lw["Brand"] == brand]
-
+        
             rows = []
-
+        
             for store in stores:
                 t = b_t[b_t["branchName"] == store]
                 l = b_l[b_l["branchName"] == store]
-
+        
                 if t.empty and l.empty:
                     continue
-
+        
                 m = calc_store_metrics(t, l)
                 m["Store Name"] = store
                 rows.append(m)
-
+        
             if rows:
                 brand_blocks.append(pd.DataFrame([{"Brand": brand}]))
                 brand_blocks.append(pd.DataFrame(rows))
-
+        
         brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
 
         # =====================================================
         # SOURCE DASHBOARD
         # =====================================================
         source_blocks = []
-
+        
         for source in ["In Store", "Swiggy", "Zomato"]:
-
+        
             s_t = df_today[df_today["Source Group"] == source]
             s_l = df_lw[df_lw["Source Group"] == source]
-
+        
             rows = []
-
+        
             for store in stores:
                 t = s_t[s_t["branchName"] == store]
                 l = s_l[s_l["branchName"] == store]
-
+        
                 if t.empty and l.empty:
                     continue
-
+        
                 m = calc_store_metrics(t, l)
                 m["Store Name"] = store
                 rows.append(m)
-
+        
             if rows:
                 source_blocks.append(pd.DataFrame([{"Source": source}]))
                 source_blocks.append(pd.DataFrame(rows))
-
+        
         source_df = pd.concat(source_blocks, ignore_index=True) if source_blocks else pd.DataFrame()
 
         # =====================================================
@@ -1679,16 +1773,19 @@ def send_tm_mail():
         if not tm_email:
             continue
 
-        df_today = final_df[final_df["Region"].isin(regions)].copy()
-        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)].copy()
+        df_today = today_df_clean[today_df_clean["Region"].isin(regions)].copy()
+        df_lw = lw_df_clean[lw_df_clean["Region"].isin(regions)].copy()
 
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
 
+
+        # =====================================================
         # STORE DASHBOARD
+        # =====================================================
         store_rows = []
 
-        for store in df_today["branchName"].unique():
+        for store in stores:
 
             t = df_today[df_today["branchName"] == store]
             l = df_lw[df_lw["branchName"] == store]
@@ -1700,14 +1797,63 @@ def send_tm_mail():
 
         store_df = pd.DataFrame(store_rows)
 
-        # SESSION
+        # SESSION BOARD
         session_df = df_today.groupby("Session")["Net Sales"].sum().reset_index()
 
-        # BRAND
-        brand_df = df_today.groupby("Brand")["Net Sales"].sum().reset_index()
+        # Brand Board
+        brand_blocks = []
+        
+        for brand in df_today["Brand"].dropna().unique():
+        
+            b_t = df_today[df_today["Brand"] == brand]
+            b_l = df_lw[df_lw["Brand"] == brand]
+        
+            rows = []
+        
+            for store in stores:
+                t = b_t[b_t["branchName"] == store]
+                l = b_l[b_l["branchName"] == store]
+        
+                if t.empty and l.empty:
+                    continue
+        
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+        
+            if rows:
+                brand_blocks.append(pd.DataFrame([{"Brand": brand}]))
+                brand_blocks.append(pd.DataFrame(rows))
+        
+        brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
+
 
         # SOURCE
-        source_df = df_today.groupby("Source Group")["Net Sales"].sum().reset_index()
+        source_blocks = []
+        
+        for source in ["In Store", "Swiggy", "Zomato"]:
+        
+            s_t = df_today[df_today["Source Group"] == source]
+            s_l = df_lw[df_lw["Source Group"] == source]
+        
+            rows = []
+        
+            for store in stores:
+                t = s_t[s_t["branchName"] == store]
+                l = s_l[s_l["branchName"] == store]
+        
+                if t.empty and l.empty:
+                    continue
+        
+                m = calc_store_metrics(t, l)
+                m["Store Name"] = store
+                rows.append(m)
+        
+            if rows:
+                source_blocks.append(pd.DataFrame([{"Source": source}]))
+                source_blocks.append(pd.DataFrame(rows))
+        
+        source_df = pd.concat(source_blocks, ignore_index=True) if source_blocks else pd.DataFrame()
 
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
