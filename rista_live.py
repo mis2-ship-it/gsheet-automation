@@ -1483,7 +1483,7 @@ def send_email():
         <br><br>
 
         <h2>🌍 Source Session Analysis</h2>
-        {styled_html(Source_session)}
+        {styled_html(source_session)}
 
         <br><br>
 
