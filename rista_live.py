@@ -289,7 +289,6 @@ tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip()}
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 
 
-
 # ---------------- FINAL DF MAPPING ---------------- #
 
 if "channel" not in final_df.columns:
@@ -1542,8 +1541,13 @@ def build_role_scope(role, identifier):
 
     if role == "AM":
         stores = am_store_map.get(identifier, [])
-        df_today = final_df[final_df["branchName"].isin(stores)].copy()
-        df_lw = lastweek_cut[lastweek_cut["branchName"].isin(stores)].copy()
+        df_today = today_cut[
+            today_cut["branchName"].isin(stores)
+        ].copy()
+        
+        df_lw = lastweek_cut[
+            lastweek_cut["branchName"].isin(stores)
+        ].copy()
         return df_today, df_lw, stores, None
 
     elif role == "TM":
@@ -1606,8 +1610,13 @@ def send_am_mail():
         if not am_email:
             continue
 
-        df_today = today_df_clean[today_df_clean["branchName"].isin(stores)].copy()
-        df_lw = lw_df_clean[lw_df_clean["branchName"].isin(stores)].copy()
+        df_today = today_cut[
+            today_cut["branchName"].isin(stores)
+        ].copy()
+        
+        df_lw = lastweek_cut[
+            lastweek_cut["branchName"].isin(stores)
+        ].copy()
 
         # ✅ SAFE SESSION FIX
         df_today["Session"] = df_today["Hour"].apply(get_session)
@@ -1624,7 +1633,10 @@ def send_am_mail():
             l = df_lw[df_lw["branchName"] == store]
 
             m = calc_store_metrics(t, l)
-            m["Store Name"] = store
+            m = {
+                "Store Name": store,
+                **m
+            }
 
             store_rows.append(m)
 
@@ -1694,7 +1706,10 @@ def send_am_mail():
                     continue
         
                 m = calc_store_metrics(t, l)
-                m["Store Name"] = store
+                m = {
+                    "Store Name": store,
+                    **m
+                }
                 rows.append(m)
         
             if rows:
@@ -1723,7 +1738,10 @@ def send_am_mail():
                     continue
         
                 m = calc_store_metrics(t, l)
-                m["Store Name"] = store
+                m = {
+                    "Store Name": store,
+                    **m
+                }
                 rows.append(m)
         
             if rows:
@@ -1819,8 +1837,13 @@ def send_tm_mail():
         if not tm_email:
             continue
 
-        df_today = today_df_clean[today_df_clean["Region"].isin(regions)].copy()
-        df_lw = lw_df_clean[lw_df_clean["Region"].isin(regions)].copy()
+        df_today = today_cut[
+            today_cut["Region"].isin(regions)
+        ].copy()
+        
+        df_lw = lastweek_cut[
+            lastweek_cut["Region"].isin(regions)
+        ].copy()
 
         df_today["Session"] = df_today["Hour"].apply(get_session)
         df_lw["Session"] = df_lw["Hour"].apply(get_session)
@@ -1838,7 +1861,10 @@ def send_tm_mail():
             l = df_lw[df_lw["branchName"] == store]
         
             m = calc_store_metrics(t, l)
-            m["Store Name"] = store
+            m = {
+                "Store Name": store,
+                **m
+            }
         
             store_rows.append(m)
         
@@ -1906,7 +1932,10 @@ def send_tm_mail():
                     continue
         
                 m = calc_store_metrics(t, l)
-                m["Store Name"] = store
+                m = {
+                   "Store Name": store,
+                   **m
+                }
                 rows.append(m)
         
             if rows:
@@ -1934,7 +1963,10 @@ def send_tm_mail():
                     continue
         
                 m = calc_store_metrics(t, l)
-                m["Store Name"] = store
+                m = {
+                    "Store Name": store,
+                    **m
+                }
                 rows.append(m)
         
             if rows:
