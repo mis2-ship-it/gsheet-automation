@@ -288,55 +288,6 @@ tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip()}
 
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 
-# =====================================================
-# 🎯 DAILY TARGET SHEET
-# =====================================================
-
-target_ws = spreadsheet.worksheet("Target")
-
-target_values = target_ws.get_all_values()
-
-target_headers = target_values[0]
-target_rows = target_values[1:]
-
-target_df = pd.DataFrame(target_rows, columns=target_headers)
-
-target_df.columns = (
-    target_df.columns.astype(str)
-    .str.strip()
-)
-
-target_df["Date"] = pd.to_datetime(
-    target_df["Date"],
-    errors="coerce"
-).dt.date
-
-today_date = business_day
-
-today_target_row = target_df[
-    target_df["Date"] == today_date
-]
-
-if today_target_row.empty:
-
-    total_target = 0
-    offline_target = 0
-    online_target = 0
-
-else:
-
-    total_target = float(
-        today_target_row["Target"].iloc[0]
-    )
-
-    offline_target = float(
-        today_target_row["Offline Target"].iloc[0]
-    )
-
-    online_target = float(
-        today_target_row["Online Target"].iloc[0]
-    )
-
 
 # ---------------- FINAL DF MAPPING ---------------- #
 
@@ -539,6 +490,11 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
 
     eod = lw_full * (1 + growth/100)
 
+    df["EOD Projection"] = 0.0
+    df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
+
+    return df.round(2)
+
     # =========================================================
     # 📌 OFFLINE / ONLINE EOD SPLIT
     # =========================================================
@@ -564,10 +520,34 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
     offline_eod = eod * offline_mix
     online_eod = eod * online_mix
 
-    df["EOD Projection"] = 0.0
-    df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
+    target_summary = pd.DataFrame([
+        {
+            "Metric": "Total",
+            "Target": total_target,
+            "EOD Projection": round(eod, 2),
+            "Ach %": round(
+                (today_sales_total / max(total_target,1))*100, 2
+            )
+        },
+        {
+            "Metric": "Offline",
+            "Target": offline_target,
+            "EOD Projection": round(offline_eod, 2),
+            "Ach %": round(
+                (instore_sales / max(offline_target,1))*100, 2
+            )
+        },
+        {
+            "Metric": "Online",
+            "Target": online_target,
+            "EOD Projection": round(online_eod, 2),
+            "Ach %": round(
+                (online_sales / max(online_target,1))*100, 2
+            )
+        }
+    ])
+    
 
-    return df.round(2)
 
 
 
@@ -809,34 +789,102 @@ summary = pd.DataFrame({
 
 print("✅ Summary Created")
 
-# ---------------- TARGET SUMMARY ---------------- #
+# =========================================================
+# 🎯 TARGET SUMMARY
+# =========================================================
+
+target_ws = spreadsheet.worksheet("Target Sheet")
+
+target_df = pd.DataFrame(
+    target_ws.get_all_records()
+)
+
+target_df["Date"] = pd.to_datetime(
+    target_df["Date"]
+).dt.date
+
+today_target_row = target_df[
+    target_df["Date"] == business_day
+]
+
+if not today_target_row.empty:
+
+    total_target = float(
+        today_target_row["Target"].iloc[0]
+    )
+
+    offline_target = float(
+        today_target_row["Offline Target"].iloc[0]
+    )
+
+    online_target = float(
+        today_target_row["Online Target"].iloc[0]
+    )
+
+else:
+    total_target = 0
+    offline_target = 0
+    online_target = 0
+
+
+today_sales_total = today_cut["Net Sales"].sum()
+
+instore_sales = today_cut[
+    today_cut["Source Group"] == "In Store"
+]["Net Sales"].sum()
+
+online_sales = (
+    today_sales_total - instore_sales
+)
+
+offline_mix = (
+    instore_sales /
+    max(today_sales_total, 1)
+)
+
+online_mix = (
+    online_sales /
+    max(today_sales_total, 1)
+)
+
+offline_eod = eod * offline_mix
+online_eod = eod * online_mix
+
 
 target_summary = pd.DataFrame([
     {
         "Metric": "Total",
-        "Target": total_target,
-        "EOD Projection": eod,
+        "Target": round(total_target,2),
+        "EOD Projection": round(eod,2),
         "Ach %": round(
-            (today_sales_total / max(total_target,1))*100, 2
+            (today_sales_total /
+             max(total_target,1))*100,
+            2
         )
     },
     {
         "Metric": "Offline",
-        "Target": offline_target,
-        "EOD Projection": offline_eod,
+        "Target": round(offline_target,2),
+        "EOD Projection": round(offline_eod,2),
         "Ach %": round(
-            (instore_sales / max(offline_target,1))*100, 2
+            (instore_sales /
+             max(offline_target,1))*100,
+            2
         )
     },
     {
         "Metric": "Online",
-        "Target": online_target,
-        "EOD Projection": online_eod,
+        "Target": round(online_target,2),
+        "EOD Projection": round(online_eod,2),
         "Ach %": round(
-            (online_sales / max(online_target,1))*100, 2
+            (online_sales /
+             max(online_target,1))*100,
+            2
         )
     }
 ])
+
+print("✅ Target Summary Created")
 
 # ---------------- HOURLY ANALYSIS ---------------- #
 
