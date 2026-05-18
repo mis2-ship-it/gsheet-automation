@@ -809,6 +809,35 @@ summary = pd.DataFrame({
 
 print("✅ Summary Created")
 
+# ---------------- TARGET SUMMARY ---------------- #
+
+target_summary = pd.DataFrame([
+    {
+        "Metric": "Total",
+        "Target": total_target,
+        "EOD Projection": eod,
+        "Ach %": round(
+            (today_sales_total / max(total_target,1))*100, 2
+        )
+    },
+    {
+        "Metric": "Offline",
+        "Target": offline_target,
+        "EOD Projection": offline_eod,
+        "Ach %": round(
+            (instore_sales / max(offline_target,1))*100, 2
+        )
+    },
+    {
+        "Metric": "Online",
+        "Target": online_target,
+        "EOD Projection": online_eod,
+        "Ach %": round(
+            (online_sales / max(online_target,1))*100, 2
+        )
+    }
+])
+
 # ---------------- HOURLY ANALYSIS ---------------- #
 
 hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
@@ -1522,6 +1551,11 @@ def send_email():
 
         <h2>📈 Overall KPI</h2>
         {styled_html(overall)}
+
+        <br><br>
+
+        <h2>🎯 Target vs EOD Projection</h2>
+        {styled_html(target_summary)}
 
         <br><br>
 
