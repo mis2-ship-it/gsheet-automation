@@ -205,7 +205,6 @@ possible_status_cols = [
     "status",
     "orderStatus",
     "invoiceStatus"
-    "statusInfo.reason"
 ]
 
 for col in possible_status_cols:
@@ -229,6 +228,27 @@ cancel_df = df[
 ].copy()
 
 print("🚨 Cancellation Found:", len(cancel_df))
+
+# =========================================================
+# 🧾 CANCEL REASON EXTRACTION
+# =========================================================
+
+if "statusInfo.reason" in cancel_df.columns:
+
+    cancel_df["cancelReason"] = (
+        cancel_df["statusInfo.reason"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+else:
+    cancel_df["cancelReason"] = ""
+
+# Debug check
+print(cancel_df[
+    ["invoiceNumber", "cancelReason"]
+].head())
 
 # =========================================================
 # 🔁 STANDARDIZE INVOICE NUMBER
