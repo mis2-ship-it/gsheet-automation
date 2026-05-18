@@ -493,63 +493,9 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
     df["EOD Projection"] = 0.0
     df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
 
-    return df.round(2)
+    return df.round(2), eod
 
-    # =========================================================
-    # 📌 OFFLINE / ONLINE EOD SPLIT
-    # =========================================================
     
-    today_sales_total = today_cut["Net Sales"].sum()
-    
-    instore_sales = today_cut[
-        today_cut["Source Group"] == "In Store"
-    ]["Net Sales"].sum()
-    
-    online_sales = (
-        today_sales_total - instore_sales
-    )
-    
-    offline_mix = (
-        instore_sales / max(today_sales_total, 1)
-    )
-    
-    online_mix = (
-        online_sales / max(today_sales_total, 1)
-    )
-    
-    offline_eod = eod * offline_mix
-    online_eod = eod * online_mix
-
-    target_summary = pd.DataFrame([
-        {
-            "Metric": "Total",
-            "Target": total_target,
-            "EOD Projection": round(eod, 2),
-            "Ach %": round(
-                (today_sales_total / max(total_target,1))*100, 2
-            )
-        },
-        {
-            "Metric": "Offline",
-            "Target": offline_target,
-            "EOD Projection": round(offline_eod, 2),
-            "Ach %": round(
-                (instore_sales / max(offline_target,1))*100, 2
-            )
-        },
-        {
-            "Metric": "Online",
-            "Target": online_target,
-            "EOD Projection": round(online_eod, 2),
-            "Ach %": round(
-                (online_sales / max(online_target,1))*100, 2
-            )
-        }
-    ])
-    
-
-
-
 
 # =========================================================
 # 🔥 FINAL EXECUTION
@@ -789,6 +735,49 @@ summary = pd.DataFrame({
 
 print("✅ Summary Created")
 
+
+
+# ---------------- HOURLY ANALYSIS ---------------- #
+
+hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
+hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
+
+hourly_analysis = pd.DataFrame({
+    "Today": hourly_today,
+    "Last Week": hourly_lw
+}).fillna(0)
+
+hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
+                               hourly_analysis["Last Week"].replace(0,1))*100
+
+hourly_analysis = hourly_analysis.reset_index()
+hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
+hourly_analysis = hourly_analysis.sort_values("BusinessHour")
+
+# ---------------- HOURLY TREND ---------------- #
+
+hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
+    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
+)
+
+# =========================================================
+# 🔥 OVERALL ANALYSIS Summary
+# =========================================================
+
+overall, eod = build_overall_extended(
+    today_cut,
+    lastweek_cut,
+    last2week_cut,
+    month_on_month_cut,
+    lastyear_cut
+)
+
+insight_text = generate_insight(overall)
+
+print("🧠 Insight:", insight_text)
+
+print("✅ Summary Created")
+
 # =========================================================
 # 🎯 TARGET SUMMARY
 # =========================================================
@@ -886,44 +875,6 @@ target_summary = pd.DataFrame([
 
 print("✅ Target Summary Created")
 
-# ---------------- HOURLY ANALYSIS ---------------- #
-
-hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
-hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
-
-hourly_analysis = pd.DataFrame({
-    "Today": hourly_today,
-    "Last Week": hourly_lw
-}).fillna(0)
-
-hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
-                               hourly_analysis["Last Week"].replace(0,1))*100
-
-hourly_analysis = hourly_analysis.reset_index()
-hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
-hourly_analysis = hourly_analysis.sort_values("BusinessHour")
-
-# ---------------- HOURLY TREND ---------------- #
-
-hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
-    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
-)
-
-# =========================================================
-# 🔥 OVERALL ANALYSIS
-# =========================================================
-
-overall = build_overall_extended(
-    today_cut,
-    lastweek_cut,
-    last2week_cut,
-    month_on_month_cut,
-    lastyear_cut
-)
-
-insight_text = generate_insight(overall)
-
-print("🧠 Insight:", insight_text)
 
 # =========================================================
 # 🔥 BRAND ANALYSIS
