@@ -1019,33 +1019,54 @@ brand_summary = pd.DataFrame(brand_rows)
 print("✅ Brand Summary Created")
 
 # =========================================================
-# 🔥 Source ANALYSIS
+# 🔥 SOURCE ANALYSIS
 # =========================================================
 
 source_rows = []
 
-sources = sorted(today_cut["Source Group"].dropna().unique())
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
 
 for source in sources:
 
-    t = today_cut[today_cut["Source Group"] == source]
-    lw = lastweek_cut[lastweek_cut["Source Group"] == source]
+    t = today_cut[
+        today_cut["Source Group"] == source
+    ]
+
+    lw = lastweek_cut[
+        lastweek_cut["Source Group"] == source
+    ]
 
     t_rev = t["Net Sales"].sum()
     lw_rev = lw["Net Sales"].sum()
 
-    growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+    growth = (
+        (t_rev - lw_rev)
+        / max(lw_rev, 1)
+    ) * 100
 
     t_gross = t["grossAmount"].sum()
     lw_gross = lw["grossAmount"].sum()
 
-    t_disc = (t["discountAmount"].sum() / max(t_gross, 1)) * 100
-    lw_disc = (lw["discountAmount"].sum() / max(lw_gross, 1)) * 100
+    t_disc = (
+        t["discountAmount"].sum()
+        / max(t_gross, 1)
+    ) * 100
 
-    disc_change = t_disc - lw_disc
+    lw_disc = (
+        lw["discountAmount"].sum()
+        / max(lw_gross, 1)
+    ) * 100
+
+    disc_change = (
+        t_disc - lw_disc
+    )
 
     source_rows.append({
-        "Source Group": source,
+        "Source": source,
         "Today Rev": round(t_rev, 2),
         "LW Rev": round(lw_rev, 2),
         "Growth %": round(growth, 2),
