@@ -261,7 +261,7 @@ source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
-source_map = dict(zip(source_master["Channel"], source_master["Source"]))
+source_map = dict(zip(source_master["Channel"], source_master["Source Group"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
 # ---------------- STORE / REGION ---------------- #
@@ -271,7 +271,7 @@ region_map = dict(zip(help_df.get("Store Name", []), help_df.get("Region", [])))
 
 # ---------------- SOURCE / BRAND ---------------- #
 
-source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source", [])))
+source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source Group", [])))
 brand_map = dict(zip(help_df.get("Channel", []), help_df.get("Brand", [])))
 
 # ---------------- AM / TM ---------------- #
@@ -292,19 +292,101 @@ tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip()}
 main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 
 
-# ---------------- FINAL DF MAPPING ---------------- #
+# =========================================================
+# FINAL DF MAPPING
+# =========================================================
 
 if "channel" not in final_df.columns:
     final_df["channel"] = "Unknown"
 
-final_df["Source"] = final_df["channel"].map(source_map).fillna("Other")
-final_df["Brand"] = final_df["channel"].map(brand_map).fillna("Others")
+# Clean channel values
+final_df["channel"] = (
+    final_df["channel"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
 
-main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
-final_df["Source Group"] = final_df["Source"].apply(lambda x: x if x in main_sources else "Others")
+source_master["Channel"] = (
+    source_master["Channel"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
 
-final_df["Store Type"] = final_df["branchName"].map(store_map).fillna("Unknown")
-final_df["Region"] = final_df["branchName"].map(region_map).fillna("Unknown")
+# Recreate mapping after cleaning
+source_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Source Group"]
+    )
+)
+
+brand_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Brand"]
+    )
+)
+
+# Source mapping
+final_df["Source Group"] = (
+    final_df["channel"]
+    .map(source_map)
+    .fillna("Others")
+)
+
+# Brand mapping
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Others")
+)
+
+# Standard Source Group
+main_sources = [
+    "In Store",
+    "Swiggy",
+    "Zomato",
+    "Ownly"
+]
+
+final_df["Source Group"] = final_df[
+    "Source Group"
+].apply(
+    lambda x:
+    x if x in main_sources
+    else "Others"
+)
+
+# Store Type & Region
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .map(store_map)
+    .fillna("Unknown")
+)
+
+final_df["Region"] = (
+    final_df["branchName"]
+    .map(region_map)
+    .fillna("Unknown")
+)
+
+print("✅ Final Mapping Completed")
+
+print("SOURCE CHECK")
+
+print(
+    final_df[
+        [
+            "channel",
+            "Source",
+            "Source Group"
+        ]
+    ]
+    .drop_duplicates()
+    .sort_values("channel")
+)
 
 # ---------------- FILTER ---------------- #
 
@@ -946,7 +1028,7 @@ for source in sources:
     disc_change = t_disc - lw_disc
 
     source_rows.append({
-        "Source": source,
+        "Source Group": source,
         "Today Rev": round(t_rev, 2),
         "LW Rev": round(lw_rev, 2),
         "Growth %": round(growth, 2),
@@ -983,7 +1065,7 @@ for brand in brands_required:
     # BRAND HEADER
     brand_source_rows.append({
         "Brand": brand,
-        "Source": "",
+        "Source Group": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1028,7 +1110,7 @@ for brand in brands_required:
 
         brand_source_rows.append({
             "Brand": "",
-            "Source": source,
+            "Source Group": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1061,7 +1143,7 @@ for region in regions_required:
 
     region_source_rows.append({
         "Region": region,
-        "Source": "",
+        "Source Group": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1101,7 +1183,7 @@ for region in regions_required:
 
         region_source_rows.append({
             "Region": "",
-            "Source": source,
+            "Source Group": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1161,7 +1243,7 @@ print("✅ Brand Session Analysis Created")
 
 source_session = pd.pivot_table(
     today_cut,
-    index="Source",
+    index="Source Group",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1170,7 +1252,7 @@ source_session = pd.pivot_table(
 
 lw_source_session = pd.pivot_table(
     lastweek_cut,
-    index="Source",
+    index="Source Group",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1240,7 +1322,7 @@ source_analysis = safe_kpi_builder(
     today_cut,
     lastweek_cut,
     "Source Group",
-    "Source"
+    "Source Group"
 )
 
 region_analysis = safe_kpi_builder(
@@ -1667,7 +1749,7 @@ def styled_html(df):
         "Parameters",
         "Parameter",
         "Metric"
-        "Source",
+        "Source Group",
         "Region",
         "Brand",
         "Session",
@@ -2343,7 +2425,7 @@ def send_am_mail():
                 m = calc_store_metrics(t, l)
 
                 m = {
-                    "Source": source,
+                    "Source Group": source,
                     "Store Name": store,
                     **m
                 }
@@ -2707,7 +2789,7 @@ def send_tm_mail():
                 )
 
                 m = {
-                    "Source": source,
+                    "Source Group": source,
                     "Store Name": store,
                     **m
                 }
@@ -2794,7 +2876,7 @@ def send_tm_mail():
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
-push("Source", source_analysis)
+push("Source Group", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
 push("Session", session_analysis)
