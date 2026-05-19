@@ -965,7 +965,11 @@ print("✅ Source Summary Created")
 
 brand_source_rows = []
 
-sources = ["In Store", "Swiggy", "Zomato"]
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
 
 brands_required = ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
 
@@ -1032,6 +1036,12 @@ print("✅ Brand Source Analysis Created")
 # =========================================================
 
 region_source_rows = []
+
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
 
 regions_required = ["KA", "MH", "TN", "Kerela"]
 
@@ -2243,7 +2253,11 @@ def send_am_mail():
         # =====================================================
         source_blocks = []
         
-        for source in ["In Store", "Swiggy", "Zomato"]:
+        sources = sorted(
+            today_cut["Source Group"]
+            .dropna()
+            .unique()
+        )
         
             s_t = df_today[df_today["Source Group"] == source]
             s_l = df_lw[df_lw["Source Group"] == source]
@@ -2468,7 +2482,11 @@ def send_tm_mail():
         # SOURCE
         source_blocks = []
         
-        for source in ["In Store", "Swiggy", "Zomato"]:
+        sources = sorted(
+            today_cut["Source Group"]
+            .dropna()
+            .unique()
+        )
         
             s_t = df_today[df_today["Source Group"] == source]
             s_l = df_lw[df_lw["Source Group"] == source]
