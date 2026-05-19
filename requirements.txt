@@ -9,3 +9,4 @@ tenacity
 loguru
 python-dotenv
 orjson
+matplotlib
