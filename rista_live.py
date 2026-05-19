@@ -2332,10 +2332,12 @@ print("✅ Source Dashboard Ready")
         # =====================================================
         # EMAIL
         # =====================================================
+
         if not am_email:
             continue
 
         msg = MIMEMultipart()
+
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
 
@@ -2364,15 +2366,34 @@ print("✅ Source Dashboard Ready")
         {styled_html(source_df)}
         """
 
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(
+            MIMEText(body, "html")
+        )
 
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server = smtplib.SMTP(
+            "smtp.gmail.com",
+            587
+        )
+
         server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, [am_email], msg.as_string())
+
+        server.login(
+            EMAIL_USER,
+            EMAIL_PASS
+        )
+
+        server.sendmail(
+            EMAIL_USER,
+            [am_email],
+            msg.as_string()
+        )
+
         server.quit()
 
-        print("📩 AM Mail Sent →", am_email)
+        print(
+            "📩 AM Mail Sent →",
+            am_email
+        )
 
 # =====================================================
 # 📩 TM MAIL
