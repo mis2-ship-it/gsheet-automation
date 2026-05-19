@@ -261,7 +261,7 @@ source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
-source_map = dict(zip(source_master["Channel"], source_master["Source Group"]))
+source_map = dict(zip(source_master["Channel"], source_master["Source"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
 # ---------------- STORE / REGION ---------------- #
@@ -314,11 +314,14 @@ source_master["Channel"] = (
     .str.upper()
 )
 
-# Recreate mapping after cleaning
+# =========================================================
+# SOURCE / BRAND MAP
+# =========================================================
+
 source_map = dict(
     zip(
         source_master["Channel"],
-        source_master["Source Group"]
+        source_master["Source"]
     )
 )
 
@@ -329,21 +332,20 @@ brand_map = dict(
     )
 )
 
-# Source mapping
-final_df["Source Group"] = (
+# =========================================================
+# SOURCE
+# =========================================================
+
+final_df["Source"] = (
     final_df["channel"]
     .map(source_map)
     .fillna("Others")
 )
 
-# Brand mapping
-final_df["Brand"] = (
-    final_df["channel"]
-    .map(brand_map)
-    .fillna("Others")
-)
+# =========================================================
+# SOURCE GROUP
+# =========================================================
 
-# Standard Source Group
 main_sources = [
     "In Store",
     "Swiggy",
@@ -351,15 +353,29 @@ main_sources = [
     "Ownly"
 ]
 
-final_df["Source Group"] = final_df[
-    "Source Group"
-].apply(
-    lambda x:
-    x if x in main_sources
-    else "Others"
+final_df["Source Group"] = (
+    final_df["Source"]
+    .apply(
+        lambda x:
+        x if x in main_sources
+        else "Others"
+    )
 )
 
-# Store Type & Region
+# =========================================================
+# BRAND
+# =========================================================
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Others")
+)
+
+# =========================================================
+# STORE TYPE & REGION
+# =========================================================
+
 final_df["Store Type"] = (
     final_df["branchName"]
     .map(store_map)
@@ -381,7 +397,8 @@ print(
         [
             "channel",
             "Source",
-            "Source Group"
+            "Source Group",
+            "Brand"
         ]
     ]
     .drop_duplicates()
