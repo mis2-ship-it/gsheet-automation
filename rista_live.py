@@ -2333,9 +2333,6 @@ print("✅ Source Dashboard Ready")
         # EMAIL
         # =====================================================
 
-        if not am_email:
-            continue
-
         msg = MIMEMultipart()
 
         msg["From"] = EMAIL_USER
@@ -2394,7 +2391,6 @@ print("✅ Source Dashboard Ready")
             "📩 AM Mail Sent →",
             am_email
         )
-
 # =====================================================
 # 📩 TM MAIL
 # =====================================================
