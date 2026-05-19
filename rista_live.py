@@ -271,7 +271,7 @@ region_map = dict(zip(help_df.get("Store Name", []), help_df.get("Region", [])))
 
 # ---------------- SOURCE / BRAND ---------------- #
 
-source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source Group", [])))
+source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source", [])))
 brand_map = dict(zip(help_df.get("Channel", []), help_df.get("Brand", [])))
 
 # ---------------- AM / TM ---------------- #
@@ -353,7 +353,7 @@ main_sources = [
     "Ownly"
 ]
 
-final_df["Source Group"] = (
+final_df["Source"] = (
     final_df["Source"]
     .apply(
         lambda x:
@@ -397,7 +397,7 @@ print(
         [
             "channel",
             "Source",
-            "Source Group",
+            "Source",
             "Brand"
         ]
     ]
@@ -921,7 +921,7 @@ else:
 today_sales_total = today_cut["Net Sales"].sum()
 
 instore_sales = today_cut[
-    today_cut["Source Group"] == "In Store"
+    today_cut["Source"] == "In Store"
 ]["Net Sales"].sum()
 
 online_sales = (
@@ -1025,7 +1025,7 @@ print("✅ Brand Summary Created")
 source_rows = []
 
 sources = sorted(
-    today_cut["Source Group"]
+    today_cut["Source"]
     .dropna()
     .unique()
 )
@@ -1033,11 +1033,11 @@ sources = sorted(
 for source in sources:
 
     t = today_cut[
-        today_cut["Source Group"] == source
+        today_cut["Source"] == source
     ]
 
     lw = lastweek_cut[
-        lastweek_cut["Source Group"] == source
+        lastweek_cut["Source"] == source
     ]
 
     t_rev = t["Net Sales"].sum()
@@ -1086,7 +1086,7 @@ print("✅ Source Summary Created")
 brand_source_rows = []
 
 sources = sorted(
-    today_cut["Source Group"]
+    today_cut["Source"]
     .dropna()
     .unique()
 )
@@ -1103,7 +1103,7 @@ for brand in brands_required:
     # BRAND HEADER
     brand_source_rows.append({
         "Brand": brand,
-        "Source Group": "",
+        "Source": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1116,12 +1116,12 @@ for brand in brands_required:
 
         t = today_cut[
             (today_cut["Brand"] == brand)
-            & (today_cut["Source Group"] == source)
+            & (today_cut["Source"] == source)
         ]
 
         lw = lastweek_cut[
             (lastweek_cut["Brand"] == brand)
-            & (lastweek_cut["Source Group"] == source)
+            & (lastweek_cut["Source"] == source)
         ]
 
         t_rev = t["Net Sales"].sum()
@@ -1148,7 +1148,7 @@ for brand in brands_required:
 
         brand_source_rows.append({
             "Brand": "",
-            "Source Group": source,
+            "Source": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1170,7 +1170,7 @@ print("✅ Brand Source Analysis Created")
 region_source_rows = []
 
 sources = sorted(
-    today_cut["Source Group"]
+    today_cut["Source"]
     .dropna()
     .unique()
 )
@@ -1181,7 +1181,7 @@ for region in regions_required:
 
     region_source_rows.append({
         "Region": region,
-        "Source Group": "",
+        "Source": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1194,12 +1194,12 @@ for region in regions_required:
 
         t = today_cut[
             (today_cut["Region"] == region) &
-            (today_cut["Source Group"] == source)
+            (today_cut["Source"] == source)
         ]
 
         lw = lastweek_cut[
             (lastweek_cut["Region"] == region) &
-            (lastweek_cut["Source Group"] == source)
+            (lastweek_cut["Source"] == source)
         ]
 
         t_rev = t["Net Sales"].sum()
@@ -1221,7 +1221,7 @@ for region in regions_required:
 
         region_source_rows.append({
             "Region": "",
-            "Source Group": source,
+            "Source": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1281,7 +1281,7 @@ print("✅ Brand Session Analysis Created")
 
 source_session = pd.pivot_table(
     today_cut,
-    index="Source Group",
+    index="Source",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1290,7 +1290,7 @@ source_session = pd.pivot_table(
 
 lw_source_session = pd.pivot_table(
     lastweek_cut,
-    index="Source Group",
+    index="Source",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1359,8 +1359,8 @@ print("✅ Region Session Analysis Created")
 source_analysis = safe_kpi_builder(
     today_cut,
     lastweek_cut,
-    "Source Group",
-    "Source Group"
+    "Source",
+    "Source"
 )
 
 region_analysis = safe_kpi_builder(
@@ -1409,7 +1409,7 @@ brand_chart_df = (
 # =========================================================
 
 source_chart_df = (
-    chart_df.groupby("Source Group")["Net Sales"]
+    chart_df.groupby("Source")["Net Sales"]
     .sum()
     .reset_index()
 )
@@ -1420,7 +1420,7 @@ source_chart_df = (
 
 discount_brand_source = (
     chart_df.groupby(
-        ["Brand", "Source Group"]
+        ["Brand", "Source"]
     )
     .agg({
         "discountAmount": "sum",
@@ -1615,7 +1615,7 @@ def create_source_chart():
 
     ax.pie(
         source_chart_df["Net Sales"],
-        labels=source_chart_df["Source Group"],
+        labels=source_chart_df["Source"],
         autopct="%1.1f%%"
     )
 
@@ -1649,7 +1649,7 @@ def create_discount_chart():
 
     pivot_df = discount_brand_source.pivot_table(
         index="Brand",
-        columns="Source Group",
+        columns="Source",
         values="Discount %",
         aggfunc="sum",
         fill_value=0
@@ -1807,7 +1807,7 @@ def styled_html(df):
         "Parameters",
         "Parameter",
         "Metric"
-        "Source Group",
+        "Source",
         "Region",
         "Brand",
         "Session",
@@ -2450,18 +2450,18 @@ def send_am_mail():
         source_rows = []
 
         for source in sorted(
-            df_today["Source Group"]
+            df_today["Source"]
             .dropna()
             .unique()
         ):
 
             s_t = df_today[
-                df_today["Source Group"]
+                df_today["Source"]
                 == source
             ]
 
             s_l = df_lw[
-                df_lw["Source Group"]
+                df_lw["Source"]
                 == source
             ]
 
@@ -2483,7 +2483,7 @@ def send_am_mail():
                 m = calc_store_metrics(t, l)
 
                 m = {
-                    "Source Group": source,
+                    "Source": source,
                     "Store Name": store,
                     **m
                 }
@@ -2810,7 +2810,7 @@ def send_tm_mail():
         source_rows = []
 
         sources = sorted(
-            df_today["Source Group"]
+            df_today["Source"]
             .dropna()
             .unique()
         )
@@ -2818,12 +2818,12 @@ def send_tm_mail():
         for source in sources:
 
             s_t = df_today[
-                df_today["Source Group"]
+                df_today["Source"]
                 == source
             ]
 
             s_l = df_lw[
-                df_lw["Source Group"]
+                df_lw["Source"]
                 == source
             ]
 
@@ -2847,7 +2847,7 @@ def send_tm_mail():
                 )
 
                 m = {
-                    "Source Group": source,
+                    "Source": source,
                     "Store Name": store,
                     **m
                 }
@@ -2934,7 +2934,7 @@ def send_tm_mail():
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
-push("Source Group", source_analysis)
+push("Source", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
 push("Session", session_analysis)
