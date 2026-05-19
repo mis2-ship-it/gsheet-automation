@@ -1342,6 +1342,135 @@ def create_hourly_chart():
 print("✅ Hourly Chart Ready")
 
 # =========================================================
+# 📊 BRAND SALES CHART
+# =========================================================
+
+def create_brand_chart():
+
+    if brand_chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    ax.bar(
+        brand_chart_df["Brand"],
+        brand_chart_df["Net Sales"]
+    )
+
+    ax.set_title("Brand Sales")
+
+    ax.set_xlabel("Brand")
+    ax.set_ylabel("Net Sales")
+
+    plt.xticks(rotation=45)
+
+    ax.grid(True)
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+
+# =========================================================
+# 📦 SOURCE MIX CHART
+# =========================================================
+
+def create_source_chart():
+
+    if source_chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    ax.pie(
+        source_chart_df["Net Sales"],
+        labels=source_chart_df["Source Group"],
+        autopct="%1.1f%%"
+    )
+
+    ax.set_title("Source Mix")
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+
+# =========================================================
+# 💸 BRAND X SOURCE DISCOUNT % CHART
+# =========================================================
+
+def create_discount_chart():
+
+    if discount_brand_source.empty:
+        return None
+
+    pivot_df = discount_brand_source.pivot_table(
+        index="Brand",
+        columns="Source Group",
+        values="Discount %",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    pivot_df.plot(
+        kind="bar",
+        ax=ax
+    )
+
+    ax.set_title(
+        "Brand x Source Discount %"
+    )
+
+    ax.set_xlabel("Brand")
+    ax.set_ylabel("Discount %")
+
+    plt.xticks(rotation=45)
+
+    ax.grid(True)
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+# =========================================================
 # 🔥 TOP 10 STORES
 # =========================================================
 
