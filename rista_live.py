@@ -2478,7 +2478,10 @@ def send_tm_mail():
         if not tm_email:
             continue
 
+        # =====================================================
         # REGION FILTER
+        # =====================================================
+
         df_today = today_cut[
             today_cut["Region"].isin(regions)
         ].copy()
@@ -2487,7 +2490,13 @@ def send_tm_mail():
             lastweek_cut["Region"].isin(regions)
         ].copy()
 
+        if df_today.empty:
+            continue
+
+        # =====================================================
         # SESSION TAG
+        # =====================================================
+
         df_today["Session"] = (
             df_today["Hour"]
             .apply(get_session)
@@ -2559,6 +2568,7 @@ def send_tm_mail():
                 "Store Name": store
             }
 
+            # Session Sales
             for s in session_order:
 
                 row[s] = round(
@@ -2568,6 +2578,7 @@ def send_tm_mail():
                     2
                 )
 
+            # Revenue
             today_rev = (
                 t_store["Net Sales"]
                 .sum()
@@ -2605,7 +2616,7 @@ def send_tm_mail():
         # BRAND DASHBOARD
         # =====================================================
 
-        brand_blocks = []
+        brand_rows = []
 
         brands = sorted(
             df_today["Brand"]
@@ -2622,8 +2633,6 @@ def send_tm_mail():
             b_l = df_lw[
                 df_lw["Brand"] == brand
             ]
-
-            rows = []
 
             for store in stores:
 
@@ -2648,27 +2657,17 @@ def send_tm_mail():
                     **m
                 }
 
-                rows.append(m)
+                brand_rows.append(m)
 
-            if rows:
-                brand_blocks.append(
-                    pd.DataFrame(rows)
-                )
-
-        brand_df = (
-            pd.concat(
-                brand_blocks,
-                ignore_index=True
-            )
-            if brand_blocks
-            else pd.DataFrame()
+        brand_df = pd.DataFrame(
+            brand_rows
         )
 
         # =====================================================
         # SOURCE DASHBOARD
         # =====================================================
 
-        source_blocks = []
+        source_rows = []
 
         sources = sorted(
             df_today["Source Group"]
@@ -2687,8 +2686,6 @@ def send_tm_mail():
                 df_lw["Source Group"]
                 == source
             ]
-
-            rows = []
 
             for store in stores:
 
@@ -2715,20 +2712,10 @@ def send_tm_mail():
                     **m
                 }
 
-                rows.append(m)
+                source_rows.append(m)
 
-            if rows:
-                source_blocks.append(
-                    pd.DataFrame(rows)
-                )
-
-        source_df = (
-            pd.concat(
-                source_blocks,
-                ignore_index=True
-            )
-            if source_blocks
-            else pd.DataFrame()
+        source_df = pd.DataFrame(
+            source_rows
         )
 
         print(
