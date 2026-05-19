@@ -2332,6 +2332,9 @@ print("✅ Source Dashboard Ready")
         # =====================================================
         # EMAIL
         # =====================================================
+        if not am_email:
+            continue
+
         msg = MIMEMultipart()
         msg["From"] = EMAIL_USER
         msg["To"] = am_email
@@ -2378,9 +2381,9 @@ print("✅ Source Dashboard Ready")
 def send_tm_mail():
 
     import smtplib
+
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
-
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
@@ -2391,16 +2394,28 @@ def send_tm_mail():
         microsecond=0
     )
 
+    # =====================================================
+    # STORE METRIC FUNCTION
+    # =====================================================
 
     def calc_store_metrics(t, l):
 
         t_rev = t["Net Sales"].sum()
         l_rev = l["Net Sales"].sum()
 
-        growth = ((t_rev - l_rev) / max(l_rev, 1)) * 100
+        growth = (
+            ((t_rev - l_rev) / max(l_rev, 1))
+        ) * 100
 
-        t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
-        l_disc = (l["discountAmount"].sum() / max(l["grossAmount"].sum(), 1)) * 100
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        l_disc = (
+            l["discountAmount"].sum()
+            / max(l["grossAmount"].sum(), 1)
+        ) * 100
 
         return {
             "Today Rev": round(t_rev, 2),
@@ -2408,53 +2423,80 @@ def send_tm_mail():
             "Growth %": round(growth, 2),
             "Today Dis %": round(t_disc, 2),
             "LW Dis %": round(l_disc, 2),
-            "Change %": round(t_disc - l_disc, 2)
+            "Change %": round(
+                t_disc - l_disc,
+                2
+            )
         }
+
+    # =====================================================
+    # LOOP TM MAIL
+    # =====================================================
 
     for tm_email, regions in tm_region_map.items():
 
         if not tm_email:
             continue
 
+        # REGION FILTER
         df_today = today_cut[
             today_cut["Region"].isin(regions)
         ].copy()
-        
+
         df_lw = lastweek_cut[
             lastweek_cut["Region"].isin(regions)
         ].copy()
 
-        df_today["Session"] = df_today["Hour"].apply(get_session)
-        df_lw["Session"] = df_lw["Hour"].apply(get_session)
+        # SESSION TAG
+        df_today["Session"] = (
+            df_today["Hour"]
+            .apply(get_session)
+        )
 
+        df_lw["Session"] = (
+            df_lw["Hour"]
+            .apply(get_session)
+        )
 
+        stores = sorted(
+            df_today["branchName"]
+            .dropna()
+            .unique()
+        )
 
+        # =====================================================
         # STORE DASHBOARD
+        # =====================================================
+
         store_rows = []
-        
-        stores = df_today["branchName"].dropna().unique()
-        
+
         for store in stores:
-        
-            t = df_today[df_today["branchName"] == store]
-            l = df_lw[df_lw["branchName"] == store]
-        
+
+            t = df_today[
+                df_today["branchName"] == store
+            ]
+
+            l = df_lw[
+                df_lw["branchName"] == store
+            ]
+
             m = calc_store_metrics(t, l)
+
             m = {
                 "Store Name": store,
                 **m
             }
-        
+
             store_rows.append(m)
-        
+
         store_df = pd.DataFrame(store_rows)
 
         # =====================================================
-        # SESSION DASHBOARD (STORE WISE)
+        # SESSION DASHBOARD
         # =====================================================
-        
+
         session_rows = []
-        
+
         session_order = [
             "Breakfast",
             "Lunch",
@@ -2462,103 +2504,203 @@ def send_tm_mail():
             "Dinner",
             "Post Dinner"
         ]
-        
+
         for store in stores:
-        
-            t_store = df_today[df_today["branchName"] == store]
-            l_store = df_lw[df_lw["branchName"] == store]
-        
-            row = {"Store Name": store}
-        
-            # Session sales
+
+            t_store = df_today[
+                df_today["branchName"] == store
+            ]
+
+            l_store = df_lw[
+                df_lw["branchName"] == store
+            ]
+
+            row = {
+                "Store Name": store
+            }
+
             for s in session_order:
+
                 row[s] = round(
-                    t_store[t_store["Session"] == s]["Net Sales"].sum(), 2
+                    t_store[
+                        t_store["Session"] == s
+                    ]["Net Sales"].sum(),
+                    2
                 )
-        
-            # Total revenue
-            today_rev = t_store["Net Sales"].sum()
-            lw_rev = l_store["Net Sales"].sum()
-        
-            growth = (
-                ((today_rev - lw_rev) / lw_rev * 100)
-                if lw_rev > 0 else 0
+
+            today_rev = (
+                t_store["Net Sales"]
+                .sum()
             )
-        
-            row["Today Rev"] = round(today_rev, 2)
-            row["LW Rev"] = round(lw_rev, 2)
-            row["Growth %"] = round(growth, 2)
-        
+
+            lw_rev = (
+                l_store["Net Sales"]
+                .sum()
+            )
+
+            growth = (
+                ((today_rev - lw_rev)
+                 / max(lw_rev, 1))
+            ) * 100
+
+            row["Today Rev"] = round(
+                today_rev, 2
+            )
+
+            row["LW Rev"] = round(
+                lw_rev, 2
+            )
+
+            row["Growth %"] = round(
+                growth, 2
+            )
+
             session_rows.append(row)
-        
-        session_df = pd.DataFrame(session_rows)
 
-        # Brand Board
+        session_df = pd.DataFrame(
+            session_rows
+        )
+
+        # =====================================================
+        # BRAND DASHBOARD
+        # =====================================================
+
         brand_blocks = []
-        
-        for brand in df_today["Brand"].dropna().unique():
-        
-            b_t = df_today[df_today["Brand"] == brand]
-            b_l = df_lw[df_lw["Brand"] == brand]
-        
-            rows = []
-        
-            for store in stores:
-                t = b_t[b_t["branchName"] == store]
-                l = b_l[b_l["branchName"] == store]
-        
-                if t.empty and l.empty:
-                    continue
-        
-                m = calc_store_metrics(t, l)
-                m = {
-                   "Store Name": store,
-                   **m
-                }
-                rows.append(m)
-        
-            if rows:
-                brand_blocks.append(pd.DataFrame([{"Brand": brand}]))
-                brand_blocks.append(pd.DataFrame(rows))
-        
-        brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
 
-
-        # SOURCE
-        source_blocks = []
-        
-        sources = sorted(
-            today_cut["Source Group"]
+        brands = sorted(
+            df_today["Brand"]
             .dropna()
             .unique()
         )
-        
-            s_t = df_today[df_today["Source Group"] == source]
-            s_l = df_lw[df_lw["Source Group"] == source]
-        
+
+        for brand in brands:
+
+            b_t = df_today[
+                df_today["Brand"] == brand
+            ]
+
+            b_l = df_lw[
+                df_lw["Brand"] == brand
+            ]
+
             rows = []
-        
+
             for store in stores:
-                t = s_t[s_t["branchName"] == store]
-                l = s_l[s_l["branchName"] == store]
-        
+
+                t = b_t[
+                    b_t["branchName"] == store
+                ]
+
+                l = b_l[
+                    b_l["branchName"] == store
+                ]
+
                 if t.empty and l.empty:
                     continue
-        
-                m = calc_store_metrics(t, l)
+
+                m = calc_store_metrics(
+                    t, l
+                )
+
                 m = {
+                    "Brand": brand,
                     "Store Name": store,
                     **m
                 }
+
                 rows.append(m)
-        
+
             if rows:
-                source_blocks.append(pd.DataFrame([{"Source": source}]))
-                source_blocks.append(pd.DataFrame(rows))
-        
-        source_df = pd.concat(source_blocks, ignore_index=True) if source_blocks else pd.DataFrame()
+                brand_blocks.append(
+                    pd.DataFrame(rows)
+                )
+
+        brand_df = (
+            pd.concat(
+                brand_blocks,
+                ignore_index=True
+            )
+            if brand_blocks
+            else pd.DataFrame()
+        )
+
+        # =====================================================
+        # SOURCE DASHBOARD
+        # =====================================================
+
+        source_blocks = []
+
+        sources = sorted(
+            df_today["Source Group"]
+            .dropna()
+            .unique()
+        )
+
+        for source in sources:
+
+            s_t = df_today[
+                df_today["Source Group"]
+                == source
+            ]
+
+            s_l = df_lw[
+                df_lw["Source Group"]
+                == source
+            ]
+
+            rows = []
+
+            for store in stores:
+
+                t = s_t[
+                    s_t["branchName"]
+                    == store
+                ]
+
+                l = s_l[
+                    s_l["branchName"]
+                    == store
+                ]
+
+                if t.empty and l.empty:
+                    continue
+
+                m = calc_store_metrics(
+                    t, l
+                )
+
+                m = {
+                    "Source": source,
+                    "Store Name": store,
+                    **m
+                }
+
+                rows.append(m)
+
+            if rows:
+                source_blocks.append(
+                    pd.DataFrame(rows)
+                )
+
+        source_df = (
+            pd.concat(
+                source_blocks,
+                ignore_index=True
+            )
+            if source_blocks
+            else pd.DataFrame()
+        )
+
+        print(
+            "✅ Source Dashboard Created"
+        )
+
+        # =====================================================
+        # EMAIL
+        # =====================================================
 
         msg = MIMEMultipart()
+
         msg["From"] = EMAIL_USER
         msg["To"] = tm_email
 
@@ -2568,6 +2710,7 @@ def send_tm_mail():
         )
 
         body = f"""
+
         <h2>🏪 Store Wise Report</h2>
         {styled_html(store_df)}
 
@@ -2585,17 +2728,40 @@ def send_tm_mail():
 
         <h2>📦 Source Report</h2>
         {styled_html(source_df)}
+
         """
 
-        msg.attach(MIMEText(body, "html"))
+        msg.attach(
+            MIMEText(
+                body,
+                "html"
+            )
+        )
 
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server = smtplib.SMTP(
+            "smtp.gmail.com",
+            587
+        )
+
         server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, [tm_email], msg.as_string())
+
+        server.login(
+            EMAIL_USER,
+            EMAIL_PASS
+        )
+
+        server.sendmail(
+            EMAIL_USER,
+            [tm_email],
+            msg.as_string()
+        )
+
         server.quit()
 
-        print("📩 TM Mail Sent →", tm_email)
+        print(
+            "📩 TM Mail Sent →",
+            tm_email
+        )
 
 
 # ---------------- EXECUTE ---------------- #
