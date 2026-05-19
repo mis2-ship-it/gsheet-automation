@@ -2260,41 +2260,74 @@ def send_am_mail():
         
         brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
 
-        # =====================================================
-        # SOURCE DASHBOARD
-        # =====================================================
-        source_blocks = []
-        
-        sources = sorted(
-            today_cut["Source Group"]
-            .dropna()
-            .unique()
+# =====================================================
+# SOURCE DASHBOARD
+# =====================================================
+
+source_blocks = []
+
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
+
+for source in sources:
+
+    s_t = df_today[
+        df_today["Source Group"] == source
+    ]
+
+    s_l = df_lw[
+        df_lw["Source Group"] == source
+    ]
+
+    rows = []
+
+    for store in stores:
+
+        t = s_t[
+            s_t["branchName"] == store
+        ]
+
+        l = s_l[
+            s_l["branchName"] == store
+        ]
+
+        if t.empty and l.empty:
+            continue
+
+        m = calc_store_metrics(t, l)
+
+        m = {
+            "Store Name": store,
+            **m
+        }
+
+        rows.append(m)
+
+    if rows:
+
+        source_blocks.append(
+            pd.DataFrame([{
+                "Source": source
+            }])
         )
-        
-            s_t = df_today[df_today["Source Group"] == source]
-            s_l = df_lw[df_lw["Source Group"] == source]
-        
-            rows = []
-        
-            for store in stores:
-                t = s_t[s_t["branchName"] == store]
-                l = s_l[s_l["branchName"] == store]
-        
-                if t.empty and l.empty:
-                    continue
-        
-                m = calc_store_metrics(t, l)
-                m = {
-                    "Store Name": store,
-                    **m
-                }
-                rows.append(m)
-        
-            if rows:
-                source_blocks.append(pd.DataFrame([{"Source": source}]))
-                source_blocks.append(pd.DataFrame(rows))
-        
-        source_df = pd.concat(source_blocks, ignore_index=True) if source_blocks else pd.DataFrame()
+
+        source_blocks.append(
+            pd.DataFrame(rows)
+        )
+
+source_df = (
+    pd.concat(
+        source_blocks,
+        ignore_index=True
+    )
+    if source_blocks
+    else pd.DataFrame()
+)
+
+print("✅ Source Dashboard Ready")
 
         # =====================================================
         # EMAIL
