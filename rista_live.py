@@ -1390,21 +1390,38 @@ print("✅ All Analysis Completed")
 # 📊 CHART DATA BLOCK
 # =========================================================
 
+# =========================================================
+# BRAND SALES CHART
+# =========================================================
+
 brand_chart_df = (
-    final_df.groupby("Brand")["Net Sales"]
+    chart_df.groupby("Brand")["Net Sales"]
     .sum()
     .reset_index()
-    .sort_values("Net Sales", ascending=False)
+    .sort_values(
+        "Net Sales",
+        ascending=False
+    )
 )
+
+# =========================================================
+# SOURCE MIX CHART
+# =========================================================
 
 source_chart_df = (
-    final_df.groupby("Source Group")["Net Sales"]
+    chart_df.groupby("Source Group")["Net Sales"]
     .sum()
     .reset_index()
 )
 
+# =========================================================
+# BRAND x SOURCE DISCOUNT %
+# =========================================================
+
 discount_brand_source = (
-    final_df.groupby(["Brand", "Source Group"])
+    chart_df.groupby(
+        ["Brand", "Source Group"]
+    )
     .agg({
         "discountAmount": "sum",
         "grossAmount": "sum"
@@ -1414,9 +1431,12 @@ discount_brand_source = (
 
 discount_brand_source["Discount %"] = (
     discount_brand_source["discountAmount"]
-    / discount_brand_source["grossAmount"].replace(0, 1)
+    / discount_brand_source[
+        "grossAmount"
+    ].replace(0, 1)
 ) * 100
 
+print("✅ Today Chart Data Prepared")
 
 # =========================================================
 # 📈 HOURLY SALES TREND CHART DATA
