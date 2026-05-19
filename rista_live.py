@@ -7,6 +7,9 @@ import pandas as pd
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
+import matplotlib.pyplot as plt
+from io import BytesIO
+from email.mime.image import MIMEImage
 
 print("🚀 Live Script Started")
 
@@ -846,7 +849,7 @@ target_summary = pd.DataFrame([
         "Target": round(total_target,2),
         "EOD Projection": round(eod,2),
         "Ach %": round(
-            (today_sales_total /
+            (eod /
              max(total_target,1))*100,
             2
         )
@@ -856,7 +859,7 @@ target_summary = pd.DataFrame([
         "Target": round(offline_target,2),
         "EOD Projection": round(offline_eod,2),
         "Ach %": round(
-            (instore_sales /
+            (offline_eod /
              max(offline_target,1))*100,
             2
         )
@@ -866,7 +869,7 @@ target_summary = pd.DataFrame([
         "Target": round(online_target,2),
         "EOD Projection": round(online_eod,2),
         "Ach %": round(
-            (online_sales /
+            (online_eod /
              max(online_target,1))*100,
             2
         )
@@ -1241,6 +1244,102 @@ session_analysis = safe_kpi_builder(
 
 print("✅ All Analysis Completed")
 
+# =========================================================
+# 📊 CHART DATA BLOCK
+# =========================================================
+
+brand_chart_df = (
+    final_df.groupby("Brand")["Net Sales"]
+    .sum()
+    .reset_index()
+    .sort_values("Net Sales", ascending=False)
+)
+
+source_chart_df = (
+    final_df.groupby("Source Group")["Net Sales"]
+    .sum()
+    .reset_index()
+)
+
+discount_brand_source = (
+    final_df.groupby(["Brand", "Source Group"])
+    .agg({
+        "discountAmount": "sum",
+        "grossAmount": "sum"
+    })
+    .reset_index()
+)
+
+discount_brand_source["Discount %"] = (
+    discount_brand_source["discountAmount"]
+    / discount_brand_source["grossAmount"].replace(0, 1)
+) * 100
+
+
+# =========================================================
+# 📈 HOURLY SALES TREND CHART DATA
+# =========================================================
+
+hourly_chart_df = hourly_analysis.copy()
+
+print("✅ Chart Data Prepared")
+
+# =========================================================
+# 📈 HOURLY SALES TREND CHART
+# =========================================================
+
+def create_hourly_chart():
+
+    chart_df = hourly_analysis.copy()
+
+    if chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    ax.plot(
+        chart_df["Hour"],
+        chart_df["Today"],
+        marker="o",
+        linewidth=2,
+        label="Today"
+    )
+
+    ax.plot(
+        chart_df["Hour"],
+        chart_df["Last Week"],
+        marker="o",
+        linewidth=2,
+        label="Last Week"
+    )
+
+    ax.set_title(
+        "Hourly Sales Trend (Today vs Last Week)"
+    )
+
+    ax.set_xlabel("Hour")
+    ax.set_ylabel("Net Sales")
+
+    ax.legend()
+    ax.grid(True)
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+print("✅ Hourly Chart Ready")
 
 # =========================================================
 # 🔥 TOP 10 STORES
@@ -1337,6 +1436,7 @@ def styled_html(df):
     text_cols = [
         "Parameters",
         "Parameter",
+        "Metric"
         "Source",
         "Region",
         "Brand",
@@ -1558,6 +1658,59 @@ def send_email():
 
         <br><br>
 
+        <h2>🏷️ Brand Sales</h2>
+
+        <img src="cid:brand_chart"
+        style="
+        width:100%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+        
+        <br><br>
+        
+        
+        <h2>📦 Source Mix</h2>
+        
+        <img src="cid:source_chart"
+        style="
+        width:100%;
+        max-width:700px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+        
+        <br><br>
+        
+        
+        <h2>💸 Brand x Source Discount %</h2>
+        
+        <img src="cid:discount_chart"
+        style="
+        width:100%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+        
+        <br><br>
+        
+        
+        <h2>⏰ Hourly Trend</h2>
+        
+        <img src="cid:hourly_chart"
+        style="
+        width:100%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+        
+        {styled_html(hourly_analysis)}
+
+        <br><br>
+         
         <h2>🏷️ Brand Summary</h2>
         {styled_html(brand_summary)}
         
@@ -1593,11 +1746,6 @@ def send_email():
 
         <br><br>
 
-        <h2>⏰ Hourly Trend</h2>
-        {styled_html(hourly_analysis)}
-
-        <br><br>
-
         <h2>🏆 Top Stores</h2>
         {styled_html(top_stores)}
 
@@ -1615,6 +1763,46 @@ def send_email():
     # =====================================================
 
     msg.attach(MIMEText(body, "html"))
+
+    # =====================================================
+    # ATTACH CHARTS
+    # =====================================================
+    
+    chart_mapping = {
+    
+        "brand_chart":
+            create_brand_chart(),
+    
+        "source_chart":
+            create_source_chart(),
+    
+        "discount_chart":
+            create_discount_chart(),
+    
+        "hourly_chart":
+            create_hourly_chart()
+    }
+    
+    for cid, chart_buffer in chart_mapping.items():
+    
+        if chart_buffer:
+    
+            image = MIMEImage(
+                chart_buffer.read()
+            )
+    
+            image.add_header(
+                "Content-ID",
+                f"<{cid}>"
+            )
+    
+            image.add_header(
+                "Content-Disposition",
+                "inline",
+                filename=f"{cid}.png"
+            )
+    
+            msg.attach(image)
 
     receivers = []
 
@@ -1639,6 +1827,31 @@ def send_email():
     server.quit()
 
     print("📩 Email Sent Successfully")
+
+# =====================================================
+# ATTACH HOURLY CHART
+# =====================================================
+
+chart_buffer = create_hourly_chart()
+
+if chart_buffer:
+
+    image = MIMEImage(
+        chart_buffer.read()
+    )
+
+    image.add_header(
+        "Content-ID",
+        "<hourly_chart>"
+    )
+
+    image.add_header(
+        "Content-Disposition",
+        "inline",
+        filename="hourly_chart.png"
+    )
+
+    msg.attach(image)
 
 # ================================
 # 📌 ROLE DASHBOARD ENGINE
