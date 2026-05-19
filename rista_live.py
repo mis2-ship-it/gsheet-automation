@@ -925,12 +925,12 @@ print("✅ Brand Summary Created")
 
 source_rows = []
 
-sources = sorted(today_cut["Source"].dropna().unique())
+sources = sorted(today_cut["Source Group"].dropna().unique())
 
 for source in sources:
 
-    t = today_cut[today_cut["Source"] == source]
-    lw = lastweek_cut[lastweek_cut["Source"] == source]
+    t = today_cut[today_cut["Source Group"] == source]
+    lw = lastweek_cut[lastweek_cut["Source Group"] == source]
 
     t_rev = t["Net Sales"].sum()
     lw_rev = lw["Net Sales"].sum()
