@@ -971,7 +971,12 @@ sources = sorted(
     .unique()
 )
 
-brands_required = ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
+brands_required = [
+    "Frozen Bottle",
+    "Madno",
+    "Boba Bar",
+    "Lubov"
+]
 
 for brand in brands_required:
 
@@ -990,19 +995,22 @@ for brand in brands_required:
     for source in sources:
 
         t = today_cut[
-            (today_cut["Brand"] == brand) &
-            (today_cut["Source Group"] == source)
+            (today_cut["Brand"] == brand)
+            & (today_cut["Source Group"] == source)
         ]
 
         lw = lastweek_cut[
-            (lastweek_cut["Brand"] == brand) &
-            (lastweek_cut["Source Group"] == source)
+            (lastweek_cut["Brand"] == brand)
+            & (lastweek_cut["Source Group"] == source)
         ]
 
         t_rev = t["Net Sales"].sum()
         lw_rev = lw["Net Sales"].sum()
 
-        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+        growth = (
+            (t_rev - lw_rev)
+            / max(lw_rev, 1)
+        ) * 100
 
         t_disc = (
             t["discountAmount"].sum()
@@ -1014,7 +1022,9 @@ for brand in brands_required:
             / max(lw["grossAmount"].sum(), 1)
         ) * 100
 
-        disc_change = t_disc - lw_disc
+        disc_change = (
+            t_disc - lw_disc
+        )
 
         brand_source_rows.append({
             "Brand": "",
@@ -1027,7 +1037,9 @@ for brand in brands_required:
             "Dis Change %": round(disc_change, 2)
         })
 
-brand_source_analysis = pd.DataFrame(brand_source_rows)
+brand_source_analysis = pd.DataFrame(
+    brand_source_rows
+)
 
 print("✅ Brand Source Analysis Created")
 
