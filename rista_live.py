@@ -299,7 +299,10 @@ main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
 if "channel" not in final_df.columns:
     final_df["channel"] = "Unknown"
 
-# Clean channel values
+# =========================================================
+# CLEAN CHANNEL
+# =========================================================
+
 final_df["channel"] = (
     final_df["channel"]
     .astype(str)
@@ -333,7 +336,7 @@ brand_map = dict(
 )
 
 # =========================================================
-# SOURCE
+# SOURCE (RAW)
 # =========================================================
 
 final_df["Source"] = (
@@ -353,7 +356,7 @@ main_sources = [
     "Ownly"
 ]
 
-final_df["Source"] = (
+final_df["Source Group"] = (
     final_df["Source"]
     .apply(
         lambda x:
@@ -397,7 +400,7 @@ print(
         [
             "channel",
             "Source",
-            "Source",
+            "Source Group",
             "Brand"
         ]
     ]
