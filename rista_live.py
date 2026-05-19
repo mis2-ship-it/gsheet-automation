@@ -2118,7 +2118,6 @@ def send_am_mail():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
@@ -2133,10 +2132,19 @@ def send_am_mail():
         t_rev = t["Net Sales"].sum()
         l_rev = l["Net Sales"].sum()
 
-        growth = ((t_rev - l_rev) / max(l_rev, 1)) * 100
+        growth = (
+            ((t_rev - l_rev) / max(l_rev, 1))
+        ) * 100
 
-        t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
-        l_disc = (l["discountAmount"].sum() / max(l["grossAmount"].sum(), 1)) * 100
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        l_disc = (
+            l["discountAmount"].sum()
+            / max(l["grossAmount"].sum(), 1)
+        ) * 100
 
         return {
             "Today Rev": round(t_rev, 2),
@@ -2155,26 +2163,39 @@ def send_am_mail():
         df_today = today_cut[
             today_cut["branchName"].isin(stores)
         ].copy()
-        
+
         df_lw = lastweek_cut[
             lastweek_cut["branchName"].isin(stores)
         ].copy()
 
-        # ✅ SAFE SESSION FIX
-        df_today["Session"] = df_today["Hour"].apply(get_session)
-        df_lw["Session"] = df_lw["Hour"].apply(get_session)
+        df_today["Session"] = (
+            df_today["Hour"]
+            .apply(get_session)
+        )
+
+        df_lw["Session"] = (
+            df_lw["Hour"]
+            .apply(get_session)
+        )
 
         # =====================================================
         # STORE DASHBOARD
         # =====================================================
+
         store_rows = []
 
         for store in stores:
 
-            t = df_today[df_today["branchName"] == store]
-            l = df_lw[df_lw["branchName"] == store]
+            t = df_today[
+                df_today["branchName"] == store
+            ]
+
+            l = df_lw[
+                df_lw["branchName"] == store
+            ]
 
             m = calc_store_metrics(t, l)
+
             m = {
                 "Store Name": store,
                 **m
@@ -2185,11 +2206,11 @@ def send_am_mail():
         store_df = pd.DataFrame(store_rows)
 
         # =====================================================
-        # SESSION DASHBOARD (STORE WISE)
+        # SESSION DASHBOARD
         # =====================================================
-        
+
         session_rows = []
-        
+
         session_order = [
             "Breakfast",
             "Lunch",
@@ -2197,137 +2218,139 @@ def send_am_mail():
             "Dinner",
             "Post Dinner"
         ]
-        
+
         for store in stores:
-        
-            t_store = df_today[df_today["branchName"] == store]
-            l_store = df_lw[df_lw["branchName"] == store]
-        
-            row = {"Store Name": store}
-        
-            # Session sales
+
+            t_store = df_today[
+                df_today["branchName"] == store
+            ]
+
+            l_store = df_lw[
+                df_lw["branchName"] == store
+            ]
+
+            row = {
+                "Store Name": store
+            }
+
             for s in session_order:
+
                 row[s] = round(
-                    t_store[t_store["Session"] == s]["Net Sales"].sum(), 2
+                    t_store[
+                        t_store["Session"] == s
+                    ]["Net Sales"].sum(),
+                    2
                 )
-        
-            # Total revenue
+
             today_rev = t_store["Net Sales"].sum()
             lw_rev = l_store["Net Sales"].sum()
-        
+
             growth = (
-                ((today_rev - lw_rev) / lw_rev * 100)
-                if lw_rev > 0 else 0
-            )
-        
+                ((today_rev - lw_rev)
+                 / max(lw_rev, 1))
+            ) * 100
+
             row["Today Rev"] = round(today_rev, 2)
             row["LW Rev"] = round(lw_rev, 2)
             row["Growth %"] = round(growth, 2)
-        
+
             session_rows.append(row)
-        
+
         session_df = pd.DataFrame(session_rows)
 
         # =====================================================
         # BRAND DASHBOARD
         # =====================================================
-        brand_blocks = []
-        
-        for brand in df_today["Brand"].dropna().unique():
-        
-            b_t = df_today[df_today["Brand"] == brand]
-            b_l = df_lw[df_lw["Brand"] == brand]
-        
-            rows = []
-        
+
+        brand_rows = []
+
+        for brand in sorted(
+            df_today["Brand"]
+            .dropna()
+            .unique()
+        ):
+
+            b_t = df_today[
+                df_today["Brand"] == brand
+            ]
+
+            b_l = df_lw[
+                df_lw["Brand"] == brand
+            ]
+
             for store in stores:
-                t = b_t[b_t["branchName"] == store]
-                l = b_l[b_l["branchName"] == store]
-        
+
+                t = b_t[
+                    b_t["branchName"] == store
+                ]
+
+                l = b_l[
+                    b_l["branchName"] == store
+                ]
+
                 if t.empty and l.empty:
                     continue
-        
+
                 m = calc_store_metrics(t, l)
+
                 m = {
+                    "Brand": brand,
                     "Store Name": store,
                     **m
                 }
-                rows.append(m)
-        
-            if rows:
-                brand_blocks.append(pd.DataFrame([{"Brand": brand}]))
-                brand_blocks.append(pd.DataFrame(rows))
-        
-        brand_df = pd.concat(brand_blocks, ignore_index=True) if brand_blocks else pd.DataFrame()
 
-# =====================================================
-# SOURCE DASHBOARD
-# =====================================================
+                brand_rows.append(m)
 
-source_blocks = []
+        brand_df = pd.DataFrame(brand_rows)
 
-sources = sorted(
-    today_cut["Source Group"]
-    .dropna()
-    .unique()
-)
+        # =====================================================
+        # SOURCE DASHBOARD
+        # =====================================================
 
-for source in sources:
+        source_rows = []
 
-    s_t = df_today[
-        df_today["Source Group"] == source
-    ]
+        for source in sorted(
+            df_today["Source Group"]
+            .dropna()
+            .unique()
+        ):
 
-    s_l = df_lw[
-        df_lw["Source Group"] == source
-    ]
+            s_t = df_today[
+                df_today["Source Group"]
+                == source
+            ]
 
-    rows = []
+            s_l = df_lw[
+                df_lw["Source Group"]
+                == source
+            ]
 
-    for store in stores:
+            for store in stores:
 
-        t = s_t[
-            s_t["branchName"] == store
-        ]
+                t = s_t[
+                    s_t["branchName"]
+                    == store
+                ]
 
-        l = s_l[
-            s_l["branchName"] == store
-        ]
+                l = s_l[
+                    s_l["branchName"]
+                    == store
+                ]
 
-        if t.empty and l.empty:
-            continue
+                if t.empty and l.empty:
+                    continue
 
-        m = calc_store_metrics(t, l)
+                m = calc_store_metrics(t, l)
 
-        m = {
-            "Store Name": store,
-            **m
-        }
+                m = {
+                    "Source": source,
+                    "Store Name": store,
+                    **m
+                }
 
-        rows.append(m)
+                source_rows.append(m)
 
-    if rows:
-
-        source_blocks.append(
-            pd.DataFrame([{
-                "Source": source
-            }])
-        )
-
-        source_blocks.append(
-            pd.DataFrame(rows)
-        )
-
-source_df = (
-    pd.concat(
-        source_blocks,
-        ignore_index=True
-    )
-    if source_blocks
-    else pd.DataFrame()
-)
-
-print("✅ Source Dashboard Ready")
+        source_df = pd.DataFrame(source_rows)
 
         # =====================================================
         # EMAIL
