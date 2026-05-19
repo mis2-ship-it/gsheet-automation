@@ -1582,9 +1582,11 @@ def safe_table(df, title):
 def send_email():
 
     import smtplib
+    import os
 
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
+    from email.mime.image import MIMEImage
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
@@ -1597,7 +1599,11 @@ def send_email():
         microsecond=0
     )
 
-    msg = MIMEMultipart()
+    # =====================================================
+    # CREATE MESSAGE
+    # =====================================================
+
+    msg = MIMEMultipart("related")
 
     msg["From"] = EMAIL_USER
     msg["To"] = TO_EMAIL
@@ -1667,12 +1673,11 @@ def send_email():
         border-radius:8px;
         margin-bottom:15px;
         ">
-        
+
         <br><br>
-        
-        
+
         <h2>📦 Source Mix</h2>
-        
+
         <img src="cid:source_chart"
         style="
         width:100%;
@@ -1680,12 +1685,11 @@ def send_email():
         border-radius:8px;
         margin-bottom:15px;
         ">
-        
+
         <br><br>
-        
-        
+
         <h2>💸 Brand x Source Discount %</h2>
-        
+
         <img src="cid:discount_chart"
         style="
         width:100%;
@@ -1693,12 +1697,11 @@ def send_email():
         border-radius:8px;
         margin-bottom:15px;
         ">
-        
+
         <br><br>
-        
-        
-        <h2>⏰ Hourly Trend</h2>
-        
+
+        <h2>⏰ Hourly Sales Trend</h2>
+
         <img src="cid:hourly_chart"
         style="
         width:100%;
@@ -1706,36 +1709,36 @@ def send_email():
         border-radius:8px;
         margin-bottom:15px;
         ">
-        
+
         {styled_html(hourly_analysis)}
 
         <br><br>
-         
+
         <h2>🏷️ Brand Summary</h2>
         {styled_html(brand_summary)}
-        
+
         <br><br>
 
         <h2>🏷️ Source Summary</h2>
         {styled_html(source_summary)}
-        
+
         <br><br>
-        
+
         <h2>🏷️ Brand Source Analysis</h2>
         {styled_html(brand_source_analysis)}
-        
+
         <br><br>
-        
+
         <h2>🌍 Region Source Analysis</h2>
         {styled_html(region_source_analysis)}
-        
+
         <br><br>
-        
+
         <h2>🍽️ Brand Session Analysis</h2>
         {styled_html(brand_session)}
-        
+
         <br><br>
-        
+
         <h2>🌍 Region Session Analysis</h2>
         {styled_html(region_session)}
 
@@ -1759,7 +1762,7 @@ def send_email():
     """
 
     # =====================================================
-    # ATTACH HTML
+    # ATTACH HTML BODY
     # =====================================================
 
     msg.attach(MIMEText(body, "html"))
@@ -1767,42 +1770,46 @@ def send_email():
     # =====================================================
     # ATTACH CHARTS
     # =====================================================
-    
+
     chart_mapping = {
-    
+
         "brand_chart":
             create_brand_chart(),
-    
+
         "source_chart":
             create_source_chart(),
-    
+
         "discount_chart":
             create_discount_chart(),
-    
+
         "hourly_chart":
             create_hourly_chart()
     }
-    
+
     for cid, chart_buffer in chart_mapping.items():
-    
+
         if chart_buffer:
-    
+
             image = MIMEImage(
                 chart_buffer.read()
             )
-    
+
             image.add_header(
                 "Content-ID",
                 f"<{cid}>"
             )
-    
+
             image.add_header(
                 "Content-Disposition",
                 "inline",
                 filename=f"{cid}.png"
             )
-    
+
             msg.attach(image)
+
+    # =====================================================
+    # RECEIVERS
+    # =====================================================
 
     receivers = []
 
@@ -1812,11 +1819,21 @@ def send_email():
     if CC_EMAIL:
         receivers += CC_EMAIL.split(",")
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
+    # =====================================================
+    # SEND EMAIL
+    # =====================================================
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
 
     server.starttls()
 
-    server.login(EMAIL_USER, EMAIL_PASS)
+    server.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
 
     server.sendmail(
         EMAIL_USER,
@@ -1827,31 +1844,6 @@ def send_email():
     server.quit()
 
     print("📩 Email Sent Successfully")
-
-# =====================================================
-# ATTACH HOURLY CHART
-# =====================================================
-
-chart_buffer = create_hourly_chart()
-
-if chart_buffer:
-
-    image = MIMEImage(
-        chart_buffer.read()
-    )
-
-    image.add_header(
-        "Content-ID",
-        "<hourly_chart>"
-    )
-
-    image.add_header(
-        "Content-Disposition",
-        "inline",
-        filename="hourly_chart.png"
-    )
-
-    msg.attach(image)
 
 # ================================
 # 📌 ROLE DASHBOARD ENGINE
