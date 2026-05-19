@@ -1297,6 +1297,7 @@ def create_hourly_chart():
 
     fig, ax = plt.subplots(figsize=(10, 4))
 
+    # TODAY LINE
     ax.plot(
         chart_df["Hour"],
         chart_df["Today"],
@@ -1305,6 +1306,7 @@ def create_hourly_chart():
         label="Today"
     )
 
+    # LAST WEEK LINE
     ax.plot(
         chart_df["Hour"],
         chart_df["Last Week"],
@@ -1321,7 +1323,45 @@ def create_hourly_chart():
     ax.set_ylabel("Net Sales")
 
     ax.legend()
+
     ax.grid(True)
+
+    # =====================================================
+    # TODAY DATA LABELS (Lakhs)
+    # =====================================================
+
+    for x, y in zip(
+        chart_df["Hour"],
+        chart_df["Today"]
+    ):
+
+        ax.text(
+            x,
+            y,
+            f"{y/100000:.1f}L",
+            fontsize=8,
+            ha="center",
+            va="bottom",
+            fontweight="bold"
+        )
+
+    # =====================================================
+    # LAST WEEK DATA LABELS (Lakhs)
+    # =====================================================
+
+    for x, y in zip(
+        chart_df["Hour"],
+        chart_df["Last Week"]
+    ):
+
+        ax.text(
+            x,
+            y,
+            f"{y/100000:.1f}L",
+            fontsize=8,
+            ha="center",
+            va="top"
+        )
 
     img_buffer = BytesIO()
 
@@ -1350,9 +1390,9 @@ def create_brand_chart():
     if brand_chart_df.empty:
         return None
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig, ax = plt.subplots(figsize=(10, 5))
 
-    ax.bar(
+    bars = ax.bar(
         brand_chart_df["Brand"],
         brand_chart_df["Net Sales"]
     )
@@ -1365,6 +1405,24 @@ def create_brand_chart():
     plt.xticks(rotation=45)
 
     ax.grid(True)
+
+    # =====================================================
+    # DATA LABELS
+    # =====================================================
+
+    for bar in bars:
+
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f'{height/100000:.1f}L',
+            ha='center',
+            va='bottom',
+            fontsize=9,
+            fontweight='bold'
+        )
 
     img_buffer = BytesIO()
 
@@ -1381,7 +1439,6 @@ def create_brand_chart():
     plt.close()
 
     return img_buffer
-
 
 # =========================================================
 # 📦 SOURCE MIX CHART
@@ -1453,6 +1510,28 @@ def create_discount_chart():
     plt.xticks(rotation=45)
 
     ax.grid(True)
+
+    # =====================================================
+    # DATA LABELS
+    # =====================================================
+
+    for container in ax.containers:
+
+        for bar in container:
+
+            height = bar.get_height()
+
+            if height > 0:
+
+                ax.text(
+                    bar.get_x() + bar.get_width()/2,
+                    height,
+                    f"{height:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold"
+                )
 
     img_buffer = BytesIO()
 
