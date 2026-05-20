@@ -335,15 +335,17 @@ brand_map = dict(
     )
 )
 
+
 # =========================================================
-# SOURCE (RAW)
+# BRAND
 # =========================================================
 
-final_df["Source"] = (
+final_df["Brand"] = (
     final_df["channel"]
-    .map(source_map)
+    .map(brand_map)
     .fillna("Others")
 )
+
 
 # =========================================================
 # SOURCE GROUP
@@ -365,15 +367,6 @@ final_df["Source Group"] = (
     )
 )
 
-# =========================================================
-# BRAND
-# =========================================================
-
-final_df["Brand"] = (
-    final_df["channel"]
-    .map(brand_map)
-    .fillna("Others")
-)
 
 # =========================================================
 # STORE TYPE & REGION
@@ -924,7 +917,7 @@ else:
 today_sales_total = today_cut["Net Sales"].sum()
 
 instore_sales = today_cut[
-    today_cut["Source"] == "In Store"
+    today_cut["Source Group"] == "In Store"
 ]["Net Sales"].sum()
 
 online_sales = (
@@ -1028,7 +1021,7 @@ print("✅ Brand Summary Created")
 source_rows = []
 
 sources = sorted(
-    today_cut["Source"]
+    today_cut["Source Group"]
     .dropna()
     .unique()
 )
@@ -1036,7 +1029,7 @@ sources = sorted(
 for source in sources:
 
     t = today_cut[
-        today_cut["Source"] == source
+        today_cut["Source Group"] == source
     ]
 
     lw = lastweek_cut[
@@ -1089,7 +1082,7 @@ print("✅ Source Summary Created")
 brand_source_rows = []
 
 sources = sorted(
-    today_cut["Source"]
+    today_cut["Source Group"]
     .dropna()
     .unique()
 )
@@ -1119,7 +1112,7 @@ for brand in brands_required:
 
         t = today_cut[
             (today_cut["Brand"] == brand)
-            & (today_cut["Source"] == source)
+            & (today_cut["Source Group"] == source)
         ]
 
         lw = lastweek_cut[
@@ -1173,7 +1166,7 @@ print("✅ Brand Source Analysis Created")
 region_source_rows = []
 
 sources = sorted(
-    today_cut["Source"]
+    today_cut["Source Group"]
     .dropna()
     .unique()
 )
@@ -1197,7 +1190,7 @@ for region in regions_required:
 
         t = today_cut[
             (today_cut["Region"] == region) &
-            (today_cut["Source"] == source)
+            (today_cut["Source Group"] == source)
         ]
 
         lw = lastweek_cut[
@@ -1412,7 +1405,7 @@ brand_chart_df = (
 # =========================================================
 
 source_chart_df = (
-    chart_df.groupby("Source")["Net Sales"]
+    chart_df.groupby("Source Group")["Net Sales"]
     .sum()
     .reset_index()
 )
@@ -2453,13 +2446,13 @@ def send_am_mail():
         source_rows = []
 
         for source in sorted(
-            df_today["Source"]
+            df_today["Source Group"]
             .dropna()
             .unique()
         ):
 
             s_t = df_today[
-                df_today["Source"]
+                df_today["Source Group"]
                 == source
             ]
 
@@ -2813,7 +2806,7 @@ def send_tm_mail():
         source_rows = []
 
         sources = sorted(
-            df_today["Source"]
+            df_today["Source Group"]
             .dropna()
             .unique()
         )
@@ -2821,7 +2814,7 @@ def send_tm_mail():
         for source in sources:
 
             s_t = df_today[
-                df_today["Source"]
+                df_today["Source Group"]
                 == source
             ]
 
