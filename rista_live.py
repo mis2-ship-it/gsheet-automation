@@ -1627,7 +1627,7 @@ def create_source_chart():
 
     ax.pie(
         source_chart_df["Net Sales"],
-        labels=source_chart_df["Source"],
+        labels=source_chart_df["Source Group"],
         autopct="%1.1f%%"
     )
 
