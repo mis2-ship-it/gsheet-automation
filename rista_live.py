@@ -291,7 +291,7 @@ region_map = dict(
 )
 
 # =========================================================
-# CHANNEL CLEAN
+# CLEAN HELP DF (CRITICAL FIX)
 # =========================================================
 
 help_df["Channel"] = (
@@ -301,6 +301,22 @@ help_df["Channel"] = (
     .str.upper()
 )
 
+help_df["Source Group"] = (
+    help_df["Source Group"]
+    .astype(str)
+    .str.strip()
+)
+
+help_df["Brand"] = (
+    help_df["Brand"]
+    .astype(str)
+    .str.strip()
+)
+
+# =========================================================
+# CLEAN FINAL DF CHANNEL
+# =========================================================
+
 final_df["channel"] = (
     final_df["channel"]
     .astype(str)
@@ -309,7 +325,7 @@ final_df["channel"] = (
 )
 
 # =========================================================
-# SOURCE / BRAND MAP
+# MAPS
 # =========================================================
 
 source_map = dict(
@@ -327,110 +343,36 @@ brand_map = dict(
 )
 
 # =========================================================
-# APPLY SOURCE GROUP
+# APPLY MAPPING
 # =========================================================
 
-final_df["Source Group"] = (
-    final_df["channel"]
-    .map(source_map)
-    .fillna("Others")
+final_df["Source Group"] = final_df["channel"].map(source_map)
+final_df["Brand"] = final_df["channel"].map(brand_map)
+
+# =========================================================
+# SAFETY FIX (ONLY AFTER MAP)
+# =========================================================
+
+final_df["Source Group"] = final_df["Source Group"].fillna("Others")
+
+main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
+
+final_df["Source Group"] = final_df["Source Group"].apply(
+    lambda x: x if x in main_sources else "Others"
 )
 
 # =========================================================
-# APPLY BRAND
+# DEBUG (IMPORTANT)
 # =========================================================
 
-final_df["Brand"] = (
-    final_df["channel"]
-    .map(brand_map)
-    .fillna("Others")
-)
+print("🔍 SOURCE MAP SAMPLE:")
+print(source_map)
 
-# =========================================================
-# STORE TYPE / REGION
-# =========================================================
+print("🔍 FINAL VALUE COUNT:")
+print(final_df["Source Group"].value_counts())
 
-final_df["Store Type"] = (
-    final_df["branchName"]
-    .map(store_map)
-    .fillna("Unknown")
-)
-
-final_df["Region"] = (
-    final_df["branchName"]
-    .map(region_map)
-    .fillna("Unknown")
-)
-
-# =========================================================
-# AM / TM MAPPING (IMPORTANT)
-# =========================================================
-
-help_df.columns = (
-    help_df.columns
-    .astype(str)
-    .str.strip()
-)
-
-required_cols = [
-    "AM Mail",
-    "TM Mail",
-    "Store Name",
-    "Region"
-]
-
-for c in required_cols:
-    if c not in help_df.columns:
-        help_df[c] = ""
-
-# AM and TM Mapping #
-
-am_store_map = (
-    help_df
-    .groupby("AM Mail")["Store Name"]
-    .apply(list)
-    .to_dict()
-)
-
-tm_region_map = (
-    help_df
-    .groupby("TM Mail")["Region"]
-    .apply(list)
-    .to_dict()
-)
-
-# remove empty keys
-am_store_map = {
-    k: v for k, v in am_store_map.items()
-    if str(k).strip()
-}
-
-tm_region_map = {
-    k: v for k, v in tm_region_map.items()
-    if str(k).strip()
-}
-# =========================================================
-# DEBUG
-# =========================================================
-
-print("✅ Final Mapping Completed")
-
-print(
-    final_df[
-        [
-            "channel",
-            "Source Group",
-            "Brand"
-        ]
-    ]
-    .drop_duplicates()
-    .sort_values("channel")
-)
-
-print(
-    final_df["Source Group"]
-    .value_counts(dropna=False)
-)
+print("🔍 CHANNEL MATCH CHECK:")
+print(set(final_df["channel"].unique()) - set(help_df["Channel"].unique()))
 
 # ---------------- FILTER ---------------- #
 
