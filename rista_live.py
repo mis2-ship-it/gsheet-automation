@@ -246,72 +246,63 @@ final_df["Net Sales"] = (
     .where(final_df["status"] == "Closed", 0)
 )
 
-# ---------------- MAPPING ---------------- #
+# =========================================================
+# MAPPING
+# =========================================================
 
 help_ws = spreadsheet.worksheet("Help Sheet")
+
 help_values = help_ws.get_all_values()
-headers = [str(h).strip() for h in help_values[0]]
+
+headers = [
+    str(h).strip()
+    for h in help_values[0]
+]
+
 rows = help_values[1:]
 
-help_df = pd.DataFrame(rows, columns=headers)
-help_df.columns = help_df.columns.astype(str).str.strip()
+help_df = pd.DataFrame(
+    rows,
+    columns=headers
+)
 
-branch_master = pd.DataFrame(help_ws.get("G:M")[1:], columns=help_ws.get("G:M")[0])
-source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[0])
-
-store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
-region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
-source_map = dict(zip(source_master["Channel"], source_master["Source Group"]))
-brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
-
-# ---------------- STORE / REGION ---------------- #
-
-store_map = dict(zip(help_df.get("Store Name", []), help_df.get("Ownership", [])))
-region_map = dict(zip(help_df.get("Store Name", []), help_df.get("Region", [])))
-
-# ---------------- SOURCE / BRAND ---------------- #
-
-source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source Group", [])))
-brand_map = dict(zip(help_df.get("Channel", []), help_df.get("Brand", [])))
-
-# ---------------- AM / TM ---------------- #
-
-help_df.columns = help_df.columns.astype(str).str.strip()
-
-required_cols = ["AM Mail", "TM Mail", "Store Name", "Region"]
-for c in required_cols:
-    if c not in help_df.columns:
-        help_df[c] = ""
-        
-am_store_map = help_df.groupby("AM Mail")["Store Name"].apply(list).to_dict()
-tm_region_map = help_df.groupby("TM Mail")["Region"].apply(list).to_dict()
-
-am_store_map = {k:v for k,v in am_store_map.items() if str(k).strip()}
-tm_region_map = {k:v for k,v in tm_region_map.items() if str(k).strip()}
-
-main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
-
+help_df.columns = (
+    help_df.columns
+    .astype(str)
+    .str.strip()
+)
 
 # =========================================================
-# FINAL DF MAPPING
+# STORE / REGION MAP
 # =========================================================
 
-if "channel" not in final_df.columns:
-    final_df["channel"] = "Unknown"
+store_map = dict(
+    zip(
+        help_df["Store Name"],
+        help_df["Ownership"]
+    )
+)
+
+region_map = dict(
+    zip(
+        help_df["Store Name"],
+        help_df["Region"]
+    )
+)
 
 # =========================================================
-# CLEAN CHANNEL
+# CHANNEL CLEAN
 # =========================================================
 
-final_df["channel"] = (
-    final_df["channel"]
+help_df["Channel"] = (
+    help_df["Channel"]
     .astype(str)
     .str.strip()
     .str.upper()
 )
 
-source_master["Channel"] = (
-    source_master["Channel"]
+final_df["channel"] = (
+    final_df["channel"]
     .astype(str)
     .str.strip()
     .str.upper()
@@ -323,20 +314,20 @@ source_master["Channel"] = (
 
 source_map = dict(
     zip(
-        source_master["Channel"],
-        source_master["Source Group"]
+        help_df["Channel"],
+        help_df["Source Group"]
     )
 )
 
 brand_map = dict(
     zip(
-        source_master["Channel"],
-        source_master["Brand"]
+        help_df["Channel"],
+        help_df["Brand"]
     )
 )
 
 # =========================================================
-# SOURCE GROUP
+# APPLY SOURCE GROUP
 # =========================================================
 
 final_df["Source Group"] = (
@@ -346,7 +337,7 @@ final_df["Source Group"] = (
 )
 
 # =========================================================
-# BRAND
+# APPLY BRAND
 # =========================================================
 
 final_df["Brand"] = (
@@ -354,8 +345,9 @@ final_df["Brand"] = (
     .map(brand_map)
     .fillna("Others")
 )
+
 # =========================================================
-# STORE TYPE & REGION
+# STORE TYPE / REGION
 # =========================================================
 
 final_df["Store Type"] = (
@@ -370,13 +362,11 @@ final_df["Region"] = (
     .fillna("Unknown")
 )
 
-print("✅ Final Mapping Completed")
-
 # =========================================================
 # DEBUG
 # =========================================================
 
-print("SOURCE CHECK")
+print("✅ Final Mapping Completed")
 
 print(
     final_df[
