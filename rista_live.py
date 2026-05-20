@@ -336,33 +336,13 @@ brand_map = dict(
 )
 
 # =========================================================
-# CREATE SOURCE COLUMN
+# SOURCE GROUP
 # =========================================================
 
 final_df["Source Group"] = (
     final_df["channel"]
     .map(source_map)
     .fillna("Others")
-)
-
-# =========================================================
-# CREATE SOURCE GROUP
-# =========================================================
-
-main_sources = [
-    "In Store",
-    "Swiggy",
-    "Zomato",
-    "Ownly"
-]
-
-final_df["Source Group"] = (
-    final_df["Source Group"]
-    .apply(
-        lambda x:
-        x if x in main_sources
-        else "Others"
-    )
 )
 
 # =========================================================
@@ -374,7 +354,6 @@ final_df["Brand"] = (
     .map(brand_map)
     .fillna("Others")
 )
-
 # =========================================================
 # STORE TYPE & REGION
 # =========================================================
@@ -403,7 +382,6 @@ print(
     final_df[
         [
             "channel",
-            "Source",
             "Source Group",
             "Brand"
         ]
