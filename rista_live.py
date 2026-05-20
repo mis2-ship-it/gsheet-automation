@@ -261,7 +261,7 @@ source_master = pd.DataFrame(help_ws.get("D:F")[1:], columns=help_ws.get("D:F")[
 
 store_map = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
 region_map = dict(zip(branch_master["Store Name"], branch_master["Region"]))
-source_map = dict(zip(source_master["Channel"], source_master["Source"]))
+source_map = dict(zip(source_master["Channel"], source_master["Source Group"]))
 brand_map = dict(zip(source_master["Channel"], source_master["Brand"]))
 
 # ---------------- STORE / REGION ---------------- #
@@ -271,7 +271,7 @@ region_map = dict(zip(help_df.get("Store Name", []), help_df.get("Region", [])))
 
 # ---------------- SOURCE / BRAND ---------------- #
 
-source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source", [])))
+source_map = dict(zip(help_df.get("Channel", []), help_df.get("Source Group", [])))
 brand_map = dict(zip(help_df.get("Channel", []), help_df.get("Brand", [])))
 
 # ---------------- AM / TM ---------------- #
@@ -324,7 +324,7 @@ source_master["Channel"] = (
 source_map = dict(
     zip(
         source_master["Channel"],
-        source_master["Source"]
+        source_master["Source Group"]
     )
 )
 
@@ -339,7 +339,7 @@ brand_map = dict(
 # CREATE SOURCE COLUMN
 # =========================================================
 
-final_df["Source"] = (
+final_df["Source Group"] = (
     final_df["channel"]
     .map(source_map)
     .fillna("Others")
@@ -357,7 +357,7 @@ main_sources = [
 ]
 
 final_df["Source Group"] = (
-    final_df["Source"]
+    final_df["Source Group"]
     .apply(
         lambda x:
         x if x in main_sources
@@ -1049,7 +1049,7 @@ for source in sources:
     ]
 
     lw = lastweek_cut[
-        lastweek_cut["Source"] == source
+        lastweek_cut["Source Group"] == source
     ]
 
     t_rev = t["Net Sales"].sum()
@@ -1078,7 +1078,7 @@ for source in sources:
     )
 
     source_rows.append({
-        "Source": source,
+        "Source Group": source,
         "Today Rev": round(t_rev, 2),
         "LW Rev": round(lw_rev, 2),
         "Growth %": round(growth, 2),
@@ -1115,7 +1115,7 @@ for brand in brands_required:
     # BRAND HEADER
     brand_source_rows.append({
         "Brand": brand,
-        "Source": "",
+        "Source Group": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1133,7 +1133,7 @@ for brand in brands_required:
 
         lw = lastweek_cut[
             (lastweek_cut["Brand"] == brand)
-            & (lastweek_cut["Source"] == source)
+            & (lastweek_cut["Source Group"] == source)
         ]
 
         t_rev = t["Net Sales"].sum()
@@ -1160,7 +1160,7 @@ for brand in brands_required:
 
         brand_source_rows.append({
             "Brand": "",
-            "Source": source,
+            "Source Group": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1193,7 +1193,7 @@ for region in regions_required:
 
     region_source_rows.append({
         "Region": region,
-        "Source": "",
+        "Source Group": "",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1211,7 +1211,7 @@ for region in regions_required:
 
         lw = lastweek_cut[
             (lastweek_cut["Region"] == region) &
-            (lastweek_cut["Source"] == source)
+            (lastweek_cut["Source Group"] == source)
         ]
 
         t_rev = t["Net Sales"].sum()
@@ -1233,7 +1233,7 @@ for region in regions_required:
 
         region_source_rows.append({
             "Region": "",
-            "Source": source,
+            "Source Group": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1293,7 +1293,7 @@ print("✅ Brand Session Analysis Created")
 
 source_session = pd.pivot_table(
     today_cut,
-    index="Source",
+    index="Source Group",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1302,7 +1302,7 @@ source_session = pd.pivot_table(
 
 lw_source_session = pd.pivot_table(
     lastweek_cut,
-    index="Source",
+    index="Source Group",
     columns="Session",
     values="Net Sales",
     aggfunc="sum",
@@ -1371,8 +1371,8 @@ print("✅ Region Session Analysis Created")
 source_analysis = safe_kpi_builder(
     today_cut,
     lastweek_cut,
-    "Source",
-    "Source"
+    "Source Group",
+    "Source Group"
 )
 
 region_analysis = safe_kpi_builder(
@@ -1432,7 +1432,7 @@ source_chart_df = (
 
 discount_brand_source = (
     chart_df.groupby(
-        ["Brand", "Source"]
+        ["Brand", "Source Group"]
     )
     .agg({
         "discountAmount": "sum",
@@ -1661,7 +1661,7 @@ def create_discount_chart():
 
     pivot_df = discount_brand_source.pivot_table(
         index="Brand",
-        columns="Source",
+        columns="Source Group",
         values="Discount %",
         aggfunc="sum",
         fill_value=0
@@ -1819,7 +1819,7 @@ def styled_html(df):
         "Parameters",
         "Parameter",
         "Metric"
-        "Source",
+        "Source Group",
         "Region",
         "Brand",
         "Session",
@@ -2473,7 +2473,7 @@ def send_am_mail():
             ]
 
             s_l = df_lw[
-                df_lw["Source"]
+                df_lw["Source Group"]
                 == source
             ]
 
@@ -2495,7 +2495,7 @@ def send_am_mail():
                 m = calc_store_metrics(t, l)
 
                 m = {
-                    "Source": source,
+                    "Source Group": source,
                     "Store Name": store,
                     **m
                 }
@@ -2835,7 +2835,7 @@ def send_tm_mail():
             ]
 
             s_l = df_lw[
-                df_lw["Source"]
+                df_lw["Source Group"]
                 == source
             ]
 
@@ -2859,7 +2859,7 @@ def send_tm_mail():
                 )
 
                 m = {
-                    "Source": source,
+                    "Source Group": source,
                     "Store Name": store,
                     **m
                 }
@@ -2946,7 +2946,7 @@ def send_tm_mail():
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
-push("Source", source_analysis)
+push("Source Group", source_analysis)
 push("Region", region_analysis)
 push("Brand", brand_analysis)
 push("Session", session_analysis)
