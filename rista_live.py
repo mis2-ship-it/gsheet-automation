@@ -335,20 +335,18 @@ brand_map = dict(
     )
 )
 
-
 # =========================================================
-# BRAND
+# CREATE SOURCE COLUMN
 # =========================================================
 
-final_df["Brand"] = (
+final_df["Source"] = (
     final_df["channel"]
-    .map(brand_map)
+    .map(source_map)
     .fillna("Others")
 )
 
-
 # =========================================================
-# SOURCE GROUP
+# CREATE SOURCE GROUP
 # =========================================================
 
 main_sources = [
@@ -367,6 +365,15 @@ final_df["Source Group"] = (
     )
 )
 
+# =========================================================
+# BRAND
+# =========================================================
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Others")
+)
 
 # =========================================================
 # STORE TYPE & REGION
@@ -386,6 +393,10 @@ final_df["Region"] = (
 
 print("✅ Final Mapping Completed")
 
+# =========================================================
+# DEBUG
+# =========================================================
+
 print("SOURCE CHECK")
 
 print(
@@ -399,6 +410,11 @@ print(
     ]
     .drop_duplicates()
     .sort_values("channel")
+)
+
+print(
+    final_df["Source Group"]
+    .value_counts(dropna=False)
 )
 
 # ---------------- FILTER ---------------- #
