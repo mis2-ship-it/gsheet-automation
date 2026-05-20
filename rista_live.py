@@ -363,6 +363,53 @@ final_df["Region"] = (
 )
 
 # =========================================================
+# AM / TM MAPPING (IMPORTANT)
+# =========================================================
+
+help_df.columns = (
+    help_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+required_cols = [
+    "AM Mail",
+    "TM Mail",
+    "Store Name",
+    "Region"
+]
+
+for c in required_cols:
+    if c not in help_df.columns:
+        help_df[c] = ""
+
+# AM and TM Mapping #
+
+am_store_map = (
+    help_df
+    .groupby("AM Mail")["Store Name"]
+    .apply(list)
+    .to_dict()
+)
+
+tm_region_map = (
+    help_df
+    .groupby("TM Mail")["Region"]
+    .apply(list)
+    .to_dict()
+)
+
+# remove empty keys
+am_store_map = {
+    k: v for k, v in am_store_map.items()
+    if str(k).strip()
+}
+
+tm_region_map = {
+    k: v for k, v in tm_region_map.items()
+    if str(k).strip()
+}
+# =========================================================
 # DEBUG
 # =========================================================
 
