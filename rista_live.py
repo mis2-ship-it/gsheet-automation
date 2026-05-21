@@ -273,6 +273,53 @@ help_df.columns = (
 )
 
 # =========================================================
+# AM / TM MAP
+# =========================================================
+
+required_cols = [
+    "AM Email",
+    "RM Email",
+    "Store Name",
+    "Region"
+]
+
+for c in required_cols:
+    if c not in help_df.columns:
+        help_df[c] = ""
+
+# ---------------- AM STORE MAP ---------------- #
+
+am_store_map = (
+    help_df.groupby("AM Email")["Store Name"]
+    .apply(list)
+    .to_dict()
+)
+
+# ---------------- TM / RM REGION MAP ---------------- #
+
+tm_region_map = (
+    help_df.groupby("RM Email")["Region"]
+    .apply(list)
+    .to_dict()
+)
+
+# Remove blanks
+am_store_map = {
+    k: v
+    for k, v in am_store_map.items()
+    if str(k).strip()
+}
+
+tm_region_map = {
+    k: v
+    for k, v in tm_region_map.items()
+    if str(k).strip()
+}
+
+print("✅ AM Count:", len(am_store_map))
+print("✅ TM Count:", len(tm_region_map))
+
+# =========================================================
 # SAFE COLUMN FIX
 # =========================================================
 
