@@ -505,7 +505,13 @@ final_df["Store Type"] = (
 
 final_df["Region"] = (
     final_df["branchName"]
-    .map(region_map)# =========================================================
+    .astype(str)
+    .str.strip()
+    .map(region_map)
+    .fillna("UNKNOWN")
+)
+    
+# =========================================================
 # HELP SHEET LOAD (FINAL FIX)
 # =========================================================
 
