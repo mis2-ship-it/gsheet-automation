@@ -278,43 +278,84 @@ help_df.columns = (
 
 store_map = dict(
     zip(
-        help_df["Store Name"],
+        help_df["Store Name"]
+        .astype(str)
+        .str.strip(),
+
         help_df["Ownership"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
     )
 )
 
 region_map = dict(
     zip(
-        help_df["Store Name"],
+        help_df["Store Name"]
+        .astype(str)
+        .str.strip(),
+
         help_df["Region"]
+        .astype(str)
+        .str.strip()
     )
 )
 
 # =========================================================
-# CLEAN HELP DF (CRITICAL FIX)
+# SOURCE MASTER
 # =========================================================
 
-help_df["Channel"] = (
-    help_df["Channel"]
+source_ws = spreadsheet.worksheet(
+    "Source Master"
+)
+
+source_values = source_ws.get_all_values()
+
+source_headers = [
+    str(h).strip()
+    for h in source_values[0]
+]
+
+source_rows = source_values[1:]
+
+source_df = pd.DataFrame(
+    source_rows,
+    columns=source_headers
+)
+
+source_df.columns = (
+    source_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+source_df["Channel"] = (
+    source_df["Channel"]
     .astype(str)
     .str.strip()
     .str.upper()
 )
 
-help_df["Source Group"] = (
-    help_df["Source Group"]
-    .astype(str)
-    .str.strip()
+# =========================================================
+# SOURCE / BRAND MAP
+# =========================================================
+
+source_map = dict(
+    zip(
+        source_df["Channel"],
+        source_df["Source Group"]
+    )
 )
 
-help_df["Brand"] = (
-    help_df["Brand"]
-    .astype(str)
-    .str.strip()
+brand_map = dict(
+    zip(
+        source_df["Channel"],
+        source_df["Brand"]
+    )
 )
 
 # =========================================================
-# CLEAN FINAL DF CHANNEL
+# CLEAN FINAL DF
 # =========================================================
 
 final_df["channel"] = (
@@ -324,94 +365,78 @@ final_df["channel"] = (
     .str.upper()
 )
 
-# =========================================================
-# MAPS
-# =========================================================
-
-source_map = dict(
-    zip(
-        help_df["Channel"],
-        help_df["Source Group"]
-    )
-)
-
-brand_map = dict(
-    zip(
-        help_df["Channel"],
-        help_df["Brand"]
-    )
+final_df["branchName"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
 )
 
 # =========================================================
 # APPLY MAPPING
 # =========================================================
 
-final_df["Source Group"] = final_df["channel"].map(source_map)
-final_df["Brand"] = final_df["channel"].map(brand_map)
-
-# =========================================================
-# SAFETY FIX (ONLY AFTER MAP)
-# =========================================================
-
-final_df["Source Group"] = final_df["Source Group"].fillna("Others")
-
-main_sources = ["In Store", "Swiggy", "Zomato", "Ownly"]
-
-final_df["Source Group"] = final_df["Source Group"].apply(
-    lambda x: x if x in main_sources else "Others"
-)
-
-# =========================================================
-# DEBUG (IMPORTANT)
-# =========================================================
-
-print("🔍 SOURCE MAP SAMPLE:")
-print(source_map)
-
-print("🔍 FINAL VALUE COUNT:")
-print(final_df["Source Group"].value_counts())
-
-print("🔍 CHANNEL MATCH CHECK:")
-print(set(final_df["channel"].unique()) - set(help_df["Channel"].unique()))
-
-print("FINAL DF COLUMNS")
-print(final_df.columns.tolist())
-
-print("HELP DF COLUMNS")
-print(help_df.columns.tolist())
-
-print("STORE MAP SAMPLE")
-print(dict(list(store_map.items())[:10]))
-
-print("BRANCH SAMPLE")
-print(
-    final_df["branchName"]
-    .dropna()
-    .unique()[:10]
-)
-
-# FORCE CREATE STORE TYPE
 final_df["Store Type"] = (
     final_df["branchName"]
-    .astype(str)
-    .str.strip()
     .map(store_map)
-)
-
-final_df["Store Type"] = (
-    final_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
     .fillna("UNKNOWN")
 )
 
+final_df["Region"] = (
+    final_df["branchName"]
+    .map(region_map)
+    .fillna("UNKNOWN")
+)
+
+final_df["Source Group"] = (
+    final_df["channel"]
+    .map(source_map)
+    .fillna("Others")
+)
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Others")
+)
+
+# =========================================================
+# STANDARD SOURCE GROUP
+# =========================================================
+
+main_sources = [
+    "In Store",
+    "Swiggy",
+    "Zomato",
+    "Ownly"
+]
+
+final_df["Source Group"] = (
+    final_df["Source Group"]
+    .apply(
+        lambda x:
+        x if x in main_sources
+        else "Others"
+    )
+)
+
+# =========================================================
+# DEBUG
+# =========================================================
 
 print("STORE TYPE CHECK")
 print(
     final_df["Store Type"]
     .value_counts(dropna=False)
 )
+
+print("SOURCE GROUP CHECK")
+print(
+    final_df["Source Group"]
+    .value_counts(dropna=False)
+)
+
+print("FINAL DF COLUMNS")
+print(final_df.columns.tolist())
 
 # ---------------- FILTER ---------------- #
 
@@ -444,6 +469,7 @@ lastyear_cut = final_df[
     (final_df["Store Type"] == "COCO") &
     (final_df["status"] == "Closed")
 ]
+
 
 # ---------------- BUSINESS HOUR ---------------- #
 
