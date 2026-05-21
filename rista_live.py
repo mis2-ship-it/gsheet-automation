@@ -376,11 +376,35 @@ print(set(final_df["channel"].unique()) - set(help_df["Channel"].unique()))
 
 # ---------------- FILTER ---------------- #
 
-today_cut = final_df.query('Data_Type=="Today" and `Store Type`=="COCO" and status=="Closed"')
-lastweek_cut = final_df.query('Data_Type=="Last Week" and `Store Type`=="COCO" and status=="Closed"')
-last2week_cut = final_df.query('Data_Type=="Last 2 Week" and `Store Type`=="COCO" and status=="Closed"')
-month_on_month_cut = final_df.query('Data_Type=="Last Month" and `Store Type`=="COCO" and status=="Closed"')
-lastyear_cut = final_df.query('Data_Type=="Last Year" and `Store Type`=="COCO" and status=="Closed"')
+today_cut = final_df[
+    (final_df["Data_Type"] == "Today") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastweek_cut = final_df[
+    (final_df["Data_Type"] == "Last Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+last2week_cut = final_df[
+    (final_df["Data_Type"] == "Last 2 Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+month_on_month_cut = final_df[
+    (final_df["Data_Type"] == "Last Month") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastyear_cut = final_df[
+    (final_df["Data_Type"] == "Last Year") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
 
 # ---------------- BUSINESS HOUR ---------------- #
 
