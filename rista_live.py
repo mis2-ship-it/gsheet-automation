@@ -254,9 +254,21 @@ help_ws = spreadsheet.worksheet("Help Sheet")
 
 help_values = help_ws.get_all_values()
 
+# =========================================================
+# DEBUG
+# =========================================================
+
+print("HELP SHEET FIRST 5 ROWS")
+for row in help_values[:5]:
+    print(row)
+
+# =========================================================
+# HEADER FIX
+# =========================================================
+
 headers = [
     str(h).strip()
-    for h in help_values[0]
+    for h in help_values[0]   # change later if needed
 ]
 
 rows = help_values[1:]
@@ -265,6 +277,12 @@ help_df = pd.DataFrame(
     rows,
     columns=headers
 )
+
+print("HELP HEADERS")
+print(help_df.columns.tolist())
+
+print("HELP DF SAMPLE")
+print(help_df.head())
 
 help_df.columns = (
     help_df.columns
