@@ -2226,10 +2226,28 @@ def build_role_scope(role, identifier):
         return df_today, df_lw, stores, None
 
     elif role == "TM":
-        regions = tm_region_map.get(identifier, [])
-        df_today = final_df[final_df["Region"].isin(regions)].copy()
-        df_lw = lastweek_cut[lastweek_cut["Region"].isin(regions)].copy()
-        return df_today, df_lw, None, regions
+    
+        regions = tm_region_map.get(
+            identifier,
+            []
+        )
+    
+        df_today = today_cut[
+            today_cut["Region"]
+            .isin(regions)
+        ].copy()
+    
+        df_lw = lastweek_cut[
+            lastweek_cut["Region"]
+            .isin(regions)
+        ].copy()
+    
+        return (
+            df_today,
+            df_lw,
+            None,
+            regions
+        )
 
     else:
         return pd.DataFrame(), pd.DataFrame(), None, None
