@@ -287,7 +287,55 @@ for c in required_cols:
     if c not in help_df.columns:
         help_df[c] = ""
 
-# ---------------- AM STORE MAP ---------------- #
+# =========================================================
+# CLEAN EMAILS
+# =========================================================
+
+help_df["AM Email"] = (
+    help_df["AM Email"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+)
+
+help_df["RM Email"] = (
+    help_df["RM Email"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+)
+
+help_df["Store Name"] = (
+    help_df["Store Name"]
+    .astype(str)
+    .str.strip()
+)
+
+help_df["Region"] = (
+    help_df["Region"]
+    .astype(str)
+    .str.strip()
+)
+
+# =========================================================
+# REMOVE BLANK EMAILS
+# =========================================================
+
+help_df = help_df[
+    (
+        help_df["AM Email"].notna()
+    ) &
+    (
+        help_df["AM Email"] != ""
+    ) &
+    (
+        help_df["AM Email"] != "nan"
+    )
+]
+
+# =========================================================
+# AM STORE MAP
+# =========================================================
 
 am_store_map = (
     help_df.groupby("AM Email")["Store Name"]
@@ -295,7 +343,9 @@ am_store_map = (
     .to_dict()
 )
 
-# ---------------- TM / RM REGION MAP ---------------- #
+# =========================================================
+# TM / RM REGION MAP
+# =========================================================
 
 tm_region_map = (
     help_df.groupby("RM Email")["Region"]
@@ -303,18 +353,23 @@ tm_region_map = (
     .to_dict()
 )
 
-# Remove blanks
-am_store_map = {
-    k: v
-    for k, v in am_store_map.items()
-    if str(k).strip()
-}
+# =========================================================
+# DEBUG
+# =========================================================
 
-tm_region_map = {
-    k: v
-    for k, v in tm_region_map.items()
-    if str(k).strip()
-}
+print("AM EMAIL SAMPLE")
+print(
+    help_df["AM Email"]
+    .drop_duplicates()
+    .tolist()[:10]
+)
+
+print("RM EMAIL SAMPLE")
+print(
+    help_df["RM Email"]
+    .drop_duplicates()
+    .tolist()[:10]
+)
 
 print("✅ AM Count:", len(am_store_map))
 print("✅ TM Count:", len(tm_region_map))
@@ -1167,7 +1222,7 @@ print("✅ Source Summary Created")
 
 brand_source_rows = []
 
-sources = sorted(
+source = sorted(
     today_cut["Source Group"]
     .dropna()
     .unique()
@@ -1251,7 +1306,7 @@ print("✅ Brand Source Analysis Created")
 
 region_source_rows = []
 
-sources = sorted(
+source = sorted(
     today_cut["Source Group"]
     .dropna()
     .unique()
