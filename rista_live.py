@@ -374,6 +374,45 @@ print(final_df["Source Group"].value_counts())
 print("🔍 CHANNEL MATCH CHECK:")
 print(set(final_df["channel"].unique()) - set(help_df["Channel"].unique()))
 
+print("FINAL DF COLUMNS")
+print(final_df.columns.tolist())
+
+print("HELP DF COLUMNS")
+print(help_df.columns.tolist())
+
+print("STORE MAP SAMPLE")
+print(dict(list(store_map.items())[:10]))
+
+print("BRANCH SAMPLE")
+print(
+    final_df["branchName"]
+    .dropna()
+    .unique()[:10]
+)
+
+# FORCE CREATE STORE TYPE
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(store_map)
+)
+
+final_df["Store Type"] = (
+    final_df["Store Type"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+    .fillna("UNKNOWN")
+)
+
+
+print("STORE TYPE CHECK")
+print(
+    final_df["Store Type"]
+    .value_counts(dropna=False)
+)
+
 # ---------------- FILTER ---------------- #
 
 today_cut = final_df[
