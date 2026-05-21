@@ -505,35 +505,195 @@ final_df["Store Type"] = (
 
 final_df["Region"] = (
     final_df["branchName"]
+    .map(region_map)# =========================================================
+# HELP SHEET LOAD (FINAL FIX)
+# =========================================================
+
+help_ws = spreadsheet.worksheet("Help Sheet")
+
+help_values = help_ws.get_all_values()
+
+# remove blank columns
+headers = [
+    str(h).strip()
+    for h in help_values[0]
+]
+
+rows = help_values[1:]
+
+help_df = pd.DataFrame(rows, columns=headers)
+
+# =========================================================
+# REMOVE BLANK COLUMN HEADERS
+# =========================================================
+
+help_df = help_df.loc[
+    :,
+    help_df.columns.astype(str).str.strip() != ""
+]
+
+help_df.columns = (
+    help_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+print("HELP HEADERS")
+print(help_df.columns.tolist())
+
+# =========================================================
+# CLEAN TEXT
+# =========================================================
+
+for col in help_df.columns:
+    help_df[col] = (
+        help_df[col]
+        .astype(str)
+        .str.strip()
+    )
+
+# =========================================================
+# STORE / REGION MAP
+# =========================================================
+
+store_map = dict(
+    zip(
+        help_df["Store Name"],
+        help_df["Ownership"]
+    )
+)
+
+region_map = dict(
+    zip(
+        help_df["Store Name"],
+        help_df["Region"]
+    )
+)
+
+# =========================================================
+# CHANNEL CLEAN
+# =========================================================
+
+help_df["Channel"] = (
+    help_df["Channel"]
+    .str.upper()
+    .str.strip()
+)
+
+final_df["channel"] = (
+    final_df["channel"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
+
+# =========================================================
+# SOURCE / BRAND MAP
+# =========================================================
+
+source_map = dict(
+    zip(
+        help_df["Channel"],
+        help_df["Source Group"]
+    )
+)
+
+brand_map = dict(
+    zip(
+        help_df["Channel"],
+        help_df["Brand"]
+    )
+)
+
+# =========================================================
+# APPLY MAPPING
+# =========================================================
+
+final_df["Source Group"] = (
+    final_df["channel"]
+    .map(source_map)
+    .fillna("Others")
+)
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Others")
+)
+
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(store_map)
+    .fillna("UNKNOWN")
+)
+
+final_df["Region"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
     .map(region_map)
     .fillna("UNKNOWN")
 )
 
 # =========================================================
-# FILTER SOURCE GROUP
+# AM / TM MAP
 # =========================================================
 
-main_sources = [
-    "In Store",
-    "Swiggy",
-    "Zomato",
-    "Ownly"
-]
-
-final_df["Source Group"] = final_df["Source Group"].apply(
-    lambda x: x if x in main_sources else "Others"
+help_df["AM Mail"] = (
+    help_df["AM Mail"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
 )
+
+help_df["TM Mail"] = (
+    help_df["TM Mail"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+)
+
+am_store_map = (
+    help_df.groupby("AM Mail")["Store Name"]
+    .apply(list)
+    .to_dict()
+)
+
+tm_region_map = (
+    help_df.groupby("TM Mail")["Region"]
+    .apply(list)
+    .to_dict()
+)
+
+# remove blank keys
+am_store_map = {
+    k: v
+    for k, v in am_store_map.items()
+    if k and k != "nan"
+}
+
+tm_region_map = {
+    k: v
+    for k, v in tm_region_map.items()
+    if k and k != "nan"
+}
 
 # =========================================================
 # DEBUG
 # =========================================================
 
-print("✅ Final Mapping Completed")
+print("✅ AM Count:", len(am_store_map))
+print("✅ TM Count:", len(tm_region_map))
 
 print(final_df["Source Group"].value_counts())
 
 print("STORE TYPE CHECK")
-print(final_df["Store Type"].value_counts())
+print(
+    final_df["Store Type"]
+    .value_counts(dropna=False)
+)
 
 # ---------------- FILTER ---------------- #
 
