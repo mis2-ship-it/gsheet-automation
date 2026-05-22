@@ -2366,39 +2366,34 @@ def send_email():
 def build_role_scope(role, identifier):
 
     if role == "AM":
+
         stores = am_store_map.get(identifier, [])
+
         df_today = today_cut[
             today_cut["branchName"].isin(stores)
         ].copy()
-        
+
         df_lw = lastweek_cut[
             lastweek_cut["branchName"].isin(stores)
         ].copy()
+
         return df_today, df_lw, stores, None
 
+
     elif role == "TM":
-    
-        regions = tm_region_map.get(
-            identifier,
-            []
-        )
-    
+
+        regions = tm_region_map.get(identifier, [])
+
         df_today = today_cut[
-            today_cut["Region"]
-            .isin(regions)
+            today_cut["Region"].isin(regions)
         ].copy()
-    
+
         df_lw = lastweek_cut[
-            lastweek_cut["Region"]
-            .isin(regions)
+            lastweek_cut["Region"].isin(regions)
         ].copy()
-    
-        return (
-            df_today,
-            df_lw,
-            None,
-            regions
-        )
+
+        return df_today, df_lw, None, regions
+
 
     else:
         return pd.DataFrame(), pd.DataFrame(), None, None
