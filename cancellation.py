@@ -632,7 +632,7 @@ critical_summary = (
 # =========================================================
 # 📧 SUMMARY EMAIL (ONLY CC)
 # =========================================================
-def send_summary_email(final_df):
+def send_summary_email(summary_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
