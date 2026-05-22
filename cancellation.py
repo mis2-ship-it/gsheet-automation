@@ -437,7 +437,6 @@ def send_email(to_email, store_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    total_cancel = len(summary_df)
 
     store_name = store_df["branchName"].iloc[0]
  
