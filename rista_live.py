@@ -2453,9 +2453,34 @@ def send_am_mail():
         }
 
     for am_email, stores in am_store_map.items():
-
-        if not am_email:
+    
+        am_email = (
+            str(am_email)
+            .strip()
+            .lower()
+        )
+    
+        if (
+            not am_email
+            or am_email == "nan"
+        ):
             continue
+    
+        stores = [
+            str(x).strip()
+            for x in stores
+            if str(x).strip()
+        ]
+    
+        print(
+            f"📨 Sending AM Mail → "
+            f"{am_email}"
+        )
+    
+        print(
+            "🏪 Store Count:",
+            len(stores)
+        )
 
         df_today = today_cut[
             today_cut["branchName"].isin(stores)
@@ -2465,15 +2490,30 @@ def send_am_mail():
             lastweek_cut["branchName"].isin(stores)
         ].copy()
 
-        df_today["Session"] = (
-            df_today["Hour"]
-            .apply(get_session)
-        )
+        if not df_today.empty:
+            df_today["Session"] = (
+                df_today["Hour"]
+                .apply(get_session)
+            )
+        
+        if not df_lw.empty:
+            df_lw["Session"] = (
+                df_lw["Hour"]
+                .apply(get_session)
+            )
 
-        df_lw["Session"] = (
-            df_lw["Hour"]
-            .apply(get_session)
+        print(
+            "Today Rows:",
+            len(df_today),
+            "| LW Rows:",
+            len(df_lw)
         )
+        
+        if df_today.empty and df_lw.empty:
+            print(
+                f"⚠️ No data for {am_email}"
+            )
+            continue
 
         # =====================================================
         # STORE DASHBOARD
@@ -2771,9 +2811,34 @@ def send_tm_mail():
     # =====================================================
 
     for tm_email, regions in tm_region_map.items():
-
-        if not tm_email:
+    
+        tm_email = (
+            str(tm_email)
+            .strip()
+            .lower()
+        )
+    
+        if (
+            not tm_email
+            or tm_email == "nan"
+        ):
             continue
+    
+        regions = [
+            str(x).strip()
+            for x in regions
+            if str(x).strip()
+        ]
+    
+        print(
+            f"📨 Sending TM Mail → "
+            f"{tm_email}"
+        )
+    
+        print(
+            "🌍 Region Count:",
+            len(regions)
+        )
 
         # =====================================================
         # REGION FILTER
@@ -2782,7 +2847,7 @@ def send_tm_mail():
         df_today = today_cut[
             today_cut["Region"].isin(regions)
         ].copy()
-
+        
         df_lw = lastweek_cut[
             lastweek_cut["Region"].isin(regions)
         ].copy()
@@ -2790,19 +2855,34 @@ def send_tm_mail():
         if df_today.empty:
             continue
 
+        print(
+            "Today Rows:",
+            len(df_today),
+            "| LW Rows:",
+            len(df_lw)
+        )
+        
+        if df_today.empty and df_lw.empty:
+            print(
+                f"⚠️ No data for {tm_email}"
+            )
+            continue
+
         # =====================================================
         # SESSION TAG
         # =====================================================
 
-        df_today["Session"] = (
-            df_today["Hour"]
-            .apply(get_session)
-        )
-
-        df_lw["Session"] = (
-            df_lw["Hour"]
-            .apply(get_session)
-        )
+        if not df_today.empty:
+            df_today["Session"] = (
+                df_today["Hour"]
+                .apply(get_session)
+            )
+        
+        if not df_lw.empty:
+            df_lw["Session"] = (
+                df_lw["Hour"]
+                .apply(get_session)
+            )
 
         stores = sorted(
             df_today["branchName"]
