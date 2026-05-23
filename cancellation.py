@@ -630,19 +630,21 @@ critical_summary = (
 )
 
 # =========================================================
-# 📧 SUMMARY EMAIL (ONLY CC)
+# 📧 SUMMARY EMAIL
 # =========================================================
-def send_summary_email(summary_df):
+def send_summary_email(final_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
     CC_EMAIL = os.environ.get("EMAIL_CCOPS")
 
+    total_cancel = len(final_df)
+
     if not CC_EMAIL:
         print("❌ No CC email configured")
         return
 
-   # Channel HTML
+    # Channel HTML
     channel_html = ""
     for _, row in channel_summary.iterrows():
         channel_html += f"""
@@ -733,24 +735,31 @@ def send_summary_email(summary_df):
     )
 
     msg["From"] = EMAIL_USER
-    msg["To"] = summary_to
+    msg["To"] = CC_EMAIL
+
+    receivers = [
+        e.strip()
+        for e in CC_EMAIL.split(",")
+        if e.strip()
+    ]
 
     server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
     server.login(EMAIL_USER, EMAIL_PASS)
     server.sendmail(
         EMAIL_USER,
-        [summary_to],
+        receivers,
         msg.as_string()
     )
     server.quit()
 
     print("📩 Summary email sent")
 
+
 # =========================================================
 # 📤 SEND SUMMARY MAIL
 # =========================================================
-send_summary_email(summary_df)
+send_summary_email(final_df)
 
         
 # =========================================================
