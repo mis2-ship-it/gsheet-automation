@@ -247,16 +247,12 @@ final_df["Net Sales"] = (
 )
 
 # =========================================================
-# MAPPING (FINAL CLEAN VERSION)
+# HELP SHEET LOAD
 # =========================================================
 
 help_ws = spreadsheet.worksheet("Help Sheet")
 
 help_values = help_ws.get_all_values()
-
-# =========================================================
-# REMOVE BLANK HEADERS
-# =========================================================
 
 headers = [
     str(h).strip()
@@ -270,6 +266,7 @@ help_df = pd.DataFrame(
     columns=headers
 )
 
+# remove blank headers
 help_df = help_df.loc[
     :,
     help_df.columns.astype(str).str.strip() != ""
@@ -282,7 +279,7 @@ help_df.columns = (
 )
 
 # =========================================================
-# CLEAN ALL TEXT
+# CLEAN HELP SHEET
 # =========================================================
 
 for col in help_df.columns:
@@ -296,18 +293,51 @@ for col in help_df.columns:
 # CHANNEL CLEAN
 # =========================================================
 
-help_df["Channel"] = (
-    help_df["Channel"]
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
-
-final_df["channel"] = (
+cl = (
     final_df["channel"]
     .astype(str)
-    .str.upper()
     .str.strip()
+    .str.lower()
+)
+
+# =========================================================
+# BRAND MAPPING (DIRECT FROM CHANNEL)
+# =========================================================
+
+final_df["Brand"] = cl.apply(
+    lambda x:
+        "Frozen Bottle" if "frozen bottle" in x else
+        "Madno" if "madno" in x else
+        "Lubov" if "lubov" in x else
+        "Boba Bar" if "boba bar" in x else
+        "Unknown"
+)
+
+# =========================================================
+# SOURCE GROUP MAPPING
+# =========================================================
+
+final_df["Source Group"] = cl.apply(
+    lambda x:
+        "In Store" if "store" in x else
+        "Swiggy" if "swiggy" in x else
+        "Zomato" if "zomato" in x else
+        "Ownly" if "ownly" in x else
+        "Magicpin" if "magicpin" in x else
+        "Website" if "website" in x else
+        "HOGR" if "hogr" in x else
+        "Others"
+)
+
+# =========================================================
+# CHANNEL CATEGORY
+# =========================================================
+
+final_df["Channel_Category"] = cl.apply(
+    lambda x:
+        "Offline"
+        if "store" in x
+        else "Online"
 )
 
 # =========================================================
@@ -340,94 +370,6 @@ region_map = dict(
 )
 
 # =========================================================
-# SOURCE MAP (HARDCODED)
-# =========================================================
-
-source_map = {
-
-    "ZOMATO BOBA BAR": "Zomato",
-    "ZOMATO FROZEN BOTTLE": "Zomato",
-    "ZOMATO MADNO": "Zomato",
-    "ZOMATO LUBOV": "Zomato",
-
-    "SWIGGY FROZEN BOTTLE": "Swiggy",
-    "SWIGGY BOBA BAR": "Swiggy",
-    "SWIGGY MADNO": "Swiggy",
-    "SWIGGY LUBOV": "Swiggy",
-
-    "FROZEN BOTTLE IN-STORE": "In Store",
-    "BOBA BAR IN-STORE": "In Store",
-    "MADNO IN-STORE": "In Store",
-
-    "HOGR DINE-IN": "HOGR",
-
-    "LUBOV WEBSITE": "Website",
-
-    "MAGICPIN - FROZEN BOTTLE": "Magicpin",
-    "MAGICPIN - MADNO": "Magicpin",
-    "MAGICPIN - BOBA BAR": "Magicpin",
-
-    "OWNLY - FROZEN BOTTLE": "Ownly",
-    "OWNLY - MADNO": "Ownly",
-    "OWNLY - BOBA BAR": "Ownly",
-
-    "BITSILA-FROZEN BOTTLE": "Others",
-    "LUBOV PICK-UP": "Others",
-}
-
-# =========================================================
-# BRAND MAP (HARDCODED)
-# =========================================================
-
-brand_map = {
-
-    "ZOMATO BOBA BAR": "Boba Bar",
-    "ZOMATO FROZEN BOTTLE": "Frozen Bottle",
-    "ZOMATO MADNO": "Madno",
-    "ZOMATO LUBOV": "Lubov",
-
-    "SWIGGY FROZEN BOTTLE": "Frozen Bottle",
-    "SWIGGY BOBA BAR": "Boba Bar",
-    "SWIGGY MADNO": "Madno",
-    "SWIGGY LUBOV": "Lubov",
-
-    "FROZEN BOTTLE IN-STORE": "Frozen Bottle",
-    "BOBA BAR IN-STORE": "Boba Bar",
-    "MADNO IN-STORE": "Madno",
-
-    "HOGR DINE-IN": "Frozen Bottle",
-
-    "LUBOV WEBSITE": "Lubov",
-
-    "MAGICPIN - FROZEN BOTTLE": "Frozen Bottle",
-    "MAGICPIN - MADNO": "Madno",
-    "MAGICPIN - BOBA BAR": "Boba Bar",
-
-    "OWNLY - FROZEN BOTTLE": "Frozen Bottle",
-    "OWNLY - MADNO": "Madno",
-    "OWNLY - BOBA BAR": "Boba Bar",
-
-    "BITSILA-FROZEN BOTTLE": "Frozen Bottle",
-    "LUBOV PICK-UP": "Lubov",
-}
-
-# =========================================================
-# APPLY SOURCE / BRAND
-# =========================================================
-
-final_df["Source Group"] = (
-    final_df["channel"]
-    .map(source_map)
-    .fillna("Others")
-)
-
-final_df["Brand"] = (
-    final_df["channel"]
-    .map(brand_map)
-    .fillna("Others")
-)
-
-# =========================================================
 # STORE TYPE / REGION
 # =========================================================
 
@@ -441,7 +383,6 @@ final_df["Store Type"] = (
     final_df["branchName"]
     .map(store_map)
     .fillna("UNKNOWN")
-    .astype(str)
     .str.upper()
 )
 
@@ -452,7 +393,7 @@ final_df["Region"] = (
 )
 
 # =========================================================
-# AM / TM MAP
+# AM / TM MAIL MAP
 # =========================================================
 
 help_df["AM Mail"] = (
@@ -469,11 +410,38 @@ help_df["TM Mail"] = (
     .str.lower()
 )
 
+help_df["Store Name"] = (
+    help_df["Store Name"]
+    .astype(str)
+    .str.strip()
+)
+
+help_df["Region"] = (
+    help_df["Region"]
+    .astype(str)
+    .str.strip()
+)
+
+# =========================================================
+# AM STORE MAP
+# =========================================================
+
 am_store_map = (
     help_df.groupby("AM Mail")["Store Name"]
     .apply(list)
     .to_dict()
 )
+
+# remove blank emails
+am_store_map = {
+    k: v
+    for k, v in am_store_map.items()
+    if k and k != "nan"
+}
+
+# =========================================================
+# TM REGION MAP
+# =========================================================
 
 tm_region_map = (
     help_df.groupby("TM Mail")["Region"]
@@ -481,14 +449,10 @@ tm_region_map = (
     .to_dict()
 )
 
-# remove blanks
-am_store_map = {
-    k: v for k, v in am_store_map.items()
-    if k and k != "nan"
-}
-
+# remove blank emails
 tm_region_map = {
-    k: v for k, v in tm_region_map.items()
+    k: v
+    for k, v in tm_region_map.items()
     if k and k != "nan"
 }
 
@@ -502,22 +466,39 @@ print(
     .value_counts(dropna=False)
 )
 
+print("BRAND CHECK")
+print(
+    final_df["Brand"]
+    .value_counts(dropna=False)
+)
+
 print("STORE TYPE CHECK")
 print(
     final_df["Store Type"]
     .value_counts(dropna=False)
 )
 
+print("REGION CHECK")
+print(
+    final_df["Region"]
+    .value_counts(dropna=False)
+)
+
 print("AM EMAIL SAMPLE")
-print(list(am_store_map.keys())[:5])
+print(
+    list(am_store_map.keys())[:5]
+)
 
 print("TM EMAIL SAMPLE")
-print(list(tm_region_map.keys())[:5])
-
-print("UNMAPPED CHANNELS")
 print(
-    set(final_df["channel"].unique())
-    - set(source_map.keys())
+    list(tm_region_map.keys())[:5]
+)
+
+print("CHANNEL SAMPLE")
+print(
+    final_df["channel"]
+    .dropna()
+    .unique()[:20]
 )
 
 print("✅ AM Count:", len(am_store_map))
@@ -2037,7 +2018,7 @@ def styled_html(df):
         <table style="
             border-collapse:collapse;
             width:auto;
-            min-width:100%;
+            min-width:60%;
             font-family:Arial;
             font-size:12px;
             background:white;
@@ -2182,7 +2163,7 @@ def send_email():
 
         <img src="cid:brand_chart"
         style="
-        width:100%;
+        width:60%;
         max-width:900px;
         border-radius:8px;
         margin-bottom:15px;
@@ -2194,7 +2175,7 @@ def send_email():
 
         <img src="cid:source_chart"
         style="
-        width:100%;
+        width:60%;
         max-width:700px;
         border-radius:8px;
         margin-bottom:15px;
@@ -2206,7 +2187,7 @@ def send_email():
 
         <img src="cid:discount_chart"
         style="
-        width:100%;
+        width:60%;
         max-width:900px;
         border-radius:8px;
         margin-bottom:15px;
@@ -2218,7 +2199,7 @@ def send_email():
 
         <img src="cid:hourly_chart"
         style="
-        width:100%;
+        width:60%;
         max-width:900px;
         border-radius:8px;
         margin-bottom:15px;
