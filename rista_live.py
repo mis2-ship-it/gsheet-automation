@@ -1231,8 +1231,8 @@ for brand in brands_required:
         )
 
         brand_source_rows.append({
-            "Brand": "",
-            "Source Group": source,
+            "Brand": f"🔹 {brand}",
+            "Source Group": "Total",
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
@@ -1264,8 +1264,8 @@ regions_required = ["KA", "MH", "TN", "Kerela"]
 for region in regions_required:
 
     region_source_rows.append({
-        "Region": region,
-        "Source Group": "",
+        "Region": f"🔹 {region}",
+        "Source Group": "Total",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -2159,19 +2159,6 @@ def send_email():
 
         <br><br>
 
-        <h2>⏰ Hourly Sales Trend</h2>
-
-        <img src="cid:hourly_chart"
-        style="
-        width:60%;
-        max-width:900px;
-        border-radius:8px;
-        margin-bottom:15px;
-        ">
-
-        {styled_html(hourly_analysis)}
-
-        <br><br>
 
         <h2>🏷️ Brand Summary</h2>
         {styled_html(brand_summary)}
@@ -2205,6 +2192,20 @@ def send_email():
 
         <h2>🌍 Source Session Analysis</h2>
         {styled_html(source_session)}
+
+        <br><br>
+
+        <h2>⏰ Hourly Sales Trend</h2>
+
+        <img src="cid:hourly_chart"
+        style="
+        width:60%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+
+        {styled_html(hourly_analysis)}
 
         <br><br>
 
@@ -2588,51 +2589,67 @@ def send_am_mail():
         # =====================================================
         # SOURCE DASHBOARD
         # =====================================================
-
+        
         source_rows = []
-
-        for source in sorted(
+        
+        sources = sorted(
             df_today["Source Group"]
             .dropna()
             .unique()
-        ):
-
+        )
+        
+        for source in sources:
+        
+            # ==========================================
+            # SOURCE HEADER
+            # ==========================================
+        
+            source_rows.append({
+                "Source Group": f"🔹 {source}",
+                "Store Name": "Total",
+                "Today Rev": "",
+                "LW Rev": "",
+                "Growth %": "",
+                "Today Dis %": "",
+                "LW Dis %": "",
+                "Change %": ""
+            })
+        
             s_t = df_today[
-                df_today["Source Group"]
-                == source
+                df_today["Source Group"] == source
             ]
-
+        
             s_l = df_lw[
-                df_lw["Source Group"]
-                == source
+                df_lw["Source Group"] == source
             ]
-
+        
             for store in stores:
-
+        
                 t = s_t[
-                    s_t["branchName"]
-                    == store
+                    s_t["branchName"] == store
                 ]
-
+        
                 l = s_l[
-                    s_l["branchName"]
-                    == store
+                    s_l["branchName"] == store
                 ]
-
+        
                 if t.empty and l.empty:
                     continue
-
+        
                 m = calc_store_metrics(t, l)
-
+        
                 m = {
-                    "Source Group": source,
+                    "Source Group": "",
                     "Store Name": store,
                     **m
                 }
-
+        
                 source_rows.append(m)
-
+        
         source_df = pd.DataFrame(source_rows)
+        
+        print("SOURCE DF CHECK")
+        print(source_df.head(20))
 
         # =====================================================
         # EMAIL
@@ -2988,61 +3005,67 @@ def send_tm_mail():
         # =====================================================
         # SOURCE DASHBOARD
         # =====================================================
-
+        
         source_rows = []
-
+        
         sources = sorted(
             df_today["Source Group"]
             .dropna()
             .unique()
         )
-
+        
         for source in sources:
-
+        
+            # ==========================================
+            # SOURCE HEADER
+            # ==========================================
+        
+            source_rows.append({
+                "Source Group": f"🔹 {source}",
+                "Store Name": "Total",
+                "Today Rev": "",
+                "LW Rev": "",
+                "Growth %": "",
+                "Today Dis %": "",
+                "LW Dis %": "",
+                "Change %": ""
+            })
+        
             s_t = df_today[
-                df_today["Source Group"]
-                == source
+                df_today["Source Group"] == source
             ]
-
+        
             s_l = df_lw[
-                df_lw["Source Group"]
-                == source
+                df_lw["Source Group"] == source
             ]
-
+        
             for store in stores:
-
+        
                 t = s_t[
-                    s_t["branchName"]
-                    == store
+                    s_t["branchName"] == store
                 ]
-
+        
                 l = s_l[
-                    s_l["branchName"]
-                    == store
+                    s_l["branchName"] == store
                 ]
-
+        
                 if t.empty and l.empty:
                     continue
-
-                m = calc_store_metrics(
-                    t, l
-                )
-
+        
+                m = calc_store_metrics(t, l)
+        
                 m = {
-                    "Source Group": source,
+                    "Source Group": "",
                     "Store Name": store,
                     **m
                 }
-
+        
                 source_rows.append(m)
-
-        source_df = pd.DataFrame(
-            source_rows
-        )
-
-        print(
-            "✅ Source Dashboard Created"
-        )
+        
+        source_df = pd.DataFrame(source_rows)
+        
+        print("SOURCE DF CHECK")
+        print(source_df.head(20))
 
         # =====================================================
         # EMAIL
