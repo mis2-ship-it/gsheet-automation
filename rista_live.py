@@ -247,196 +247,80 @@ final_df["Net Sales"] = (
 )
 
 # =========================================================
-# HELP SHEET LOAD
+# HELP SHEET MAPPING (FINAL STABLE VERSION)
 # =========================================================
 
-help_ws = spreadsheet.worksheet("Help Sheet")
+sheet = client.open(
+    "Sales Dashboard"
+).worksheet("Help Sheet")
 
-help_values = help_ws.get_all_values()
+# =========================================================
+# STORE / REGION / AM / TM MASTER
+# =========================================================
 
-headers = [
-    str(h).strip()
-    for h in help_values[0]
-]
-
-rows = help_values[1:]
-
-help_df = pd.DataFrame(
-    rows,
-    columns=headers
+branch_master = pd.DataFrame(
+    sheet.get("G:M")[1:],
+    columns=sheet.get("G:M")[0]
 )
 
-# remove blank headers
-help_df = help_df.loc[
-    :,
-    help_df.columns.astype(str).str.strip() != ""
-]
-
-help_df.columns = (
-    help_df.columns
-    .astype(str)
-    .str.strip()
-)
-
-# =========================================================
-# CLEAN HELP SHEET
-# =========================================================
-
-for col in help_df.columns:
-    help_df[col] = (
-        help_df[col]
+# Clean text
+for col in branch_master.columns:
+    branch_master[col] = (
+        branch_master[col]
         .astype(str)
         .str.strip()
     )
 
 # =========================================================
-# CHANNEL CLEAN
+# STORE TYPE MAP
 # =========================================================
 
-cl = (
-    final_df["channel"]
-    .astype(str)
-    .str.strip()
-    .str.lower()
-)
-
-# =========================================================
-# BRAND MAPPING (DIRECT FROM CHANNEL)
-# =========================================================
-
-final_df["Brand"] = cl.apply(
-    lambda x:
-        "Frozen Bottle" if "frozen bottle" in x else
-        "Madno" if "madno" in x else
-        "Lubov" if "lubov" in x else
-        "Boba Bar" if "boba bar" in x else
-        "Unknown"
-)
-
-# =========================================================
-# SOURCE GROUP MAPPING
-# =========================================================
-
-final_df["Source Group"] = cl.apply(
-    lambda x:
-        "In Store" if "store" in str(x).lower() else
-        "Swiggy" if "swiggy" in str(x).lower() else
-        "Zomato" if "zomato" in str(x).lower() else
-        "Ownly" if "ownly" in str(x).lower() else
-        "Magicpin" if "magicpin" in str(x).lower() else
-        "Website" if "website" in str(x).lower() else
-        "HOGR" if "hogr" in str(x).lower() else
-        "Others"
-)
-
-# CRITICAL FIX
-final_df["Source Group"] = (
-    final_df["Source Group"]
-    .astype(str)
-    .str.strip()
-    .replace("", "Others")
-    .fillna("Others")
-)
-
-# =========================================================
-# CHANNEL CATEGORY
-# =========================================================
-
-final_df["Channel_Category"] = cl.apply(
-    lambda x:
-        "Offline"
-        if "store" in x
-        else "Online"
-)
-
-# =========================================================
-# STORE / REGION MAP
-# =========================================================
-
-store_map = dict(
+storetype_map = dict(
     zip(
-        help_df["Store Name"]
-        .astype(str)
-        .str.strip(),
-
-        help_df["Ownership"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
+        branch_master["Store Name"],
+        branch_master["Ownership"]
     )
 )
+
+# =========================================================
+# REGION MAP
+# =========================================================
 
 region_map = dict(
     zip(
-        help_df["Store Name"]
-        .astype(str)
-        .str.strip(),
-
-        help_df["Region"]
-        .astype(str)
-        .str.strip()
+        branch_master["Store Name"],
+        branch_master["Region"]
     )
 )
 
 # =========================================================
-# STORE TYPE / REGION
+# AM / TM MAP
 # =========================================================
 
-final_df["branchName"] = (
-    final_df["branchName"]
-    .astype(str)
-    .str.strip()
-)
-
-final_df["Store Type"] = (
-    final_df["branchName"]
-    .map(store_map)
-    .fillna("UNKNOWN")
-    .str.upper()
-)
-
-final_df["Region"] = (
-    final_df["branchName"]
-    .map(region_map)
-    .fillna("UNKNOWN")
-)
-
-# =========================================================
-# AM / TM MAIL MAP
-# =========================================================
-
-help_df["AM Mail"] = (
-    help_df["AM Mail"]
+branch_master["AM Mail"] = (
+    branch_master["AM Mail"]
     .astype(str)
     .str.strip()
     .str.lower()
 )
 
-help_df["TM Mail"] = (
-    help_df["TM Mail"]
+branch_master["TM Mail"] = (
+    branch_master["TM Mail"]
     .astype(str)
     .str.strip()
     .str.lower()
 )
-
-help_df["Store Name"] = (
-    help_df["Store Name"]
-    .astype(str)
-    .str.strip()
-)
-
-help_df["Region"] = (
-    help_df["Region"]
-    .astype(str)
-    .str.strip()
-)
-
-# =========================================================
-# AM STORE MAP
-# =========================================================
 
 am_store_map = (
-    help_df.groupby("AM Mail")["Store Name"]
+    branch_master
+    .groupby("AM Mail")["Store Name"]
+    .apply(list)
+    .to_dict()
+)
+
+tm_region_map = (
+    branch_master
+    .groupby("TM Mail")["Region"]
     .apply(list)
     .to_dict()
 )
@@ -448,17 +332,6 @@ am_store_map = {
     if k and k != "nan"
 }
 
-# =========================================================
-# TM REGION MAP
-# =========================================================
-
-tm_region_map = (
-    help_df.groupby("TM Mail")["Region"]
-    .apply(list)
-    .to_dict()
-)
-
-# remove blank emails
 tm_region_map = {
     k: v
     for k, v in tm_region_map.items()
@@ -466,23 +339,101 @@ tm_region_map = {
 }
 
 # =========================================================
+# SOURCE + BRAND MASTER
+# D:F = Channel, Source Group, Brand
+# =========================================================
+
+source_master = pd.DataFrame(
+    sheet.get("D:F")[1:],
+    columns=sheet.get("D:F")[0]
+)
+
+# clean text
+for col in source_master.columns:
+    source_master[col] = (
+        source_master[col]
+        .astype(str)
+        .str.strip()
+    )
+
+source_master["Channel"] = (
+    source_master["Channel"]
+    .str.upper()
+)
+
+# =========================================================
+# FINAL DF CHANNEL CLEAN
+# =========================================================
+
+final_df["channel"] = (
+    final_df["channel"]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+# =========================================================
+# SOURCE MAP
+# =========================================================
+
+source_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Source Group"]
+    )
+)
+
+# =========================================================
+# BRAND MAP
+# =========================================================
+
+brand_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Brand"]
+    )
+)
+
+# =========================================================
+# APPLY MAPPING
+# =========================================================
+
+final_df["Source Group"] = (
+    final_df["channel"]
+    .map(source_map)
+    .fillna("Others")
+)
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Unknown")
+)
+
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(storetype_map)
+    .fillna("UNKNOWN")
+)
+
+final_df["Region"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(region_map)
+    .fillna("UNKNOWN")
+)
+
+# =========================================================
 # DEBUG PRINTS
 # =========================================================
 
-print("SOURCE GROUP UNIQUE")
+print("SOURCE GROUP CHECK")
 print(
     final_df["Source Group"]
-    .unique()
-)
-
-print("BLANK SOURCE CHECK")
-print(
-    final_df[
-        final_df["Source Group"]
-        .astype(str)
-        .str.strip() == ""
-    ][["channel", "Source Group"]]
-    .head(20)
+    .value_counts(dropna=False)
 )
 
 print("BRAND CHECK")
@@ -497,27 +448,16 @@ print(
     .value_counts(dropna=False)
 )
 
-print("REGION CHECK")
-print(
-    final_df["Region"]
-    .value_counts(dropna=False)
-)
-
 print("AM EMAIL SAMPLE")
-print(
-    list(am_store_map.keys())[:5]
-)
+print(list(am_store_map.keys())[:5])
 
 print("TM EMAIL SAMPLE")
-print(
-    list(tm_region_map.keys())[:5]
-)
+print(list(tm_region_map.keys())[:5])
 
-print("CHANNEL SAMPLE")
+print("UNMAPPED CHANNELS")
 print(
-    final_df["channel"]
-    .dropna()
-    .unique()[:20]
+    set(final_df["channel"].unique())
+    - set(source_map.keys())
 )
 
 print("✅ AM Count:", len(am_store_map))
