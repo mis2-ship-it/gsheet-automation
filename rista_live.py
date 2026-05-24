@@ -319,14 +319,23 @@ final_df["Brand"] = cl.apply(
 
 final_df["Source Group"] = cl.apply(
     lambda x:
-        "In Store" if "store" in x else
-        "Swiggy" if "swiggy" in x else
-        "Zomato" if "zomato" in x else
-        "Ownly" if "ownly" in x else
-        "Magicpin" if "magicpin" in x else
-        "Website" if "website" in x else
-        "HOGR" if "hogr" in x else
+        "In Store" if "store" in str(x).lower() else
+        "Swiggy" if "swiggy" in str(x).lower() else
+        "Zomato" if "zomato" in str(x).lower() else
+        "Ownly" if "ownly" in str(x).lower() else
+        "Magicpin" if "magicpin" in str(x).lower() else
+        "Website" if "website" in str(x).lower() else
+        "HOGR" if "hogr" in str(x).lower() else
         "Others"
+)
+
+# CRITICAL FIX
+final_df["Source Group"] = (
+    final_df["Source Group"]
+    .astype(str)
+    .str.strip()
+    .replace("", "Others")
+    .fillna("Others")
 )
 
 # =========================================================
@@ -460,10 +469,20 @@ tm_region_map = {
 # DEBUG PRINTS
 # =========================================================
 
-print("SOURCE GROUP CHECK")
+print("SOURCE GROUP UNIQUE")
 print(
     final_df["Source Group"]
-    .value_counts(dropna=False)
+    .unique()
+)
+
+print("BLANK SOURCE CHECK")
+print(
+    final_df[
+        final_df["Source Group"]
+        .astype(str)
+        .str.strip() == ""
+    ][["channel", "Source Group"]]
+    .head(20)
 )
 
 print("BRAND CHECK")
