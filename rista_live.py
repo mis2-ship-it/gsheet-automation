@@ -1161,7 +1161,8 @@ for source in sources:
 
 source_summary = pd.DataFrame(source_rows)
 
-print("✅ Source Summary Created")
+print("SOURCE SUMMARY CHECK")
+print(source_summary)
 
 # =========================================================
 # 🔥 BRAND x SOURCE
@@ -1890,7 +1891,7 @@ def styled_html(df):
     text_cols = [
         "Parameters",
         "Parameter",
-        "Metric"
+        "Metric",
         "Source Group",
         "Region",
         "Brand",
@@ -2013,7 +2014,7 @@ def styled_html(df):
         <td style="
             padding:6px;
             border:1px solid #e5e5e5;
-            text-align:right;
+            text-align:left;
             white-space:nowrap;
         ">
         '''
