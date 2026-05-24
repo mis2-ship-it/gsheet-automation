@@ -1187,8 +1187,8 @@ for brand in brands_required:
 
     # BRAND HEADER
     brand_source_rows.append({
-        "Brand": brand,
-        "Source Group": "",
+        "Brand": f"🔹 {brand}",
+        "Source Group": "Total",
         "Today Rev": "",
         "LW Rev": "",
         "Growth %": "",
@@ -1232,8 +1232,8 @@ for brand in brands_required:
         )
 
         brand_source_rows.append({
-            "Brand": f"🔹 {brand}",
-            "Source Group": "Total",
+            "Brand": "",
+            "Source Group": source,
             "Today Rev": round(t_rev, 2),
             "LW Rev": round(lw_rev, 2),
             "Growth %": round(growth, 2),
