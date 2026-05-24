@@ -2117,6 +2117,11 @@ def send_email():
     # CREATE MESSAGE
     # =====================================================
 
+    source_df = pd.DataFrame(source_rows)
+
+    print("SOURCE DF CHECK")
+    print(source_df.head(10))
+    
     msg = MIMEMultipart("related")
 
     msg["From"] = EMAIL_USER
