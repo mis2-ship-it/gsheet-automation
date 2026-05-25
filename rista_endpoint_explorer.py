@@ -364,6 +364,9 @@ for endpoint, params in endpoint_map.items():
 
     final_params = {}
 
+    if active_branch:
+    final_params["branch"] = active_branch
+
     for k, v in params.items():
 
         if v == "today":
