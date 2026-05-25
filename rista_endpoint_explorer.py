@@ -455,8 +455,8 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print("🔗 URL:", url)
     print("📦 Params:", params)
-
-        try:
+    
+    try:
     
         response = requests.get(
             url,
