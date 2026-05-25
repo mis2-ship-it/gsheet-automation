@@ -386,20 +386,35 @@ for endpoint, params in endpoint_map.items():
             final_params[k] = v
 
     # =============================================
-    # SMART PARAMS
+    # SMART PARAMS (CORRECTED)
     # =============================================
-
+    
+    # Default params for ALL APIs
+    params = {
+        "branch": active_branch,
+        "day": today,
+        "fromDate": from_date,
+        "toDate": to_date,
+        "page": 1,
+        "pageSize": 10,
+        "sort": "desc"
+    }
+    
+    # Analytics APIs
     if "analytics" in tab_name:
         params["day"] = today
-
+    
+    # Sales APIs
     if "sales" in tab_name:
         params.update({
+            "branch": active_branch,
             "day": today,
             "page": 1,
             "pageSize": 10,
             "sort": "desc"
         })
-
+    
+    # Inventory / Menu / Payment / Order / Customer
     if any(
         x in tab_name
         for x in [
@@ -407,35 +422,72 @@ for endpoint, params in endpoint_map.items():
             "menu",
             "payment",
             "order",
-            "customer"
+            "customer",
+            "employee",
+            "delivery",
+            "invoice",
+            "report",
+            "purchase",
+            "vendor",
+            "discount",
+            "kot",
+            "kitchen"
         ]
     ):
         params["branch"] = active_branch
-
-    if "page" in tab_name:
+    
+    # Pagination endpoints
+    if any(
+        x in tab_name
+        for x in [
+            "page",
+            "list",
+            "orders",
+            "invoice",
+            "transaction"
+        ]
+    ):
         params.update({
             "page": 1,
             "pageSize": 10
         })
-
-    params["fromDate"] = from_date
-    params["toDate"] = to_date
-
+    
+    # Some APIs don't need dates
+    if any(
+        x in tab_name
+        for x in [
+            "branch",
+            "settings",
+            "status",
+            "dashboard",
+            "business",
+            "menu",
+            "vendor"
+        ]
+    ):
+        params.pop("fromDate", None)
+        params.pop("toDate", None)
+    
+    print(f"🔗 URL: {url}")
+    print(f"📦 Params: {params}")
+    
     try:
-
+    
         response = requests.get(
             url,
             headers=headers(),
             params=params,
             timeout=30
         )
-
+    
+        print("STATUS:", response.status_code)
+    
         if response.status_code != 200:
-
+            print("ERROR RESPONSE:", response.text)
             raise Exception(
                 f"HTTP {response.status_code}"
             )
-
+    
         js = response.json()
 
         # =========================================
