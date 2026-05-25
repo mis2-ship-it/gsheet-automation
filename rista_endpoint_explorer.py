@@ -421,6 +421,7 @@ for endpoint, endpoint_params in endpoint_map.items():
 
         params = {
             "branch": active_branch,
+            "businessDay": today,
             "page": 1,
             "pageSize": 10
         }
@@ -454,6 +455,8 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print("🔗 URL:", url)
     print("📦 Params:", params)
+    print("STATUS:", response.status_code)
+    print("RESPONSE:", response.text[:500])
 
     try:
 
