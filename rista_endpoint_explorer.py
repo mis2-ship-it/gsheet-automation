@@ -353,6 +353,9 @@ status_logs = []
 
 for endpoint, endpoint_params in endpoint_map.items():
 
+    # =============================================
+    # TAB NAME
+    # =============================================
     tab_name = (
         endpoint
         .replace("/v1/", "")
@@ -361,13 +364,16 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print(f"\n🔍 Processing {tab_name}")
 
+    # =============================================
+    # URL
+    # =============================================
     url = (
         "https://api.ristaapps.com"
         + endpoint
     )
 
     # =============================================
-    # SMART PARAMS
+    # DEFAULT PARAMS
     # =============================================
     params = {
         "branch": active_branch,
@@ -395,19 +401,9 @@ for endpoint, endpoint_params in endpoint_map.items():
             ).strftime("%Y-%m-%d 23:59:59")
         }
 
-    print("🔗 URL:", url)
-    print("📦 Params:", params)
-
-    try:
-
-        response = requests.get(
-            url,
-            headers=headers(),
-            params=params,
-            timeout=30
-        )
-
-    # Add endpoint-specific params
+    # =============================================
+    # ENDPOINT SPECIFIC PARAMS
+    # =============================================
     for k, v in endpoint_params.items():
 
         if v == "today":
@@ -440,7 +436,12 @@ for endpoint, endpoint_params in endpoint_map.items():
         print("STATUS:", response.status_code)
 
         if response.status_code != 200:
-            print("ERROR RESPONSE:", response.text)
+
+            print(
+                "ERROR RESPONSE:",
+                response.text
+            )
+
             raise Exception(
                 f"HTTP {response.status_code} | "
                 f"{response.text[:300]}"
