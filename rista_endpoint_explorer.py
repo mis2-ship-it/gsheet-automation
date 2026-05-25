@@ -119,154 +119,224 @@ except Exception as e:
     active_branch = None
 
 # =====================================================
-# 📌 ENDPOINT LIST (FULL DISCOVERY)
+# 📌 ENDPOINT MAP (FULL)
 # =====================================================
 
-endpoint_tabs = [
+endpoint_map = {
 
-    # ==========================================
-    # BRANCH / OUTLET
-    # ==========================================
-    "branch_list",
-    "branch_details",
-    "branch_settings",
-    "outlet_status",
+    "/v1/branch/list": {},
+    "/v1/branch/details": {"branch": "active_branch"},
+    "/v1/branch/settings": {"branch": "active_branch"},
+    "/v1/outlet/status": {},
 
-    # ==========================================
-    # SALES
-    # ==========================================
-    "sales_page",
-    "sales_summary",
-    "sales_invoice",
-    "sales_order",
-    "sales_order_details",
-    "sales_voided",
-    "sales_cancelled",
+    "/v1/sales/page": {
+        "day": "today",
+        "page": 1,
+        "pageSize": 10,
+        "sort": "desc"
+    },
 
-    # ==========================================
-    # ANALYTICS
-    # ==========================================
-    "analytics_sales_summary",
-    "analytics_custom_sales_summary",
-    "analytics_discount_transaction",
-    "analytics_tax_summary",
-    "analytics_payment_summary",
-    "analytics_hourly_sales",
-    "analytics_order_summary",
-    "analytics_item_sales",
-    "analytics_category_sales",
-    "analytics_channel_sales",
+    "/v1/sales/summary": {"day": "today"},
+    "/v1/sales/invoice": {"day": "today"},
+    "/v1/sales/order": {"day": "today"},
+    "/v1/sales/order/details": {"day": "today"},
+    "/v1/sales/voided": {"day": "today"},
+    "/v1/sales/cancelled": {"day": "today"},
 
-    # ==========================================
-    # ORDERS
-    # ==========================================
-    "order_status",
-    "order_list",
-    "order_details",
-    "order_summary",
+    "/v1/analytics/sales/summary": {"day": "today"},
+    "/v1/analytics/custom/sales/summary": {"day": "today"},
+    "/v1/analytics/discount/transaction": {"day": "today"},
+    "/v1/analytics/tax/summary": {"day": "today"},
+    "/v1/analytics/payment/summary": {"day": "today"},
+    "/v1/analytics/hourly/sales": {"day": "today"},
+    "/v1/analytics/order/summary": {"day": "today"},
+    "/v1/analytics/item/sales": {"day": "today"},
+    "/v1/analytics/category/sales": {"day": "today"},
+    "/v1/analytics/channel/sales": {"day": "today"},
 
-    # ==========================================
-    # KOT / KITCHEN
-    # ==========================================
-    "kot_list",
-    "kot_summary",
-    "kitchen_orders",
+    "/v1/order/status": {
+        "branch": "active_branch",
+        "day": "today"
+    },
 
-    # ==========================================
-    # MENU
-    # ==========================================
-    "menu_list",
-    "menu_item",
-    "menu_modifier",
-    "menu_category",
-    "menu_combo",
+    "/v1/order/list": {
+        "branch": "active_branch",
+        "page": 1,
+        "pageSize": 10
+    },
 
-    # ==========================================
-    # INVENTORY
-    # ==========================================
-    "inventory_stock",
-    "inventory_item",
-    "inventory_consumption",
-    "inventory_stock_adjustment",
-    "inventory_purchase",
-    "inventory_vendor",
-    "inventory_transfer",
+    "/v1/order/details": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # PAYMENTS
-    # ==========================================
-    "payment_summary",
-    "payment_transaction",
-    "payment_mode",
-    "payment_settlement",
+    "/v1/order/summary": {
+        "branch": "active_branch",
+        "day": "today"
+    },
 
-    # ==========================================
-    # DISCOUNTS
-    # ==========================================
-    "discount_transaction",
-    "discount_summary",
-    "discount_coupon",
+    "/v1/kot/list": {
+        "branch": "active_branch",
+        "page": 1,
+        "pageSize": 10
+    },
 
-    # ==========================================
-    # CUSTOMERS
-    # ==========================================
-    "customer_list",
-    "customer_details",
-    "customer_feedback",
-    "customer_loyalty",
+    "/v1/kot/summary": {
+        "branch": "active_branch",
+        "day": "today"
+    },
 
-    # ==========================================
-    # EMPLOYEE / STAFF
-    # ==========================================
-    "employee_list",
-    "employee_attendance",
-    "employee_shift",
+    "/v1/kitchen/orders": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # ONLINE CHANNELS
-    # ==========================================
-    "swiggy_orders",
-    "zomato_orders",
-    "online_orders",
+    "/v1/menu/list": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # TAX / BILLING
-    # ==========================================
-    "tax_summary",
-    "invoice_list",
-    "invoice_details",
+    "/v1/menu/item": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # REPORTS
-    # ==========================================
-    "report_daily_sales",
-    "report_hourly_sales",
-    "report_store_performance",
-    "report_item_performance",
+    "/v1/menu/modifier": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # STOCK / PROCUREMENT
-    # ==========================================
-    "purchase_order",
-    "goods_receipt",
-    "stock_transfer",
-    "vendor_list",
+    "/v1/menu/category": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # DELIVERY
-    # ==========================================
-    "delivery_orders",
-    "delivery_status",
+    "/v1/menu/combo": {
+        "branch": "active_branch"
+    },
 
-    # ==========================================
-    # EXPERIMENTAL / UNKNOWN
-    # ==========================================
-    "dashboard_summary",
-    "dashboard_metrics",
-    "business_summary"
+    "/v1/inventory/stock": {
+        "branch": "active_branch"
+    },
 
-]
+    "/v1/inventory/item": {
+        "branch": "active_branch"
+    },
 
+    "/v1/inventory/consumption": {
+        "branch": "active_branch",
+        "fromDate": "from_date",
+        "toDate": "to_date"
+    },
+
+    "/v1/inventory/stock/adjustment": {
+        "branch": "active_branch"
+    },
+
+    "/v1/inventory/purchase": {
+        "branch": "active_branch"
+    },
+
+    "/v1/inventory/vendor": {
+        "branch": "active_branch"
+    },
+
+    "/v1/inventory/transfer": {
+        "branch": "active_branch"
+    },
+
+    "/v1/payment/summary": {"day": "today"},
+    "/v1/payment/transaction": {"day": "today"},
+    "/v1/payment/mode": {},
+    "/v1/payment/settlement": {"day": "today"},
+
+    "/v1/discount/transaction": {"day": "today"},
+    "/v1/discount/summary": {"day": "today"},
+    "/v1/discount/coupon": {},
+
+    "/v1/customer/list": {
+        "branch": "active_branch",
+        "page": 1,
+        "pageSize": 10
+    },
+
+    "/v1/customer/details": {
+        "branch": "active_branch"
+    },
+
+    "/v1/customer/feedback": {
+        "day": "today"
+    },
+
+    "/v1/customer/loyalty": {},
+
+    "/v1/employee/list": {},
+    "/v1/employee/attendance": {
+        "day": "today"
+    },
+
+    "/v1/employee/shift": {
+        "day": "today"
+    },
+
+    "/v1/swiggy/orders": {
+        "day": "today"
+    },
+
+    "/v1/zomato/orders": {
+        "day": "today"
+    },
+
+    "/v1/online/orders": {
+        "day": "today"
+    },
+
+    "/v1/tax/summary": {
+        "day": "today"
+    },
+
+    "/v1/invoice/list": {
+        "day": "today"
+    },
+
+    "/v1/invoice/details": {
+        "day": "today"
+    },
+
+    "/v1/report/daily/sales": {
+        "day": "today"
+    },
+
+    "/v1/report/hourly/sales": {
+        "day": "today"
+    },
+
+    "/v1/report/store/performance": {
+        "day": "today"
+    },
+
+    "/v1/report/item/performance": {
+        "day": "today"
+    },
+
+    "/v1/purchase/order": {
+        "branch": "active_branch"
+    },
+
+    "/v1/goods/receipt": {
+        "branch": "active_branch"
+    },
+
+    "/v1/stock/transfer": {
+        "branch": "active_branch"
+    },
+
+    "/v1/vendor/list": {},
+
+    "/v1/delivery/orders": {
+        "day": "today"
+    },
+
+    "/v1/delivery/status": {},
+
+    "/v1/dashboard/summary": {},
+    "/v1/dashboard/metrics": {},
+    "/v1/business/summary": {}
+}
 # =====================================================
 # 📊 STATUS LOG
 # =====================================================
@@ -277,21 +347,39 @@ status_logs = []
 # 🔁 LOOP ENDPOINTS
 # =====================================================
 
-for tab_name in endpoint_tabs:
+for endpoint, params in endpoint_map.items():
+
+    tab_name = (
+        endpoint
+        .replace("/v1/", "")
+        .replace("/", "_")
+    )
 
     print(f"\n🔍 Processing {tab_name}")
-
-    endpoint = (
-        "/v1/" +
-        tab_name.replace("_", "/")
-    )
 
     url = (
         "https://api.ristaapps.com"
         + endpoint
     )
 
-    params = {}
+    final_params = {}
+
+    for k, v in params.items():
+
+        if v == "today":
+            final_params[k] = today
+
+        elif v == "active_branch":
+            final_params[k] = active_branch
+
+        elif v == "from_date":
+            final_params[k] = from_date
+
+        elif v == "to_date":
+            final_params[k] = to_date
+
+        else:
+            final_params[k] = v
 
     # =============================================
     # SMART PARAMS
