@@ -455,32 +455,31 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print("🔗 URL:", url)
     print("📦 Params:", params)
-    print("STATUS:", response.status_code)
-    print("RESPONSE:", response.text[:500])
 
-    try:
-
+        try:
+    
         response = requests.get(
             url,
             headers=headers(),
             params=params,
             timeout=30
         )
-
+    
         print("STATUS:", response.status_code)
-
+        print("RESPONSE:", response.text[:500])
+    
         if response.status_code != 200:
-
+    
             print(
                 "ERROR RESPONSE:",
                 response.text
             )
-
+    
             raise Exception(
                 f"HTTP {response.status_code} | "
                 f"{response.text[:300]}"
             )
-
+    
         js = response.json()
 
         # =========================================
