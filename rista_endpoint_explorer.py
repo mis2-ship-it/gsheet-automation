@@ -347,8 +347,9 @@ status_logs = []
 # 🔁 LOOP ENDPOINTS
 # =====================================================
 
-for endpoint, params in endpoint_map.items():
+for endpoint, endpoint_params in endpoint_map.items():
 
+    # Sheet tab name
     tab_name = (
         endpoint
         .replace("/v1/", "")
@@ -357,137 +358,61 @@ for endpoint, params in endpoint_map.items():
 
     print(f"\n🔍 Processing {tab_name}")
 
+    # Correct URL
     url = (
         "https://api.ristaapps.com"
         + endpoint
     )
 
-    final_params = {}
-
-    # Default branch for all APIs
-    if active_branch:
-        final_params["branch"] = active_branch
-    
-    for k, v in params.items():
-    
-        if v == "today":
-            final_params[k] = today
-    
-        elif v == "active_branch":
-            final_params[k] = active_branch
-    
-        elif v == "from_date":
-            final_params[k] = from_date
-    
-        elif v == "to_date":
-            final_params[k] = to_date
-    
-        else:
-            final_params[k] = v
-
     # =============================================
-    # SMART PARAMS (CORRECTED)
+    # SMART PARAMS
     # =============================================
-    
-    # Default params for ALL APIs
     params = {
         "branch": active_branch,
         "day": today,
-        "fromDate": from_date,
-        "toDate": to_date,
         "page": 1,
         "pageSize": 10,
         "sort": "desc"
     }
-    
-    # Analytics APIs
-    if "analytics" in tab_name:
-        params["day"] = today
-    
-    # Sales APIs
-    if "sales" in tab_name:
-        params.update({
-            "branch": active_branch,
-            "day": today,
-            "page": 1,
-            "pageSize": 10,
-            "sort": "desc"
-        })
-    
-    # Inventory / Menu / Payment / Order / Customer
-    if any(
-        x in tab_name
-        for x in [
-            "inventory",
-            "menu",
-            "payment",
-            "order",
-            "customer",
-            "employee",
-            "delivery",
-            "invoice",
-            "report",
-            "purchase",
-            "vendor",
-            "discount",
-            "kot",
-            "kitchen"
-        ]
-    ):
-        params["branch"] = active_branch
-    
-    # Pagination endpoints
-    if any(
-        x in tab_name
-        for x in [
-            "page",
-            "list",
-            "orders",
-            "invoice",
-            "transaction"
-        ]
-    ):
-        params.update({
-            "page": 1,
-            "pageSize": 10
-        })
-    
-    # Some APIs don't need dates
-    if any(
-        x in tab_name
-        for x in [
-            "branch",
-            "settings",
-            "status",
-            "dashboard",
-            "business",
-            "menu",
-            "vendor"
-        ]
-    ):
-        params.pop("fromDate", None)
-        params.pop("toDate", None)
-    
-    print(f"🔗 URL: {url}")
-    print(f"📦 Params: {params}")
-    
+
+    # Add endpoint-specific params
+    for k, v in endpoint_params.items():
+
+        if v == "today":
+            params[k] = today
+
+        elif v == "active_branch":
+            params[k] = active_branch
+
+        elif v == "from_date":
+            params[k] = from_date
+
+        elif v == "to_date":
+            params[k] = to_date
+
+        else:
+            params[k] = v
+
+    print("🔗 URL:", url)
+    print("📦 Params:", params)
+
     try:
-    
+
         response = requests.get(
             url,
             headers=headers(),
             params=params,
             timeout=30
         )
-    
+
         print("STATUS:", response.status_code)
-    
+
         if response.status_code != 200:
             print("ERROR RESPONSE:", response.text)
             raise Exception(
                 f"HTTP {response.status_code}"
             )
-    
+
         js = response.json()
 
         # =========================================
