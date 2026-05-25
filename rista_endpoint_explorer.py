@@ -364,23 +364,24 @@ for endpoint, params in endpoint_map.items():
 
     final_params = {}
 
+    # Default branch for all APIs
     if active_branch:
-    final_params["branch"] = active_branch
-
+        final_params["branch"] = active_branch
+    
     for k, v in params.items():
-
+    
         if v == "today":
             final_params[k] = today
-
+    
         elif v == "active_branch":
             final_params[k] = active_branch
-
+    
         elif v == "from_date":
             final_params[k] = from_date
-
+    
         elif v == "to_date":
             final_params[k] = to_date
-
+    
         else:
             final_params[k] = v
 
