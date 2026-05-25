@@ -351,11 +351,10 @@ status_logs = []
 # 🔁 LOOP ENDPOINTS
 # =====================================================
 
+import numpy as np
+
 for endpoint, endpoint_params in endpoint_map.items():
 
-    # =============================================
-    # TAB NAME
-    # =============================================
     tab_name = (
         endpoint
         .replace("/v1/", "")
@@ -364,45 +363,77 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print(f"\n🔍 Processing {tab_name}")
 
-    # =============================================
-    # URL
-    # =============================================
     url = (
         "https://api.ristaapps.com"
         + endpoint
     )
 
     # =============================================
-    # DEFAULT PARAMS
+    # SMART PARAMS
     # =============================================
-    params = {
-        "branch": active_branch,
-        "day": today,
-        "page": 1,
-        "pageSize": 10
-    }
+    params = {}
 
-    # =============================================
-    # ANALYTICS FIX
-    # =============================================
-    if "analytics" in tab_name:
+    # ---------------------------------------------
+    # SALES APIs
+    # ---------------------------------------------
+    if "sales" in tab_name:
 
         params = {
             "branch": active_branch,
-
-            "fromDate": (
-                datetime.now()
-                - timedelta(days=1)
-            ).strftime("%Y-%m-%d 00:00:00"),
-
-            "toDate": (
-                datetime.now()
-                - timedelta(days=1)
-            ).strftime("%Y-%m-%d 23:59:59")
+            "day": today,
+            "page": 1,
+            "pageSize": 10
         }
 
+    # ---------------------------------------------
+    # ANALYTICS APIs
+    # ---------------------------------------------
+    elif "analytics" in tab_name:
+
+        params = {
+            "businessDay": today,
+            "branch": active_branch
+        }
+
+    # ---------------------------------------------
+    # CUSTOMER FEEDBACK
+    # ---------------------------------------------
+    elif "customer_feedback" in tab_name:
+
+        params = {
+            "businessDay": today,
+            "branch": active_branch
+        }
+
+    # ---------------------------------------------
+    # ORDER / MENU / INVENTORY
+    # ---------------------------------------------
+    elif any(x in tab_name for x in [
+        "order",
+        "menu",
+        "inventory",
+        "payment",
+        "customer",
+        "invoice",
+        "kot",
+        "kitchen"
+    ]):
+
+        params = {
+            "branch": active_branch,
+            "page": 1,
+            "pageSize": 10
+        }
+
+    # ---------------------------------------------
+    # DEFAULT PARAMS
+    # ---------------------------------------------
+    else:
+
+        params = {}
+
     # =============================================
-    # ENDPOINT SPECIFIC PARAMS
+    # ADD ENDPOINT PARAMS
     # =============================================
     for k, v in endpoint_params.items():
 
@@ -452,17 +483,13 @@ for endpoint, endpoint_params in endpoint_map.items():
         # =========================================
         # DATA EXTRACTION
         # =========================================
-
         data = []
 
         if isinstance(js, dict):
 
             if "data" in js:
 
-                if isinstance(
-                    js["data"],
-                    dict
-                ):
+                if isinstance(js["data"], dict):
 
                     data = (
                         js["data"]
@@ -470,14 +497,9 @@ for endpoint, endpoint_params in endpoint_map.items():
                     )
 
                     if not data:
-                        data = [
-                            js["data"]
-                        ]
+                        data = [js["data"]]
 
-                elif isinstance(
-                    js["data"],
-                    list
-                ):
+                elif isinstance(js["data"], list):
                     data = js["data"]
 
             else:
@@ -487,24 +509,39 @@ for endpoint, endpoint_params in endpoint_map.items():
             data = js
 
         if not data:
-
             raise Exception(
                 "No data found"
             )
 
         # =========================================
-        # NORMALIZE JSON
+        # DATAFRAME CLEANING
         # =========================================
-
         df = pd.json_normalize(data)
 
+        df = df.replace(
+            [np.inf, -np.inf],
+            0
+        )
+
+        df = df.fillna("")
         df = df.head(10)
 
-        # =========================================
-        # CREATE TAB IF MISSING
-        # =========================================
+        # Prevent JSON errors
+        sheet_df = df.copy()
 
+        sheet_df = sheet_df.replace(
+            [np.inf, -np.inf],
+            0
+        )
+
+        sheet_df = sheet_df.fillna("")
+        sheet_df = sheet_df.astype(str)
+
+        # =========================================
+        # CREATE TAB
+        # =========================================
         try:
+
             ws = spreadsheet.worksheet(
                 tab_name
             )
@@ -514,33 +551,29 @@ for endpoint, endpoint_params in endpoint_map.items():
             ws = spreadsheet.add_worksheet(
                 title=tab_name,
                 rows=1000,
-                cols=50
+                cols=100
             )
 
         # =========================================
-        # REFRESH DATA
+        # REFRESH TAB DATA
         # =========================================
-
         ws.clear()
 
         ws.update(
-            [
-                df.columns.tolist()
-            ] +
-            df.astype(str)
-            .values
-            .tolist()
+            [sheet_df.columns.tolist()]
+            +
+            sheet_df.values.tolist()
         )
 
         print(
             f"✅ {tab_name}: "
-            f"{len(df)} rows"
+            f"{len(sheet_df)} rows"
         )
 
         status_logs.append([
             tab_name,
             endpoint,
-            len(df),
+            len(sheet_df),
             "Success",
             ""
         ])
