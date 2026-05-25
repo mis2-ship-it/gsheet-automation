@@ -63,7 +63,11 @@ print("✅ GSheet Connected")
 # 📅 DATE
 # =====================================================
 
-today = datetime.now().strftime("%Y-%m-%d")
+business_day = (
+    datetime.now() - timedelta(days=1)
+).strftime("%Y-%m-%d")
+
+today = business_day
 
 from_date = (
     datetime.now() - timedelta(days=1)
@@ -349,7 +353,6 @@ status_logs = []
 
 for endpoint, endpoint_params in endpoint_map.items():
 
-    # Sheet tab name
     tab_name = (
         endpoint
         .replace("/v1/", "")
@@ -358,7 +361,6 @@ for endpoint, endpoint_params in endpoint_map.items():
 
     print(f"\n🔍 Processing {tab_name}")
 
-    # Correct URL
     url = (
         "https://api.ristaapps.com"
         + endpoint
@@ -371,9 +373,39 @@ for endpoint, endpoint_params in endpoint_map.items():
         "branch": active_branch,
         "day": today,
         "page": 1,
-        "pageSize": 10,
-        "sort": "desc"
+        "pageSize": 10
     }
+
+    # =============================================
+    # ANALYTICS FIX
+    # =============================================
+    if "analytics" in tab_name:
+
+        params = {
+            "branch": active_branch,
+
+            "fromDate": (
+                datetime.now()
+                - timedelta(days=1)
+            ).strftime("%Y-%m-%d 00:00:00"),
+
+            "toDate": (
+                datetime.now()
+                - timedelta(days=1)
+            ).strftime("%Y-%m-%d 23:59:59")
+        }
+
+    print("🔗 URL:", url)
+    print("📦 Params:", params)
+
+    try:
+
+        response = requests.get(
+            url,
+            headers=headers(),
+            params=params,
+            timeout=30
+        )
 
     # Add endpoint-specific params
     for k, v in endpoint_params.items():
@@ -410,7 +442,8 @@ for endpoint, endpoint_params in endpoint_map.items():
         if response.status_code != 200:
             print("ERROR RESPONSE:", response.text)
             raise Exception(
-                f"HTTP {response.status_code}"
+                f"HTTP {response.status_code} | "
+                f"{response.text[:300]}"
             )
 
         js = response.json()
