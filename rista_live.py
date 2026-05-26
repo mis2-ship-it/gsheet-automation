@@ -2092,7 +2092,7 @@ def send_email():
 
         <p>
             🕒 Data Till:
-            <b>{report_time.strftime('%d %b %Y')}</b>
+            <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
         </p>
 
         <div style="
@@ -2667,6 +2667,14 @@ def send_am_mail():
         )
 
         body = f"""
+
+        <p>
+        🕒 Data Till:
+        <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+        </p>
+        
+        <br><br>
+        
         <h2>🏪 Store Wise Report</h2>
         {styled_html(store_df)}
 
@@ -3083,6 +3091,13 @@ def send_tm_mail():
         )
 
         body = f"""
+
+        <p>
+        🕒 Data Till:
+        <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+        </p>
+        
+        <br><br>
 
         <h2>🏪 Store Wise Report</h2>
         {styled_html(store_df)}
