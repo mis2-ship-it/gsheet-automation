@@ -2071,7 +2071,7 @@ def send_email():
 
     msg["Subject"] = (
         f"📊 Live Sales Dashboard - "
-        f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+        f"{report_time.strftime('%d %b %Y')}"
     )
 
     # =====================================================
@@ -2092,7 +2092,7 @@ def send_email():
 
         <p>
             🕒 Data Till:
-            <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+            <b>{report_time.strftime('%d %b %Y')}</b>
         </p>
 
         <div style="
@@ -2663,7 +2663,7 @@ def send_am_mail():
 
         msg["Subject"] = (
             f"📊 AM Sales Dashboard - "
-            f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+            f"{report_time.strftime('%d %b %Y')}"
         )
 
         body = f"""
@@ -3079,7 +3079,7 @@ def send_tm_mail():
 
         msg["Subject"] = (
             f"📊 TM Sales Dashboard - "
-            f"{report_time.strftime('%d %b %Y %I:%M %p')}"
+            f"{report_time.strftime('%d %b %Y')}"
         )
 
         body = f"""
