@@ -348,7 +348,10 @@ source_master = pd.DataFrame(
     columns=sheet.get("D:F")[0]
 )
 
-# clean text
+# =========================================================
+# CLEAN TEXT
+# =========================================================
+
 for col in source_master.columns:
     source_master[col] = (
         source_master[col]
@@ -358,7 +361,9 @@ for col in source_master.columns:
 
 source_master["Channel"] = (
     source_master["Channel"]
+    .astype(str)
     .str.upper()
+    .str.strip()
 )
 
 # =========================================================
@@ -368,8 +373,8 @@ source_master["Channel"] = (
 final_df["channel"] = (
     final_df["channel"]
     .astype(str)
-    .str.strip()
     .str.upper()
+    .str.strip()
 )
 
 # =========================================================
@@ -427,7 +432,7 @@ final_df["Region"] = (
 )
 
 # =========================================================
-# DEBUG PRINTS
+# DEBUG
 # =========================================================
 
 print("SOURCE GROUP CHECK")
@@ -442,6 +447,12 @@ print(
     .value_counts(dropna=False)
 )
 
+print("UNMAPPED CHANNELS")
+print(
+    set(final_df["channel"].unique())
+    - set(source_master["Channel"].unique())
+)
+
 print("STORE TYPE CHECK")
 print(
     final_df["Store Type"]
@@ -453,12 +464,6 @@ print(list(am_store_map.keys())[:5])
 
 print("TM EMAIL SAMPLE")
 print(list(tm_region_map.keys())[:5])
-
-print("UNMAPPED CHANNELS")
-print(
-    set(final_df["channel"].unique())
-    - set(source_map.keys())
-)
 
 print("✅ AM Count:", len(am_store_map))
 print("✅ TM Count:", len(tm_region_map))
@@ -985,7 +990,9 @@ today_target_row = target_df[
 if not today_target_row.empty:
 
     total_target = float(
-        today_target_row["Target"].iloc[0]
+    target_value
+    if str(target_value).strip() != ""
+    else 0
     )
 
     offline_target = float(
