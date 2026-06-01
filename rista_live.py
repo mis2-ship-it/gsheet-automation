@@ -989,11 +989,14 @@ today_target_row = target_df[
 
 if not today_target_row.empty:
 
-    total_target = float(
-    target_value
-    if str(target_value).strip() != ""
-    else 0
-    )
+    try:
+        total_target = float(
+            str(target_value)
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        total_target = 0
 
     offline_target = float(
         today_target_row["Offline Target"].iloc[0]
