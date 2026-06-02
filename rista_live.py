@@ -989,27 +989,45 @@ today_target_row = target_df[
 
 if not today_target_row.empty:
 
+    # =====================================================
+    # SAFE TARGET FETCH
+    # =====================================================
+
     try:
         total_target = float(
-            str(target_value)
+            str(
+                today_target_row["Total Target"]
+                .iloc[0]
+            )
             .replace(",", "")
             .strip()
         )
     except:
         total_target = 0
 
-    offline_target = float(
-        today_target_row["Offline Target"].iloc[0]
-    )
+    try:
+        offline_target = float(
+            str(
+                today_target_row["Offline Target"]
+                .iloc[0]
+            )
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        offline_target = 0
 
-    online_target = float(
-        today_target_row["Online Target"].iloc[0]
-    )
-
-else:
-    total_target = 0
-    offline_target = 0
-    online_target = 0
+    try:
+        online_target = float(
+            str(
+                today_target_row["Online Target"]
+                .iloc[0]
+            )
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        online_target = 0
 
 
 today_sales_total = today_cut["Net Sales"].sum()
