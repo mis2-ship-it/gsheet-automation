@@ -596,7 +596,56 @@ for store, group in final_df.groupby("branchName"):
     send_email(",".join(receivers), group)
 
     print(f"📩 Alert sent for {store} → {receivers}")
+# =========================================================
+# FILTER ONLY COCO STORES
+# =========================================================
 
+try:
+
+    mapping_ws = spreadsheet.worksheet(
+        "Store_Mapping"
+    )
+
+    mapping_df = pd.DataFrame(
+        mapping_ws.get_all_records()
+    )
+
+    # Keep only COCO stores
+    coco_stores = (
+        mapping_df[
+            mapping_df["Store_Type"]
+            .astype(str)
+            .str.upper()
+            == "COCO"
+        ]["branchName"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    print(
+        f"✅ COCO Stores Found: "
+        f"{len(coco_stores)}"
+    )
+
+    # Filter final_df
+    final_df = final_df[
+        final_df["branchName"]
+        .astype(str)
+        .isin(coco_stores)
+    ].copy()
+
+    print(
+        f"✅ COCO Filter Applied | "
+        f"Rows: {len(final_df)}"
+    )
+
+except Exception as e:
+
+    print(
+        f"❌ Store_Mapping error: {e}"
+    )
 # =========================================================
 # 📊 SUMMARY DATA
 # =========================================================
@@ -605,12 +654,14 @@ channel_summary = (
     final_df.groupby("channel")
     .size()
     .reset_index(name="Count")
+    .sort_values("Count", ascending=False)
 )
 
 reason_summary = (
     final_df.groupby("Cancel_Group")
     .size()
     .reset_index(name="Count")
+    .sort_values("Count", ascending=False)
 )
 
 store_summary = (
@@ -627,6 +678,7 @@ critical_summary = (
     .groupby(["branchName", "channel"])
     .size()
     .reset_index(name="Count")
+    .sort_values("Count", ascending=False)
 )
 
 # =========================================================
@@ -666,7 +718,7 @@ def send_summary_email(final_df):
 
     # Store HTML
     store_html = ""
-    for _, row in store_summary.head(10).iterrows():
+    for _, row in store_summary.iterrows():
         store_html += f"""
         <tr>
             <td>{row['branchName']}</td>
@@ -686,13 +738,19 @@ def send_summary_email(final_df):
         """
 
     body = f"""
-    <h2>📊 Cancellation Summary</h2>
+    <h2>📊 COCO Cancellation Summary</h2>
 
-    <p><b>Total Cancellations:</b> {total_cancel}</p>
+    <p>
+        <b>Total Cancellations:</b>
+        {total_cancel}
+    </p>
 
     <h3>Channel-wise Cancellation</h3>
     <table border="1" cellpadding="5">
-    <tr><th>Channel</th><th>Count</th></tr>
+    <tr>
+        <th>Channel</th>
+        <th>Count</th>
+    </tr>
     {channel_html}
     </table>
 
@@ -700,7 +758,10 @@ def send_summary_email(final_df):
 
     <h3>Reason-wise Summary</h3>
     <table border="1" cellpadding="5">
-    <tr><th>Reason Group</th><th>Count</th></tr>
+    <tr>
+        <th>Reason Group</th>
+        <th>Count</th>
+    </tr>
     {reason_html}
     </table>
 
@@ -718,7 +779,7 @@ def send_summary_email(final_df):
 
     <br>
 
-    <h3>🏪 Top Impacted Stores</h3>
+    <h3>🏪 Store-wise Cancellation</h3>
     <table border="1" cellpadding="5">
     <tr>
         <th>Store</th>
@@ -729,6 +790,7 @@ def send_summary_email(final_df):
     """
 
     msg = MIMEText(body, "html")
+
     msg["Subject"] = (
         f"🚨 Cancellation Summary | "
         f"{today} | Total: {total_cancel}"
@@ -743,14 +805,24 @@ def send_summary_email(final_df):
         if e.strip()
     ]
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
+
     server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
+
+    server.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
+
     server.sendmail(
         EMAIL_USER,
         receivers,
         msg.as_string()
     )
+
     server.quit()
 
     print("📩 Summary email sent")
@@ -759,6 +831,7 @@ def send_summary_email(final_df):
 # =========================================================
 # 📤 SEND SUMMARY MAIL
 # =========================================================
+
 send_summary_email(final_df)
 
         
