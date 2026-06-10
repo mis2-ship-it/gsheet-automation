@@ -99,6 +99,14 @@ try:
 
     branch_json = branch_resp.json()
 
+    
+    print(
+        f"Branch: {branch_code} | "
+        f"Date: {day} | "
+        f"Status: {resp.status_code}"
+    )
+    
+    print(str(data)[:300])
     print("Branch API Sample:")
     print(str(branch_json)[:500])
 
@@ -202,6 +210,13 @@ def fetch_sales(day):
 
             df = future.result()
 
+        if df is not None:
+        
+            print(
+                f"Fetched rows for {day}:",
+                len(df)
+            )
+        
             if not df.empty:
                 results.append(df)
 
