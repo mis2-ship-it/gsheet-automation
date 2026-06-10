@@ -793,7 +793,7 @@ def send_summary_email(final_df):
 
     msg["Subject"] = (
         f"🚨 Cancellation Summary | "
-        f"{today} | Total: {total_cancel}"
+        f"{today}"
     )
 
     msg["From"] = EMAIL_USER
