@@ -1,0 +1,463 @@
+# =========================================================
+# IMPORTS
+# =========================================================
+
+import os
+import json
+import requests
+import pandas as pd
+import numpy as np
+import gspread
+
+from datetime import datetime, timedelta
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed
+)
+from google.oauth2.service_account import Credentials
+
+
+print("🚀 MTD Script Started")
+
+
+# =========================================================
+# GOOGLE AUTH
+# =========================================================
+
+scope = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+creds_dict = json.loads(
+    os.environ["GOOGLE_CREDENTIALS"]
+)
+
+creds = Credentials.from_service_account_info(
+    creds_dict,
+    scopes=scope
+)
+
+client = gspread.authorize(creds)
+
+print("✅ Connected to Google")
+
+
+# =========================================================
+# API CONFIG
+# =========================================================
+
+API_KEY = os.getenv("API_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY")
+
+
+def headers():
+    return {
+        "api-key": API_KEY,
+        "secret-key": SECRET_KEY,
+        "Content-Type": "application/json"
+    }
+
+
+# =========================================================
+# DATE RANGE
+# =========================================================
+
+today = datetime.now().date()
+
+start_date = today.replace(day=1)
+end_date = today - timedelta(days=1)
+
+print(f"📅 MTD Range: {start_date} → {end_date}")
+
+
+# =========================================================
+# FETCH BRANCHES
+# =========================================================
+
+b_resp = requests.get(
+    "https://api.ristaapps.com/v1/branch/list",
+    headers=headers()
+)
+
+data = b_resp.json()
+data = data.get("data", [])
+
+branches = [
+    b["branchCode"]
+    for b in data
+    if b.get("status") == "Active"
+]
+
+print("🏪 Branch Count:", len(branches))
+
+
+# =========================================================
+# FETCH SALES
+# =========================================================
+
+def fetch_branch_data(branch, day):
+
+    try:
+
+        payload = {
+            "branch": branch,
+            "businessDate": str(day)
+        }
+
+        r = requests.post(
+            "https://api.ristaapps.com/v1/order/list",
+            headers=headers(),
+            json=payload,
+            timeout=60
+        )
+
+        data = r.json()
+
+        if isinstance(data, dict):
+            rows = data.get("data", [])
+        else:
+            rows = data
+
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+
+        df["businessDate"] = day
+
+        return df
+
+    except Exception as e:
+        print(f"❌ {branch} {day}: {e}")
+        return pd.DataFrame()
+
+
+def fetch_sales(day):
+
+    results = []
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+
+        futures = [
+            executor.submit(
+                fetch_branch_data,
+                b,
+                day
+            )
+            for b in branches
+        ]
+
+        for future in as_completed(futures):
+
+            df = future.result()
+
+            if not df.empty:
+                results.append(df)
+
+    return (
+        pd.concat(results, ignore_index=True)
+        if results
+        else pd.DataFrame()
+    )
+
+
+# =========================================================
+# FETCH MTD DATA
+# =========================================================
+
+all_days = []
+
+current_day = start_date
+
+while current_day <= end_date:
+
+    print("📥 Fetching:", current_day)
+
+    df = fetch_sales(current_day)
+
+    if not df.empty:
+        all_days.append(df)
+
+    current_day += timedelta(days=1)
+
+final_df = pd.concat(
+    all_days,
+    ignore_index=True
+)
+
+print("✅ Rows:", len(final_df))
+
+
+# =========================================================
+# HELP SHEET MAPPING
+# =========================================================
+
+sheet = client.open_by_key(
+    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+).worksheet("Region_Help_Sheet")
+
+master = pd.DataFrame(
+    sheet.get_all_records()
+)
+
+storetype_map = dict(
+    zip(master["Branch"], master["Store Type"])
+)
+
+region_map = dict(
+    zip(master["Branch"], master["Region"])
+)
+
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .map(storetype_map)
+)
+
+final_df["Region"] = (
+    final_df["branchName"]
+    .map(region_map)
+)
+
+
+# =========================================================
+# SOURCE MAP
+# =========================================================
+
+help_sheet = client.open(
+    "Sales Dashboard"
+).worksheet("Help Sheet")
+
+source_master = pd.DataFrame(
+    help_sheet.get("D:F")[1:],
+    columns=help_sheet.get("D:F")[0]
+)
+
+source_master["Channel"] = (
+    source_master["Channel"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
+
+final_df["channel"] = (
+    final_df["channel"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
+
+source_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Source Group"]
+    )
+)
+
+brand_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Brand"]
+    )
+)
+
+final_df["Source"] = (
+    final_df["channel"]
+    .map(source_map)
+)
+
+final_df["Brand Name"] = (
+    final_df["channel"]
+    .map(brand_map)
+)
+
+final_df["Source"] = final_df["Source"].replace(
+    [
+        "Magicpin",
+        "HOGR",
+        "Website"
+    ],
+    "Others"
+)
+
+
+# =========================================================
+# SESSION
+# =========================================================
+
+final_df["Session"] = (
+    final_df["sessionLabel"]
+)
+
+
+# =========================================================
+# NUMERIC
+# =========================================================
+
+numeric_cols = [
+    "netAmount",
+    "discountAmount",
+    "taxAmount",
+    "grossAmount",
+    "item_quantity"
+]
+
+for col in numeric_cols:
+
+    if col in final_df.columns:
+
+        final_df[col] = pd.to_numeric(
+            final_df[col],
+            errors="coerce"
+        ).fillna(0)
+
+
+final_df["discountAmount"] = (
+    final_df["discountAmount"]
+    .abs()
+)
+
+
+# =========================================================
+# WEEK
+# =========================================================
+
+final_df["Date"] = pd.to_datetime(
+    final_df["businessDate"]
+)
+
+final_df["Week"] = (
+    "WK "
+    + final_df["Date"]
+    .dt.isocalendar()
+    .week.astype(str)
+)
+
+
+# =========================================================
+# SUMMARY
+# =========================================================
+
+mtd_summary = (
+    final_df.groupby(
+        [
+            "Brand Name",
+            "businessDate",
+            "Week",
+            "branchName",
+            "Source",
+            "Session",
+            "Store Type",
+            "Region"
+        ],
+        dropna=False
+    )
+    .agg({
+        "netAmount": "sum",
+        "discountAmount": "sum",
+        "taxAmount": "sum",
+        "grossAmount": "sum",
+        "item_quantity": "sum",
+        "invoiceNumber": "nunique"
+    })
+    .reset_index()
+)
+
+mtd_summary.columns = [
+    "Brand Name",
+    "Date",
+    "Week",
+    "Branch",
+    "Source",
+    "Session",
+    "Store Type",
+    "Region",
+    "Net Sales",
+    "Discount",
+    "Taxes",
+    "Gross Sales",
+    "Quantity",
+    "Orders"
+]
+
+
+# =========================================================
+# AOV + DIS%
+# =========================================================
+
+mtd_summary["Dis %"] = (
+    mtd_summary["Discount"]
+    / mtd_summary["Gross Sales"]
+    .replace(0, 1)
+) * 100
+
+mtd_summary["AOV"] = (
+    mtd_summary["Net Sales"]
+    / mtd_summary["Orders"]
+    .replace(0, 1)
+)
+
+
+# =========================================================
+# BUCKETS
+# =========================================================
+
+mtd_summary["AOV Bucket"] = pd.cut(
+    mtd_summary["AOV"],
+    bins=[0,100,200,300,400,500,600,900,999999],
+    labels=[
+        "0-100",
+        "100-200",
+        "200-300",
+        "300-400",
+        "400-500",
+        "500-600",
+        "600-900",
+        ">900"
+    ]
+)
+
+mtd_summary["Discount Bucket"] = pd.cut(
+    mtd_summary["Dis %"],
+    bins=[0,10,20,30,40,50,60,70,80,90,100],
+    labels=[
+        "1%-10%",
+        "10%-20%",
+        "20%-30%",
+        "30%-40%",
+        "40%-50%",
+        "50%-60%",
+        "60%-70%",
+        "70%-80%",
+        "80%-90%",
+        "90%-100%"
+    ]
+)
+
+mtd_summary["Discount Bucket"] = (
+    mtd_summary["Discount Bucket"]
+    .fillna("0%")
+)
+
+
+# =========================================================
+# UPDATE GSHEET
+# =========================================================
+
+sheet = client.open_by_key(
+    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+).worksheet("MTD_Data")
+
+sheet.clear()
+
+mtd_summary["Date"] = (
+    pd.to_datetime(mtd_summary["Date"])
+    .dt.strftime("%Y-%m-%d")
+)
+
+sheet.update(
+    [mtd_summary.columns.tolist()]
+    + mtd_summary.fillna("").values.tolist()
+)
+
+print("✅ MTD Update Completed")
