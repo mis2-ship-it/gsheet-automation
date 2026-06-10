@@ -778,8 +778,7 @@ mtd_summary = mtd_summary.rename(
         "Source Group": "Source",
         "discountAmount": "Discount",
         "taxAmount": "Taxes",
-        "grossAmount": "Gross Sales",
-        "item_quantity": "Quantity"
+        "grossAmount": "Gross Sales"
     }
 )
 
@@ -797,7 +796,6 @@ required_cols = [
     "Orders",
     "Taxes",
     "Gross Sales",
-    "Quantity",
     "Dis %",
     "AOV",
     "AOV Bucket",
