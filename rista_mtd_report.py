@@ -75,21 +75,63 @@ print(f"📅 MTD Range: {start_date} → {end_date}")
 # FETCH BRANCHES
 # =========================================================
 
-b_resp = requests.get(
-    "https://api.ristaapps.com/v1/branch/list",
-    headers=headers()
-)
+print("📥 Fetching Branches...")
 
-data = b_resp.json()
-data = data.get("data", [])
+branch_url = "https://api.ristaapps.com/v1/branch/list"
 
-branches = [
-    b["branchCode"]
-    for b in data
-    if b.get("status") == "Active"
-]
+try:
 
-print("🏪 Branch Count:", len(branches))
+    branch_resp = requests.get(
+        branch_url,
+        headers=headers(),
+        timeout=60
+    )
+
+    print("Branch API Status:", branch_resp.status_code)
+
+    branch_json = branch_resp.json()
+
+    print("Branch API Sample:")
+    print(str(branch_json)[:500])
+
+    # handle multiple response formats
+    if isinstance(branch_json, dict):
+
+        if "data" in branch_json:
+            branch_data = branch_json["data"]
+
+        elif "branches" in branch_json:
+            branch_data = branch_json["branches"]
+
+        else:
+            branch_data = []
+
+    elif isinstance(branch_json, list):
+        branch_data = branch_json
+
+    else:
+        branch_data = []
+
+    branches = []
+
+    for b in branch_data:
+
+        branch_code = (
+            b.get("branchCode")
+            or b.get("code")
+            or b.get("id")
+        )
+
+        if branch_code:
+            branches.append(str(branch_code))
+
+    print("🏪 Branch Count:", len(branches))
+    print("🏪 Sample Branches:", branches[:10])
+
+except Exception as e:
+
+    print("❌ Branch Fetch Failed:", str(e))
+    branches = []
 
 
 # =========================================================
@@ -180,6 +222,11 @@ while current_day <= end_date:
         all_days.append(df)
 
     current_day += timedelta(days=1)
+
+if not all_data:
+    raise Exception(
+        "No sales data fetched"
+    )
 
 final_df = pd.concat(
     all_days,
