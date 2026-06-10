@@ -402,8 +402,7 @@ numeric_cols = [
     "netAmount",
     "discountAmount",
     "taxAmount",
-    "grossAmount",
-    "item_quantity"
+    "grossAmount"
 ]
 
 for col in numeric_cols:
@@ -437,7 +436,13 @@ final_df["Week"] = (
     .week.astype(str)
 )
 
+# =========================================================
+# SAFE COLUMN FIX
+# =========================================================
 
+if "item_quantity" not in final_df.columns:
+    final_df["item_quantity"] = 0
+    
 # =========================================================
 # SUMMARY
 # =========================================================
@@ -461,7 +466,6 @@ mtd_summary = (
         "discountAmount": "sum",
         "taxAmount": "sum",
         "grossAmount": "sum",
-        "item_quantity": "sum",
         "invoiceNumber": "nunique"
     })
     .reset_index()
@@ -480,7 +484,6 @@ mtd_summary.columns = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Quantity",
     "Orders"
 ]
 
