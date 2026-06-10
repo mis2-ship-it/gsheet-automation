@@ -100,13 +100,6 @@ try:
     branch_json = branch_resp.json()
 
     
-    print(
-        f"Branch: {branch_code} | "
-        f"Date: {day} | "
-        f"Status: {resp.status_code}"
-    )
-    
-    print(str(data)[:300])
     print("Branch API Sample:")
     print(str(branch_json)[:500])
 
@@ -151,7 +144,7 @@ except Exception as e:
 
 
 # =========================================================
-# FETCH SALES
+# FETCH BRANCH SALES
 # =========================================================
 
 def fetch_branch_data(branch, day):
@@ -159,8 +152,11 @@ def fetch_branch_data(branch, day):
     try:
 
         payload = {
-            "branch": branch,
-            "businessDate": str(day)
+            "branchCode": branch,
+            "fromDate": str(day),
+            "toDate": str(day),
+            "page": 1,
+            "pageSize": 10000
         }
 
         r = requests.post(
@@ -172,22 +168,49 @@ def fetch_branch_data(branch, day):
 
         data = r.json()
 
+        # ---------------- DEBUG ---------------- #
+
+        print(
+            f"Branch: {branch} | "
+            f"Date: {day} | "
+            f"Status: {r.status_code}"
+        )
+
+        print(str(data)[:200])
+
+        # ---------------- RESPONSE ---------------- #
+
         if isinstance(data, dict):
-            rows = data.get("data", [])
-        else:
+
+            rows = (
+                data.get("data")
+                or data.get("orders")
+                or []
+            )
+
+        elif isinstance(data, list):
+
             rows = data
+
+        else:
+            rows = []
 
         if not rows:
             return pd.DataFrame()
 
         df = pd.DataFrame(rows)
 
-        df["businessDate"] = day
+        df["businessDate"] = str(day)
 
         return df
 
     except Exception as e:
-        print(f"❌ {branch} {day}: {e}")
+
+        print(
+            f"❌ Error Branch {branch} "
+            f"Date {day}: {e}"
+        )
+
         return pd.DataFrame()
 
 
@@ -208,17 +231,21 @@ def fetch_sales(day):
 
         for future in as_completed(futures):
 
-            df = future.result()
+            try:
+                df = future.result()
 
-        if df is not None:
-        
-            print(
-                f"Fetched rows for {day}:",
-                len(df)
-            )
-        
-            if not df.empty:
-                results.append(df)
+                if df is not None:
+
+                    print(
+                        f"Fetched rows for {day}:",
+                        len(df)
+                    )
+
+                    if not df.empty:
+                        results.append(df)
+
+            except Exception as e:
+                print("Fetch Error:", e)
 
     return (
         pd.concat(results, ignore_index=True)
