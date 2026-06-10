@@ -148,31 +148,45 @@ def fetch_sales(day):
 
     results = []
 
-    # 🔥 THREAD CONTROL (IMPORTANT)
-    max_threads = 10   # safe limit (don’t exceed 15 for API safety)
+    # 🔥 THREAD CONTROL
+    max_threads = 10
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = [executor.submit(fetch_branch_data, b, day) for b in branches]
+
+        futures = [
+            executor.submit(fetch_branch_data, b, day)
+            for b in branches
+        ]
 
         for future in as_completed(futures):
+
             df = future.result()
+
             if df is not None and not df.empty:
                 results.append(df)
 
+    # =====================================================
+    # FINAL CONCAT
+    # =====================================================
+
     final_sales_df = (
-        pd.concat(
-            results,
-            ignore_index=True
-        )
+        pd.concat(results, ignore_index=True)
         if results
         else pd.DataFrame()
     )
-    
+
+    # =====================================================
+    # RAW DATA CHECK
+    # =====================================================
+
     print("RAW DATA CHECK")
     print(final_sales_df.shape)
-    
-    if not final_sales_df.empty:
-    
+
+    if (
+        not final_sales_df.empty
+        and "businessDate" in final_sales_df.columns
+    ):
+
         print(
             sorted(
                 pd.to_datetime(
@@ -180,15 +194,7 @@ def fetch_sales(day):
                 ).dt.date.unique()
             )[:15]
         )
-    
-        print(
-            sorted(
-                pd.to_datetime(
-                    final_sales_df["businessDate"]
-                ).dt.date.unique()
-            )[-15:]
-        )
-    
+
     return final_sales_df
 
 # ---------------- RUN ---------------- #
