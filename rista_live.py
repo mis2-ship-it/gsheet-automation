@@ -501,6 +501,25 @@ try:
     print("merged_df:", len(merged_df))
 except:
     print("merged_df missing")
+
+print("CHECK AVAILABLE DATAFRAMES")
+
+for var in list(globals().keys()):
+
+    if "df" in var.lower():
+
+        try:
+            obj = globals()[var]
+
+            if hasattr(obj, "shape"):
+
+                print(
+                    var,
+                    obj.shape
+                )
+
+        except:
+            pass
 print("🚀 MTD Data Creation Started")
 
 # =========================================================
