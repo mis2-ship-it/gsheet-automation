@@ -2793,6 +2793,20 @@ def send_email():
     if CC_EMAIL:
         receivers += CC_EMAIL.split(",")
 
+    RUN_MODE = os.environ.get(
+    "RUN_MODE",
+    "LIVE"
+    )
+    
+    if RUN_MODE == "MTD":
+    
+        print(
+            "✅ MTD Update Completed - No Email Sent"
+        )
+    
+    else:
+    
+        send_email()
     # =====================================================
     # SEND EMAIL
     # =====================================================
