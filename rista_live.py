@@ -469,6 +469,360 @@ print("✅ AM Count:", len(am_store_map))
 print("✅ TM Count:", len(tm_region_map))
 print("✅ Final Mapping Completed")
 
+# =========================================================
+# 📊 MTD DATA PUSH TO GSHEET
+# PASTE BEFORE FILTER BLOCK
+# =========================================================
+
+import numpy as np
+
+print("🚀 MTD Data Creation Started")
+
+# =========================================================
+# DATE RANGE
+# =========================================================
+
+today_date = now.date()
+
+month_start = today_date.replace(day=1)
+
+yesterday = today_date - timedelta(days=1)
+
+# =========================================================
+# MTD DATA FILTER
+# =========================================================
+
+mtd_df = final_df.copy()
+
+mtd_df["businessDate"] = pd.to_datetime(
+    mtd_df["businessDate"]
+).dt.date
+
+mtd_df = mtd_df[
+    (mtd_df["businessDate"] >= month_start) &
+    (mtd_df["businessDate"] <= yesterday) &
+    (mtd_df["Store Type"] == "COCO") &
+    (mtd_df["status"] == "Closed")
+].copy()
+
+print("✅ MTD Rows:", len(mtd_df))
+
+# =========================================================
+# SESSION MAP
+# =========================================================
+
+def get_session(hour):
+
+    if 8 <= hour < 12:
+        return "Breakfast"
+
+    elif 12 <= hour < 16:
+        return "Lunch"
+
+    elif 16 <= hour < 19:
+        return "Snacks"
+
+    elif 19 <= hour < 23:
+        return "Dinner"
+
+    else:
+        return "Post Dinner"
+
+mtd_df["Session"] = (
+    mtd_df["Hour"]
+    .fillna(0)
+    .astype(int)
+    .apply(get_session)
+)
+
+# =========================================================
+# WEEK FORMAT (WK 23)
+# =========================================================
+
+mtd_df["Date"] = pd.to_datetime(
+    mtd_df["businessDate"]
+)
+
+mtd_df["Week"] = (
+    "WK "
+    + mtd_df["Date"]
+    .dt.isocalendar()
+    .week.astype(str)
+)
+
+# =========================================================
+# SAFE NUMERIC
+# =========================================================
+
+numeric_cols = [
+    "Net Sales",
+    "discountAmount",
+    "grossAmount",
+    "taxAmount",
+    "quantity"
+]
+
+for col in numeric_cols:
+
+    if col in mtd_df.columns:
+
+        mtd_df[col] = pd.to_numeric(
+            mtd_df[col],
+            errors="coerce"
+        ).fillna(0)
+
+# =========================================================
+# AOV
+# =========================================================
+
+if "billNo" in mtd_df.columns:
+
+    order_df = (
+        mtd_df.groupby("billNo")
+        .size()
+        .reset_index(name="dummy")
+    )
+
+    orders = (
+        mtd_df.groupby(
+            [
+                "businessDate",
+                "branchName",
+                "Source Group",
+                "Brand",
+                "Session",
+                "Store Type",
+                "Region"
+            ]
+        )["billNo"]
+        .nunique()
+        .reset_index(name="Orders")
+    )
+
+else:
+
+    orders = (
+        mtd_df.groupby(
+            [
+                "businessDate",
+                "branchName",
+                "Source Group",
+                "Brand",
+                "Session",
+                "Store Type",
+                "Region"
+            ]
+        )
+        .size()
+        .reset_index(name="Orders")
+    )
+
+# =========================================================
+# AGGREGATION
+# =========================================================
+
+mtd_summary = (
+    mtd_df.groupby(
+        [
+            "businessDate",
+            "Week",
+            "branchName",
+            "Source Group",
+            "Brand",
+            "Session",
+            "Store Type",
+            "Region"
+        ],
+        dropna=False
+    )
+    .agg({
+        "Net Sales": "sum",
+        "discountAmount": "sum",
+        "taxAmount": "sum",
+        "grossAmount": "sum",
+        "quantity": "sum"
+    })
+    .reset_index()
+)
+
+# =========================================================
+# MERGE ORDERS
+# =========================================================
+
+merge_cols = [
+    "businessDate",
+    "branchName",
+    "Source Group",
+    "Brand",
+    "Session",
+    "Store Type",
+    "Region"
+]
+
+mtd_summary = mtd_summary.merge(
+    orders,
+    on=merge_cols,
+    how="left"
+)
+
+mtd_summary["Orders"] = (
+    mtd_summary["Orders"]
+    .fillna(0)
+)
+
+# =========================================================
+# DIS %
+# =========================================================
+
+mtd_summary["Dis %"] = np.where(
+    mtd_summary["grossAmount"] > 0,
+
+    (
+        mtd_summary["discountAmount"]
+        / mtd_summary["grossAmount"]
+    ) * 100,
+
+    0
+)
+
+# =========================================================
+# AOV
+# =========================================================
+
+mtd_summary["AOV"] = np.where(
+    mtd_summary["Orders"] > 0,
+
+    (
+        mtd_summary["Net Sales"]
+        / mtd_summary["Orders"]
+    ),
+
+    0
+)
+
+# =========================================================
+# AOV BUCKET
+# =========================================================
+
+def aov_bucket(x):
+
+    if x <= 100:
+        return "0-100"
+    elif x <= 200:
+        return "100-200"
+    elif x <= 300:
+        return "200-300"
+    elif x <= 400:
+        return "300-400"
+    elif x <= 500:
+        return "400-500"
+    elif x <= 600:
+        return "500-600"
+    elif x <= 900:
+        return "600-900"
+    else:
+        return ">900"
+
+mtd_summary["AOV Bucket"] = (
+    mtd_summary["AOV"]
+    .apply(aov_bucket)
+)
+
+# =========================================================
+# DISCOUNT BUCKET
+# =========================================================
+
+def dis_bucket(x):
+
+    if x == 0:
+        return "0%"
+    elif x <= 10:
+        return "1%-10%"
+    elif x <= 20:
+        return "10%-20%"
+    elif x <= 30:
+        return "20%-30%"
+    elif x <= 40:
+        return "30%-40%"
+    elif x <= 50:
+        return "40%-50%"
+    elif x <= 60:
+        return "50%-60%"
+    elif x <= 70:
+        return "60%-70%"
+    elif x <= 80:
+        return "70%-80%"
+    elif x <= 90:
+        return "80%-90%"
+    else:
+        return "90%-100%"
+
+mtd_summary["Discount Bucket"] = (
+    mtd_summary["Dis %"]
+    .apply(dis_bucket)
+)
+
+# =========================================================
+# FINAL COLUMN FORMAT
+# =========================================================
+
+mtd_summary = mtd_summary.rename(
+    columns={
+        "Brand": "Brand Name",
+        "businessDate": "Date",
+        "branchName": "Branch",
+        "Source Group": "Source",
+        "discountAmount": "Discount",
+        "taxAmount": "Taxes",
+        "grossAmount": "Gross Sales",
+        "quantity": "Quantity"
+    }
+)
+
+required_cols = [
+    "Brand Name",
+    "Date",
+    "Week",
+    "Branch",
+    "Source",
+    "Session",
+    "Store Type",
+    "Region",
+    "Net Sales",
+    "Discount",
+    "Orders",
+    "Taxes",
+    "Gross Sales",
+    "Quantity",
+    "Dis %",
+    "AOV",
+    "AOV Bucket",
+    "Discount Bucket"
+]
+
+mtd_summary = mtd_summary[
+    required_cols
+]
+
+# =========================================================
+# GSHEET PUSH
+# =========================================================
+
+mtd_sheet = client.open_by_key(
+    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+).worksheet("MTD_Data")
+
+mtd_sheet.clear()
+
+mtd_sheet.update(
+    [
+        mtd_summary.columns.values.tolist()
+    ] +
+    mtd_summary.values.tolist()
+)
+
+print("✅ MTD Data Updated Successfully")
+
 # ---------------- FILTER ---------------- #
 
 today_cut = final_df[
