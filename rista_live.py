@@ -479,32 +479,38 @@ import numpy as np
 print("🚀 MTD Data Creation Started")
 
 # =========================================================
-# MTD DATA (ALL STORES)
+# MTD DATA (RAW DATA)
 # =========================================================
 
 month_start = business_day.replace(day=1)
 yesterday = business_day - timedelta(days=1)
 
-mtd_df = final_df[
+mtd_df = reqcolumns[
     (
         pd.to_datetime(
-            final_df["businessDate"]
+            reqcolumns["businessDate"]
         ).dt.date >= month_start
     )
     &
     (
         pd.to_datetime(
-            final_df["businessDate"]
+            reqcolumns["businessDate"]
         ).dt.date <= yesterday
     )
     &
     (
-        final_df["status"] == "Closed"
+        reqcolumns["status"] == "Closed"
     )
 ].copy()
 
-print("✅ MTD Rows:", len(mtd_df))
+print(
+    "MTD DATE RANGE:",
+    mtd_df["businessDate"].min(),
+    "to",
+    mtd_df["businessDate"].max()
+)
 
+print("✅ MTD Rows:", len(mtd_df))
 # =========================================================
 # REGION HELP SHEET (ONLY FOR MTD)
 # =========================================================
