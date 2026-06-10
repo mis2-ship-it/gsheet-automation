@@ -1,24 +1,15 @@
-name: Rista Live MTD Report
+name: Rista MTD Update
 
 on:
   schedule:
-
-    # MTD Update (7:30 AM IST = 02:00 UTC)
+    # 07:30 AM IST
     - cron: '0 2 * * *'
 
   workflow_dispatch:
 
 jobs:
-
-  # ==================================================
-  # DAILY MTD UPDATE
-  # ==================================================
-
-  mtd-update:
+  run-mtd:
     runs-on: ubuntu-latest
-
-    # only run for 7:30 AM IST schedule
-    if: github.event.schedule == '0 2 * * *'
 
     steps:
       - name: Checkout
@@ -29,7 +20,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install deps
+      - name: Install Dependencies
         run: |
           pip install -r requirements.txt
 
@@ -38,6 +29,9 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           API_KEY: ${{ secrets.API_KEY }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+          # IMPORTANT
+          RUN_MODE: MTD
 
         run: |
           echo "Running MTD Update..."
