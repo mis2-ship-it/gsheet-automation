@@ -523,35 +523,31 @@ for var in list(globals().keys()):
 print("🚀 MTD Data Creation Started")
 
 # =========================================================
-# MTD DATA (RAW DATA)
+# MTD DATA (1st TO YESTERDAY)
 # =========================================================
 
 month_start = business_day.replace(day=1)
 yesterday = business_day - timedelta(days=1)
 
-mtd_df = sales_df[
+# ensure date format
+final_df["businessDate"] = pd.to_datetime(
+    final_df["businessDate"]
+).dt.date
+
+mtd_df = final_df[
     (
-        pd.to_datetime(
-            reqcolumns["businessDate"]
-        ).dt.date >= month_start
+        final_df["businessDate"] >= month_start
     )
     &
     (
-        pd.to_datetime(
-            reqcolumns["businessDate"]
-        ).dt.date <= yesterday
+        final_df["businessDate"] <= yesterday
     )
     &
     (
-        reqcolumns["status"] == "Closed"
+        final_df["status"] == "Closed"
     )
 ].copy()
 
-print(
-    mtd_df["businessDate"]
-    .sort_values()
-    .unique()[:20]
-)
 print(
     "MTD DATE RANGE:",
     mtd_df["businessDate"].min(),
