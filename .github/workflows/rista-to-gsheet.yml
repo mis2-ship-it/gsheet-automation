@@ -2,11 +2,22 @@ name: Rista Live to GSheet Hourly
 
 on:
   schedule:
+
+    # Hourly Live Dashboard
     - cron: '0 * * * *'
+
+    # MTD Update (7:30 AM IST = 02:00 UTC)
+    - cron: '0 2 * * *'
+
   workflow_dispatch:
 
 jobs:
-  run-script:
+
+  # ==================================================
+  # LIVE DASHBOARD - HOURLY
+  # ==================================================
+
+  live-dashboard:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,7 +33,7 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Run Script
+      - name: Run Live Script
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           API_KEY: ${{ secrets.API_KEY }}
@@ -33,5 +44,39 @@ jobs:
           EMAIL_CC: ${{ secrets.EMAIL_CC }}
 
         run: |
-          echo "Running script..."
+          echo "Running Live Dashboard..."
+          python rista_live.py
+
+
+  # ==================================================
+  # DAILY MTD UPDATE
+  # ==================================================
+
+  mtd-update:
+    runs-on: ubuntu-latest
+
+    # only run for 7:30 AM IST schedule
+    if: github.event.schedule == '0 2 * * *'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run MTD Script
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          API_KEY: ${{ secrets.API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+        run: |
+          echo "Running MTD Update..."
           python rista_live.py
