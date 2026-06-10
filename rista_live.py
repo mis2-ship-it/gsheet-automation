@@ -101,6 +101,7 @@ branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
 
 print("🏪 Branch count:", len(branches))
 
+
 # ---------------- FETCH SALES ---------------- #
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -158,7 +159,37 @@ def fetch_sales(day):
             if df is not None and not df.empty:
                 results.append(df)
 
-    return pd.concat(results, ignore_index=True) if results else pd.DataFrame()
+    final_sales_df = (
+        pd.concat(
+            results,
+            ignore_index=True
+        )
+        if results
+        else pd.DataFrame()
+    )
+    
+    print("RAW DATA CHECK")
+    print(final_sales_df.shape)
+    
+    if not final_sales_df.empty:
+    
+        print(
+            sorted(
+                pd.to_datetime(
+                    final_sales_df["businessDate"]
+                ).dt.date.unique()
+            )[:15]
+        )
+    
+        print(
+            sorted(
+                pd.to_datetime(
+                    final_sales_df["businessDate"]
+                ).dt.date.unique()
+            )[-15:]
+        )
+    
+    return final_sales_df
 
 # ---------------- RUN ---------------- #
 
@@ -521,6 +552,24 @@ for var in list(globals().keys()):
         except:
             pass
 print("🚀 MTD Data Creation Started")
+
+print("FINAL DF DATE CHECK")
+
+print(
+    sorted(
+        pd.to_datetime(
+            final_df["businessDate"]
+        ).dt.date.unique()
+    )[:20]
+)
+
+print(
+    sorted(
+        pd.to_datetime(
+            final_df["businessDate"]
+        ).dt.date.unique()
+    )[-20:]
+)
 
 # =========================================================
 # MTD DATA (1st TO YESTERDAY)
