@@ -479,33 +479,90 @@ import numpy as np
 print("🚀 MTD Data Creation Started")
 
 # =========================================================
-# DATE RANGE
+# MTD DATA (ALL STORES)
 # =========================================================
 
-today_date = now.date()
+month_start = business_day.replace(day=1)
+yesterday = business_day - timedelta(days=1)
 
-month_start = today_date.replace(day=1)
-
-yesterday = today_date - timedelta(days=1)
-
-# =========================================================
-# MTD DATA FILTER
-# =========================================================
-
-mtd_df = final_df.copy()
-
-mtd_df["businessDate"] = pd.to_datetime(
-    mtd_df["businessDate"]
-).dt.date
-
-mtd_df = mtd_df[
-    (mtd_df["businessDate"] >= month_start) &
-    (mtd_df["businessDate"] <= yesterday) &
-    (mtd_df["Store Type"] == "COCO") &
-    (mtd_df["status"] == "Closed")
+mtd_df = final_df[
+    (
+        pd.to_datetime(
+            final_df["businessDate"]
+        ).dt.date >= month_start
+    )
+    &
+    (
+        pd.to_datetime(
+            final_df["businessDate"]
+        ).dt.date <= yesterday
+    )
+    &
+    (
+        final_df["status"] == "Closed"
+    )
 ].copy()
 
 print("✅ MTD Rows:", len(mtd_df))
+
+# =========================================================
+# REGION HELP SHEET (ONLY FOR MTD)
+# =========================================================
+
+mtd_spreadsheet = client.open_by_key(
+    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+)
+
+region_help_ws = mtd_spreadsheet.worksheet(
+    "Region_Help_Sheet"
+)
+
+region_help_df = pd.DataFrame(
+    region_help_ws.get_all_records()
+)
+
+# clean
+for col in region_help_df.columns:
+
+    region_help_df[col] = (
+        region_help_df[col]
+        .astype(str)
+        .str.strip()
+    )
+
+storetype_map = dict(
+    zip(
+        region_help_df["Branch"],
+        region_help_df["Store Type"]
+    )
+)
+
+region_map = dict(
+    zip(
+        region_help_df["Branch"],
+        region_help_df["Region"]
+    )
+)
+
+mtd_df["branchName"] = (
+    mtd_df["branchName"]
+    .astype(str)
+    .str.strip()
+)
+
+mtd_df["Store Type"] = (
+    mtd_df["branchName"]
+    .map(storetype_map)
+    .fillna("UNKNOWN")
+)
+
+mtd_df["Region"] = (
+    mtd_df["branchName"]
+    .map(region_map)
+    .fillna("UNKNOWN")
+)
+
+print("✅ Region Mapping Done")
 
 # =========================================================
 # SESSION MAP
@@ -569,6 +626,17 @@ for col in numeric_cols:
             mtd_df[col],
             errors="coerce"
         ).fillna(0)
+
+# =========================================================
+# DISCOUNT POSITIVE
+# =========================================================
+
+mtd_df["discountAmount"] = (
+    mtd_df["discountAmount"]
+    .abs()
+)
+
+print("✅ Discount Converted Positive")
 
 # =========================================================
 # AOV
