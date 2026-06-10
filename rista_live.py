@@ -475,7 +475,32 @@ print("✅ Final Mapping Completed")
 # =========================================================
 
 import numpy as np
+print("AVAILABLE VARIABLES CHECK")
 
+try:
+    print("final_df:", len(final_df))
+except:
+    print("final_df missing")
+
+try:
+    print("df:", len(df))
+except:
+    print("df missing")
+
+try:
+    print("sales_df:", len(sales_df))
+except:
+    print("sales_df missing")
+
+try:
+    print("raw_df:", len(raw_df))
+except:
+    print("raw_df missing")
+
+try:
+    print("merged_df:", len(merged_df))
+except:
+    print("merged_df missing")
 print("🚀 MTD Data Creation Started")
 
 # =========================================================
@@ -485,7 +510,7 @@ print("🚀 MTD Data Creation Started")
 month_start = business_day.replace(day=1)
 yesterday = business_day - timedelta(days=1)
 
-mtd_df = reqcolumns[
+mtd_df = sales_df[
     (
         pd.to_datetime(
             reqcolumns["businessDate"]
@@ -503,6 +528,11 @@ mtd_df = reqcolumns[
     )
 ].copy()
 
+print(
+    mtd_df["businessDate"]
+    .sort_values()
+    .unique()[:20]
+)
 print(
     "MTD DATE RANGE:",
     mtd_df["businessDate"].min(),
