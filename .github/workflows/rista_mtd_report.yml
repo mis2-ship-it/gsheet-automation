@@ -35,4 +35,4 @@ jobs:
 
         run: |
           echo "Running MTD Update..."
-          python rista_live.py
+          python rista_mtd_report.py
