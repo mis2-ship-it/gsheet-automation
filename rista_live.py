@@ -558,8 +558,7 @@ numeric_cols = [
     "Net Sales",
     "discountAmount",
     "grossAmount",
-    "taxAmount",
-    "item_quantity"
+    "taxAmount"
 ]
 
 for col in numeric_cols:
@@ -621,7 +620,7 @@ else:
 # DEBUG COLUMN CHECK
 # =========================================================
 
-print("FINAL DF COLUMNS")
+print("MTD DF COLUMNS")
 print(final_df.columns.tolist())
 
 # =========================================================
@@ -646,8 +645,7 @@ mtd_summary = (
         "Net Sales": "sum",
         "discountAmount": "sum",
         "taxAmount": "sum",
-        "grossAmount": "sum",
-        "item_quantity": "sum"
+        "grossAmount": "sum"
     })
     .reset_index()
 )
