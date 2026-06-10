@@ -159,11 +159,14 @@ def fetch_branch_data(branch, day):
             "pageSize": 10000
         }
 
-        r = requests.post(
-            "https://api.ristaapps.com/v1/order/list",
+        r = requests.get(
+            "https://api.ristaapps.com/v1/sales/summary",
             headers=headers(),
-            json=payload,
-            timeout=60
+            params={
+                "branch": branch,
+                "day": day
+            },
+            timeout=20
         )
 
         data = r.json()
