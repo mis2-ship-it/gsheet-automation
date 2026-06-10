@@ -559,7 +559,7 @@ numeric_cols = [
     "discountAmount",
     "grossAmount",
     "taxAmount",
-    "quantity"
+    "item_quantity"
 ]
 
 for col in numeric_cols:
@@ -647,7 +647,7 @@ mtd_summary = (
         "discountAmount": "sum",
         "taxAmount": "sum",
         "grossAmount": "sum",
-        "quantity": "sum"
+        "item_quantity": "sum"
     })
     .reset_index()
 )
@@ -781,7 +781,7 @@ mtd_summary = mtd_summary.rename(
         "discountAmount": "Discount",
         "taxAmount": "Taxes",
         "grossAmount": "Gross Sales",
-        "quantity": "Quantity"
+        "item_quantity": "Quantity"
     }
 )
 
