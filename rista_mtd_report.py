@@ -58,6 +58,8 @@ def headers():
         "Content-Type": "application/json"
     }
 
+print("API KEY EXISTS:", bool(API_KEY))
+print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
 # DATE RANGE
@@ -223,10 +225,14 @@ while current_day <= end_date:
 
     current_day += timedelta(days=1)
 
-if not all_data:
+# ---------------- CHECK ---------------- #
+
+if not all_days:
     raise Exception(
         "No sales data fetched"
     )
+
+# ---------------- FINAL DF ---------------- #
 
 final_df = pd.concat(
     all_days,
