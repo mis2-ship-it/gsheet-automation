@@ -50,13 +50,17 @@ print("✅ Connected to Google")
 API_KEY = os.getenv("API_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
 
+def get_token():
+    payload = {"iss": API_KEY, "iat": int(time.time())}
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 def headers():
     return {
-        "api-key": API_KEY,
-        "secret-key": SECRET_KEY,
-        "Content-Type": "application/json"
+        "x-api-key": API_KEY,
+        "x-api-token": get_token(),
+        "content-type": "application/json"
     }
+
 
 print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
