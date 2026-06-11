@@ -393,7 +393,48 @@ final_df["Session"] = (
     final_df["sessionLabel"]
 )
 
+# =========================================================
+# SAFE COLUMN CHECK
+# =========================================================
 
+required_cols = [
+    "netAmount",
+    "chargeAmount",
+    "status",
+    "branchName",
+    "channel"
+]
+
+for col in required_cols:
+
+    if col not in final_df.columns:
+        final_df[col] = 0
+
+
+# =========================================================
+# NET SALES
+# =========================================================
+
+final_df["netAmount"] = pd.to_numeric(
+    final_df["netAmount"],
+    errors="coerce"
+).fillna(0)
+
+final_df["chargeAmount"] = pd.to_numeric(
+    final_df["chargeAmount"],
+    errors="coerce"
+).fillna(0)
+
+final_df["Net Sales"] = (
+    (
+        final_df["netAmount"]
+        + final_df["chargeAmount"]
+    )
+    .where(
+        final_df["status"] == "Closed",
+        0
+    )
+)
 # =========================================================
 # NUMERIC
 # =========================================================
@@ -462,7 +503,7 @@ mtd_summary = (
         dropna=False
     )
     .agg({
-        "netAmount": "sum",
+        "Net Sales": "sum",
         "discountAmount": "sum",
         "taxAmount": "sum",
         "grossAmount": "sum",
