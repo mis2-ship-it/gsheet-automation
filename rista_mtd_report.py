@@ -560,9 +560,23 @@ mtd_summary["Date"] = (
     .dt.strftime("%Y-%m-%d")
 )
 
+# Convert categorical columns to string
+mtd_summary["AOV Bucket"] = (
+    mtd_summary["AOV Bucket"]
+    .astype(str)
+)
+
+mtd_summary["Discount Bucket"] = (
+    mtd_summary["Discount Bucket"]
+    .astype(str)
+)
+
 sheet.update(
     [mtd_summary.columns.tolist()]
-    + mtd_summary.fillna("").values.tolist()
+    + mtd_summary.replace(
+        [np.nan, "nan"],
+        ""
+    ).values.tolist()
 )
 
 print("✅ MTD Update Completed")
