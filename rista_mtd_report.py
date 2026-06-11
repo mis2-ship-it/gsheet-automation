@@ -528,8 +528,9 @@ mtd_summary["AOV Bucket"] = pd.cut(
 
 mtd_summary["Discount Bucket"] = pd.cut(
     mtd_summary["Dis %"],
-    bins=[0,10,20,30,40,50,60,70,80,90,100],
+    bins=[-1,0,10,20,30,40,50,60,70,80,90,100],
     labels=[
+        "0%",
         "1%-10%",
         "10%-20%",
         "20%-30%",
@@ -541,12 +542,7 @@ mtd_summary["Discount Bucket"] = pd.cut(
         "80%-90%",
         "90%-100%"
     ]
-)
-
-mtd_summary["Discount Bucket"] = (
-    mtd_summary["Discount Bucket"]
-    .fillna("0%")
-)
+).astype(str)
 
 
 # =========================================================
