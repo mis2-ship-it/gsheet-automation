@@ -544,7 +544,7 @@ mtd_summary = (
     final_df.groupby(
         [
             "Brand Name",
-            "businessDate",
+            "Business Date",
             "Week",
             "branchName",
             "Source",
