@@ -463,12 +463,64 @@ final_df["discountAmount"] = (
 
 
 # =========================================================
-# WEEK
+# BUSINESS HOUR LOGIC
+# 8:00 AM → NEXT DAY 5:30 AM
 # =========================================================
 
-final_df["Date"] = pd.to_datetime(
-    final_df["businessDate"]
+final_df["invoiceDate"] = pd.to_datetime(
+    final_df["invoiceDate"],
+    errors="coerce"
 )
+
+# Hour + minute
+final_df["Hour"] = (
+    final_df["invoiceDate"]
+    .dt.hour
+)
+
+final_df["Minute"] = (
+    final_df["invoiceDate"]
+    .dt.minute
+)
+
+# Business Date Logic
+final_df["Business Date"] = (
+    final_df["invoiceDate"]
+    .dt.date
+)
+
+# Before 5:30 AM belongs to previous day
+mask = (
+    (final_df["Hour"] < 5)
+    |
+    (
+        (final_df["Hour"] == 5)
+        &
+        (final_df["Minute"] <= 30)
+    )
+)
+
+final_df.loc[
+    mask,
+    "Business Date"
+] = (
+    pd.to_datetime(
+        final_df.loc[
+            mask,
+            "Business Date"
+        ]
+    )
+    - pd.Timedelta(days=1)
+).dt.date
+
+# Convert for reporting
+final_df["Date"] = pd.to_datetime(
+    final_df["Business Date"]
+)
+
+# =========================================================
+# WEEK
+# =========================================================
 
 final_df["Week"] = (
     "WK "
