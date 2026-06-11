@@ -466,6 +466,7 @@ mtd_summary = (
         "discountAmount": "sum",
         "taxAmount": "sum",
         "grossAmount": "sum",
+        "item_quantity": "sum",
         "invoiceNumber": "nunique"
     })
     .reset_index()
@@ -484,6 +485,7 @@ mtd_summary.columns = [
     "Discount",
     "Taxes",
     "Gross Sales",
+    "Quantity",
     "Orders"
 ]
 
