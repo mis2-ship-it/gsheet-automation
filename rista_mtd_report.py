@@ -410,57 +410,71 @@ for col in required_cols:
     if col not in final_df.columns:
         final_df[col] = 0
 
-
-# =========================================================
-# NET SALES
-# =========================================================
-
-final_df["netAmount"] = pd.to_numeric(
-    final_df["netAmount"],
-    errors="coerce"
-).fillna(0)
-
-final_df["chargeAmount"] = pd.to_numeric(
-    final_df["chargeAmount"],
-    errors="coerce"
-).fillna(0)
-
-final_df["Net Sales"] = (
-    (
-        final_df["netAmount"]
-        + final_df["chargeAmount"]
-    )
-    .where(
-        final_df["status"] == "Closed",
-        0
-    )
-)
 # =========================================================
 # NUMERIC
 # =========================================================
 
-numeric_cols = [
+required_numeric = [
     "netAmount",
+    "chargeAmount",
     "discountAmount",
     "taxAmount",
-    "grossAmount"
+    "grossAmount",
+    "item_quantity"
 ]
 
-for col in numeric_cols:
+for col in required_numeric:
 
-    if col in final_df.columns:
+    # create column if missing
+    if col not in final_df.columns:
+        final_df[col] = 0
 
-        final_df[col] = pd.to_numeric(
-            final_df[col],
-            errors="coerce"
-        ).fillna(0)
+    # numeric conversion
+    final_df[col] = pd.to_numeric(
+        final_df[col],
+        errors="coerce"
+    ).fillna(0)
 
+# ---------------- DISCOUNT POSITIVE ---------------- #
 
 final_df["discountAmount"] = (
     final_df["discountAmount"]
     .abs()
 )
 
+# =========================================================
+# NET SALES
+# =========================================================
+
+final_df["Net Sales"] = (
+    final_df["netAmount"]
+    +
+    final_df["chargeAmount"]
+)
+
+# =========================================================
+# CLOSED BILL FILTER
+# =========================================================
+
+final_df = final_df[
+    final_df["status"]
+    .astype(str)
+    .str.upper()
+    == "CLOSED"
+]
+
+print(
+    "✅ Closed Rows:",
+    len(final_df)
+)
+
+print(
+    "✅ Total Net Sales:",
+    round(
+        final_df["Net Sales"].sum(),
+        2
+    )
+)
 
 # =========================================================
 # BUSINESS HOUR LOGIC
