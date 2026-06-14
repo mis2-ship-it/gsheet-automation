@@ -2,7 +2,7 @@ name: Rista MTD Update
 
 on:
   schedule:
-    # 07:30 AM IST
+    # 07:15 AM IST
     - cron: '45 1 * * *'
 
   workflow_dispatch:
