@@ -149,113 +149,74 @@ except Exception as e:
 
 def fetch_branch_data(branch, day):
 
-    try:
+    all_data = []
+    last_key = None
 
-        payload = {
-            "branchCode": branch,
-            "fromDate": str(day),
-            "toDate": str(day),
-            "page": 1,
-            "pageSize": 10000
+    while True:
+
+        params = {
+            "branch": branch,
+            "day": day
         }
 
-        r = requests.get(
-            "https://api.ristaapps.com/v1/sales/summary",
-            headers=headers(),
-            params={
-                "branch": branch,
-                "day": day
-            },
-            timeout=20
-        )
+        if last_key:
+            params["lastKey"] = last_key
 
-        data = r.json()
+        try:
 
-        # ---------------- DEBUG ---------------- #
-
-        print(
-            f"Branch: {branch} | "
-            f"Date: {day} | "
-            f"Status: {r.status_code}"
-        )
-
-        print(str(data)[:200])
-
-        # ---------------- RESPONSE ---------------- #
-
-        if isinstance(data, dict):
-
-            rows = (
-                data.get("data")
-                or data.get("orders")
-                or []
+            r = requests.get(
+                "https://api.ristaapps.com/v1/sales/summary",
+                headers=headers(),
+                params=params,
+                timeout=20
             )
 
-        elif isinstance(data, list):
+            if r.status_code != 200:
 
-            rows = data
+                print(
+                    f"❌ API Failed | "
+                    f"{branch} | "
+                    f"{day} | "
+                    f"{r.status_code}"
+                )
 
-        else:
-            rows = []
+                return pd.DataFrame()
 
-        if not rows:
+            js = r.json()
+
+            data = js.get("data", [])
+
+            if not data:
+                break
+
+            all_data.append(
+                pd.json_normalize(data)
+            )
+
+            last_key = js.get("lastKey")
+
+            if not last_key:
+                break
+
+        except Exception as e:
+
+            print(
+                f"❌ Branch Error | "
+                f"{branch} | "
+                f"{day} | "
+                f"{str(e)}"
+            )
+
             return pd.DataFrame()
 
-        df = pd.DataFrame(rows)
-
-        df["businessDate"] = str(day)
-
-        return df
-
-    except Exception as e:
-
-        print(
-            f"❌ Error Branch {branch} "
-            f"Date {day}: {e}"
-        )
-
-        return pd.DataFrame()
-
-
-def fetch_sales(day):
-
-    results = []
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-
-        futures = [
-            executor.submit(
-                fetch_branch_data,
-                b,
-                day
-            )
-            for b in branches
-        ]
-
-        for future in as_completed(futures):
-
-            try:
-                df = future.result()
-
-                if df is not None:
-
-                    print(
-                        f"Fetched rows for {day}:",
-                        len(df)
-                    )
-
-                    if not df.empty:
-                        results.append(df)
-
-            except Exception as e:
-                print("Fetch Error:", e)
-
     return (
-        pd.concat(results, ignore_index=True)
-        if results
+        pd.concat(
+            all_data,
+            ignore_index=True
+        )
+        if all_data
         else pd.DataFrame()
     )
-
 
 # =========================================================
 # FETCH MTD DATA
@@ -469,13 +430,15 @@ print(
 )
 
 print(
-    "✅ Total Net Sales:",
+    "💰 Total Net Sales:"
+)
+
+print(
     round(
         final_df["Net Sales"].sum(),
         2
     )
 )
-
 # =========================================================
 # BUSINESS HOUR LOGIC
 # 8:00 AM → NEXT DAY 5:30 AM
