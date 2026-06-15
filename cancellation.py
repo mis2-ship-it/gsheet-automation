@@ -629,16 +629,17 @@ try:
         f"{len(coco_stores)}"
     )
 
-    # Filter final_df
+   # Filter final_df
     final_df = final_df[
         final_df["branchName"]
         .astype(str)
+        .str.strip()
         .isin(coco_stores)
     ].copy()
-
+    
     print(
-        f"✅ COCO Filter Applied | "
-        f"Rows: {len(final_df)}"
+        "✅ COCO Stores Filtered:",
+        len(final_df)
     )
 
 except Exception as e:
@@ -842,14 +843,37 @@ send_summary_email(final_df)
 final_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 final_df["emailSent"] = "YES"
 
-# Only tracking columns
-tracking_df = final_df[[
-    "invoiceNumber",
-    "branchName",
-    "channel",
-    "Cancel_Reason",
-    "createdAt"
-]].copy()
+# =========================================================
+# 📊 SAVE ALERT HISTORY
+# =========================================================
+
+final_df["createdAt"] = (
+    datetime.now()
+    .strftime("%Y-%m-%d %H:%M:%S")
+)
+
+final_df["emailSent"] = "YES"
+
+tracking_df = pd.DataFrame({
+
+    "invoiceNumber":
+        final_df["invoiceNumber"],
+
+    "Store Name":
+        final_df["branchName"],
+
+    "Channel":
+        final_df["channel"],
+
+    "Reason":
+        final_df["Cancel_Reason"],
+
+    "createdAt":
+        final_df["createdAt"],
+
+    "sessionLabel":
+        today
+})
 
 tracking_df = (
     tracking_df
