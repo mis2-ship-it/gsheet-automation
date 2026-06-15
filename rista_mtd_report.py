@@ -142,7 +142,6 @@ except Exception as e:
     print("❌ Branch Fetch Failed:", str(e))
     branches = []
 
-
 # =========================================================
 # FETCH BRANCH SALES
 # =========================================================
@@ -217,6 +216,42 @@ def fetch_branch_data(branch, day):
         if all_data
         else pd.DataFrame()
     )
+#-- Fetch Sales----- #
+
+def fetch_sales(day):
+
+    results = []
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+
+        futures = [
+            executor.submit(
+                fetch_branch_data,
+                b,
+                day
+            )
+            for b in branches
+        ]
+
+        for future in as_completed(futures):
+
+            try:
+                df = future.result()
+
+                if df is not None:
+
+                    if not df.empty:
+                        results.append(df)
+
+            except Exception as e:
+                print("Fetch Error:", e)
+
+    return (
+        pd.concat(results, ignore_index=True)
+        if results
+        else pd.DataFrame()
+    )
+
 
 # =========================================================
 # FETCH MTD DATA
