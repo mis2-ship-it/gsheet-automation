@@ -387,7 +387,7 @@ mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 final_df = cancel_df.merge(
     mapping_df,
     left_on="branchName",
-    right_on="Store Name",
+    right_on="branchName",
     how="left"
 )
 
@@ -592,7 +592,7 @@ for store, group in final_df.groupby("branchName"):
     if not receivers:
         print(
             f"⚠️ No email mapped for store: "
-            f"{row['Store Name']}"
+            f"{row['branchName']}"
         )
         continue
 
@@ -630,7 +630,7 @@ mapping_df = mapping_df.loc[
 final_df = final_df.merge(
     mapping_df,
     left_on="branchName",
-    right_on="Store Name",
+    right_on="branchName",
     how="left"
 )
 
@@ -847,7 +847,7 @@ tracking_df = pd.DataFrame({
     "invoiceNumber":
         final_df["invoiceNumber"],
 
-    "Store Name":
+    "branchName":
         final_df["branchName"],
 
     "Channel":
@@ -881,7 +881,7 @@ existing_rows = raw_ws.get_all_values()
 # Header check
 expected_headers = [
     "invoiceNumber",
-    "Store Name",
+    "branchName",
     "Channel",
     "Reason",
     "createdAt",
