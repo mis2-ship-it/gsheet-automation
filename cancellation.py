@@ -590,63 +590,53 @@ for store, group in final_df.groupby("branchName"):
     receivers = list(set(receivers))
 
     if not receivers:
-        print(f"⚠️ No email mapped for store: {store}")
+        print(
+            f"⚠️ No email mapped for store: "
+            f"{row['Store Name']}"
+        )
         continue
 
     send_email(",".join(receivers), group)
 
     print(f"📩 Alert sent for {store} → {receivers}")
 # =========================================================
-# FILTER ONLY COCO STORES
+# COCO STORE MAPPING
 # =========================================================
 
-try:
+mapping_ws = spreadsheet.worksheet(
+    "Store_Mapping"
+)
 
-    mapping_ws = spreadsheet.worksheet(
-        "Store_Mapping"
-    )
+mapping_data = (
+    mapping_ws.get_all_records()
+)
 
-    mapping_df = pd.DataFrame(
-        mapping_ws.get_all_records()
-    )
+mapping_df = pd.DataFrame(
+    mapping_data
+)
 
-    # Keep only COCO stores
-    coco_stores = (
-        mapping_df[
-            mapping_df["Ownership"]
-            .astype(str)
-            .str.upper()
-            == "COCO"
-        ]["branchName"]
-        .dropna()
-        .astype(str)
-        .unique()
-        .tolist()
-    )
+print(
+    "✅ Mapping Ready:",
+    mapping_df.shape
+)
 
-    print(
-        f"✅ COCO Stores Found: "
-        f"{len(coco_stores)}"
-    )
+# Remove blank columns
+mapping_df = mapping_df.loc[
+    :,
+    mapping_df.columns != ""
+]
 
-   # Filter final_df
-    final_df = final_df[
-        final_df["branchName"]
-        .astype(str)
-        .str.strip()
-        .isin(coco_stores)
-    ].copy()
-    
-    print(
-        "✅ COCO Stores Filtered:",
-        len(final_df)
-    )
+# Merge mapping
+final_df = final_df.merge(
+    mapping_df,
+    left_on="branchName",
+    right_on="Store Name",
+    how="left"
+)
 
-except Exception as e:
-
-    print(
-        f"❌ Store_Mapping error: {e}"
-    )
+print(
+    "✅ Mapping Merged"
+)
 # =========================================================
 # 📊 SUMMARY DATA
 # =========================================================
@@ -852,8 +842,6 @@ final_df["createdAt"] = (
     .strftime("%Y-%m-%d %H:%M:%S")
 )
 
-final_df["emailSent"] = "YES"
-
 tracking_df = pd.DataFrame({
 
     "invoiceNumber":
@@ -882,14 +870,44 @@ tracking_df = (
     .astype(str)
 )
 
-# =========================================================
-# 🧾 ADD HEADER IF SHEET EMPTY
-# =========================================================
+# Remove blank columns
+tracking_df = tracking_df.loc[
+    :,
+    tracking_df.columns != ""
+]
 
 existing_rows = raw_ws.get_all_values()
 
+# Header check
+expected_headers = [
+    "invoiceNumber",
+    "Store Name",
+    "Channel",
+    "Reason",
+    "createdAt",
+    "sessionLabel"
+]
+
 if len(existing_rows) == 0:
-    raw_ws.append_row(tracking_df.columns.tolist())
+
+    raw_ws.append_row(
+        expected_headers
+    )
+
+elif existing_rows[0] != expected_headers:
+
+    raw_ws.clear()
+
+    raw_ws.append_row(
+        expected_headers
+    )
+
+raw_ws.append_rows(
+    tracking_df.values.tolist(),
+    value_input_option="USER_ENTERED"
+)
+
+print("✅ Tracking data saved")
 
 # =========================================================
 # ➕ APPEND DATA
