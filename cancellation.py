@@ -879,4 +879,321 @@ raw_ws.append_rows(
 print("✅ Tracking data saved")
 print("🎉 Flow Completed")
 
+# =========================================================
+# 📊 FTD / MTD CANCELLATION DASHBOARD
+# =========================================================
+
+from datetime import datetime
+import pandas as pd
+import smtplib
+from email.mime.text import MIMEText
+
+print("📊 Preparing FTD / MTD Dashboard")
+
+try:
+
+    # =====================================================
+    # READ TRACKING DATA
+    # =====================================================
+
+    history_data = raw_ws.get_all_records()
+
+    hist_df = pd.DataFrame(history_data)
+
+    if hist_df.empty:
+        print("❌ No tracking data found")
+        exit()
+
+    # =====================================================
+    # DATE CLEANING
+    # =====================================================
+
+    hist_df["createdAt"] = pd.to_datetime(
+        hist_df["createdAt"],
+        errors="coerce"
+    )
+
+    today_date = datetime.now().date()
+
+    month_start = today_date.replace(day=1)
+
+    # =====================================================
+    # FTD / MTD FILTER
+    # =====================================================
+
+    ftd_df = hist_df[
+        hist_df["createdAt"].dt.date
+        == today_date
+    ].copy()
+
+    mtd_df = hist_df[
+        hist_df["createdAt"].dt.date
+        >= month_start
+    ].copy()
+
+    # =====================================================
+    # FETCH TOTAL UNIQUE ORDERS
+    # Replace this with your actual order count
+    # =====================================================
+
+    overall_ftd_orders = overall_unique_orders_ftd
+    overall_mtd_orders = overall_unique_orders_mtd
+
+    # =====================================================
+    # CANCEL / VOID COUNTS
+    # =====================================================
+
+    ftd_cancel = len(ftd_df)
+
+    mtd_cancel = len(mtd_df)
+
+    ftd_void = 0
+    mtd_void = 0
+
+    ftd_total_loss = (
+        ftd_cancel + ftd_void
+    )
+
+    mtd_total_loss = (
+        mtd_cancel + mtd_void
+    )
+
+    # =====================================================
+    # CANCELLATION %
+    # =====================================================
+
+    ftd_cancel_pct = round(
+        (
+            ftd_total_loss
+            / overall_ftd_orders
+        ) * 100,
+        2
+    ) if overall_ftd_orders > 0 else 0
+
+    mtd_cancel_pct = round(
+        (
+            mtd_total_loss
+            / overall_mtd_orders
+        ) * 100,
+        2
+    ) if overall_mtd_orders > 0 else 0
+
+    # =====================================================
+    # CHANNEL SUMMARY
+    # =====================================================
+
+    ftd_channel = (
+        ftd_df.groupby("channel")
+        .size()
+        .reset_index(name="Count")
+        .sort_values(
+            "Count",
+            ascending=False
+        )
+    )
+
+    mtd_channel = (
+        mtd_df.groupby("channel")
+        .size()
+        .reset_index(name="Count")
+        .sort_values(
+            "Count",
+            ascending=False
+        )
+    )
+
+    channel_html = ""
+
+    all_channels = sorted(
+        set(ftd_channel["channel"])
+        |
+        set(mtd_channel["channel"])
+    )
+
+    for ch in all_channels:
+
+        ftd_count = (
+            ftd_channel.loc[
+                ftd_channel["channel"] == ch,
+                "Count"
+            ].sum()
+        )
+
+        mtd_count = (
+            mtd_channel.loc[
+                mtd_channel["channel"] == ch,
+                "Count"
+            ].sum()
+        )
+
+        channel_html += f"""
+        <tr>
+            <td>{ch}</td>
+            <td>{ftd_count}</td>
+            <td>{mtd_count}</td>
+        </tr>
+        """
+
+    # =====================================================
+    # STORE SUMMARY
+    # =====================================================
+
+    store_summary = (
+        ftd_df.groupby("branchName")
+        .size()
+        .reset_index(name="Cancel_Count")
+        .sort_values(
+            "Cancel_Count",
+            ascending=False
+        )
+        .head(10)
+    )
+
+    store_html = ""
+
+    for _, row in store_summary.iterrows():
+
+        store_html += f"""
+        <tr>
+            <td>{row['branchName']}</td>
+            <td>{row['Cancel_Count']}</td>
+        </tr>
+        """
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
+
+    body = f"""
+    <h2>
+    📊 Cancellation Dashboard
+    </h2>
+
+    <table border="1"
+    cellpadding="8">
+
+    <tr>
+        <th>Metric</th>
+        <th>FTD</th>
+        <th>MTD</th>
+    </tr>
+
+    <tr>
+        <td>Overall Unique Orders</td>
+        <td>{overall_ftd_orders}</td>
+        <td>{overall_mtd_orders}</td>
+    </tr>
+
+    <tr>
+        <td>Cancelled Orders</td>
+        <td>{ftd_cancel}</td>
+        <td>{mtd_cancel}</td>
+    </tr>
+
+    <tr>
+        <td>Voided Orders</td>
+        <td>{ftd_void}</td>
+        <td>{mtd_void}</td>
+    </tr>
+
+    <tr>
+        <td>Total Loss Orders</td>
+        <td>{ftd_total_loss}</td>
+        <td>{mtd_total_loss}</td>
+    </tr>
+
+    <tr>
+        <td><b>Cancellation %</b></td>
+        <td><b>{ftd_cancel_pct}%</b></td>
+        <td><b>{mtd_cancel_pct}%</b></td>
+    </tr>
+
+    </table>
+
+    <br>
+
+    <h3>Channel Wise Cancellation</h3>
+
+    <table border="1"
+    cellpadding="8">
+
+    <tr>
+        <th>Channel</th>
+        <th>FTD</th>
+        <th>MTD</th>
+    </tr>
+
+    {channel_html}
+
+    </table>
+
+    <br>
+
+    <h3>
+    🏪 Top Impacted Stores
+    </h3>
+
+    <table border="1"
+    cellpadding="8">
+
+    <tr>
+        <th>Store</th>
+        <th>Cancellation</th>
+    </tr>
+
+    {store_html}
+
+    </table>
+    """
+
+    # =====================================================
+    # SEND MAIL
+    # =====================================================
+
+    msg = MIMEText(body, "html")
+
+    msg["Subject"] = (
+        f"📊 Cancellation Dashboard | {today}"
+    )
+
+    msg["From"] = EMAIL_USER
+    msg["To"] = CC_EMAIL
+
+    receivers = [
+        e.strip()
+        for e in CC_EMAIL.split(",")
+        if e.strip()
+    ]
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
+
+    server.sendmail(
+        EMAIL_USER,
+        receivers,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    print(
+        "✅ FTD/MTD Dashboard Sent"
+    )
+
+except Exception as e:
+
+    print(
+        "❌ Dashboard Error:",
+        e
+    )
+
 
