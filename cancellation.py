@@ -613,7 +613,7 @@ try:
     # Keep only COCO stores
     coco_stores = (
         mapping_df[
-            mapping_df["Store_Type"]
+            mapping_df["Ownership"]
             .astype(str)
             .str.upper()
             == "COCO"
@@ -905,13 +905,24 @@ try:
         exit()
 
     # =====================================================
-    # DATE CLEANING
+    # DATE COLUMN FIX
     # =====================================================
-
+    
+    if "createdAt" not in hist_df.columns:
+    
+        print("❌ createdAt column missing")
+        print("Available columns:", hist_df.columns.tolist())
+    
+        exit()
+    
     hist_df["createdAt"] = pd.to_datetime(
         hist_df["createdAt"],
         errors="coerce"
     )
+    
+    hist_df = hist_df[
+        hist_df["createdAt"].notna()
+    ]
 
     today_date = datetime.now().date()
 
