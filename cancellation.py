@@ -1,3 +1,4 @@
+
 # =========================================================
 # 🔥 IMPORTS
 # =========================================================
@@ -387,7 +388,7 @@ mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 final_df = cancel_df.merge(
     mapping_df,
     left_on="branchName",
-    right_on="branchName",
+    right_on="Store Name",
     how="left"
 )
 
@@ -439,7 +440,7 @@ def send_email(to_email, store_df):
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
     store_name = store_df["branchName"].iloc[0]
- 
+
 
     rows_html = ""
 
@@ -463,18 +464,18 @@ def send_email(to_email, store_df):
         .size()
         .reset_index(name="Count")
     )
-    
+
     channel_html = ""
-    
+
     for _, row in channel_summary.iterrows():
-    
+
         channel_html += f"""
         <tr>
             <td>{row['channel']}</td>
             <td>{row['Count']}</td>
         </tr>
         """
-    
+
     # =====================================================
     # 📊 REASON SUMMARY
     # =====================================================
@@ -483,18 +484,18 @@ def send_email(to_email, store_df):
         .size()
         .reset_index(name="Count")
     )
-    
+
     reason_html = ""
-    
+
     for _, row in reason_summary.iterrows():
-    
+
         reason_html += f"""
         <tr>
             <td>{row['Cancel_Group']}</td>
             <td>{row['Count']}</td>
         </tr>
         """
-    
+
     body = f"""
     <h2>🚨 Cancellation Alert</h2>
     
@@ -590,53 +591,13 @@ for store, group in final_df.groupby("branchName"):
     receivers = list(set(receivers))
 
     if not receivers:
-        print(
-            f"⚠️ No email mapped for store: "
-            f"{row['branchName']}"
-        )
+        print(f"⚠️ No email mapped for store: {store}")
         continue
 
     send_email(",".join(receivers), group)
 
     print(f"📩 Alert sent for {store} → {receivers}")
-# =========================================================
-# COCO STORE MAPPING
-# =========================================================
 
-mapping_ws = spreadsheet.worksheet(
-    "Store_Mapping"
-)
-
-mapping_data = (
-    mapping_ws.get_all_records()
-)
-
-mapping_df = pd.DataFrame(
-    mapping_data
-)
-
-print(
-    "✅ Mapping Ready:",
-    mapping_df.shape
-)
-
-# Remove blank columns
-mapping_df = mapping_df.loc[
-    :,
-    mapping_df.columns != ""
-]
-
-# Merge mapping
-final_df = final_df.merge(
-    mapping_df,
-    left_on="branchName",
-    right_on="branchName",
-    how="left"
-)
-
-print(
-    "✅ Mapping Merged"
-)
 # =========================================================
 # 📊 SUMMARY DATA
 # =========================================================
@@ -645,14 +606,12 @@ channel_summary = (
     final_df.groupby("channel")
     .size()
     .reset_index(name="Count")
-    .sort_values("Count", ascending=False)
 )
 
 reason_summary = (
     final_df.groupby("Cancel_Group")
     .size()
     .reset_index(name="Count")
-    .sort_values("Count", ascending=False)
 )
 
 store_summary = (
@@ -669,12 +628,13 @@ critical_summary = (
     .groupby(["branchName", "channel"])
     .size()
     .reset_index(name="Count")
-    .sort_values("Count", ascending=False)
 )
 
 # =========================================================
+# 📧 SUMMARY EMAIL (ONLY CC)
 # 📧 SUMMARY EMAIL
 # =========================================================
+def send_summary_email(summary_df):
 def send_summary_email(final_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
@@ -682,11 +642,11 @@ def send_summary_email(final_df):
     CC_EMAIL = os.environ.get("EMAIL_CCOPS")
 
     total_cancel = len(final_df)
-
     if not CC_EMAIL:
         print("❌ No CC email configured")
         return
 
+   # Channel HTML
     # Channel HTML
     channel_html = ""
     for _, row in channel_summary.iterrows():
@@ -709,7 +669,7 @@ def send_summary_email(final_df):
 
     # Store HTML
     store_html = ""
-    for _, row in store_summary.iterrows():
+    for _, row in store_summary.head(10).iterrows():
         store_html += f"""
         <tr>
             <td>{row['branchName']}</td>
@@ -729,35 +689,20 @@ def send_summary_email(final_df):
         """
 
     body = f"""
-    <h2>📊 COCO Cancellation Summary</h2>
-
-    <p>
-        <b>Total Cancellations:</b>
-        {total_cancel}
-    </p>
-
+    <h2>📊 Cancellation Summary</h2>
+    <p><b>Total Cancellations:</b> {total_cancel}</p>
     <h3>Channel-wise Cancellation</h3>
     <table border="1" cellpadding="5">
-    <tr>
-        <th>Channel</th>
-        <th>Count</th>
-    </tr>
+    <tr><th>Channel</th><th>Count</th></tr>
     {channel_html}
     </table>
-
     <br>
-
     <h3>Reason-wise Summary</h3>
     <table border="1" cellpadding="5">
-    <tr>
-        <th>Reason Group</th>
-        <th>Count</th>
-    </tr>
+    <tr><th>Reason Group</th><th>Count</th></tr>
     {reason_html}
     </table>
-
     <br>
-
     <h3>🔴 Store Closed (Critical)</h3>
     <table border="1" cellpadding="5">
     <tr>
@@ -767,10 +712,8 @@ def send_summary_email(final_df):
     </tr>
     {critical_html}
     </table>
-
     <br>
-
-    <h3>🏪 Store-wise Cancellation</h3>
+    <h3>🏪 Top Impacted Stores</h3>
     <table border="1" cellpadding="5">
     <tr>
         <th>Store</th>
@@ -781,51 +724,40 @@ def send_summary_email(final_df):
     """
 
     msg = MIMEText(body, "html")
-
     msg["Subject"] = (
         f"🚨 Cancellation Summary | "
-        f"{today}"
+        f"{today} | Total: {total_cancel}"
     )
 
     msg["From"] = EMAIL_USER
+    msg["To"] = summary_to
     msg["To"] = CC_EMAIL
-
     receivers = [
         e.strip()
         for e in CC_EMAIL.split(",")
         if e.strip()
     ]
 
-    server = smtplib.SMTP(
-        "smtp.gmail.com",
-        587
-    )
-
+    server = smtplib.SMTP("smtp.gmail.com", 587)
     server.starttls()
-
-    server.login(
-        EMAIL_USER,
-        EMAIL_PASS
-    )
-
+    server.login(EMAIL_USER, EMAIL_PASS)
     server.sendmail(
         EMAIL_USER,
+        [summary_to],
         receivers,
         msg.as_string()
     )
-
     server.quit()
 
     print("📩 Summary email sent")
 
-
 # =========================================================
 # 📤 SEND SUMMARY MAIL
 # =========================================================
-
+send_summary_email(summary_df)
 send_summary_email(final_df)
 
-        
+
 # =========================================================
 # 📊 SAVE ALERT HISTORY
 # =========================================================
@@ -833,35 +765,14 @@ send_summary_email(final_df)
 final_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 final_df["emailSent"] = "YES"
 
-# =========================================================
-# 📊 SAVE ALERT HISTORY
-# =========================================================
-
-final_df["createdAt"] = (
-    datetime.now()
-    .strftime("%Y-%m-%d %H:%M:%S")
-)
-
-tracking_df = pd.DataFrame({
-
-    "invoiceNumber":
-        final_df["invoiceNumber"],
-
-    "branchName":
-        final_df["branchName"],
-
-    "Channel":
-        final_df["channel"],
-
-    "Reason":
-        final_df["Cancel_Reason"],
-
-    "createdAt":
-        final_df["createdAt"],
-
-    "sessionLabel":
-        today
-})
+# Only tracking columns
+tracking_df = final_df[[
+    "invoiceNumber",
+    "branchName",
+    "channel",
+    "Cancel_Reason",
+    "createdAt"
+]].copy()
 
 tracking_df = (
     tracking_df
@@ -870,44 +781,14 @@ tracking_df = (
     .astype(str)
 )
 
-# Remove blank columns
-tracking_df = tracking_df.loc[
-    :,
-    tracking_df.columns != ""
-]
+# =========================================================
+# 🧾 ADD HEADER IF SHEET EMPTY
+# =========================================================
 
 existing_rows = raw_ws.get_all_values()
 
-# Header check
-expected_headers = [
-    "invoiceNumber",
-    "branchName",
-    "Channel",
-    "Reason",
-    "createdAt",
-    "sessionLabel"
-]
-
 if len(existing_rows) == 0:
-
-    raw_ws.append_row(
-        expected_headers
-    )
-
-elif existing_rows[0] != expected_headers:
-
-    raw_ws.clear()
-
-    raw_ws.append_row(
-        expected_headers
-    )
-
-raw_ws.append_rows(
-    tracking_df.values.tolist(),
-    value_input_option="USER_ENTERED"
-)
-
-print("✅ Tracking data saved")
+    raw_ws.append_row(tracking_df.columns.tolist())
 
 # =========================================================
 # ➕ APPEND DATA
@@ -920,7 +801,3 @@ raw_ws.append_rows(
 
 print("✅ Tracking data saved")
 print("🎉 Flow Completed")
-
-
-
-
