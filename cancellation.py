@@ -1,4 +1,3 @@
-
 # =========================================================
 # 🔥 IMPORTS
 # =========================================================
@@ -32,57 +31,6 @@ def headers():
         "x-api-token": get_token(),
         "content-type": "application/json"
     }
-# =========================================================
-# 🧠 CANCELLATION GROUPING
-# =========================================================
-def classify_reason(reason):
-
-    reason = str(reason).lower()
-
-    # Store Closed
-    if any(x in reason for x in [
-        "closed",
-        "restaurant is now closed",
-        "store closed"
-    ]):
-        return "Store Closed"
-
-    # Store Busy / Delay
-    elif any(x in reason for x in [
-        "running late",
-        "busy",
-        "delay",
-        "preparation"
-    ]):
-        return "Store Busy"
-
-    # Out of Stock
-    elif any(x in reason for x in [
-        "out of stock",
-        "not available",
-        "unavailable",
-        "item unavailable"
-    ]):
-        return "Out of Stock"
-
-    # Customer Cancelled
-    elif any(x in reason for x in [
-        "customer",
-        "cancelled by customer"
-    ]):
-        return "Customer Cancelled"
-
-    # Payment Issues
-    elif any(x in reason for x in [
-        "payment",
-        "gateway",
-        "transaction",
-        "declined"
-    ]):
-        return "Payment Issue"
-
-    else:
-        return "Other"
 
 # =========================================================
 # 🔐 GOOGLE SHEETS
@@ -162,6 +110,18 @@ for branch in branches:
         # 📡 API CALL
         # =====================================================
         r = requests.get(
+            "https://api.ristaapps.com/v1/sales/page",
+            headers=headers(),
+            params={
+                "branch": branch,
+                "fromDate": from_time_str,
+                "toDate": to_time_str,
+                "page": 1,
+                "pageSize": 500,
+                "sort": "desc"
+            },
+            timeout=30
+        )
         "https://api.ristaapps.com/v1/sales/page",
         headers=headers(),
         params={
@@ -276,31 +236,10 @@ cancel_df = df[
     df[status_col]
     .astype(str)
     .str.lower()
-    .isin(["voided", "cancel"])
+    .isin(["cancelled", "voided", "cancel"])
 ].copy()
 
 print("🚨 Cancellation Found:", len(cancel_df))
-
-# =========================================================
-# 🧾 CANCEL REASON EXTRACTION
-# =========================================================
-
-if "statusInfo.reason" in cancel_df.columns:
-
-    cancel_df["cancelReason"] = (
-        cancel_df["statusInfo.reason"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
-
-else:
-    cancel_df["cancelReason"] = ""
-
-# Debug check
-print(cancel_df[
-    ["invoiceNumber", "cancelReason"]
-].head())
 
 # =========================================================
 # 🔁 STANDARDIZE INVOICE NUMBER
@@ -392,15 +331,6 @@ final_df = cancel_df.merge(
     how="left"
 )
 
-# =========================================================
-# 📊 GROUP CANCELLATION TYPES
-# =========================================================
-final_df["Cancel_Group"] = (
-    final_df["cancelReason"]
-    .fillna("")
-    .apply(classify_reason)
-)
-
 # Safe channel
 if "channel" not in final_df.columns:
     final_df["channel"] = "Unknown"
@@ -415,8 +345,7 @@ possible_reason_cols = [
     "cancelReason",
     "cancellationReason",
     "voidReason",
-    "reason",
-    "statusInfo.reason"
+    "reason"
 ]
 
 reason_col = None
@@ -439,8 +368,6 @@ def send_email(to_email, store_df):
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
-    store_name = store_df["branchName"].iloc[0]
-
 
     rows_html = ""
 
@@ -456,93 +383,23 @@ def send_email(to_email, store_df):
         </tr>
         """
 
-    # =====================================================
-    # 📊 CHANNEL SUMMARY
-    # =====================================================
-    channel_summary = (
-        store_df.groupby("channel")
-        .size()
-        .reset_index(name="Count")
-    )
-
-    channel_html = ""
-
-    for _, row in channel_summary.iterrows():
-
-        channel_html += f"""
-        <tr>
-            <td>{row['channel']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
-
-    # =====================================================
-    # 📊 REASON SUMMARY
-    # =====================================================
-    reason_summary = (
-        store_df.groupby("Cancel_Group")
-        .size()
-        .reset_index(name="Count")
-    )
-
-    reason_html = ""
-
-    for _, row in reason_summary.iterrows():
-
-        reason_html += f"""
-        <tr>
-            <td>{row['Cancel_Group']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
-
     body = f"""
     <h2>🚨 Cancellation Alert</h2>
+    <p><b>Store:</b> {store_df['branchName'].iloc[0]}</p>
     
-    <p><b>Store:</b> {store_name}</p>
-    
-    <p style="color:red;">
-    ⚠ Please check and update the reason for cancellation immediately.
+    <p style="color:red; font-weight:bold;">
+    ⚠️ Please check and update the reason for cancellation immediately.
     </p>
-    
-    <h3>📊 Channel-wise Cancellation Count</h3>
-    
-    <table border="1" cellpadding="5">
-    <tr>
-        <th>Channel</th>
-        <th>Count</th>
-    </tr>
-    {channel_html}
-    </table>
-    
-    <br>
-    
-    <h3>📊 Cancellation Reason Summary</h3>
-    
-    <table border="1" cellpadding="5">
-    <tr>
-        <th>Cancellation Type</th>
-        <th>Count</th>
-    </tr>
-    {reason_html}
-    </table>
-    
-    <br>
-    
-    <h3>📋 Detailed Cancellation Log</h3>
-    
-    <table border="1" cellpadding="5">
-    <tr>
-        <th>Order ID</th>
-        <th>Store</th>
-        <th>Channel</th>
-        <th>Time</th>
-        <th>Amount</th>
-        <th>Reason</th>
-    </tr>
-    
-    {rows_html}
-    
+    <table border="1" cellpadding="5" cellspacing="0">
+        <tr>
+            <th>Order ID</th>
+            <th>Store</th>
+            <th>Channel</th>
+            <th>Time</th>
+            <th>Amount</th>
+            <th>Reason</th>
+        </tr>
+        {rows_html}
     </table>
     """
 
@@ -598,164 +455,71 @@ for store, group in final_df.groupby("branchName"):
 
     print(f"📩 Alert sent for {store} → {receivers}")
 
-# =========================================================
-# 📊 SUMMARY DATA
-# =========================================================
-
-channel_summary = (
-    final_df.groupby("channel")
-    .size()
-    .reset_index(name="Count")
-)
-
-reason_summary = (
-    final_df.groupby("Cancel_Group")
-    .size()
-    .reset_index(name="Count")
-)
-
-store_summary = (
-    final_df.groupby("branchName")
-    .size()
-    .reset_index(name="Count")
-    .sort_values("Count", ascending=False)
-)
-
-critical_summary = (
-    final_df[
-        final_df["Cancel_Group"] == "Store Closed"
-    ]
-    .groupby(["branchName", "channel"])
-    .size()
-    .reset_index(name="Count")
-)
 
 # =========================================================
 # 📧 SUMMARY EMAIL (ONLY CC)
-# 📧 SUMMARY EMAIL
 # =========================================================
 def send_summary_email(summary_df):
-def send_summary_email(final_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
     CC_EMAIL = os.environ.get("EMAIL_CCOPS")
 
-    total_cancel = len(final_df)
     if not CC_EMAIL:
         print("❌ No CC email configured")
         return
 
-   # Channel HTML
-    # Channel HTML
-    channel_html = ""
-    for _, row in channel_summary.iterrows():
-        channel_html += f"""
-        <tr>
-            <td>{row['channel']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
-
-    # Reason HTML
-    reason_html = ""
-    for _, row in reason_summary.iterrows():
-        reason_html += f"""
-        <tr>
-            <td>{row['Cancel_Group']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
-
-    # Store HTML
-    store_html = ""
-    for _, row in store_summary.head(10).iterrows():
-        store_html += f"""
-        <tr>
-            <td>{row['branchName']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
-
-    # Critical HTML
-    critical_html = ""
-    for _, row in critical_summary.iterrows():
-        critical_html += f"""
-        <tr>
-            <td>{row['branchName']}</td>
-            <td>{row['channel']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
+    # Convert dataframe to HTML
+    table_html = summary_df.to_html(index=False, border=1)
 
     body = f"""
-    <h2>📊 Cancellation Summary</h2>
-    <p><b>Total Cancellations:</b> {total_cancel}</p>
-    <h3>Channel-wise Cancellation</h3>
-    <table border="1" cellpadding="5">
-    <tr><th>Channel</th><th>Count</th></tr>
-    {channel_html}
-    </table>
+    <h2>📊 Store-Level Cancellation Summary</h2>
+
+    <p><b>Channel-wise cancellation count</b></p>
+
+    {table_html}
+
     <br>
-    <h3>Reason-wise Summary</h3>
-    <table border="1" cellpadding="5">
-    <tr><th>Reason Group</th><th>Count</th></tr>
-    {reason_html}
-    </table>
-    <br>
-    <h3>🔴 Store Closed (Critical)</h3>
-    <table border="1" cellpadding="5">
-    <tr>
-        <th>Store</th>
-        <th>Channel</th>
-        <th>Count</th>
-    </tr>
-    {critical_html}
-    </table>
-    <br>
-    <h3>🏪 Top Impacted Stores</h3>
-    <table border="1" cellpadding="5">
-    <tr>
-        <th>Store</th>
-        <th>Count</th>
-    </tr>
-    {store_html}
-    </table>
+    <p style="color:red;"><b>⚠️ Please review high cancellation stores.</b></p>
     """
 
     msg = MIMEText(body, "html")
-    msg["Subject"] = (
-        f"🚨 Cancellation Summary | "
-        f"{today} | Total: {total_cancel}"
-    )
-
+    msg["Subject"] = "📊 Cancellation Summary Report"
     msg["From"] = EMAIL_USER
-    msg["To"] = summary_to
-    msg["To"] = CC_EMAIL
-    receivers = [
-        e.strip()
-        for e in CC_EMAIL.split(",")
-        if e.strip()
-    ]
+    msg["To"] = CC_EMAIL   # sending only to CC list
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
-    server.sendmail(
-        EMAIL_USER,
-        [summary_to],
-        receivers,
-        msg.as_string()
-    )
-    server.quit()
+    receivers = [e.strip() for e in CC_EMAIL.split(",") if e.strip()]
 
-    print("📩 Summary email sent")
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, receivers, msg.as_string())
+        server.quit()
+
+        print(f"📩 Summary mail sent → {receivers}")
+
+    except Exception as e:
+        print(f"❌ Summary email error: {e}")
+
+# =========================================================
+# 📊 CHANNEL + REASON SUMMARY
+# =========================================================
+
+summary_df = (
+    final_df
+    .groupby(["channel", "Cancel_Reason", "branchName"])
+    .size()
+    .reset_index(name="Cancel_Count")
+    .sort_values(by="Cancel_Count", ascending=False)
+)
+
+print(summary_df.head())
 
 # =========================================================
 # 📤 SEND SUMMARY MAIL
 # =========================================================
 send_summary_email(summary_df)
-send_summary_email(final_df)
 
 
 # =========================================================
