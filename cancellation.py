@@ -134,7 +134,7 @@ for branch in branches:
             "sort": "desc"
         },
         timeout=30
-    )
+        )
 
         # =====================================================
         # ❌ STATUS CHECK
