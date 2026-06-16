@@ -716,14 +716,29 @@ def send_summary_email(final_df):
         </tr>
         """
 
-    # Store HTML
+    # =====================================================
+    # STORE SUMMARY
+    # =====================================================
+    
+    store_summary = (
+        ftd_df.groupby("Store Name")
+        .size()
+        .reset_index(name="Cancel_Count")
+        .sort_values(
+            "Cancel_Count",
+            ascending=False
+        )
+        .head(10)
+    )
+    
     store_html = ""
-    for _, row in store_summary.head(10).iterrows():
+    
     for _, row in store_summary.iterrows():
+    
         store_html += f"""
         <tr>
-            <td>{row['branchName']}</td>
-            <td>{row['Count']}</td>
+            <td>{row['Store Name']}</td>
+            <td>{row['Cancel_Count']}</td>
         </tr>
         """
 
