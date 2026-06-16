@@ -613,11 +613,11 @@ try:
     # Keep only COCO stores
     coco_stores = (
         mapping_df[
-            mapping_df["Store_Type"]
+            mapping_df["Ownership"]
             .astype(str)
             .str.upper()
             == "COCO"
-        ]["branchName"]
+        ]["Store Name"]
         .dropna()
         .astype(str)
         .unique()
