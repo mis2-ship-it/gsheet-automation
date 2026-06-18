@@ -2,7 +2,7 @@ name: Run Cancellation Report
 
 on:
    schedule:
-     - cron: "17 * * * *"
+     - cron: "*/32 * * * *"
    workflow_dispatch:
 
 jobs:
