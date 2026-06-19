@@ -1,3 +1,7 @@
+from datetime import datetime
+
+print("🚀 MTD START")
+print("Current Time:", datetime.now())
 # =========================================================
 # IMPORTS
 # =========================================================
@@ -658,14 +662,51 @@ sheet = client.open_by_key(
     "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
 ).worksheet("MTD_Data")
 
-sheet.clear()
+# ---------------- FORMAT DATE ---------------- #
+
+mtd_summary["Date"] = pd.to_datetime(
+    mtd_summary["Date"]
+)
+
+# ---------------- READ EXISTING DATA ---------------- #
+
+existing_data = pd.DataFrame(
+    sheet.get_all_records()
+)
+
+print(
+    "Existing Rows:",
+    len(existing_data)
+)
+
+# ---------------- KEEP OLD DATA ---------------- #
+
+if len(existing_data) > 0:
+
+    existing_data["Date"] = pd.to_datetime(
+        existing_data["Date"]
+    )
+
+    refresh_from = (
+        mtd_summary["Date"].min()
+    )
+
+    historical_df = existing_data[
+        existing_data["Date"]
+        < refresh_from
+    ].copy()
+
+else:
+
+    historical_df = pd.DataFrame()
+
+# ---------------- FORMAT NEW DATA ---------------- #
 
 mtd_summary["Date"] = (
-    pd.to_datetime(mtd_summary["Date"])
+    mtd_summary["Date"]
     .dt.strftime("%Y-%m-%d")
 )
 
-# Convert categorical columns to string
 mtd_summary["AOV Bucket"] = (
     mtd_summary["AOV Bucket"]
     .astype(str)
@@ -676,12 +717,37 @@ mtd_summary["Discount Bucket"] = (
     .astype(str)
 )
 
+# ---------------- MERGE OLD + NEW ---------------- #
+
+final_upload_df = pd.concat(
+    [
+        historical_df,
+        mtd_summary
+    ],
+    ignore_index=True
+)
+
+print(
+    "Final Upload Rows:",
+    len(final_upload_df)
+)
+
+# ---------------- UPDATE SHEET ---------------- #
+
+sheet.clear()
+
 sheet.update(
-    [mtd_summary.columns.tolist()]
-    + mtd_summary.replace(
+    [final_upload_df.columns.tolist()]
+    +
+    final_upload_df.replace(
         [np.nan, "nan"],
         ""
     ).values.tolist()
 )
 
-print("✅ MTD Update Completed")
+print(
+    "✅ Incremental MTD Update Completed"
+)
+
+print("✅ MTD END")
+print("End Time:", datetime.now())
