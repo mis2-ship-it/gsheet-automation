@@ -392,6 +392,57 @@ final_df = cancel_df.merge(
 )
 
 # =========================================================
+# FILTER ONLY COCO STORES
+# =========================================================
+
+coco_stores = (
+    mapping_df[
+        mapping_df["Ownership"]
+        .astype(str)
+        .str.upper()
+        .eq("COCO")
+    ]["Store Name"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+final_df = final_df[
+    final_df["branchName"]
+    .astype(str)
+    .isin(coco_stores)
+].copy()
+
+print(
+    f"✅ COCO cancellations: {len(final_df)}"
+)
+
+# =========================================================
+# FILTER ONLY COCO STORES
+# =========================================================
+
+coco_stores = (
+    mapping_df[
+        mapping_df["Ownership"]
+        .astype(str)
+        .str.upper()
+        .eq("COCO")
+    ]["Store Name"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+final_df = final_df[
+    final_df["branchName"]
+    .astype(str)
+    .isin(coco_stores)
+].copy()
+
+print(
+    f"✅ COCO cancellations: {len(final_df)}"
+)
+# =========================================================
 # 📊 GROUP CANCELLATION TYPES
 # =========================================================
 final_df["Cancel_Group"] = (
@@ -429,6 +480,27 @@ if reason_col:
     final_df["Cancel_Reason"] = final_df[reason_col].fillna("Unknown")
 else:
     final_df["Cancel_Reason"] = "Unknown"
+
+existing_data = raw_ws.get_all_records()
+
+if existing_data:
+
+    existing_df = pd.DataFrame(existing_data)
+
+    alerted_invoices = (
+        existing_df["invoiceNumber"]
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+else:
+
+    alerted_invoices = []
+
+print(existing_df.columns.tolist())
+
+
 
 # =========================================================
 # 📧 EMAIL FUNCTION
@@ -596,56 +668,7 @@ for store, group in final_df.groupby("branchName"):
     send_email(",".join(receivers), group)
 
     print(f"📩 Alert sent for {store} → {receivers}")
-# =========================================================
-# FILTER ONLY COCO STORES
-# =========================================================
 
-try:
-
-    mapping_ws = spreadsheet.worksheet(
-        "Store_Mapping"
-    )
-
-    mapping_df = pd.DataFrame(
-        mapping_ws.get_all_records()
-    )
-
-    # Keep only COCO stores
-    coco_stores = (
-        mapping_df[
-            mapping_df["Ownership"]
-            .astype(str)
-            .str.upper()
-            == "COCO"
-        ]["Store Name"]
-        .dropna()
-        .astype(str)
-        .unique()
-        .tolist()
-    )
-
-    print(
-        f"✅ COCO Stores Found: "
-        f"{len(coco_stores)}"
-    )
-
-    # Filter final_df
-    final_df = final_df[
-        final_df["branchName"]
-        .astype(str)
-        .isin(coco_stores)
-    ].copy()
-
-    print(
-        f"✅ COCO Filter Applied | "
-        f"Rows: {len(final_df)}"
-    )
-
-except Exception as e:
-
-    print(
-        f"❌ Store_Mapping error: {e}"
-    )
 # =========================================================
 # 📊 SUMMARY DATA
 # =========================================================
@@ -813,8 +836,7 @@ def send_summary_email(final_df):
     msg = MIMEText(body, "html")
 
     msg["Subject"] = (
-        f"🚨 Cancellation Summary | "
-        f"{today} | Total: {total_cancel}"
+    f"🚨 Cancellation Summary | {today}"
     )
 
     msg["From"] = EMAIL_USER
