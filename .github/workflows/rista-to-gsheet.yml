@@ -4,7 +4,7 @@ on:
   schedule:
 
     # Hourly Live Dashboard
-    - cron: '*/34 * * * *'
+    - cron: '0 * * * *'
 
   workflow_dispatch:
 
