@@ -72,15 +72,15 @@ print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
-# DATE RANGE
+# DATE RANGE - LAST 2 DAYS ONLY
 # =========================================================
 
 today = datetime.now().date()
 
-start_date = today.replace(day=1)
+start_date = today - timedelta(days=2)
 end_date = today - timedelta(days=1)
 
-print(f"📅 MTD Range: {start_date} → {end_date}")
+print(f"📅 Date Range: {start_date} → {end_date}")
 
 
 # =========================================================
@@ -204,7 +204,7 @@ def fetch_branch_data(branch, day):
         except Exception as e:
 
             print(
-                f"❌ Branch Error | "
+                f"�� Branch Error | "
                 f"{branch} | "
                 f"{day} | "
                 f"{str(e)}"
@@ -258,7 +258,7 @@ def fetch_sales(day):
 
 
 # =========================================================
-# FETCH MTD DATA
+# FETCH DATA FOR LAST 2 DAYS
 # =========================================================
 
 all_days = []
@@ -679,7 +679,7 @@ print(
     len(existing_data)
 )
 
-# ---------------- KEEP OLD DATA ---------------- #
+# ---------------- KEEP OLD DATA (EXCEPT LAST 2 DAYS) ---------------- #
 
 if len(existing_data) > 0:
 
@@ -691,6 +691,7 @@ if len(existing_data) > 0:
         mtd_summary["Date"].min()
     )
 
+    # Keep data older than the refresh period
     historical_df = existing_data[
         existing_data["Date"]
         < refresh_from
@@ -717,7 +718,7 @@ mtd_summary["Discount Bucket"] = (
     .astype(str)
 )
 
-# ---------------- MERGE OLD + NEW ---------------- #
+# ---------------- MERGE OLD + NEW (LAST 2 DAYS) ---------------- #
 
 final_upload_df = pd.concat(
     [
@@ -746,7 +747,7 @@ sheet.update(
 )
 
 print(
-    "✅ Incremental MTD Update Completed"
+    "✅ Last 2 Days Data Update Completed"
 )
 
 print("✅ MTD END")
