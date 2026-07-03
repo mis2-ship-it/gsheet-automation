@@ -733,22 +733,125 @@ print(
     len(final_upload_df)
 )
 
-# ---------------- UPDATE SHEET ---------------- #
+# =========================================================
+# FORMAT DATE
+# =========================================================
 
-sheet.clear()
+mtd_summary["Date"] = pd.to_datetime(
+    mtd_summary["Date"]
+).dt.strftime("%Y-%m-%d")
 
-sheet.update(
-    [final_upload_df.columns.tolist()]
-    +
-    final_upload_df.replace(
+mtd_summary["AOV Bucket"] = (
+    mtd_summary["AOV Bucket"]
+    .astype(str)
+)
+
+mtd_summary["Discount Bucket"] = (
+    mtd_summary["Discount Bucket"]
+    .astype(str)
+)
+
+new_data = (
+    [mtd_summary.columns.tolist()]
+    + mtd_summary.replace(
         [np.nan, "nan"],
         ""
     ).values.tolist()
 )
 
-print(
-    "✅ Last 2 Days Data Update Completed"
-)
+# =========================================================
+# READ EXISTING DATA
+# =========================================================
+
+existing = sheet.get_all_values()
+
+if len(existing) <= 1:
+
+    print("🆕 Empty Sheet")
+
+    sheet.update(new_data)
+
+else:
+
+    header = existing[0]
+
+    body = existing[1:]
+
+    existing_df = pd.DataFrame(
+        body,
+        columns=header
+    )
+
+    # ------------------------------------------
+
+    refresh_date = (
+        mtd_summary["Date"]
+        .min()
+    )
+
+    print(
+        "Refreshing From:",
+        refresh_date
+    )
+
+    # ------------------------------------------
+
+    if "Date" not in existing_df.columns:
+
+        print(
+            "Date column missing."
+        )
+
+        sheet.clear()
+
+        sheet.update(new_data)
+
+    else:
+
+        existing_df["Date"] = (
+            existing_df["Date"]
+            .astype(str)
+        )
+
+        keep_df = existing_df[
+            existing_df["Date"] < refresh_date
+        ]
+
+        print(
+            "Keeping Rows:",
+            len(keep_df)
+        )
+
+        print(
+            "Replacing Rows:",
+            len(existing_df) -
+            len(keep_df)
+        )
+
+        final_upload = pd.concat(
+            [
+                keep_df,
+                mtd_summary
+            ],
+            ignore_index=True
+        )
+
+        sheet.clear()
+
+        sheet.update(
+            [
+                final_upload.columns.tolist()
+            ]
+            +
+            final_upload
+            .replace(
+                [np.nan, "nan"],
+                ""
+            )
+            .values.tolist()
+        )
+
+print("✅ Incremental Update Completed")
 
 print("✅ MTD END")
 print("End Time:", datetime.now())
