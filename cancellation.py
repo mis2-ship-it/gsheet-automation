@@ -430,14 +430,14 @@ coco_stores = (
     .tolist()
 )
 
-rdc_df = rdc_df[
-    rdc_df["branchName"]
+final_df = final_df[
+    final_df["branchName"]
     .astype(str)
     .isin(coco_stores)
 ].copy()
 
 print(
-    f"✅ COCO cancellations: {len(rdc_df)}"
+    f"✅ COCO cancellations: {len(final_df)}"
 )
 
 # =========================================================
@@ -452,46 +452,6 @@ final_df = final_df.merge(
     right_on="Reason (raw, contains)",
     how="left"
 )
-
-# =========================================================
-# FILTER ONLY RDC
-# =========================================================
-
-cancel_df = cancel_df[
-    cancel_df["Notes"]
-    .fillna("")
-    .str.upper()
-    .eq("RDC")
-].copy()
-
-print("✅ RDC cancellations:", len(cancel_df))
-
-if cancel_df.empty:
-    print("✅ No RDC cancellations")
-    exit()
-# =========================================================
-# FILTER ONLY COCO STORES
-# =========================================================
-
-coco_stores = (
-    mapping_df[
-        mapping_df["Ownership"]
-        .astype(str)
-        .str.upper()
-        .eq("COCO")
-    ]["Store Name"]
-    .dropna()
-    .unique()
-    .tolist()
-)
-
-final_df = final_df[
-    final_df["branchName"]
-    .astype(str)
-    .isin(coco_stores)
-].copy()
-
-print(f"✅ COCO cancellations: {len(final_df)}")
 
 # =========================================================
 # FILTER ONLY RDC
@@ -512,7 +472,13 @@ if final_df.empty:
     print("✅ No RDC cancellations")
     exit()
 
+# =========================================================
+# CREATE RDC DATAFRAME
+# =========================================================
 
+rdc_df = final_df.copy()
+
+print(f"✅ RDC Alert Data : {len(rdc_df)}")
 
 # =========================================================
 # MAP REASON FROM GOOGLE SHEET
@@ -521,7 +487,7 @@ if final_df.empty:
 rdc_df["Cancel_Group"] = "Other"
 rdc_df["RDC_Flag"] = "No"
 
-for _, r in reason_map_df.iterrows():
+for _, r in reason_map.iterrows():
 
     keyword = str(r["Reason (raw, contains)"]).lower().strip()
 
