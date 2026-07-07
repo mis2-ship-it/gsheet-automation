@@ -825,26 +825,28 @@ store_summary = (
 )
 
 store_html = ""
-    
-    for _, row in store_summary.iterrows():
-    
-        store_html += f"""
-        <tr>
-            <td>{row['Store Name']}</td>
-            <td>{row['Cancel_Count']}</td>
-        </tr>
-        """
 
-    # Critical HTML
-    critical_html = ""
-    for _, row in critical_summary.iterrows():
-        critical_html += f"""
-        <tr>
-            <td>{row['branchName']}</td>
-            <td>{row['channel']}</td>
-            <td>{row['Count']}</td>
-        </tr>
-        """
+for _, row in store_summary.iterrows():
+
+    store_html += f"""
+    <tr>
+        <td>{row['Store Name']}</td>
+        <td>{row['Cancel_Count']}</td>
+    </tr>
+    """
+
+# Critical HTML
+critical_html = ""
+
+for _, row in critical_summary.iterrows():
+
+    critical_html += f"""
+    <tr>
+        <td>{row['Store Name']}</td>
+        <td>{row['channel']}</td>
+        <td>{row['Count']}</td>
+    </tr>
+    """
 
     body = f"""
     <h2>📊 Cancellation Summary</h2>
