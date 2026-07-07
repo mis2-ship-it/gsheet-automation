@@ -400,6 +400,12 @@ if cancel_df.empty:
 print("✅ New cancellations:", len(cancel_df))
 
 # =========================================================
+# CREATE FINAL DATAFRAME
+# =========================================================
+
+final_df = cancel_df.copy()
+
+# =========================================================
 # 🧩 STORE MAPPING
 # =========================================================
 data = mapping_ws.get_all_values()
@@ -434,16 +440,35 @@ print(
     f"✅ COCO cancellations: {len(rdc_df)}"
 )
 
-cancel_df = cancel_df[
-    cancel_df["branchName"]
-    .astype(str)
-    .isin(coco_stores)
-].copy()
+# =========================================================
+# LOAD REASON MAP
+# =========================================================
 
-print(
-    f"✅ COCO cancellations: {len(cancel_df)}"
+reason_map = pd.DataFrame(reason_ws.get_all_records())
+
+final_df = final_df.merge(
+    reason_map,
+    left_on="Cancel_Reason",
+    right_on="Reason (raw, contains)",
+    how="left"
 )
 
+# =========================================================
+# FILTER ONLY RDC
+# =========================================================
+
+cancel_df = cancel_df[
+    cancel_df["Notes"]
+    .fillna("")
+    .str.upper()
+    .eq("RDC")
+].copy()
+
+print("✅ RDC cancellations:", len(cancel_df))
+
+if cancel_df.empty:
+    print("✅ No RDC cancellations")
+    exit()
 # =========================================================
 # FILTER ONLY COCO STORES
 # =========================================================
@@ -460,15 +485,34 @@ coco_stores = (
     .tolist()
 )
 
-rdc_df = rdc_df[
-    rdc_df["branchName"]
+final_df = final_df[
+    final_df["branchName"]
     .astype(str)
     .isin(coco_stores)
 ].copy()
 
-print(
-    f"✅ COCO cancellations: {len(rdc_df)}"
-)
+print(f"✅ COCO cancellations: {len(final_df)}")
+
+# =========================================================
+# FILTER ONLY RDC
+# =========================================================
+
+final_df["Notes"] = final_df["Notes"].fillna("")
+
+final_df = final_df[
+    final_df["Notes"]
+    .astype(str)
+    .str.upper()
+    .eq("RDC")
+].copy()
+
+print(f"✅ RDC cancellations: {len(final_df)}")
+
+if final_df.empty:
+    print("✅ No RDC cancellations")
+    exit()
+
+
 
 # =========================================================
 # MAP REASON FROM GOOGLE SHEET
