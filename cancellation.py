@@ -407,7 +407,8 @@ headers_map = [h.strip() for h in data[0]]
 
 mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 
-final_df = final_df.merge(
+# cancel_df is the dataframe after duplicate removal
+rdc_df = cancel_df.merge(
     mapping_df,
     left_on="branchName",
     right_on="Store Name",
@@ -430,14 +431,14 @@ coco_stores = (
     .tolist()
 )
 
-final_df = final_df[
-    final_df["branchName"]
+rdc_df = rdc_df[
+    rdc_df["branchName"]
     .astype(str)
     .isin(coco_stores)
 ].copy()
 
 print(
-    f"✅ COCO cancellations: {len(final_df)}"
+    f"✅ COCO cancellations: {len(rdc_df)}"
 )
 
 # =========================================================
@@ -456,22 +457,22 @@ coco_stores = (
     .tolist()
 )
 
-final_df = final_df[
-    final_df["branchName"]
+rdc_df = rdc_df[
+    rdc_df["branchName"]
     .astype(str)
     .isin(coco_stores)
 ].copy()
 
 print(
-    f"✅ COCO cancellations: {len(final_df)}"
+    f"✅ COCO cancellations: {len(rdc_df)}"
 )
 
 # =========================================================
 # MAP REASON FROM GOOGLE SHEET
 # =========================================================
 
-final_df["Cancel_Group"] = "Other"
-final_df["RDC_Flag"] = "No"
+rdc_df["Cancel_Group"] = "Other"
+rdc_df["RDC_Flag"] = "No"
 
 for _, r in reason_map_df.iterrows():
 
@@ -481,20 +482,20 @@ for _, r in reason_map_df.iterrows():
         continue
 
     mask = (
-        final_df["cancelReason"]
+        rdc_df["cancelReason"]
         .fillna("")
         .str.lower()
         .str.contains(keyword, na=False)
     )
 
-    final_df.loc[mask, "Cancel_Group"] = r["Bucket"]
+    rdc_df.loc[mask, "Cancel_Group"] = r["Bucket"]
 
     if "RDC" in str(r["Notes"]).upper():
-        final_df.loc[mask, "RDC_Flag"] = "Yes"
+        rdc_df.loc[mask, "RDC_Flag"] = "Yes"
 
 print(
     "✅ RDC Orders:",
-    len(final_df[final_df["RDC_Flag"] == "Yes"])
+    len(rdc_df[rdc_df["RDC_Flag"] == "Yes"])
 )
 
 # =========================================================
@@ -512,14 +513,14 @@ possible_reason_cols = [
 reason_col = None
 
 for col in possible_reason_cols:
-    if col in final_df.columns:
+    if col in rdc_df.columns:
         reason_col = col
         break
 
 if reason_col:
-    final_df["Cancel_Reason"] = final_df[reason_col].fillna("Unknown")
+    rdc_df["Cancel_Reason"] = rdc_df[reason_col].fillna("Unknown")
 else:
-    final_df["Cancel_Reason"] = "Unknown"
+    rdc_df["Cancel_Reason"] = "Unknown"
 
 existing_data = alert_ws.get_all_records()
 
@@ -680,8 +681,8 @@ def send_email(to_email, store_df):
 # =========================================================
 # 🚀 SEND ALERTS (TEAM + REGION MANAGER)
 # =========================================================
-rdc_df = final_df[
-    final_df["RDC_Flag"] == "Yes"
+rdc_df = rdc_df[
+    rdc_df["RDC_Flag"] == "Yes"
 ].copy()
 
 for store, group in rdc_df.groupby("branchName"):
@@ -726,7 +727,7 @@ for store, group in rdc_df.groupby("branchName"):
 
     print(f"📩 Alert sent for {store} → {receivers}")
 
-    alert_history_df = final_df[[
+    alert_history_df = rdc_df[[
         "invoiceNumber"
     ]].copy()
     
@@ -744,31 +745,31 @@ for store, group in rdc_df.groupby("branchName"):
 # =========================================================
 
 channel_summary = (
-    final_df.groupby("channel")
+    rdc_df.groupby("channel")
     .size()
     .reset_index(name="Count")
     .sort_values("Count", ascending=False)
 )
 
 reason_summary = (
-    final_df.groupby("Cancel_Group")
+    rdc_df.groupby("Cancel_Group")
     .size()
     .reset_index(name="Count")
     .sort_values("Count", ascending=False)
 )
 
 store_summary = (
-    final_df.groupby("branchName")
+    rdc_df.groupby("branchName")
     .size()
     .reset_index(name="Count")
     .sort_values("Count", ascending=False)
 )
 
 critical_summary = (
-    final_df[
-        final_df["Cancel_Group"] == "Store Closed"
+    rdc_df[
+        rdc_df["Cancel_Group"] == "Store Closed"
     ]
-    .groupby(["branchName", "channel"])
+    .groupby(["Store Name", "channel"])
     .size()
     .reset_index(name="Count")
     .sort_values("Count", ascending=False)
@@ -783,7 +784,7 @@ def send_summary_email(rdc_df):
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
     CC_EMAIL = os.environ.get("EMAIL_CCOPS")
 
-    total_cancel = len(final_df)
+    total_cancel = len(rdc_df)
 
     if not CC_EMAIL:
         print("❌ No CC email configured")
@@ -814,7 +815,7 @@ def send_summary_email(rdc_df):
 # =====================================================
 
 store_summary = (
-    final_df.groupby("Store Name")
+    rdc_df.groupby("Store Name")
     .size()
     .reset_index(name="Cancel_Count")
     .sort_values(
@@ -849,7 +850,6 @@ for _, row in critical_summary.iterrows():
     """
 
     body = f"""
-    <h2>📊 Cancellation Summary</h2>
     <h2>📊 COCO Cancellation Summary</h2>
 
     <p><b>Total Cancellations:</b> {total_cancel}</p>
@@ -920,15 +920,13 @@ for _, row in critical_summary.iterrows():
         if e.strip()
     ]
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
+
     server = smtplib.SMTP(
         "smtp.gmail.com",
         587
     )
 
     server.starttls()
-    server.login(EMAIL_USER, EMAIL_PASS)
-
     server.login(
         EMAIL_USER,
         EMAIL_PASS
@@ -949,18 +947,18 @@ for _, row in critical_summary.iterrows():
 # 📤 SEND SUMMARY MAIL
 # =========================================================
 
-send_summary_email(final_df)
+send_summary_email(rdc_df)
 
 
 # =========================================================
 # 📊 SAVE ALERT HISTORY
 # =========================================================
 
-final_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-final_df["emailSent"] = "YES"
+rdc_df["createdAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+rdc_df["emailSent"] = "YES"
 
 # Only tracking columns
-tracking_df = final_df[[
+tracking_df = rdc_df[[
     "invoiceNumber",
     "branchName",
     "channel",
