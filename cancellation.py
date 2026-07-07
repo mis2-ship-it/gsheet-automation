@@ -98,7 +98,26 @@ client = gspread.authorize(creds)
 spreadsheet = client.open("Cancellation Dashboard")
 
 raw_ws = spreadsheet.worksheet("Cancellation_Tracker")
+try:
+
+    alert_ws = spreadsheet.worksheet(
+        "Alert_History"
+    )
+
+except:
+
+    alert_ws = spreadsheet.add_worksheet(
+        title="Alert_History",
+        rows=100000,
+        cols=20
+    )
 mapping_ws = spreadsheet.worksheet("Store_Mapping")
+reason_ws = spreadsheet.worksheet("Reason_Map")
+
+reason_data = reason_ws.get_all_records()
+reason_map_df = pd.DataFrame(reason_data)
+
+print("✅ Reason Map Loaded:", len(reason_map_df))
 
 print("✅ Google Connected")
 
@@ -354,7 +373,11 @@ if (
         .str.strip()
     )
 
-    sent_ids = set(existing["invoiceNumber"])
+    sent_ids = set(
+    existing["invoiceNumber"]
+    .astype(str)
+    .str.strip()
+    )
 
     before_count = len(cancel_df)
 
@@ -384,7 +407,7 @@ headers_map = [h.strip() for h in data[0]]
 
 mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 
-final_df = cancel_df.merge(
+final_df = final_df.merge(
     mapping_df,
     left_on="branchName",
     right_on="Store Name",
@@ -442,20 +465,37 @@ final_df = final_df[
 print(
     f"✅ COCO cancellations: {len(final_df)}"
 )
+
 # =========================================================
-# 📊 GROUP CANCELLATION TYPES
+# MAP REASON FROM GOOGLE SHEET
 # =========================================================
-final_df["Cancel_Group"] = (
-    final_df["cancelReason"]
-    .fillna("")
-    .apply(classify_reason)
+
+final_df["Cancel_Group"] = "Other"
+final_df["RDC_Flag"] = "No"
+
+for _, r in reason_map_df.iterrows():
+
+    keyword = str(r["Reason (raw, contains)"]).lower().strip()
+
+    if keyword == "":
+        continue
+
+    mask = (
+        final_df["cancelReason"]
+        .fillna("")
+        .str.lower()
+        .str.contains(keyword, na=False)
+    )
+
+    final_df.loc[mask, "Cancel_Group"] = r["Bucket"]
+
+    if "RDC" in str(r["Notes"]).upper():
+        final_df.loc[mask, "RDC_Flag"] = "Yes"
+
+print(
+    "✅ RDC Orders:",
+    len(final_df[final_df["RDC_Flag"] == "Yes"])
 )
-
-# Safe channel
-if "channel" not in final_df.columns:
-    final_df["channel"] = "Unknown"
-
-print("✅ Mapping Ready:", final_df.shape)
 
 # =========================================================
 # 🧾 CANCELLATION REASON
@@ -481,7 +521,7 @@ if reason_col:
 else:
     final_df["Cancel_Reason"] = "Unknown"
 
-existing_data = raw_ws.get_all_records()
+existing_data = alert_ws.get_all_records()
 
 if existing_data:
 
@@ -640,7 +680,11 @@ def send_email(to_email, store_df):
 # =========================================================
 # 🚀 SEND ALERTS (TEAM + REGION MANAGER)
 # =========================================================
-for store, group in final_df.groupby("branchName"):
+rdc_df = final_df[
+    final_df["RDC_Flag"] == "Yes"
+].copy()
+
+for store, group in rdc_df.groupby("branchName"):
 
     # Team email
     team_email = str(group["Email"].iloc[0]).strip() if "Email" in group.columns else ""
@@ -665,9 +709,35 @@ for store, group in final_df.groupby("branchName"):
         print(f"⚠️ No email mapped for store: {store}")
         continue
 
+    # ==========================================
+    # DEBUG EMAIL MAPPING
+    # ==========================================
+    print("\n========== EMAIL DEBUG ==========")
+    print(group[[
+        "branchName",
+        "Store Name",
+        "Email",
+        "Region Manager Email"
+    ]])
+    print("Receivers:", receivers)
+    print("=================================\n")
+
     send_email(",".join(receivers), group)
 
     print(f"📩 Alert sent for {store} → {receivers}")
+
+    alert_history_df = final_df[[
+        "invoiceNumber"
+    ]].copy()
+    
+    if len(alert_history_df):
+    
+        alert_ws.append_rows(
+            alert_history_df.values.tolist(),
+            value_input_option="USER_ENTERED"
+        )
+    
+    print("✅ Alert history updated")
 
 # =========================================================
 # 📊 SUMMARY DATA
@@ -707,7 +777,7 @@ critical_summary = (
 # =========================================================
 # 📧 SUMMARY EMAIL
 # =========================================================
-def send_summary_email(final_df):
+def send_summary_email(rdc_df):
 
     EMAIL_USER = os.environ.get("EMAIL_USER")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
@@ -744,13 +814,14 @@ def send_summary_email(final_df):
     # =====================================================
     
     store_summary = (
-        ftd_df.groupby("Store Name")
+        final_df.groupby("Store Name")
         .size()
         .reset_index(name="Cancel_Count")
         .sort_values(
             "Cancel_Count",
             ascending=False
         )
+    )
         .head(10)
     )
     
