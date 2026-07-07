@@ -407,11 +407,16 @@ headers_map = [h.strip() for h in data[0]]
 
 mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 
-# cancel_df is the dataframe after duplicate removal
-rdc_df = cancel_df.merge(
-    mapping_df,
-    left_on="branchName",
-    right_on="Store Name",
+# =========================================================
+# LOAD REASON MAP
+# =========================================================
+
+reason_map = pd.DataFrame(reason_ws.get_all_records())
+
+rdc_df = rdc_df.merge(
+    reason_map,
+    left_on="Cancel_Reason",
+    right_on="Reason (raw, contains)",
     how="left"
 )
 
@@ -522,29 +527,7 @@ if reason_col:
 else:
     rdc_df["Cancel_Reason"] = "Unknown"
 
-# =========================================================
-# LOAD REASON MAP
-# =========================================================
 
-reason_map_ws = spreadsheet.worksheet("Reason_Map")
-reason_map = pd.DataFrame(reason_map_ws.get_all_records())
-
-final_df = final_df.merge(
-    reason_map,
-    left_on="Cancel_Reason",
-    right_on="Cancel Reason",
-    how="left"
-)
-
-# Only RDC alerts
-rdc_df = final_df[
-    final_df["Notes"]
-    .fillna("")
-    .str.upper()
-    .eq("RDC")
-].copy()
-
-print(f"RDC Alerts : {len(rdc_df)}")
 
 existing_data = alert_ws.get_all_records()
 
@@ -724,6 +707,8 @@ def send_email(to_email, store_df):
 rdc_df = rdc_df[
     rdc_df["RDC_Flag"] == "Yes"
 ].copy()
+
+print(f"RDC Alerts : {len(rdc_df)}")
 
 for store, group in rdc_df.groupby("branchName"):
 
