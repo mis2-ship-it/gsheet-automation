@@ -809,23 +809,22 @@ def send_summary_email(rdc_df):
         </tr>
         """
 
-    # =====================================================
-    # STORE SUMMARY
-    # =====================================================
-    
-    store_summary = (
-        final_df.groupby("Store Name")
-        .size()
-        .reset_index(name="Cancel_Count")
-        .sort_values(
-            "Cancel_Count",
-            ascending=False
-        )
+# =====================================================
+# STORE SUMMARY
+# =====================================================
+
+store_summary = (
+    final_df.groupby("Store Name")
+    .size()
+    .reset_index(name="Cancel_Count")
+    .sort_values(
+        "Cancel_Count",
+        ascending=False
     )
-        .head(10)
-    )
-    
-    store_html = ""
+    .head(10)
+)
+
+store_html = ""
     
     for _, row in store_summary.iterrows():
     
