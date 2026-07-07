@@ -1940,7 +1940,14 @@ def push(name, df):
         ws = spreadsheet.add_worksheet(title=name, rows="1000", cols="50")
 
     ws.clear()
-    ws.update([df.columns.tolist()] + df.astype(str).values.tolist())
+    ws.batch_clear(["A:Z"])
+    
+    time.sleep(2)
+    
+    ws.update(
+        [df.columns.tolist()] +
+        df.astype(str).values.tolist()
+    )
 
 
         
