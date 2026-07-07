@@ -522,26 +522,66 @@ if reason_col:
 else:
     rdc_df["Cancel_Reason"] = "Unknown"
 
+# =========================================================
+# LOAD REASON MAP
+# =========================================================
+
+reason_map_ws = spreadsheet.worksheet("Reason_Map")
+reason_map = pd.DataFrame(reason_map_ws.get_all_records())
+
+final_df = final_df.merge(
+    reason_map,
+    left_on="Cancel_Reason",
+    right_on="Cancel Reason",
+    how="left"
+)
+
+# Only RDC alerts
+rdc_df = final_df[
+    final_df["Notes"]
+    .fillna("")
+    .str.upper()
+    .eq("RDC")
+].copy()
+
+print(f"RDC Alerts : {len(rdc_df)}")
+
 existing_data = alert_ws.get_all_records()
 
 if existing_data:
 
     existing_df = pd.DataFrame(existing_data)
 
-    alerted_invoices = (
-        existing_df["invoiceNumber"]
-        .astype(str)
-        .unique()
-        .tolist()
-    )
-
 else:
 
-    alerted_invoices = []
+    existing_df = pd.DataFrame(
+        columns=["invoiceNumber"]
+    )
 
+alerted_invoices = (
+    existing_df["invoiceNumber"]
+    .astype(str)
+    .tolist()
+)
+
+print("Alert History Columns:")
 print(existing_df.columns.tolist())
 
+# =========================================================
+# REMOVE ALREADY ALERTED RDC ORDERS
+# =========================================================
 
+rdc_df = rdc_df[
+    ~rdc_df["invoiceNumber"]
+    .astype(str)
+    .isin(alerted_invoices)
+].copy()
+
+print(f"New RDC Alerts : {len(rdc_df)}")
+
+if rdc_df.empty:
+    print("✅ No new RDC alerts")
+    exit()
 
 # =========================================================
 # 📧 EMAIL FUNCTION
