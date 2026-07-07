@@ -407,18 +407,6 @@ headers_map = [h.strip() for h in data[0]]
 
 mapping_df = pd.DataFrame(data[1:], columns=headers_map)
 
-# =========================================================
-# LOAD REASON MAP
-# =========================================================
-
-reason_map = pd.DataFrame(reason_ws.get_all_records())
-
-rdc_df = rdc_df.merge(
-    reason_map,
-    left_on="Cancel_Reason",
-    right_on="Reason (raw, contains)",
-    how="left"
-)
 
 # =========================================================
 # FILTER ONLY COCO STORES
@@ -444,6 +432,16 @@ rdc_df = rdc_df[
 
 print(
     f"✅ COCO cancellations: {len(rdc_df)}"
+)
+
+cancel_df = cancel_df[
+    cancel_df["branchName"]
+    .astype(str)
+    .isin(coco_stores)
+].copy()
+
+print(
+    f"✅ COCO cancellations: {len(cancel_df)}"
 )
 
 # =========================================================
