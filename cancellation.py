@@ -476,18 +476,20 @@ else:
 # LOAD REASON MAP
 # =========================================================
 
-reason_map = pd.DataFrame(
-    reason_ws.get_all_records()
+reason_map = (
+    pd.DataFrame(reason_ws.get_all_records())[
+        ["Reason (raw, contains)", "Bucket", "Notes"]
+    ]
 )
 
 final_df = final_df.merge(
     reason_map,
     left_on="Cancel_Reason",
     right_on="Reason (raw, contains)",
-    how="left"
+    how="left",
+    suffixes=("", "_map")
 )
 
-print(final_df.columns.tolist())
 print(reason_map.columns.tolist())
 # =========================================================
 # MERGE REASON MAP
@@ -500,15 +502,21 @@ final_df = final_df.merge(
     how="left"
 )
 
+print(final_df.columns.tolist())
+print(reason_map.columns.tolist())
+
 # =========================================================
 # FILTER ONLY RDC
 # =========================================================
 
-final_df["Notes"] = final_df["Notes"].fillna("")
+final_df["Notes_map"] = (
+    final_df["Notes_map"]
+    .fillna("")
+    .astype(str)
+)
 
 final_df = final_df[
-    final_df["Notes"]
-    .astype(str)
+    final_df["Notes_map"]
     .str.upper()
     .eq("RDC")
 ].copy()
