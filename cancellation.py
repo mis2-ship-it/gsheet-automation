@@ -441,10 +441,57 @@ print(
 )
 
 # =========================================================
+# 🧾 CANCELLATION REASON
+# =========================================================
+
+possible_reason_cols = [
+    "cancelReason",
+    "cancellationReason",
+    "voidReason",
+    "reason",
+    "statusInfo.reason"
+]
+
+reason_col = None
+
+for col in possible_reason_cols:
+    if col in final_df.columns:
+        reason_col = col
+        break
+
+if reason_col:
+
+    final_df["Cancel_Reason"] = (
+        final_df[reason_col]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+else:
+
+    final_df["Cancel_Reason"] = "Unknown"
+
+# =========================================================
 # LOAD REASON MAP
 # =========================================================
 
-reason_map = pd.DataFrame(reason_ws.get_all_records())
+reason_map = pd.DataFrame(
+    reason_ws.get_all_records()
+)
+
+final_df = final_df.merge(
+    reason_map,
+    left_on="Cancel_Reason",
+    right_on="Reason (raw, contains)",
+    how="left"
+)
+
+print(final_df.columns.tolist())
+print(reason_map.columns.tolist())
+# =========================================================
+# MERGE REASON MAP
+# =========================================================
 
 final_df = final_df.merge(
     reason_map,
@@ -478,6 +525,8 @@ if final_df.empty:
 
 rdc_df = final_df.copy()
 
+print("RDC Columns:")
+print(rdc_df.columns.tolist())
 print(f"✅ RDC Alert Data : {len(rdc_df)}")
 
 # =========================================================
@@ -510,30 +559,6 @@ print(
     "✅ RDC Orders:",
     len(rdc_df[rdc_df["RDC_Flag"] == "Yes"])
 )
-
-# =========================================================
-# 🧾 CANCELLATION REASON
-# =========================================================
-
-possible_reason_cols = [
-    "cancelReason",
-    "cancellationReason",
-    "voidReason",
-    "reason",
-    "statusInfo.reason"
-]
-
-reason_col = None
-
-for col in possible_reason_cols:
-    if col in rdc_df.columns:
-        reason_col = col
-        break
-
-if reason_col:
-    rdc_df["Cancel_Reason"] = rdc_df[reason_col].fillna("Unknown")
-else:
-    rdc_df["Cancel_Reason"] = "Unknown"
 
 
 
