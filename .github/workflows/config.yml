@@ -1,7 +1,7 @@
 name: Fetch Inventory Report
 
 on:
-   workflow_dispatch:
+  workflow_dispatch:
 
 jobs:
   run-script:
@@ -17,8 +17,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run Script
         env:
@@ -27,9 +26,8 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO: to_email 
+          EMAIL_TO: to_email
           EMAIL_CCOPS: ${{ secrets.EMAIL_CCOPS }}
-
         run: |
           echo "Running script..."
           python fetch_inventory.py
