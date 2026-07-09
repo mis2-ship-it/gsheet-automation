@@ -741,6 +741,15 @@ mtd_summary["Discount Bucket"] = (
 
 # ---------------- MERGE OLD + NEW (LAST 2 DAYS) ---------------- #
 
+# Ensure Date column is consistent before merging
+historical_df["Date"] = pd.to_datetime(
+    historical_df["Date"], errors="coerce"
+).dt.strftime("%Y-%m-%d")
+
+mtd_summary["Date"] = pd.to_datetime(
+    mtd_summary["Date"], errors="coerce"
+).dt.strftime("%Y-%m-%d")
+
 final_upload_df = pd.concat(
     [
         historical_df,
@@ -849,28 +858,25 @@ else:
             len(keep_df)
         )
 
-        final_upload = pd.concat(
-            [
-                keep_df,
-                mtd_summary
-            ],
-            ignore_index=True
-        )
-
+        # Ensure Date column is consistent before upload
+        final_upload["Date"] = pd.to_datetime(
+            final_upload["Date"], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
+        
+        final_upload["AOV Bucket"] = final_upload["AOV Bucket"].astype(str)
+        final_upload["Discount Bucket"] = final_upload["Discount Bucket"].astype(str)
+        
         sheet.clear()
-
+        
         sheet.update(
-            [
-                final_upload.columns.tolist()
-            ]
+            [final_upload.columns.tolist()]
             +
-            final_upload
-            .replace(
+            final_upload.replace(
                 [np.nan, "nan"],
                 ""
-            )
-            .values.tolist()
+            ).values.tolist()
         )
+
 
 print("✅ Incremental Update Completed")
 
