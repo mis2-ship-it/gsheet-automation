@@ -864,7 +864,15 @@ else:
             len(keep_df)
         )
 
-        # Build the merged DataFrame first
+        # Drop duplicate column names if any
+        keep_df = keep_df.loc[:, ~keep_df.columns.duplicated()]
+        mtd_summary = mtd_summary.loc[:, ~mtd_summary.columns.duplicated()]
+        
+        # Reset index to avoid duplicate index values
+        keep_df = keep_df.reset_index(drop=True)
+        mtd_summary = mtd_summary.reset_index(drop=True)
+        
+        # Now safe to concat
         final_upload_df = pd.concat(
             [
                 keep_df,
@@ -872,6 +880,7 @@ else:
             ],
             ignore_index=True
         )
+
         
         # Ensure Date column is consistent before upload
         final_upload_df["Date"] = pd.to_datetime(
