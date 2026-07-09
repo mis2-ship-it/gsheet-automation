@@ -504,19 +504,21 @@ final_df = final_df.merge(
 
 print(final_df.columns.tolist())
 print(reason_map.columns.tolist())
+print("FINAL DF COLUMNS")
+print(final_df.columns.tolist())
 
 # =========================================================
 # FILTER ONLY RDC
 # =========================================================
 
-final_df["Notes_map"] = (
-    final_df["Notes_map"]
+final_df["Notes"] = (
+    final_df["Notes"]
     .fillna("")
     .astype(str)
 )
 
 final_df = final_df[
-    final_df["Notes_map"]
+    final_df["Notes"]
     .str.upper()
     .eq("RDC")
 ].copy()
