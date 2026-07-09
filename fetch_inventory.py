@@ -1,30 +1,36 @@
-import yaml
+import os
+import json
 import requests
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- Load Config ---
-with open("config.yml", "r") as f:
-    config = yaml.safe_load(f)
+# --- Load secrets from environment ---
+api_key = os.environ["API_KEY"]
+secret_key = os.environ["SECRET_KEY"]
+google_credentials = os.environ["GOOGLE_CREDENTIALS"]
 
-base_url = config["rista"]["base_url"]
-headers = {
-    "API-KEY": config["rista"]["api_key"],
-    "SECRET-KEY": config["rista"]["secret_key"]
-}
+sheet_id = "1YAzHR1djQQSyW8Cz9-y6HxLV7XQY9xSm6mVnBy8a7lc"
+tab_name = "Sample_Data"
+
+# --- Write Google credentials to file ---
+with open("service_account.json", "w") as f:
+    f.write(google_credentials)
 
 # --- Google Sheets Auth ---
 scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    config["google_sheets"]["credentials_file"], scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 client = gspread.authorize(creds)
+sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 
-sheet = client.open_by_key(config["google_sheets"]["sheet_id"]).worksheet(
-    config["google_sheets"]["tab_name"])
+# --- API Setup ---
+base_url = "https://api.ristaapps.com"
+headers = {
+    "API-KEY": api_key,
+    "SECRET-KEY": secret_key
+}
 
-# --- Fetch Data ---
 def fetch_data(endpoint, method="GET", payload=None):
     url = base_url + endpoint
     if method == "GET":
@@ -34,9 +40,10 @@ def fetch_data(endpoint, method="GET", payload=None):
     response.raise_for_status()
     return response.json()
 
-transfer = fetch_data(config["rista"]["endpoints"]["transfer"], "GET")
-grn = fetch_data(config["rista"]["endpoints"]["grn"], "GET")
-stock = fetch_data(config["rista"]["endpoints"]["stock"], "POST")
+# --- Fetch Data ---
+transfer = fetch_data("/inventory/transfer/page", "GET")
+grn = fetch_data("/inventory/grn/page", "GET")
+stock = fetch_data("/inventory/item/stock", "POST")
 
 # --- Convert to DataFrame ---
 df_transfer = pd.DataFrame(transfer.get("data", []))
@@ -49,4 +56,4 @@ combined = pd.concat([df_transfer, df_grn, df_stock], ignore_index=True)
 sheet.clear()
 sheet.update([combined.columns.tolist()] + combined.values.tolist())
 
-print("✅ Data pushed to Google Sheet successfully!")
+print("✅ Inventory data pushed to Google Sheet successfully!")
