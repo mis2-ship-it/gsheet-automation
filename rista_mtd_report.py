@@ -864,24 +864,34 @@ else:
             len(keep_df)
         )
 
+        # Build the merged DataFrame first
+        final_upload_df = pd.concat(
+            [
+                keep_df,
+                mtd_summary
+            ],
+            ignore_index=True
+        )
+        
         # Ensure Date column is consistent before upload
-        final_upload["Date"] = pd.to_datetime(
-            final_upload["Date"], errors="coerce"
+        final_upload_df["Date"] = pd.to_datetime(
+            final_upload_df["Date"], errors="coerce"
         ).dt.strftime("%Y-%m-%d")
         
-        final_upload["AOV Bucket"] = final_upload["AOV Bucket"].astype(str)
-        final_upload["Discount Bucket"] = final_upload["Discount Bucket"].astype(str)
+        final_upload_df["AOV Bucket"] = final_upload_df["AOV Bucket"].astype(str)
+        final_upload_df["Discount Bucket"] = final_upload_df["Discount Bucket"].astype(str)
         
         sheet.clear()
         
         sheet.update(
-            [final_upload.columns.tolist()]
+            [final_upload_df.columns.tolist()]
             +
-            final_upload.replace(
+            final_upload_df.replace(
                 [np.nan, "nan"],
                 ""
             ).values.tolist()
         )
+
 
 
 print("✅ Incremental Update Completed")
