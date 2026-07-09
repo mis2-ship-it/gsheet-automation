@@ -301,9 +301,12 @@ sheet = client.open_by_key(
     "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
 ).worksheet("Region_Help_Sheet")
 
-master = pd.DataFrame(
-    sheet.get_all_records()
-)
+values = sheet.get_all_values()
+
+headers = values[0]
+rows = values[1:]
+
+df = pd.DataFrame(rows, columns=headers)
 
 storetype_map = dict(
     zip(master["Branch"], master["Store Type"])
