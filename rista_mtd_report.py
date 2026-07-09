@@ -306,7 +306,10 @@ values = sheet.get_all_values()
 headers = values[0]
 rows = values[1:]
 
-df = pd.DataFrame(rows, columns=headers)
+master = pd.DataFrame(
+    rows,
+    columns=headers
+)
 
 storetype_map = dict(
     zip(master["Branch"], master["Store Type"])
