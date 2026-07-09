@@ -10,3 +10,6 @@ loguru
 python-dotenv
 orjson
 matplotlib
+requests
+oauth2client
+PyYAML
