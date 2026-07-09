@@ -334,9 +334,9 @@ final_df["Region"] = (
 # SOURCE MAP
 # =========================================================
 
-help_sheet = client.open(
-    "Sales Dashboard"
-).worksheet("Help Sheet")
+help_sheet = client.open_by_key(
+    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+).worksheet("Region_Help_Sheet")
 
 source_master = pd.DataFrame(
     help_sheet.get("D:F")[1:],
@@ -674,6 +674,8 @@ mtd_summary["Date"] = pd.to_datetime(
     mtd_summary["Date"]
 )
 
+
+print("Worksheet Name:", sheet.title)
 # ---------------- READ EXISTING DATA ---------------- #
 
 existing_data = pd.DataFrame(
