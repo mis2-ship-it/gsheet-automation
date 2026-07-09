@@ -667,25 +667,38 @@ mtd_summary["Discount Bucket"] = pd.cut(
 sheet = client.open_by_key(
     "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
 ).worksheet("MTD_Data")
-
 # ---------------- FORMAT DATE ---------------- #
 
 mtd_summary["Date"] = pd.to_datetime(
     mtd_summary["Date"]
 )
 
-
 print("Worksheet Name:", sheet.title)
+
 # ---------------- READ EXISTING DATA ---------------- #
 
-existing_data = pd.DataFrame(
-    sheet.get_all_records()
-)
+existing = sheet.get_all_values()
 
-print(
-    "Existing Rows:",
-    len(existing_data)
-)
+if len(existing) > 1:
+
+    headers = existing[0]
+    rows = existing[1:]
+
+    existing_data = pd.DataFrame(
+        rows,
+        columns=headers
+    )
+
+    print(
+        "Existing Rows:",
+        len(existing_data)
+    )
+
+else:
+
+    existing_data = pd.DataFrame()
+
+    print("Sheet is Empty")
 
 # ---------------- KEEP OLD DATA (EXCEPT LAST 2 DAYS) ---------------- #
 
