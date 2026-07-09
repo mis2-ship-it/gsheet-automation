@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 import pandas as pd
 import gspread
@@ -27,12 +26,14 @@ sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 # --- API Setup ---
 base_url = "https://api.ristaapps.com"
 headers = {
-    "API-KEY": api_key,
-    "SECRET-KEY": secret_key
+    "x-api-key": api_key,
+    "x-secret-key": secret_key,
+    "Content-Type": "application/json"
 }
 
 def fetch_data(endpoint, method="GET", payload=None):
     url = base_url + endpoint
+    print(f"Calling: {url}")  # Debug log
     if method == "GET":
         response = requests.get(url, headers=headers)
     else:
