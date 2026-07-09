@@ -511,23 +511,39 @@ print(final_df.columns.tolist())
 # FILTER ONLY RDC
 # =========================================================
 
-final_df["Notes"] = (
-    final_df["Notes"]
+print(final_df.columns.tolist())
+
+if "Notes" in final_df.columns:
+
+    note_column = "Notes"
+
+elif "Notes_y" in final_df.columns:
+
+    note_column = "Notes_y"
+
+elif "Notes_map" in final_df.columns:
+
+    note_column = "Notes_map"
+
+else:
+
+    print("❌ No Notes column found")
+    print(final_df.columns.tolist())
+    exit()
+
+final_df[note_column] = (
+    final_df[note_column]
     .fillna("")
     .astype(str)
 )
 
 final_df = final_df[
-    final_df["Notes"]
+    final_df[note_column]
     .str.upper()
     .eq("RDC")
 ].copy()
 
 print(f"✅ RDC cancellations: {len(final_df)}")
-
-if final_df.empty:
-    print("✅ No RDC cancellations")
-    exit()
 
 # =========================================================
 # CREATE RDC DATAFRAME
