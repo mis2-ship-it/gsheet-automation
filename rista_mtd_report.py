@@ -750,11 +750,17 @@ mtd_summary["Date"] = pd.to_datetime(
     mtd_summary["Date"], errors="coerce"
 ).dt.strftime("%Y-%m-%d")
 
+# Ensure both DataFrames have unique column names
+historical_df = historical_df.loc[:, ~historical_df.columns.duplicated()]
+mtd_summary   = mtd_summary.loc[:, ~mtd_summary.columns.duplicated()]
+
+# Reset index to avoid duplicate index values
+historical_df = historical_df.reset_index(drop=True)
+mtd_summary   = mtd_summary.reset_index(drop=True)
+
+# Now safe to concat
 final_upload_df = pd.concat(
-    [
-        historical_df,
-        mtd_summary
-    ],
+    [historical_df, mtd_summary],
     ignore_index=True
 )
 
