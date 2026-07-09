@@ -4,7 +4,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# --- Load secrets from environment ---
+# --- Load secrets ---
 api_key = os.environ["API_KEY"]
 secret_key = os.environ["SECRET_KEY"]
 google_credentials = os.environ["GOOGLE_CREDENTIALS"]
@@ -26,14 +26,13 @@ sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 # --- API Setup ---
 base_url = "https://api.ristaapps.com"
 headers = {
-    "x-api-key": api_key,
-    "x-secret-key": secret_key,
+    "Authorization": f"Bearer {api_key}",
     "Content-Type": "application/json"
 }
 
 def fetch_data(endpoint, method="GET", payload=None):
     url = base_url + endpoint
-    print(f"Calling: {url}")  # Debug log
+    print(f"Calling: {url}")
     if method == "GET":
         response = requests.get(url, headers=headers)
     else:
@@ -46,11 +45,10 @@ transfer = fetch_data("/inventory/transfer/page", "GET")
 grn = fetch_data("/inventory/grn/page", "GET")
 stock = fetch_data("/inventory/item/stock", "POST")
 
-# --- Convert to DataFrame ---
+# --- Combine ---
 df_transfer = pd.DataFrame(transfer.get("data", []))
 df_grn = pd.DataFrame(grn.get("data", []))
 df_stock = pd.DataFrame(stock.get("data", []))
-
 combined = pd.concat([df_transfer, df_grn, df_stock], ignore_index=True)
 
 # --- Push to Sheet ---
