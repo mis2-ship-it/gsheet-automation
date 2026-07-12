@@ -1231,7 +1231,7 @@ print("SOURCE SUMMARY CHECK")
 print(source_summary)
 
 # =========================================================
-# 🔥 Region ANALYSIS
+# 🔥 REGION ANALYSIS
 # =========================================================
 
 region_rows = []
@@ -1287,7 +1287,7 @@ for region in regions:
         "Dis Change %": round(disc_change, 2)
     })
 
-source_summary = pd.DataFrame(region_rows)
+region_summary = pd.DataFrame(region_rows)
 
 print("REGION SUMMARY CHECK")
 print(region_summary)
