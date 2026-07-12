@@ -1231,6 +1231,69 @@ print("SOURCE SUMMARY CHECK")
 print(source_summary)
 
 # =========================================================
+# 🔥 Region ANALYSIS
+# =========================================================
+
+region_rows = []
+
+regions = sorted(
+    today_cut["Region Group"]
+    .dropna()
+    .unique()
+)
+
+for region in regions:
+
+    t = today_cut[
+        today_cut["Region Group"] == region
+    ]
+
+    lw = lastweek_cut[
+        lastweek_cut["Region Group"] == region
+    ]
+
+    t_rev = t["Net Sales"].sum()
+    lw_rev = lw["Net Sales"].sum()
+
+    growth = (
+        (t_rev - lw_rev)
+        / max(lw_rev, 1)
+    ) * 100
+
+    t_gross = t["grossAmount"].sum()
+    lw_gross = lw["grossAmount"].sum()
+
+    t_disc = (
+        t["discountAmount"].sum()
+        / max(t_gross, 1)
+    ) * 100
+
+    lw_disc = (
+        lw["discountAmount"].sum()
+        / max(lw_gross, 1)
+    ) * 100
+
+    disc_change = (
+        t_disc - lw_disc
+    )
+
+    region_rows.append({
+        "Region Group": region,
+        "Today Rev": round(t_rev, 2),
+        "LW Rev": round(lw_rev, 2),
+        "Growth %": round(growth, 2),
+        "Today Dis %": round(t_disc, 2),
+        "LW Dis %": round(lw_disc, 2),
+        "Dis Change %": round(disc_change, 2)
+    })
+
+source_summary = pd.DataFrame(region_rows)
+
+print("REGION SUMMARY CHECK")
+print(region_summary)
+
+
+# =========================================================
 # 🔥 BRAND x SOURCE
 # =========================================================
 
@@ -2241,6 +2304,11 @@ def send_email():
 
         <h2>🏷️ Source Summary</h2>
         {styled_html(source_summary)}
+
+        <br><br>
+
+        <h2>🏷️ Region Summary</h2>
+        {styled_html(region_summary)}
 
         <br><br>
 
