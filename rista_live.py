@@ -1931,6 +1931,17 @@ print("🔍 Bottom Stores Check")
 print(bottom_stores.head())
 
 
+# =========================================================
+# FINAL DATAFRAME READY
+# =========================================================
+
+print("\n==============================")
+print("FINAL_DF COLUMNS")
+print("==============================")
+print(final_df.columns.tolist())
+
+print("\nTotal Rows :", len(final_df))
+
 # ---------------- PUSH ---------------- #
 
 def push(name, df):
