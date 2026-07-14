@@ -4,7 +4,6 @@ import time
 import jwt
 import requests
 import pandas as pd
-from scripts.insert_sales import insert_sales
 from datetime import datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
