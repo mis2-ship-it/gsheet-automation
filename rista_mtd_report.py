@@ -664,9 +664,39 @@ mtd_summary["Discount Bucket"] = pd.cut(
 # UPDATE GSHEET
 # =========================================================
 
-sheet = client.open_by_key(
+# =========================================================
+# MONTH SHEET
+# =========================================================
+
+spreadsheet = client.open_by_key(
     "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
-).worksheet("MTD_Data")
+)
+
+sheet_name = datetime.now().strftime(
+    "MTD_%b_%y"
+)
+
+try:
+
+    sheet = spreadsheet.worksheet(
+        sheet_name
+    )
+
+    print(
+        f"✅ Using Existing Sheet : {sheet_name}"
+    )
+
+except:
+
+    sheet = spreadsheet.add_worksheet(
+        title=sheet_name,
+        rows=200000,
+        cols=20
+    )
+
+    print(
+        f"✅ Created Sheet : {sheet_name}"
+    )
 # ---------------- FORMAT DATE ---------------- #
 
 mtd_summary["Date"] = pd.to_datetime(
