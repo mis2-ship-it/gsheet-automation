@@ -518,24 +518,6 @@ csv_path = (
 print("CSV Path :", csv_path)
 
 # =========================================================
-# SAVE CSV
-# =========================================================
-
-csv_path.parent.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-mtd_summary.to_csv(
-    csv_path,
-    index=False
-)
-
-print(
-    "✅ CSV Saved Successfully"
-)
-
-# =========================================================
 # BUSINESS HOUR LOGIC
 # 8:00 AM → NEXT DAY 5:30 AM
 # =========================================================
@@ -711,6 +693,20 @@ mtd_summary["Discount Bucket"] = pd.cut(
 ).astype(str)
 
 
+# =========================================================
+# SAVE CSV
+# =========================================================
 
+csv_path.parent.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+mtd_summary.to_csv(
+    csv_path,
+    index=False
+)
+
+print("✅ CSV Saved Successfully")
 
 
