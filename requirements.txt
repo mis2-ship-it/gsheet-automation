@@ -13,3 +13,4 @@ matplotlib
 requests
 oauth2client
 PyYAML
+google-api-python-client
