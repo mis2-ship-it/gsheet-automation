@@ -3,6 +3,9 @@ name: Rista MTD Update
 on:
   workflow_dispatch:  
 
+permissions:
+  contents: write
+
 jobs:
   run-mtd:
     runs-on: ubuntu-latest
