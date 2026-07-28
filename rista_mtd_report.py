@@ -21,6 +21,10 @@ from concurrent.futures import (
     as_completed
 )
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+import tempfile
+import os
 
 
 print("🚀 MTD Script Started")
@@ -48,6 +52,15 @@ client = gspread.authorize(creds)
 
 print("✅ Connected to Google")
 
+# =========================================================
+# GOOGLE DRIVE SERVICE
+# =========================================================
+
+drive_service = build(
+    "drive",
+    "v3",
+    credentials=creds
+)
 
 # =========================================================
 # API CONFIG
@@ -659,281 +672,82 @@ mtd_summary["Discount Bucket"] = pd.cut(
     ]
 ).astype(str)
 
-
 # =========================================================
-# UPDATE GSHEET
-# =========================================================
-
-# =========================================================
-# MONTH SHEET
+# SAVE MONTHLY CSV TO GOOGLE DRIVE
 # =========================================================
 
-spreadsheet = client.open_by_key(
-    "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"
+year = pd.Timestamp.today().year
+
+if year == 2026:
+    folder_id = "1oegnGeRGw3tLzaO-WfHQwYiEjYFiaUH_"
+elif year == 2027:
+    folder_id = "1xuwH67uLJypYc4vGc0BDGqRdqMUfVay5"
+else:
+    raise Exception(f"No Google Drive folder configured for {year}")
+
+month_file = (
+    "MTD_"
+    + pd.Timestamp.today().strftime("%b_%y")
+    + ".csv"
 )
 
-sheet_name = datetime.now().strftime(
-    "MTD_%b_%y"
+temp_csv = os.path.join(
+    tempfile.gettempdir(),
+    month_file
 )
 
-try:
-
-    sheet = spreadsheet.worksheet(
-        sheet_name
-    )
-
-    print(
-        f"✅ Using Existing Sheet : {sheet_name}"
-    )
-
-except:
-
-    sheet = spreadsheet.add_worksheet(
-        title=sheet_name,
-        rows=200000,
-        cols=20
-    )
-
-    print(
-        f"✅ Created Sheet : {sheet_name}"
-    )
-# ---------------- FORMAT DATE ---------------- #
-
-mtd_summary["Date"] = pd.to_datetime(
-    mtd_summary["Date"]
+mtd_summary.to_csv(
+    temp_csv,
+    index=False
 )
 
-print("Worksheet Name:", sheet.title)
+print("CSV Saved:", temp_csv)
 
-# ---------------- READ EXISTING DATA ---------------- #
+# =========================================================
+# CHECK EXISTING FILE
+# =========================================================
 
-existing = sheet.get_all_values()
+query = (
+    f"name='{month_file}' "
+    f"and '{folder_id}' in parents "
+    f"and trashed=false"
+)
 
-if len(existing) > 1:
+files = drive_service.files().list(
+    q=query,
+    fields="files(id,name)"
+).execute()
 
-    headers = existing[0]
-    rows = existing[1:]
+media = MediaFileUpload(
+    temp_csv,
+    mimetype="text/csv"
+)
 
-    existing_data = pd.DataFrame(
-        rows,
-        columns=headers
-    )
+if files["files"]:
 
-    print(
-        "Existing Rows:",
-        len(existing_data)
-    )
+    file_id = files["files"][0]["id"]
+
+    drive_service.files().update(
+        fileId=file_id,
+        media_body=media
+    ).execute()
+
+    print("✅ Monthly CSV Updated")
 
 else:
 
-    existing_data = pd.DataFrame()
+    metadata = {
+        "name": month_file,
+        "parents": [folder_id]
+    }
 
-    print("Sheet is Empty")
+    drive_service.files().create(
+        body=metadata,
+        media_body=media,
+        fields="id"
+    ).execute()
 
-# ---------------- KEEP OLD DATA (EXCEPT LAST 2 DAYS) ---------------- #
-
-if len(existing_data) > 0:
-
-    existing_data["Date"] = pd.to_datetime(
-        existing_data["Date"]
-    )
-
-    refresh_from = (
-        mtd_summary["Date"].min()
-    )
-
-    # Keep data older than the refresh period
-    historical_df = existing_data[
-        existing_data["Date"]
-        < refresh_from
-    ].copy()
-
-else:
-
-    historical_df = pd.DataFrame()
-
-# ---------------- FORMAT NEW DATA ---------------- #
-
-mtd_summary["Date"] = (
-    mtd_summary["Date"]
-    .dt.strftime("%Y-%m-%d")
-)
-
-mtd_summary["AOV Bucket"] = (
-    mtd_summary["AOV Bucket"]
-    .astype(str)
-)
-
-mtd_summary["Discount Bucket"] = (
-    mtd_summary["Discount Bucket"]
-    .astype(str)
-)
-
-# ---------------- MERGE OLD + NEW (LAST 2 DAYS) ---------------- #
-
-# Ensure Date column is consistent before merging
-historical_df["Date"] = pd.to_datetime(
-    historical_df["Date"], errors="coerce"
-).dt.strftime("%Y-%m-%d")
-
-mtd_summary["Date"] = pd.to_datetime(
-    mtd_summary["Date"], errors="coerce"
-).dt.strftime("%Y-%m-%d")
-
-# Ensure both DataFrames have unique column names
-historical_df = historical_df.loc[:, ~historical_df.columns.duplicated()]
-mtd_summary   = mtd_summary.loc[:, ~mtd_summary.columns.duplicated()]
-
-# Reset index to avoid duplicate index values
-historical_df = historical_df.reset_index(drop=True)
-mtd_summary   = mtd_summary.reset_index(drop=True)
-
-# Now safe to concat
-final_upload_df = pd.concat(
-    [historical_df, mtd_summary],
-    ignore_index=True
-)
-
-print(
-    "Final Upload Rows:",
-    len(final_upload_df)
-)
-
-# =========================================================
-# FORMAT DATE
-# =========================================================
-
-mtd_summary["Date"] = pd.to_datetime(
-    mtd_summary["Date"]
-).dt.strftime("%Y-%m-%d")
-
-mtd_summary["AOV Bucket"] = (
-    mtd_summary["AOV Bucket"]
-    .astype(str)
-)
-
-mtd_summary["Discount Bucket"] = (
-    mtd_summary["Discount Bucket"]
-    .astype(str)
-)
-
-new_data = (
-    [mtd_summary.columns.tolist()]
-    + mtd_summary.replace(
-        [np.nan, "nan"],
-        ""
-    ).values.tolist()
-)
-
-# =========================================================
-# READ EXISTING DATA
-# =========================================================
-
-existing = sheet.get_all_values()
-
-if len(existing) <= 1:
-
-    print("🆕 Empty Sheet")
-
-    sheet.update(new_data)
-
-else:
-
-    header = existing[0]
-
-    body = existing[1:]
-
-    existing_df = pd.DataFrame(
-        body,
-        columns=header
-    )
-
-    # ------------------------------------------
-
-    refresh_date = (
-        mtd_summary["Date"]
-        .min()
-    )
-
-    print(
-        "Refreshing From:",
-        refresh_date
-    )
-
-    # ------------------------------------------
-
-    if "Date" not in existing_df.columns:
-
-        print(
-            "Date column missing."
-        )
-
-        sheet.clear()
-
-        sheet.update(new_data)
-
-    else:
-
-        existing_df["Date"] = (
-            existing_df["Date"]
-            .astype(str)
-        )
-
-        keep_df = existing_df[
-            existing_df["Date"] < refresh_date
-        ]
-
-        print(
-            "Keeping Rows:",
-            len(keep_df)
-        )
-
-        print(
-            "Replacing Rows:",
-            len(existing_df) -
-            len(keep_df)
-        )
-
-        # Drop duplicate column names if any
-        keep_df = keep_df.loc[:, ~keep_df.columns.duplicated()]
-        mtd_summary = mtd_summary.loc[:, ~mtd_summary.columns.duplicated()]
-        
-        # Reset index to avoid duplicate index values
-        keep_df = keep_df.reset_index(drop=True)
-        mtd_summary = mtd_summary.reset_index(drop=True)
-        
-        # Now safe to concat
-        final_upload_df = pd.concat(
-            [
-                keep_df,
-                mtd_summary
-            ],
-            ignore_index=True
-        )
-
-        
-        # Ensure Date column is consistent before upload
-        final_upload_df["Date"] = pd.to_datetime(
-            final_upload_df["Date"], errors="coerce"
-        ).dt.strftime("%Y-%m-%d")
-        
-        final_upload_df["AOV Bucket"] = final_upload_df["AOV Bucket"].astype(str)
-        final_upload_df["Discount Bucket"] = final_upload_df["Discount Bucket"].astype(str)
-        
-        sheet.clear()
-        
-        sheet.update(
-            [final_upload_df.columns.tolist()]
-            +
-            final_upload_df.replace(
-                [np.nan, "nan"],
-                ""
-            ).values.tolist()
-        )
+    print("✅ Monthly CSV Created")
 
 
 
-print("✅ Incremental Update Completed")
-
-print("✅ MTD END")
-print("End Time:", datetime.now())
