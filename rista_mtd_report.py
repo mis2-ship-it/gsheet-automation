@@ -676,36 +676,27 @@ mtd_summary["Discount Bucket"] = pd.cut(
 # SAVE MONTHLY CSV TO GOOGLE DRIVE
 # =========================================================
 
-year = pd.Timestamp.today().year
+import io
+import tempfile
+from googleapiclient.http import MediaIoBaseDownload
 
-if year == 2026:
-    folder_id = "1oegnGeRGw3tLzaO-WfHQwYiEjYFiaUH_"
-elif year == 2027:
-    folder_id = "1xuwH67uLJypYc4vGc0BDGqRdqMUfVay5"
-else:
-    raise Exception(f"No Google Drive folder configured for {year}")
+year = datetime.now().year
 
-month_file = (
-    "MTD_"
-    + pd.Timestamp.today().strftime("%b_%y")
-    + ".csv"
-)
+FOLDER_IDS = {
+    2026: "1oegnGeRGw3tLzaO-WfHQwYiEjYFiaUH_",
+    2027: "1xuwH67uLJypYc4vGc0BDGqRdqMUfVay5"
+}
 
-temp_csv = os.path.join(
-    tempfile.gettempdir(),
-    month_file
-)
+folder_id = FOLDER_IDS.get(year)
 
-mtd_summary.to_csv(
-    temp_csv,
-    index=False
-)
+if folder_id is None:
+    raise Exception(f"No Folder configured for {year}")
 
-print("CSV Saved:", temp_csv)
+month_file = datetime.now().strftime("MTD_%b_%y.csv")
 
-# =========================================================
-# CHECK EXISTING FILE
-# =========================================================
+refresh_date = pd.to_datetime(
+    mtd_summary["Date"]
+).min()
 
 query = (
     f"name='{month_file}' "
@@ -716,16 +707,114 @@ query = (
 files = drive_service.files().list(
     q=query,
     fields="files(id,name)"
-).execute()
+).execute().get("files", [])
+
+# =========================================================
+# FILE EXISTS
+# =========================================================
+
+if files:
+
+    print("📂 Existing Monthly File Found")
+
+    file_id = files[0]["id"]
+
+    request = drive_service.files().get_media(
+        fileId=file_id
+    )
+
+    fh = io.BytesIO()
+
+    downloader = MediaIoBaseDownload(
+        fh,
+        request
+    )
+
+    done = False
+
+    while not done:
+
+        status, done = downloader.next_chunk()
+
+    fh.seek(0)
+
+    existing_df = pd.read_csv(fh)
+
+    print(
+        "Existing Rows:",
+        len(existing_df)
+    )
+
+    existing_df["Date"] = pd.to_datetime(
+        existing_df["Date"],
+        errors="coerce"
+    )
+
+    keep_df = existing_df[
+        existing_df["Date"] < refresh_date
+    ].copy()
+
+    print(
+        "Keeping Rows:",
+        len(keep_df)
+    )
+
+    mtd_summary["Date"] = pd.to_datetime(
+        mtd_summary["Date"]
+    )
+
+    final_upload_df = pd.concat(
+        [
+            keep_df,
+            mtd_summary
+        ],
+        ignore_index=True
+    )
+
+else:
+
+    print("🆕 Creating New Monthly File")
+
+    final_upload_df = mtd_summary.copy()
+
+# =========================================================
+# FORMAT
+# =========================================================
+
+final_upload_df["Date"] = pd.to_datetime(
+    final_upload_df["Date"]
+).dt.strftime("%Y-%m-%d")
+
+final_upload_df["AOV Bucket"] = (
+    final_upload_df["AOV Bucket"]
+    .astype(str)
+)
+
+final_upload_df["Discount Bucket"] = (
+    final_upload_df["Discount Bucket"]
+    .astype(str)
+)
+
+temp_csv = os.path.join(
+    tempfile.gettempdir(),
+    month_file
+)
+
+final_upload_df.to_csv(
+    temp_csv,
+    index=False
+)
 
 media = MediaFileUpload(
     temp_csv,
     mimetype="text/csv"
 )
 
-if files["files"]:
+# =========================================================
+# UPDATE / CREATE
+# =========================================================
 
-    file_id = files["files"][0]["id"]
+if files:
 
     drive_service.files().update(
         fileId=file_id,
@@ -743,11 +832,15 @@ else:
 
     drive_service.files().create(
         body=metadata,
-        media_body=media,
-        fields="id"
+        media_body=media
     ).execute()
 
     print("✅ Monthly CSV Created")
+
+print("Total Rows Uploaded:", len(final_upload_df))
+
+print("✅ MTD END")
+print("End Time:", datetime.now())
 
 
 
