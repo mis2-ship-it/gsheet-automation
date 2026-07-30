@@ -603,7 +603,7 @@ def send_morning_email_notification():
             </a>
           </div>
 
-          <p style="font-size: 12px; color: #777777; border-top: 1px solid #eeeeee; pt: 10px;">
+          <p style="font-size: 12px; color: #777777; border-top: 1px solid #eeeeee; padding-top: 10px;">
             This is an automated notification sent every morning at 9:00 AM.
           </p>
         </div>
@@ -611,26 +611,25 @@ def send_morning_email_notification():
     </html>
     """
 
+    test_recipient = "mis2@frozenbottle.in"
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = EMAIL_USER
-    msg["To"] = RECIPIENTS_TO
-    if RECIPIENTS_CC:
-        msg["Cc"] = RECIPIENTS_CC
+    msg["To"] = test_recipient
 
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        all_recipients = [r.strip() for r in RECIPIENTS_TO.split(",") if r.strip()]
-        if RECIPIENTS_CC:
-            all_recipients += [r.strip() for r in RECIPIENTS_CC.split(",") if r.strip()]
-
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASSWORD)
-        server.sendmail(EMAIL_USER, all_recipients, msg.as_string())
+        
+        # Send strictly to test recipient
+        server.sendmail(EMAIL_USER, [test_recipient], msg.as_string())
         server.quit()
-        print(f"📧 Notification Email sent successfully to: {all_recipients}")
+        
+        print(f"📧 Test Notification Email sent successfully to: {test_recipient}")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
 
