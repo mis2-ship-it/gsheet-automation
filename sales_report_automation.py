@@ -5,6 +5,9 @@ import jwt
 import requests
 import pandas as pd
 import numpy as np
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import gspread
@@ -18,6 +21,12 @@ print("🚀 Starting Fast Multi-Threaded Sales Report Automation")
 API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 GSHEET_KEY = "1PhVeFoPERJODrGPW68ORAO0kJjToB5ZYMY-yOkGTWDk"
+SHEET_LINK = f"https://docs.google.com/spreadsheets/d/{GSHEET_KEY}/edit"
+
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+RECIPIENTS_TO = os.environ.get("RECIPIENTS_TO", "mis2@frozenbottle.in")
+RECIPIENTS_CC = os.environ.get("RECIPIENTS_CC", "")
 
 def get_token():
     payload = {
@@ -50,6 +59,7 @@ print("✅ Connected to Google Sheet")
 # =========================================================
 today = datetime.now()
 yesterday = today - timedelta(days=1)
+ftd_date_str = yesterday.strftime("%Y-%m-%d")
 
 # MTD: 1st to Yesterday
 mtd_start = yesterday.replace(day=1)
@@ -69,6 +79,7 @@ pmtd_end = pmtd_start.replace(day=pmtd_day)
 mtd_label = mtd_end.strftime("%b-%y")
 pmtd_label = pmtd_end.strftime("%b-%y")
 
+print(f"📅 FTD Date: {ftd_date_str}")
 print(f"📅 MTD Range: {mtd_start.strftime('%Y-%m-%d')} to {mtd_end.strftime('%Y-%m-%d')} ({mtd_label})")
 print(f"📅 pMTD Range: {pmtd_start.strftime('%Y-%m-%d')} to {pmtd_end.strftime('%Y-%m-%d')} ({pmtd_label})")
 
@@ -96,12 +107,11 @@ except Exception as e:
     exit(1)
 
 # =========================================================
-# 4. PARALLEL / FAST API DATA FETCHING
+# 4. PARALLEL API DATA FETCHING
 # =========================================================
 sales_url = "https://api.ristaapps.com/v1/sales/page"
 
 def fetch_single_branch_day(branch, day_str, curr_dt):
-    """Helper worker task for fetching a single (branch, date) combination."""
     rows = []
     params = {"branch": branch, "day": day_str}
     try:
@@ -150,14 +160,12 @@ def fetch_single_branch_day(branch, day_str, curr_dt):
                     
                     qty = float(item.get("item_quantity") or item.get("quantity") or item.get("qty") or 0)
                     gross = float(item.get("item_grossAmount") or item.get("grossAmount") or item.get("gross") or 0)
-                    
-                    discount_val = (
+                    discount = abs(float(
                         item.get("item_netDiscountAmount") or 
                         item.get("netDiscountAmount") or 
                         item.get("discount") or 
                         item.get("discounts") or 0
-                    )
-                    discount = abs(float(discount_val))
+                    ))
                     net = float(item.get("item_netAmount") or item.get("netAmount") or item.get("net") or 0)
                     materials = float(
                         item.get("item_itemMaterialCost") or 
@@ -166,10 +174,13 @@ def fetch_single_branch_day(branch, day_str, curr_dt):
                         item.get("materials") or 0
                     )
 
+                    is_ftd = (day_str == ftd_date_str)
+
                     rows.append({
                         "Date": day_str,
                         "Month": curr_dt.strftime("%b-%y"),
                         "Period": "MTD" if curr_dt >= mtd_start else "pMTD",
+                        "Is_FTD": is_ftd,
                         "Brand Name": brand_name,
                         "Category": category,
                         "Item Name": item_name,
@@ -181,16 +192,13 @@ def fetch_single_branch_day(branch, day_str, curr_dt):
                         "Materials": materials,
                         "Qty": qty
                     })
-    except Exception as e:
+    except Exception:
         pass
     return rows
 
 def fetch_sales_data_parallel(start_dt, end_dt, max_workers=15):
-    """Fetches sales data concurrently using ThreadPoolExecutor."""
     all_rows = []
     tasks = []
-    
-    # Build list of date & branch tasks
     curr_dt = start_dt
     while curr_dt <= end_dt:
         day_str = curr_dt.strftime("%Y-%m-%d")
@@ -198,10 +206,9 @@ def fetch_sales_data_parallel(start_dt, end_dt, max_workers=15):
             tasks.append((branch, day_str, curr_dt))
         curr_dt += timedelta(days=1)
         
-    print(f"⚡ Queueing {len(tasks)} parallel API requests across {max_workers} worker threads...")
-    
+    print(f"⚡ Queueing {len(tasks)} parallel API requests...")
     start_time = time.time()
-    completed_count = 0
+    completed = 0
     
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_task = {
@@ -211,28 +218,29 @@ def fetch_sales_data_parallel(start_dt, end_dt, max_workers=15):
             res = future.result()
             if res:
                 all_rows.extend(res)
-            completed_count += 1
-            if completed_count % 200 == 0 or completed_count == len(tasks):
-                print(f"   Progress: {completed_count}/{len(tasks)} tasks completed...")
+            completed += 1
+            if completed % 250 == 0 or completed == len(tasks):
+                print(f"   Progress: {completed}/{len(tasks)} requests completed...")
                 
-    elapsed = time.time() - start_time
-    print(f"⏱️ Parallel fetching finished in {round(elapsed, 1)} seconds!")
+    print(f"⏱️ Fetch completed in {round(time.time() - start_time, 1)} seconds.")
     return pd.DataFrame(all_rows)
 
-# Execute Parallel Data Fetch
 df_pmtd = fetch_sales_data_parallel(pmtd_start, pmtd_end, max_workers=15)
 df_mtd = fetch_sales_data_parallel(mtd_start, mtd_end, max_workers=15)
 
 df_all = pd.concat([df_pmtd, df_mtd], ignore_index=True)
 
 if df_all.empty:
-    print("❌ No data fetched from API. Exiting.")
+    print("❌ No data fetched. Exiting.")
     exit()
 
-print(f"✅ Total Raw Records Processed: {len(df_all)}")
+# Current Month Live Items Filter
+live_items = df_all[(df_all['Period'] == 'MTD') & (df_all['Net'] > 0)]['Item Name'].unique()
+df_all = df_all[df_all['Item Name'].isin(live_items)].copy()
+print(f"✅ Active Live Items Filtered: {len(live_items)} items.")
 
 # =========================================================
-# 5. DATA AGGREGATION BUILDER
+# 5. DATA AGGREGATION BUILDERS
 # =========================================================
 def build_report_matrix(df, group_cols):
     if df.empty:
@@ -268,7 +276,6 @@ def build_report_matrix(df, group_cols):
         pmtd_mat = sub[sub['Period'] == 'pMTD']['Materials'].sum()
         mtd_mat = sub[sub['Period'] == 'MTD']['Materials'].sum()
         
-        # Overall Metrics
         row_dict[f'Overall Sales ({pmtd_label})'] = round(pmtd_net, 2)
         row_dict[f'Overall Sales ({mtd_label})'] = round(mtd_net, 2)
         row_dict['Overall Growth %'] = round((mtd_net - pmtd_net) / pmtd_net, 4) if pmtd_net > 0 else 0
@@ -278,10 +285,9 @@ def build_report_matrix(df, group_cols):
         row_dict['Dis% Growth %'] = round(row_dict[f'Dis% ({mtd_label})'] - row_dict[f'Dis% ({pmtd_label})'], 4)
         
         row_dict[f'Food Cost % ({pmtd_label})'] = round(pmtd_mat / pmtd_net, 4) if pmtd_net > 0 else 0
-        row_dict[f'Food Cost % ({mtd_label})'] = round(mtd_mat / mtd_net, 4) if pmtd_net > 0 else 0
+        row_dict[f'Food Cost % ({mtd_label})'] = round(mtd_mat / mtd_net, 4) if mtd_net > 0 else 0
         row_dict['Food Cost % Growth %'] = round(row_dict[f'Food Cost % ({mtd_label})'] - row_dict[f'Food Cost % ({pmtd_label})'], 4)
         
-        # Channel Splits
         for channel_name in ['Ownly', 'Swiggy', 'Zomato']:
             prefix = "In Store" if channel_name == "Ownly" else channel_name
             c_sub = sub[sub['Platform Group'] == channel_name]
@@ -314,12 +320,146 @@ def build_report_matrix(df, group_cols):
         
     return pd.DataFrame(res_rows)
 
+def build_ftd_mtd_tab(df):
+    df_mtd_only = df[df['Period'] == 'MTD']
+    if df_mtd_only.empty:
+        return pd.DataFrame()
+
+    unique_items = df_mtd_only[['Brand Name', 'Category', 'Item Name']].drop_duplicates()
+    res_rows = []
+
+    for _, row_keys in unique_items.iterrows():
+        b_name, c_name, i_name = row_keys['Brand Name'], row_keys['Category'], row_keys['Item Name']
+        sub = df_mtd_only[(df_mtd_only['Brand Name'] == b_name) & 
+                          (df_mtd_only['Category'] == c_name) & 
+                          (df_mtd_only['Item Name'] == i_name)]
+
+        ftd_sub = sub[sub['Is_FTD'] == True]
+
+        row_dict = {
+            "Brand Name": b_name,
+            "Category Name": c_name,
+            "Item Name": i_name,
+            "Overall FTD Sales": round(ftd_sub['Net'].sum(), 2),
+            "Overall MTD Sales": round(sub['Net'].sum(), 2),
+            "Overall FTD Dis%": round(ftd_sub['Discounts'].sum() / ftd_sub['Gross'].sum(), 4) if ftd_sub['Gross'].sum() > 0 else 0,
+            "Overall MTD Dis%": round(sub['Discounts'].sum() / sub['Gross'].sum(), 4) if sub['Gross'].sum() > 0 else 0,
+            "Overall FTD FC%": round(ftd_sub['Materials'].sum() / ftd_sub['Net'].sum(), 4) if ftd_sub['Net'].sum() > 0 else 0,
+            "Overall MTD FC%": round(sub['Materials'].sum() / sub['Net'].sum(), 4) if sub['Net'].sum() > 0 else 0,
+        }
+
+        for ch_key, ch_label in [("Ownly", "In Store"), ("Swiggy", "Swiggy"), ("Zomato", "Zomato")]:
+            c_sub, c_ftd_sub = sub[sub['Platform Group'] == ch_key], ftd_sub[ftd_sub['Platform Group'] == ch_key]
+            row_dict[f"{ch_label} FTD Sales"] = round(c_ftd_sub['Net'].sum(), 2)
+            row_dict[f"{ch_label} MTD Sales"] = round(c_sub['Net'].sum(), 2)
+            row_dict[f"{ch_label} FTD Dis%"] = round(c_ftd_sub['Discounts'].sum() / c_ftd_sub['Gross'].sum(), 4) if c_ftd_sub['Gross'].sum() > 0 else 0
+            row_dict[f"{ch_label} MTD Dis%"] = round(c_sub['Discounts'].sum() / c_sub['Gross'].sum(), 4) if c_sub['Gross'].sum() > 0 else 0
+            row_dict[f"{ch_label} FTD FC%"] = round(c_ftd_sub['Materials'].sum() / c_ftd_sub['Net'].sum(), 4) if c_ftd_sub['Net'].sum() > 0 else 0
+            row_dict[f"{ch_label} MTD FC%"] = round(c_sub['Materials'].sum() / c_sub['Net'].sum(), 4) if c_sub['Net'].sum() > 0 else 0
+
+        res_rows.append(row_dict)
+
+    return pd.DataFrame(res_rows)
+
+def build_performance_tab(df):
+    """Generates Brand-wise Top 10 and Bottom 10 Performers based on MTD Sales."""
+    df_mtd_only = df[df['Period'] == 'MTD']
+    if df_mtd_only.empty:
+        return pd.DataFrame()
+
+    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name']).agg(
+        Net_Sales=('Net', 'sum'),
+        Gross_Sales=('Gross', 'sum'),
+        Discounts=('Discounts', 'sum'),
+        Materials=('Materials', 'sum'),
+        Qty=('Qty', 'sum')
+    ).reset_index()
+
+    item_summary['Dis%'] = round(item_summary['Discounts'] / item_summary['Gross_Sales'], 4).fillna(0)
+    item_summary['Food Cost %'] = round(item_summary['Materials'] / item_summary['Net_Sales'], 4).fillna(0)
+
+    perf_rows = []
+    brands = item_summary['Brand Name'].unique()
+
+    for b in brands:
+        b_sub = item_summary[item_summary['Brand Name'] == b].sort_values(by='Net_Sales', ascending=False)
+        
+        top10 = b_sub.head(10).copy()
+        top10['Performance Rank'] = [f"Top {i+1}" for i in range(len(top10))]
+        
+        bot10 = b_sub.tail(10).copy().sort_values(by='Net_Sales', ascending=True)
+        bot10['Performance Rank'] = [f"Bottom {i+1}" for i in range(len(bot10))]
+        
+        comb = pd.concat([top10, bot10], ignore_index=True)
+        for _, r in comb.iterrows():
+            perf_rows.append({
+                "Brand Name": r['Brand Name'],
+                "Performance Rank": r['Performance Rank'],
+                "Category": r['Category'],
+                "Item Name": r['Item Name'],
+                "MTD Net Sales": round(r['Net_Sales'], 2),
+                "MTD Qty Sold": int(r['Qty']),
+                "Dis%": r['Dis%'],
+                "Food Cost %": r['Food Cost %']
+            })
+
+    return pd.DataFrame(perf_rows)
+
+def build_insights_tab(df):
+    """Generates High Food Cost (>35%) and High Discount (>25%) Actionable Insights."""
+    df_mtd_only = df[df['Period'] == 'MTD']
+    if df_mtd_only.empty:
+        return pd.DataFrame()
+
+    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name']).agg(
+        Net_Sales=('Net', 'sum'),
+        Gross_Sales=('Gross', 'sum'),
+        Discounts=('Discounts', 'sum'),
+        Materials=('Materials', 'sum')
+    ).reset_index()
+
+    item_summary['Dis%'] = round(item_summary['Discounts'] / item_summary['Gross_Sales'], 4).fillna(0)
+    item_summary['Food Cost %'] = round(item_summary['Materials'] / item_summary['Net_Sales'], 4).fillna(0)
+
+    insights_rows = []
+
+    # High Food Cost Alert (>35%)
+    high_fc = item_summary[item_summary['Food Cost %'] > 0.35].sort_values(by='Food Cost %', ascending=False)
+    for _, r in high_fc.iterrows():
+        insights_rows.append({
+            "Alert Category": "⚠️ High Food Cost (>35%)",
+            "Brand Name": r['Brand Name'],
+            "Category": r['Category'],
+            "Item Name": r['Item Name'],
+            "Metric Value": f"{round(r['Food Cost %']*100, 2)}%",
+            "MTD Net Sales": round(r['Net_Sales'], 2),
+            "Action Item": "Immediate Portion Audit / Vendor Recipe Cost Review Needed"
+        })
+
+    # High Discount Alert (>25%)
+    high_dis = item_summary[item_summary['Dis%'] > 0.25].sort_values(by='Dis%', ascending=False)
+    for _, r in high_dis.iterrows():
+        insights_rows.append({
+            "Alert Category": "🏷️ High Discount % (>25%)",
+            "Brand Name": r['Brand Name'],
+            "Category": r['Category'],
+            "Item Name": r['Item Name'],
+            "Metric Value": f"{round(r['Dis%']*100, 2)}%",
+            "MTD Net Sales": round(r['Net_Sales'], 2),
+            "Action Item": "Review Campaign Discounts & Aggregator Promo Margins"
+        })
+
+    return pd.DataFrame(insights_rows)
+
 # =========================================================
 # 6. GENERATE TAB DATAFRAMES
 # =========================================================
-print("📊 Generating Aggregated Reports...")
+print("📊 Generating Aggregated Reports & Insights...")
 
 df_overall = build_report_matrix(df_all, ['Brand Name', 'Category', 'Item Name', 'Item Variant'])
+df_ftd_mtd = build_ftd_mtd_tab(df_all)
+df_perf = build_performance_tab(df_all)
+df_insights = build_insights_tab(df_all)
 df_category = build_report_matrix(df_all, ['Category'])
 df_fb = build_report_matrix(df_all[df_all['Brand Name'].str.contains('Frozen Bottle', case=False, na=False)], ['Category', 'Item Name', 'Item Variant'])
 df_madno = build_report_matrix(df_all[df_all['Brand Name'].str.contains('Madno', case=False, na=False)], ['Category', 'Item Name', 'Item Variant'])
@@ -333,6 +473,9 @@ def clean_df(df):
     return df.replace([np.inf, -np.inf], 0).fillna(0)
 
 df_overall = clean_df(df_overall)
+df_ftd_mtd = clean_df(df_ftd_mtd)
+df_perf = clean_df(df_perf)
+df_insights = clean_df(df_insights)
 df_category = clean_df(df_category)
 df_fb = clean_df(df_fb)
 df_madno = clean_df(df_madno)
@@ -340,8 +483,72 @@ df_boba = clean_df(df_boba)
 df_data_tab = clean_df(df_data_tab)
 
 # =========================================================
-# 7. WRITE TO GOOGLE SHEET
+# 7. FORMATTING & GOOGLE SHEETS UPDATER
 # =========================================================
+def apply_sheet_formatting_and_highlights(ws, df):
+    if df.empty:
+        return
+
+    sheet_id = ws.id
+    num_rows = len(df) + 1
+    num_cols = len(df.columns)
+
+    requests_list = [
+        # Dark Slate Blue Header
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": sheet_id,
+                    "startRowIndex": 0,
+                    "endRowIndex": 1,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": num_cols
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "backgroundColor": {"red": 0.12, "green": 0.30, "blue": 0.47},
+                        "textFormat": {"foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}, "bold": True, "fontSize": 10},
+                        "horizontalAlignment": "CENTER"
+                    }
+                },
+                "fields": "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)"
+            }
+        }
+    ]
+
+    green_bg = {"red": 0.85, "green": 0.92, "blue": 0.83}
+    red_bg = {"red": 0.95, "green": 0.80, "blue": 0.80}
+
+    for col_idx, col_name in enumerate(df.columns):
+        col_lower = col_name.lower()
+        if "growth" in col_lower:
+            pos_bg, neg_bg = (green_bg, red_bg) if ("sales" in col_lower or "overall growth" in col_lower) else (red_bg, green_bg)
+
+            requests_list.append({
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": num_rows, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}],
+                        "booleanRule": {
+                            "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0"}]},
+                            "format": {"backgroundColor": pos_bg}
+                        }
+                    }, "index": 0
+                }
+            })
+            requests_list.append({
+                "addConditionalFormatRule": {
+                    "rule": {
+                        "ranges": [{"sheetId": sheet_id, "startRowIndex": 1, "endRowIndex": num_rows, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}],
+                        "booleanRule": {
+                            "condition": {"type": "NUMBER_LESS", "values": [{"userEnteredValue": "0"}]},
+                            "format": {"backgroundColor": neg_bg}
+                        }
+                    }, "index": 1
+                }
+            })
+
+    spreadsheet.batch_update({"requests": requests_list})
+
 def write_sheet(sheet_name, df):
     try:
         try:
@@ -353,17 +560,80 @@ def write_sheet(sheet_name, df):
         if not df.empty:
             data = [df.columns.tolist()] + df.values.tolist()
             ws.update(data)
-            print(f"✅ Successfully updated tab: {sheet_name} ({len(df)} rows)")
+            apply_sheet_formatting_and_highlights(ws, df)
+            print(f"✅ Successfully updated & formatted: {sheet_name} ({len(df)} rows)")
         else:
             print(f"⚠️ Tab {sheet_name} is empty.")
     except Exception as e:
         print(f"❌ Error updating tab {sheet_name}: {e}")
 
+# Write all sheets
 write_sheet("Overall", df_overall)
+write_sheet("FTD/MTD", df_ftd_mtd)
+write_sheet("Performance", df_perf)
+write_sheet("Insights", df_insights)
 write_sheet("Category Wise ", df_category)
 write_sheet("Frozen Bottle", df_fb)
 write_sheet("Madno", df_madno)
 write_sheet("Boba Bar", df_boba)
 write_sheet("Data", df_data_tab)
 
-print("🎉 Daily Performance Report Automation Completed in 3 to 5 minutes!")
+# =========================================================
+# 8. MORNING EMAIL NOTIFICATION (9 AM AUTOMATION)
+# =========================================================
+def send_morning_email_notification():
+    if not EMAIL_USER or not EMAIL_PASSWORD:
+        print("⚠️ Email credentials not set. Skipping email notification.")
+        return
+
+    subject = f"📊 Product Performance Report is Ready - {ftd_date_str}"
+    
+    html_body = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333333; line-height: 1.6;">
+        <div style="max-width: 600px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #1F4E78; margin-top: 0;">Product Performance Report is Ready</h2>
+          <p>Hi Team,</p>
+          <p>The daily item-level product performance report for <strong>{ftd_date_str}</strong> has been updated successfully.</p>
+          <p>Please visit the tracker below to access full brand analysis, Top/Bottom 10 performance, and actionable insights (Food Cost & Discount Alerts):</p>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="{SHEET_LINK}" target="_blank" style="background-color: #1F4E78; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 14px; display: inline-block;">
+              👉 Open Product Performance Tracker
+            </a>
+          </div>
+
+          <p style="font-size: 12px; color: #777777; border-top: 1px solid #eeeeee; pt: 10px;">
+            This is an automated notification sent every morning at 9:00 AM.
+          </p>
+        </div>
+      </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = EMAIL_USER
+    msg["To"] = RECIPIENTS_TO
+    if RECIPIENTS_CC:
+        msg["Cc"] = RECIPIENTS_CC
+
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        all_recipients = [r.strip() for r in RECIPIENTS_TO.split(",") if r.strip()]
+        if RECIPIENTS_CC:
+            all_recipients += [r.strip() for r in RECIPIENTS_CC.split(",") if r.strip()]
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_USER, all_recipients, msg.as_string())
+        server.quit()
+        print(f"📧 Notification Email sent successfully to: {all_recipients}")
+    except Exception as e:
+        print(f"❌ Failed to send email: {e}")
+
+send_morning_email_notification()
+
+print("🎉 Complete Daily Performance Report Automation Finished Successfully!")
