@@ -567,7 +567,7 @@ def write_sheet(sheet_name, df):
     except Exception as e:
         print(f"❌ Error updating tab {sheet_name}: {e}")
 
-# Write all sheets
+# Write all required sheets (Data tab omitted to stay within sheet cell limits)
 write_sheet("Overall", df_overall)
 write_sheet("FTD/MTD", df_ftd_mtd)
 write_sheet("Performance", df_perf)
@@ -576,18 +576,22 @@ write_sheet("Category Wise ", df_category)
 write_sheet("Frozen Bottle", df_fb)
 write_sheet("Madno", df_madno)
 write_sheet("Boba Bar", df_boba)
-write_sheet("Data", df_data_tab)
 
 # =========================================================
-# 8. MORNING EMAIL NOTIFICATION (9 AM AUTOMATION)
+# 8. MORNING EMAIL NOTIFICATION
 # =========================================================
 def send_morning_email_notification():
-    if not EMAIL_USER or not EMAIL_PASSWORD:
-        print("⚠️ Email credentials not set. Skipping email notification.")
+    # Retrieve credentials from Environment or set fallback for testing
+    sender_email = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
+    sender_password = os.environ.get("EMAIL_PASSWORD", "")  # Add your App Password here if testing locally
+
+    if not sender_password:
+        print("⚠️ EMAIL_PASSWORD environment variable is missing/empty. Skipping email notification.")
         return
 
+    test_recipient = "mis2@frozenbottle.in"
     subject = f"📊 Product Performance Report is Ready - {ftd_date_str}"
-    
+
     html_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #333333; line-height: 1.6;">
@@ -611,11 +615,9 @@ def send_morning_email_notification():
     </html>
     """
 
-    test_recipient = "mis2@frozenbottle.in"
-
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = EMAIL_USER
+    msg["From"] = sender_email
     msg["To"] = test_recipient
 
     msg.attach(MIMEText(html_body, "html"))
@@ -623,13 +625,10 @@ def send_morning_email_notification():
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASSWORD)
-        
-        # Send strictly to test recipient
-        server.sendmail(EMAIL_USER, [test_recipient], msg.as_string())
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, [test_recipient], msg.as_string())
         server.quit()
-        
-        print(f"📧 Test Notification Email sent successfully to: {test_recipient}")
+        print(f"📧 Notification Email sent successfully to: {test_recipient}")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
 
