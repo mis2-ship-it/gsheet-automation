@@ -583,10 +583,10 @@ write_sheet("Boba Bar", df_boba)
 def send_morning_email_notification():
     # Retrieve credentials from Environment or set fallback for testing
     sender_email = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
-    sender_password = os.environ.get("EMAIL_PASSWORD", "")  # Add your App Password here if testing locally
+    sender_password = os.environ.get("EMAIL_PASS", "")  # Add your App Password here if testing locally
 
     if not sender_password:
-        print("⚠️ EMAIL_PASSWORD environment variable is missing/empty. Skipping email notification.")
+        print("⚠️ EMAIL_PASS environment variable is missing/empty. Skipping email notification.")
         return
 
     test_recipient = "mis2@frozenbottle.in"
