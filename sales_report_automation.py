@@ -578,18 +578,27 @@ write_sheet("Madno", df_madno)
 write_sheet("Boba Bar", df_boba)
 
 # =========================================================
-# 8. MORNING EMAIL NOTIFICATION
+# 8. MORNING EMAIL NOTIFICATION (ALIGNED WITH RISTA_LIVE.PY)
 # =========================================================
 def send_morning_email_notification():
-    # Retrieve credentials from Environment or set fallback for testing
-    sender_email = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
-    sender_password = os.environ.get("EMAIL_PASS", "")  # Add your App Password here if testing locally
+    import smtplib
+    import os
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
 
-    if not sender_password:
-        print("⚠️ EMAIL_PASS environment variable is missing/empty. Skipping email notification.")
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    TO_EMAIL = os.environ.get("mis2@frozenbottle.in")
+    CC_EMAIL = os.environ.get("mis2@frozenbottle.in")
+
+    # Fallback to mis2@frozenbottle.in if TO_EMAIL is not set in env
+    if not TO_EMAIL:
+        TO_EMAIL = "mis2@frozenbottle.in"
+
+    if not EMAIL_USER or not EMAIL_PASS:
+        print("⚠️ EMAIL_USER or EMAIL_PASS environment variable is missing/empty. Skipping email notification.")
         return
 
-    test_recipient = "mis2@frozenbottle.in"
     subject = f"📊 Product Performance Report is Ready - {ftd_date_str}"
 
     html_body = f"""
@@ -617,18 +626,25 @@ def send_morning_email_notification():
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = sender_email
-    msg["To"] = test_recipient
+    msg["From"] = EMAIL_USER
+    msg["To"] = TO_EMAIL
+    if CC_EMAIL:
+        msg["Cc"] = CC_EMAIL
 
     msg.attach(MIMEText(html_body, "html"))
 
     try:
+        # Build recipient list
+        recipients = [r.strip() for r in TO_EMAIL.split(",") if r.strip()]
+        if CC_EMAIL:
+            recipients += [r.strip() for r in CC_EMAIL.split(",") if r.strip()]
+
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
-        server.login(sender_email, sender_password)
-        server.sendmail(sender_email, [test_recipient], msg.as_string())
+        server.login(EMAIL_USER, EMAIL_PASS)
+        server.sendmail(EMAIL_USER, recipients, msg.as_string())
         server.quit()
-        print(f"📧 Notification Email sent successfully to: {test_recipient}")
+        print(f"📧 Notification Email sent successfully to: {recipients}")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
 
