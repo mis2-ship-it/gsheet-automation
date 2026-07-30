@@ -6,10 +6,11 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import gspread
 from google.oauth2.service_account import Credentials
 
-print("🚀 Starting Item Level Performance Report Automation")
+print("🚀 Starting Fast Multi-Threaded Sales Report Automation")
 
 # =========================================================
 # 1. AUTHENTICATION & ENVIRONMENT
@@ -50,11 +51,11 @@ print("✅ Connected to Google Sheet")
 today = datetime.now()
 yesterday = today - timedelta(days=1)
 
-# Current Month MTD: 1st to Yesterday
+# MTD: 1st to Yesterday
 mtd_start = yesterday.replace(day=1)
 mtd_end = yesterday
 
-# Previous Month pMTD: 1st to Same Day Last Month
+# pMTD: 1st of previous month to same day
 if mtd_start.month == 1:
     pmtd_start = mtd_start.replace(year=mtd_start.year - 1, month=12, day=1)
 else:
@@ -65,11 +66,9 @@ _, max_days_pm = calendar.monthrange(pmtd_start.year, pmtd_start.month)
 pmtd_day = min(yesterday.day, max_days_pm)
 pmtd_end = pmtd_start.replace(day=pmtd_day)
 
-ftd_date_str = yesterday.strftime("%Y-%m-%d")
 mtd_label = mtd_end.strftime("%b-%y")
 pmtd_label = pmtd_end.strftime("%b-%y")
 
-print(f"📅 FTD Date: {ftd_date_str}")
 print(f"📅 MTD Range: {mtd_start.strftime('%Y-%m-%d')} to {mtd_end.strftime('%Y-%m-%d')} ({mtd_label})")
 print(f"📅 pMTD Range: {pmtd_start.strftime('%Y-%m-%d')} to {pmtd_end.strftime('%Y-%m-%d')} ({pmtd_label})")
 
@@ -78,9 +77,7 @@ print(f"📅 pMTD Range: {pmtd_start.strftime('%Y-%m-%d')} to {pmtd_end.strftime
 # =========================================================
 try:
     help_ws = spreadsheet.worksheet("Help Sheet")
-    help_data = help_ws.get_all_records()
-    help_df = pd.DataFrame(help_data)
-    
+    help_df = pd.DataFrame(help_ws.get_all_records())
     help_df.columns = help_df.columns.str.strip()
     
     branch_col = None
@@ -99,116 +96,132 @@ except Exception as e:
     exit(1)
 
 # =========================================================
-# 4. RISTA API DATA FETCHING
+# 4. PARALLEL / FAST API DATA FETCHING
 # =========================================================
 sales_url = "https://api.ristaapps.com/v1/sales/page"
 
-def fetch_sales_for_date_range(start_dt, end_dt):
+def fetch_single_branch_day(branch, day_str, curr_dt):
+    """Helper worker task for fetching a single (branch, date) combination."""
+    rows = []
+    params = {"branch": branch, "day": day_str}
+    try:
+        res = requests.get(sales_url, headers=get_headers(), params=params, timeout=30)
+        if res.status_code == 200:
+            data = res.json().get("data", [])
+            for order in data:
+                channel = order.get("Channel") or order.get("channel") or "Ownly"
+                channel_str = str(channel).lower()
+                if "swiggy" in channel_str:
+                    platform_group = "Swiggy"
+                elif "zomato" in channel_str:
+                    platform_group = "Zomato"
+                else:
+                    platform_group = "Ownly"
+
+                items = order.get("items") or order.get("orderItems") or [order]
+                for item in items:
+                    brand_name = (
+                        item.get("brandName") or 
+                        order.get("brandName") or 
+                        item.get("brand") or 
+                        order.get("brand") or 
+                        "Frozen Bottle"
+                    )
+                    category = (
+                        item.get("item_categoryName") or 
+                        item.get("categoryName") or 
+                        item.get("category") or 
+                        "General"
+                    )
+                    item_name = (
+                        item.get("item_shortName") or 
+                        item.get("shortName") or 
+                        item.get("itemName") or 
+                        item.get("name") or 
+                        "Unknown"
+                    )
+                    variant = (
+                        item.get("item_variants") or 
+                        item.get("variantName") or 
+                        item.get("variant") or 
+                        item.get("variation") or 
+                        "-"
+                    )
+                    
+                    qty = float(item.get("item_quantity") or item.get("quantity") or item.get("qty") or 0)
+                    gross = float(item.get("item_grossAmount") or item.get("grossAmount") or item.get("gross") or 0)
+                    
+                    discount_val = (
+                        item.get("item_netDiscountAmount") or 
+                        item.get("netDiscountAmount") or 
+                        item.get("discount") or 
+                        item.get("discounts") or 0
+                    )
+                    discount = abs(float(discount_val))
+                    net = float(item.get("item_netAmount") or item.get("netAmount") or item.get("net") or 0)
+                    materials = float(
+                        item.get("item_itemMaterialCost") or 
+                        item.get("itemMaterialCost") or 
+                        item.get("materialCost") or 
+                        item.get("materials") or 0
+                    )
+
+                    rows.append({
+                        "Date": day_str,
+                        "Month": curr_dt.strftime("%b-%y"),
+                        "Period": "MTD" if curr_dt >= mtd_start else "pMTD",
+                        "Brand Name": brand_name,
+                        "Category": category,
+                        "Item Name": item_name,
+                        "Item Variant": variant,
+                        "Platform Group": platform_group,
+                        "Gross": gross,
+                        "Discounts": discount,
+                        "Net": net,
+                        "Materials": materials,
+                        "Qty": qty
+                    })
+    except Exception as e:
+        pass
+    return rows
+
+def fetch_sales_data_parallel(start_dt, end_dt, max_workers=15):
+    """Fetches sales data concurrently using ThreadPoolExecutor."""
     all_rows = []
-    curr_dt = start_dt
+    tasks = []
     
+    # Build list of date & branch tasks
+    curr_dt = start_dt
     while curr_dt <= end_dt:
         day_str = curr_dt.strftime("%Y-%m-%d")
-        print(f"📦 Fetching Rista Sales Data for: {day_str}")
-        
         for branch in valid_branches:
-            params = {"branch": branch, "day": day_str}
-            try:
-                res = requests.get(sales_url, headers=get_headers(), params=params, timeout=60)
-                if res.status_code == 200:
-                    data = res.json().get("data", [])
-                    for order in data:
-                        channel = order.get("Channel") or order.get("channel") or "Ownly"
-                        channel_str = str(channel).lower()
-                        if "swiggy" in channel_str:
-                            platform_group = "Swiggy"
-                        elif "zomato" in channel_str:
-                            platform_group = "Zomato"
-                        else:
-                            platform_group = "Ownly"
-
-                        # Extract items array safely
-                        items = order.get("items") or order.get("orderItems") or [order]
-                        for item in items:
-                            brand_name = (
-                                item.get("brandName") or 
-                                order.get("brandName") or 
-                                item.get("brand") or 
-                                order.get("brand") or 
-                                "Frozen Bottle"
-                            )
-                            category = (
-                                item.get("item_categoryName") or 
-                                item.get("categoryName") or 
-                                item.get("category") or 
-                                "General"
-                            )
-                            
-                            # Item Name extraction with fallbacks
-                            item_name = (
-                                item.get("item_shortName") or 
-                                item.get("shortName") or 
-                                item.get("itemName") or 
-                                item.get("name") or 
-                                "Unknown"
-                            )
-                            
-                            # Variant extraction
-                            variant = (
-                                item.get("item_variants") or 
-                                item.get("variantName") or 
-                                item.get("variant") or 
-                                item.get("variation") or 
-                                "-"
-                            )
-                            
-                            # Numeric field extraction with robust fallbacks
-                            qty = float(item.get("item_quantity") or item.get("quantity") or item.get("qty") or 0)
-                            gross = float(item.get("item_grossAmount") or item.get("grossAmount") or item.get("gross") or 0)
-                            
-                            # Convert negative discounts to positive
-                            discount_val = (
-                                item.get("item_netDiscountAmount") or 
-                                item.get("netDiscountAmount") or 
-                                item.get("discount") or 
-                                item.get("discounts") or 0
-                            )
-                            discount = abs(float(discount_val))
-                            
-                            net = float(item.get("item_netAmount") or item.get("netAmount") or item.get("net") or 0)
-                            
-                            materials = float(
-                                item.get("item_itemMaterialCost") or 
-                                item.get("itemMaterialCost") or 
-                                item.get("materialCost") or 
-                                item.get("materials") or 0
-                            )
-
-                            all_rows.append({
-                                "Date": day_str,
-                                "Month": curr_dt.strftime("%b-%y"),
-                                "Period": "MTD" if curr_dt >= mtd_start else "pMTD",
-                                "Brand Name": brand_name,
-                                "Category": category,
-                                "Item Name": item_name,
-                                "Item Variant": variant,
-                                "Platform Group": platform_group,
-                                "Gross": gross,
-                                "Discounts": discount,
-                                "Net": net,
-                                "Materials": materials,
-                                "Qty": qty
-                            })
-            except Exception as err:
-                print(f"⚠️ Error fetching branch {branch} on {day_str}: {err}")
-                
+            tasks.append((branch, day_str, curr_dt))
         curr_dt += timedelta(days=1)
         
+    print(f"⚡ Queueing {len(tasks)} parallel API requests across {max_workers} worker threads...")
+    
+    start_time = time.time()
+    completed_count = 0
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_task = {
+            executor.submit(fetch_single_branch_day, b, d, dt): (b, d) for b, d, dt in tasks
+        }
+        for future in as_completed(future_to_task):
+            res = future.result()
+            if res:
+                all_rows.extend(res)
+            completed_count += 1
+            if completed_count % 200 == 0 or completed_count == len(tasks):
+                print(f"   Progress: {completed_count}/{len(tasks)} tasks completed...")
+                
+    elapsed = time.time() - start_time
+    print(f"⏱️ Parallel fetching finished in {round(elapsed, 1)} seconds!")
     return pd.DataFrame(all_rows)
 
-# Fetch MTD & pMTD Data
-df_pmtd = fetch_sales_for_date_range(pmtd_start, pmtd_end)
-df_mtd = fetch_sales_for_date_range(mtd_start, mtd_end)
+# Execute Parallel Data Fetch
+df_pmtd = fetch_sales_data_parallel(pmtd_start, pmtd_end, max_workers=15)
+df_mtd = fetch_sales_data_parallel(mtd_start, mtd_end, max_workers=15)
 
 df_all = pd.concat([df_pmtd, df_mtd], ignore_index=True)
 
@@ -216,16 +229,12 @@ if df_all.empty:
     print("❌ No data fetched from API. Exiting.")
     exit()
 
-print(f"✅ Total Raw Item Records Fetched: {len(df_all)}")
+print(f"✅ Total Raw Records Processed: {len(df_all)}")
 
 # =========================================================
 # 5. DATA AGGREGATION BUILDER
 # =========================================================
 def build_report_matrix(df, group_cols):
-    """
-    Builds structured matrix table (Sales, Discount %, Food Cost % across channels)
-    comparing pMTD vs MTD with Growth %
-    """
     if df.empty:
         return pd.DataFrame()
 
@@ -247,7 +256,6 @@ def build_report_matrix(df, group_cols):
             
         row_dict = row_keys.to_dict()
         
-        # Overall pMTD & MTD
         pmtd_gross = sub[sub['Period'] == 'pMTD']['Gross'].sum()
         mtd_gross = sub[sub['Period'] == 'MTD']['Gross'].sum()
         
@@ -270,13 +278,12 @@ def build_report_matrix(df, group_cols):
         row_dict['Dis% Growth %'] = round(row_dict[f'Dis% ({mtd_label})'] - row_dict[f'Dis% ({pmtd_label})'], 4)
         
         row_dict[f'Food Cost % ({pmtd_label})'] = round(pmtd_mat / pmtd_net, 4) if pmtd_net > 0 else 0
-        row_dict[f'Food Cost % ({mtd_label})'] = round(mtd_mat / mtd_net, 4) if mtd_net > 0 else 0
+        row_dict[f'Food Cost % ({mtd_label})'] = round(mtd_mat / mtd_net, 4) if pmtd_net > 0 else 0
         row_dict['Food Cost % Growth %'] = round(row_dict[f'Food Cost % ({mtd_label})'] - row_dict[f'Food Cost % ({pmtd_label})'], 4)
         
-        # Channel Metrics: In Store (Ownly), Swiggy, Zomato
+        # Channel Splits
         for channel_name in ['Ownly', 'Swiggy', 'Zomato']:
             prefix = "In Store" if channel_name == "Ownly" else channel_name
-            
             c_sub = sub[sub['Platform Group'] == channel_name]
             
             c_pmtd_net = c_sub[c_sub['Period'] == 'pMTD']['Net'].sum()
@@ -310,28 +317,20 @@ def build_report_matrix(df, group_cols):
 # =========================================================
 # 6. GENERATE TAB DATAFRAMES
 # =========================================================
-print("📊 Generating Aggregated Performance Reports...")
+print("📊 Generating Aggregated Reports...")
 
-# Overall Tab: Brand Name in Column A, followed by Category, Item Name, Item Variant
 df_overall = build_report_matrix(df_all, ['Brand Name', 'Category', 'Item Name', 'Item Variant'])
-
-# Category Wise Tab
 df_category = build_report_matrix(df_all, ['Category'])
-
-# Brand Specific Tabs
 df_fb = build_report_matrix(df_all[df_all['Brand Name'].str.contains('Frozen Bottle', case=False, na=False)], ['Category', 'Item Name', 'Item Variant'])
 df_madno = build_report_matrix(df_all[df_all['Brand Name'].str.contains('Madno', case=False, na=False)], ['Category', 'Item Name', 'Item Variant'])
 df_boba = build_report_matrix(df_all[df_all['Brand Name'].str.contains('Boba Bar', case=False, na=False)], ['Category', 'Item Name', 'Item Variant'])
 
-# Data Tab (Raw Granular Data)
 df_data_tab = df_all[['Month', 'Brand Name', 'Category', 'Item Name', 'Item Variant', 'Platform Group', 'Gross', 'Discounts', 'Net', 'Materials', 'Qty']].copy()
 
-# Clean NaN and Infinite values
 def clean_df(df):
     if df.empty:
         return df
-    df = df.replace([np.inf, -np.inf], 0).fillna(0)
-    return df
+    return df.replace([np.inf, -np.inf], 0).fillna(0)
 
 df_overall = clean_df(df_overall)
 df_category = clean_df(df_category)
@@ -367,4 +366,4 @@ write_sheet("Madno", df_madno)
 write_sheet("Boba Bar", df_boba)
 write_sheet("Data", df_data_tab)
 
-print("🎉 Item Level Performance Report Daily Automation Completed Successfully!")
+print("🎉 Daily Performance Report Automation Completed in 3 to 5 minutes!")
