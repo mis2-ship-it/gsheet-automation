@@ -578,7 +578,7 @@ write_sheet("Madno", df_madno)
 write_sheet("Boba Bar", df_boba)
 
 # =========================================================
-# 8. MORNING EMAIL NOTIFICATION (ALIGNED WITH RISTA_LIVE.PY)
+# 8. MORNING EMAIL NOTIFICATION
 # =========================================================
 def send_morning_email_notification():
     import smtplib
@@ -586,17 +586,15 @@ def send_morning_email_notification():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    EMAIL_USER = os.environ.get("EMAIL_USER")
+    # Fetch env vars or set testing defaults
+    EMAIL_USER = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = os.environ.get("mis2@frozenbottle.in")
-    CC_EMAIL = os.environ.get("mis2@frozenbottle.in")
+    TO_EMAIL = os.environ.get("EMAIL_TO", "mis2@frozenbottle.in")
+    CC_EMAIL = os.environ.get("EMAIL_CC", "")
 
-    # Fallback to mis2@frozenbottle.in if TO_EMAIL is not set in env
-    if not TO_EMAIL:
-        TO_EMAIL = "mis2@frozenbottle.in"
-
-    if not EMAIL_USER or not EMAIL_PASS:
-        print("⚠️ EMAIL_USER or EMAIL_PASS environment variable is missing/empty. Skipping email notification.")
+    # Safety check: Require password to attempt SMTP login
+    if not EMAIL_PASS:
+        print("❌ EMAIL_PASS environment variable is missing. Set EMAIL_PASS in your environment or GitHub Secrets.")
         return
 
     subject = f"📊 Product Performance Report is Ready - {ftd_date_str}"
@@ -604,8 +602,8 @@ def send_morning_email_notification():
     html_body = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #333333; line-height: 1.6;">
-        <div style="max-width: 600px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <h2 style="color: #1F4E78; margin-top: 0;">Product Performance Report is Ready</h2>
+        <div style="max-width: 600px; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #ffffff;">
+          <h2 style="color: #1F4E78; margin-top: 0;">📊 Product Performance Report is Ready</h2>
           <p>Hi Team,</p>
           <p>The daily item-level product performance report for <strong>{ftd_date_str}</strong> has been updated successfully.</p>
           <p>Please visit the tracker below to access full brand analysis, Top/Bottom 10 performance, and actionable insights (Food Cost & Discount Alerts):</p>
@@ -633,18 +631,18 @@ def send_morning_email_notification():
 
     msg.attach(MIMEText(html_body, "html"))
 
-    try:
-        # Build recipient list
-        recipients = [r.strip() for r in TO_EMAIL.split(",") if r.strip()]
-        if CC_EMAIL:
-            recipients += [r.strip() for r in CC_EMAIL.split(",") if r.strip()]
+    # Build recipients list properly
+    receivers = [r.strip() for r in TO_EMAIL.split(",") if r.strip()]
+    if CC_EMAIL:
+        receivers += [r.strip() for r in CC_EMAIL.split(",") if r.strip()]
 
+    try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, recipients, msg.as_string())
+        server.sendmail(EMAIL_USER, receivers, msg.as_string())
         server.quit()
-        print(f"📧 Notification Email sent successfully to: {recipients}")
+        print(f"📧 Notification Email sent successfully to: {receivers}")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
 
