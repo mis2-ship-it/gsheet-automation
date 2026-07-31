@@ -26,8 +26,8 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}      # Changed from literal "to_email"
-          EMAIL_CCOPS: ${{ secrets.EMAIL_CCOPS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_CC: ${{ secrets.EMAIL_CC }}
         run: |
           echo "Running script..."
           python fetch_inventory.py
