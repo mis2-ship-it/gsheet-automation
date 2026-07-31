@@ -586,17 +586,22 @@ def send_morning_email_notification():
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    # Fetch env vars or set testing defaults
+    # Sender Credentials
     EMAIL_USER = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = os.environ.get("EMAIL_TO", "mis2@frozenbottle.in")
-    CC_EMAIL = os.environ.get("EMAIL_CC", "")
 
-    # Safety check: Require password to attempt SMTP login
     if not EMAIL_PASS:
-        print("❌ EMAIL_PASS environment variable is missing. Set EMAIL_PASS in your environment or GitHub Secrets.")
+        print("❌ EMAIL_PASS environment variable is missing. Skipping email notification.")
         return
 
+    # Strictly specified recipients list
+    target_recipients = [
+        "vivek@frozenbottle.in",
+        "faraz@frozenbottle.in",
+        "bangaloreterritorymanager@frozenbottle.in"
+    ]
+
+    to_header = ", ".join(target_recipients)
     subject = f"📊 Product Performance Report is Ready - {ftd_date_str}"
 
     html_body = f"""
@@ -615,7 +620,7 @@ def send_morning_email_notification():
           </div>
 
           <p style="font-size: 12px; color: #777777; border-top: 1px solid #eeeeee; padding-top: 10px;">
-            This is an automated notification sent every morning at 9:00 AM.
+            This is an automated notification sent every morning at 9:00 AM IST.
           </p>
         </div>
       </body>
@@ -625,24 +630,17 @@ def send_morning_email_notification():
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = EMAIL_USER
-    msg["To"] = TO_EMAIL
-    if CC_EMAIL:
-        msg["Cc"] = CC_EMAIL
+    msg["To"] = to_header
 
     msg.attach(MIMEText(html_body, "html"))
-
-    # Build recipients list properly
-    receivers = [r.strip() for r in TO_EMAIL.split(",") if r.strip()]
-    if CC_EMAIL:
-        receivers += [r.strip() for r in CC_EMAIL.split(",") if r.strip()]
 
     try:
         server = smtplib.SMTP("smtp.gmail.com", 587)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASS)
-        server.sendmail(EMAIL_USER, receivers, msg.as_string())
+        server.sendmail(EMAIL_USER, target_recipients, msg.as_string())
         server.quit()
-        print(f"📧 Notification Email sent successfully to: {receivers}")
+        print(f"📧 Notification Email sent successfully to: {target_recipients}")
     except Exception as e:
         print(f"❌ Failed to send email: {e}")
 
