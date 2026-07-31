@@ -1,6 +1,5 @@
 import os
 import time
-import jwt
 import requests
 import pandas as pd
 import gspread
@@ -17,35 +16,16 @@ BASE_URL = "https://api.ristaapps.com/v1"
 API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 
-def generate_jwt():
-    """
-    Generates a dynamic JWT Bearer token using PyJWT signed with SECRET_KEY.
-    """
-    payload = {
-        "apiKey": API_KEY,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 3600  # Token valid for 1 hour
-    }
-    
-    # Encodes token using HMAC-SHA256
-    encoded_token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-    
-    # Handle compatibility across different PyJWT versions (returns str)
-    if isinstance(encoded_token, bytes):
-        return encoded_token.decode('utf-8')
-    return encoded_token
-
 def headers():
     """
     Returns required HTTP headers for Rista API requests.
-    Sends both JWT Bearer Authorization and custom headers to cover standard specs.
+    Rista natively expects x-api-key and x-channel-id.
     """
-    bearer_token = generate_jwt()
-    
     return {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {bearer_token}",
-        "x-api-key": API_KEY
+        "x-api-key": API_KEY,
+        "x-channel-id": SECRET_KEY,  # Map your secret key / channel ID parameter here
+        "x-client-id": API_KEY       # Fallback header used in some Rista API versions
     }
 
 # =========================================================
@@ -58,7 +38,7 @@ last_week_dt = today_dt - timedelta(days=7)
 today = today_dt.strftime("%Y-%m-%d")
 last_week = last_week_dt.strftime("%Y-%m-%d")
 
-# Replace with your actual branch code(s)
+# Update with your active Rista branch code
 branches = ["BRANCH_001"]
 
 # =========================================================
@@ -68,7 +48,10 @@ branches = ["BRANCH_001"]
 def fetch_inventory_data():
     print("--- Fetching Inventory Data ---")
     
-    # 1. Fetch Inventory Transfers (GET with Query Parameters)
+    # Debugging check (prints key lengths to verify GitHub Secrets aren't empty)
+    print(f"🔑 API_KEY length: {len(API_KEY)} | SECRET_KEY length: {len(SECRET_KEY)}")
+    
+    # 1. Fetch Inventory Transfers (GET)
     transfer_url = f"{BASE_URL}/inventory/transfer/page"
     transfer_params = {
         "fromDate": last_week,
@@ -90,9 +73,11 @@ def fetch_inventory_data():
         print("✅ Inventory Transfers Fetched Successfully")
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Warning: Failed for /inventory/transfer/page | Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   Server Response: {e.response.text}")
         transfer_data = {}
 
-    # 2. Fetch Goods Received Note - GRN (GET with Query Parameters)
+    # 2. Fetch Goods Received Note - GRN (GET)
     grn_url = f"{BASE_URL}/inventory/grn/page"
     grn_params = {
         "fromDate": last_week,
@@ -114,9 +99,11 @@ def fetch_inventory_data():
         print("✅ GRN Data Fetched Successfully")
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Warning: Failed for /inventory/grn/page | Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   Server Response: {e.response.text}")
         grn_data = {}
 
-    # 3. Fetch Item Stock (POST with Body Payload)
+    # 3. Fetch Item Stock (POST)
     stock_url = f"{BASE_URL}/inventory/item/stock"
     stock_payload = {
         "branchCodes": branches
@@ -135,6 +122,8 @@ def fetch_inventory_data():
         print("✅ Item Stock Fetched Successfully")
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Warning: Failed for /inventory/item/stock | Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"   Server Response: {e.response.text}")
         stock_data = {}
 
     return transfer_data, grn_data, stock_data
@@ -151,6 +140,6 @@ if __name__ == "__main__":
     
     # Summary Output
     print("\n--- Summary of Results ---")
-    print(f"Transfer Data Keys: {list(transfer_data.keys()) if isinstance(transfer_data, dict) else 'List Response'}")
-    print(f"GRN Data Keys: {list(grn_data.keys()) if isinstance(grn_data, dict) else 'List Response'}")
-    print(f"Stock Data Keys: {list(stock_data.keys()) if isinstance(stock_data, dict) else 'List Response'}")
+    print(f"Transfer Data: {'Fetched' if transfer_data else 'Empty/Failed'}")
+    print(f"GRN Data: {'Fetched' if grn_data else 'Empty/Failed'}")
+    print(f"Stock Data: {'Fetched' if stock_data else 'Empty/Failed'}")
