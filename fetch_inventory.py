@@ -5,91 +5,127 @@ import requests
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime, timedelta
 
-# --- Load secrets ---
-api_key = os.environ["API_KEY"]
-secret_key = os.environ["SECRET_KEY"]
-google_credentials = os.environ["GOOGLE_CREDENTIALS"]
+# =========================================================
+# 🔑 CONFIGURATION & AUTHENTICATION
+# =========================================================
 
-sheet_id = "1YAzHR1djQQSyW8Cz9-y6HxLV7XQY9xSm6mVnBy8a7lc"
-tab_name = "Sample_Data"
+BASE_URL = "https://api.ristaapps.com/v1"
 
-# --- Write Google credentials to file ---
-with open("service_account.json", "w") as f:
-    f.write(google_credentials)
+API_KEY = os.getenv("RISTA_API_KEY", "YOUR_API_KEY_HERE")
+CHANNEL_ID = os.getenv("RISTA_CHANNEL_ID", "YOUR_CHANNEL_ID_HERE")
 
-# --- Google Sheets Auth ---
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-client = gspread.authorize(creds)
-sheet = client.open_by_key(sheet_id).worksheet(tab_name)
-
-# --- API Setup ---
-base_url = "https://api.ristaapps.com/v1"  # Correct v1 base URL for Rista API
-
-def generate_jwt():
-    """Generates the required JWT token using PyJWT."""
-    payload = {
-        "iss": api_key,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 300  # Token valid for 5 minutes
+def headers():
+    """Returns required HTTP headers for Rista API requests."""
+    return {
+        "Content-Type": "application/json",
+        "x-api-key": API_KEY,
+        "x-channel-id": CHANNEL_ID
     }
-    return jwt.encode(payload, secret_key, algorithm="HS256")
 
-def safe_fetch(endpoint, method="GET", params=None, payload=None):
-    """Fetches endpoint data safely without breaking execution on error."""
-    url = base_url + endpoint
-    print(f"Calling ({method}): {url}")
+# =========================================================
+# 📅 DATE RANGE & BRANCHES SETUP
+# =========================================================
+
+today_dt = datetime.now()
+last_week_dt = today_dt - timedelta(days=7)
+
+today = today_dt.strftime("%Y-%m-%d")
+last_week = last_week_dt.strftime("%Y-%m-%d")
+
+branches = ["BRANCH_001"] 
+
+# =========================================================
+# 📦 FETCH INVENTORY DATA
+# =========================================================
+
+def fetch_inventory_data():
+    print("--- Fetching Inventory Data ---")
     
-    headers = {
-        "x-api-key": api_key,
-        "x-api-token": generate_jwt(),
-        "Content-Type": "application/json"
+    # 1. Fetch Inventory Transfers (GET with Query Parameters)
+    transfer_url = f"{BASE_URL}/inventory/transfer/page"
+    transfer_params = {
+        "fromDate": last_week,
+        "toDate": today,
+        "page": 1,
+        "pageSize": 50
     }
     
+    print(f"Calling (GET): {transfer_url}")
     try:
-        if method == "GET":
-            response = requests.get(url, headers=headers, params=params)
-        else:
-            response = requests.post(url, headers=headers, json=payload or {})
-            
-        response.raise_for_status()
-        data = response.json()
-        print(f"✅ Success fetching {endpoint}")
-        
-        if isinstance(data, dict):
-            return data.get("data", [])
-        elif isinstance(data, list):
-            return data
-        return []
-        
-    except Exception as e:
-        print(f"⚠️ Warning: Failed for {endpoint} | Error: {e}")
-        return []
+        r_transfer = requests.get(
+            transfer_url, 
+            headers=headers(), 
+            params=transfer_params, 
+            timeout=20
+        )
+        r_transfer.raise_for_status()
+        transfer_data = r_transfer.json()
+        print("✅ Inventory Transfers Fetched Successfully")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Warning: Failed for /inventory/transfer/page | Error: {e}")
+        transfer_data = {}
 
-# --- Fetch Data ---
-print("\n--- Fetching Inventory Data ---")
-transfer_data = safe_fetch("/inventory/transfer/page", "GET")
-grn_data = safe_fetch("/inventory/grn/page", "GET")
-stock_data = safe_fetch("/inventory/item/stock", "POST", payload={})
-
-# --- Convert & Combine ---
-df_transfer = pd.DataFrame(transfer_data)
-df_grn = pd.DataFrame(grn_data)
-df_stock = pd.DataFrame(stock_data)
-
-dataframes = [df for df in [df_transfer, df_grn, df_stock] if not df.empty]
-
-if dataframes:
-    combined = pd.concat(dataframes, ignore_index=True)
-    combined = combined.fillna("")  # Replace NaN values with empty strings
+    # 2. Fetch Goods Received Note - GRN (GET with Query Parameters)
+    grn_url = f"{BASE_URL}/inventory/grn/page"
+    grn_params = {
+        "fromDate": last_week,
+        "toDate": today,
+        "page": 1,
+        "pageSize": 50
+    }
     
-    # Push to Google Sheet
-    sheet.clear()
-    sheet.update([combined.columns.tolist()] + combined.values.tolist())
-    print("\n✅ Available inventory data successfully pushed to Google Sheet!")
-else:
-    print("\n❌ No data returned. Please verify your API_KEY and SECRET_KEY in GitHub Secrets.")
+    print(f"Calling (GET): {grn_url}")
+    try:
+        r_grn = requests.get(
+            grn_url, 
+            headers=headers(), 
+            params=grn_params, 
+            timeout=20
+        )
+        r_grn.raise_for_status()
+        grn_data = r_grn.json()
+        print("✅ GRN Data Fetched Successfully")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Warning: Failed for /inventory/grn/page | Error: {e}")
+        grn_data = {}
+
+    # 3. Fetch Item Stock (POST with Body Payload)
+    stock_url = f"{BASE_URL}/inventory/item/stock"
+    stock_payload = {
+        "branchCodes": branches
+    }
+    
+    print(f"Calling (POST): {stock_url}")
+    try:
+        r_stock = requests.post(
+            stock_url, 
+            headers=headers(), 
+            json=stock_payload, 
+            timeout=20
+        )
+        r_stock.raise_for_status()
+        stock_data = r_stock.json()
+        print("✅ Item Stock Fetched Successfully")
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Warning: Failed for /inventory/item/stock | Error: {e}")
+        stock_data = {}
+
+    return transfer_data, grn_data, stock_data
+
+# =========================================================
+# 🚀 MAIN EXECUTION
+# =========================================================
+
+if __name__ == "__main__":
+    print(f"Starting script run for date range: {last_week} to {today}\n")
+    
+    # Execute inventory call
+    transfer_data, grn_data, stock_data = fetch_inventory_data()
+    
+    # Optional Summary Output
+    print("\n--- Summary of Results ---")
+    print(f"Transfer Data Keys: {list(transfer_data.keys()) if isinstance(transfer_data, dict) else 'List Response'}")
+    print(f"GRN Data Keys: {list(grn_data.keys()) if isinstance(grn_data, dict) else 'List Response'}")
+    print(f"Stock Data Keys: {list(stock_data.keys()) if isinstance(stock_data, dict) else 'List Response'}")
