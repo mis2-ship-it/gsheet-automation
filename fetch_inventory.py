@@ -1,4 +1,6 @@
 import os
+import time
+import jwt
 import requests
 import pandas as pd
 import gspread
@@ -23,23 +25,32 @@ creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json",
 client = gspread.authorize(creds)
 sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 
-# --- API Setup ---
-base_url = "https://api.ristaapps.com"
+# --- Base URL ---
+base_url = "https://api.ristaapps.com/v1"  # Added /v1 per Rista documentation
 
-# Reverted to standard Bearer token authorization format
-headers = {
-    "Authorization": f"Bearer {api_key}",
-    "Content-Type": "application/json"
-}
+def generate_jwt():
+    """Generate dynamic JWT token required by Rista API."""
+    payload = {
+        "iss": api_key,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 300  # Expires in 5 minutes
+    }
+    return jwt.encode(payload, secret_key, algorithm="HS256")
 
-def safe_fetch(endpoint, method="GET", payload=None):
-    """Fetches data and handles errors gracefully so script doesn't crash."""
+def fetch_data(endpoint, method="GET", params=None, payload=None):
     url = base_url + endpoint
     print(f"Calling ({method}): {url}")
     
+    # Rista required authentication headers
+    headers = {
+        "x-api-key": api_key,
+        "x-api-token": generate_jwt(),
+        "Content-Type": "application/json"
+    }
+    
     try:
         if method == "GET":
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, params=params)
         else:
             response = requests.post(url, headers=headers, json=payload or {})
             
@@ -49,16 +60,22 @@ def safe_fetch(endpoint, method="GET", payload=None):
         return data.get("data", []) if isinstance(data, dict) else data
         
     except Exception as e:
-        print(f"⚠️ Warning: Call failed for {endpoint} | Error: {e}")
+        print(f"⚠️ Warning: Failed for {endpoint} | Error: {e}")
         return []
 
 # --- Fetch Data ---
-print("\n--- Fetching Data ---")
-transfer_data = safe_fetch("/inventory/transfer/page", "GET")
-grn_data = safe_fetch("/inventory/grn/page", "GET")
-stock_data = safe_fetch("/inventory/item/stock", "POST")
+print("\n--- Fetching Inventory Data ---")
 
-# --- Process & Combine ---
+# Pass required store parameters if needed by your account
+params = {
+    # "date": "2026-07-31" # Format YYYY-MM-DD if mandatory for date queries
+}
+
+transfer_data = fetch_data("/inventory/transfer/page", "GET", params=params)
+grn_data = fetch_data("/inventory/grn/page", "GET", params=params)
+stock_data = fetch_data("/inventory/item/stock", "POST", payload={})
+
+# --- Combine Data ---
 df_transfer = pd.DataFrame(transfer_data)
 df_grn = pd.DataFrame(grn_data)
 df_stock = pd.DataFrame(stock_data)
@@ -73,4 +90,4 @@ if dataframes:
     sheet.update([combined.columns.tolist()] + combined.values.tolist())
     print("\n✅ Available inventory data pushed to Google Sheet successfully!")
 else:
-    print("\n❌ No data was retrieved from any endpoint. Check endpoint routes or credentials.")
+    print("\n❌ No data was retrieved. Verify API_KEY, SECRET_KEY, and permissions.")
