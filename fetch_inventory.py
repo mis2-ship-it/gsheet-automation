@@ -13,16 +13,39 @@ from datetime import datetime, timedelta
 
 BASE_URL = "https://api.ristaapps.com/v1"
 
-# Fetch environment variables directly
+# Fetch environment variables directly from GitHub Secrets / System Environment
 API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 
+def generate_jwt():
+    """
+    Generates a dynamic JWT Bearer token using PyJWT signed with SECRET_KEY.
+    """
+    payload = {
+        "apiKey": API_KEY,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600  # Token valid for 1 hour
+    }
+    
+    # Encodes token using HMAC-SHA256
+    encoded_token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    
+    # Handle compatibility across different PyJWT versions (returns str)
+    if isinstance(encoded_token, bytes):
+        return encoded_token.decode('utf-8')
+    return encoded_token
+
 def headers():
-    """Returns required HTTP headers for Rista API requests."""
+    """
+    Returns required HTTP headers for Rista API requests.
+    Sends both JWT Bearer Authorization and custom headers to cover standard specs.
+    """
+    bearer_token = generate_jwt()
+    
     return {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
-        "x-channel-id": SECRET_KEY
+        "Authorization": f"Bearer {bearer_token}",
+        "x-api-key": API_KEY
     }
 
 # =========================================================
@@ -35,6 +58,7 @@ last_week_dt = today_dt - timedelta(days=7)
 today = today_dt.strftime("%Y-%m-%d")
 last_week = last_week_dt.strftime("%Y-%m-%d")
 
+# Replace with your actual branch code(s)
 branches = ["BRANCH_001"]
 
 # =========================================================
