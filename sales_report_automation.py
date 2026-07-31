@@ -144,20 +144,27 @@ def fetch_single_branch_day(branch, day_str, curr_dt):
                         "General"
                     )
                     item_name = (
+                        item.get("item_longName") or
                         item.get("item_shortName") or 
                         item.get("shortName") or 
                         item.get("itemName") or 
                         item.get("name") or 
                         "Unknown"
                     )
-                    variant = (
+                    
+                    # 🛠️ IMPROVED ITEM VARIANT EXTRACTION
+                    raw_variant = (
+                        item.get("item_variant") or
                         item.get("item_variants") or 
                         item.get("variantName") or 
                         item.get("variant") or 
                         item.get("variation") or 
-                        "-"
+                        "Regular"
                     )
-                    
+                    variant = str(raw_variant).strip()
+                    if variant in ["", "nan", "None", "-", "null"]:
+                        variant = "Regular"
+
                     qty = float(item.get("item_quantity") or item.get("quantity") or item.get("qty") or 0)
                     gross = float(item.get("item_grossAmount") or item.get("grossAmount") or item.get("gross") or 0)
                     discount = abs(float(
@@ -233,6 +240,10 @@ df_all = pd.concat([df_pmtd, df_mtd], ignore_index=True)
 if df_all.empty:
     print("❌ No data fetched. Exiting.")
     exit()
+
+# Clean Variants Across Master DataFrame
+df_all['Item Variant'] = df_all['Item Variant'].fillna('Regular').astype(str).str.strip()
+df_all['Item Variant'] = df_all['Item Variant'].replace(['', 'nan', 'None', '-', 'NaN'], 'Regular')
 
 # Current Month Live Items Filter
 live_items = df_all[(df_all['Period'] == 'MTD') & (df_all['Net'] > 0)]['Item Name'].unique()
@@ -325,14 +336,15 @@ def build_ftd_mtd_tab(df):
     if df_mtd_only.empty:
         return pd.DataFrame()
 
-    unique_items = df_mtd_only[['Brand Name', 'Category', 'Item Name']].drop_duplicates()
+    unique_items = df_mtd_only[['Brand Name', 'Category', 'Item Name', 'Item Variant']].drop_duplicates()
     res_rows = []
 
     for _, row_keys in unique_items.iterrows():
-        b_name, c_name, i_name = row_keys['Brand Name'], row_keys['Category'], row_keys['Item Name']
+        b_name, c_name, i_name, v_name = row_keys['Brand Name'], row_keys['Category'], row_keys['Item Name'], row_keys['Item Variant']
         sub = df_mtd_only[(df_mtd_only['Brand Name'] == b_name) & 
                           (df_mtd_only['Category'] == c_name) & 
-                          (df_mtd_only['Item Name'] == i_name)]
+                          (df_mtd_only['Item Name'] == i_name) &
+                          (df_mtd_only['Item Variant'] == v_name)]
 
         ftd_sub = sub[sub['Is_FTD'] == True]
 
@@ -340,6 +352,7 @@ def build_ftd_mtd_tab(df):
             "Brand Name": b_name,
             "Category Name": c_name,
             "Item Name": i_name,
+            "Item Variant": v_name,
             "Overall FTD Sales": round(ftd_sub['Net'].sum(), 2),
             "Overall MTD Sales": round(sub['Net'].sum(), 2),
             "Overall FTD Dis%": round(ftd_sub['Discounts'].sum() / ftd_sub['Gross'].sum(), 4) if ftd_sub['Gross'].sum() > 0 else 0,
@@ -367,7 +380,7 @@ def build_performance_tab(df):
     if df_mtd_only.empty:
         return pd.DataFrame()
 
-    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name']).agg(
+    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name', 'Item Variant']).agg(
         Net_Sales=('Net', 'sum'),
         Gross_Sales=('Gross', 'sum'),
         Discounts=('Discounts', 'sum'),
@@ -397,6 +410,7 @@ def build_performance_tab(df):
                 "Performance Rank": r['Performance Rank'],
                 "Category": r['Category'],
                 "Item Name": r['Item Name'],
+                "Item Variant": r['Item Variant'],
                 "MTD Net Sales": round(r['Net_Sales'], 2),
                 "MTD Qty Sold": int(r['Qty']),
                 "Dis%": r['Dis%'],
@@ -411,7 +425,7 @@ def build_insights_tab(df):
     if df_mtd_only.empty:
         return pd.DataFrame()
 
-    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name']).agg(
+    item_summary = df_mtd_only.groupby(['Brand Name', 'Category', 'Item Name', 'Item Variant']).agg(
         Net_Sales=('Net', 'sum'),
         Gross_Sales=('Gross', 'sum'),
         Discounts=('Discounts', 'sum'),
@@ -431,6 +445,7 @@ def build_insights_tab(df):
             "Brand Name": r['Brand Name'],
             "Category": r['Category'],
             "Item Name": r['Item Name'],
+            "Item Variant": r['Item Variant'],
             "Metric Value": f"{round(r['Food Cost %']*100, 2)}%",
             "MTD Net Sales": round(r['Net_Sales'], 2),
             "Action Item": "Immediate Portion Audit / Vendor Recipe Cost Review Needed"
@@ -444,6 +459,7 @@ def build_insights_tab(df):
             "Brand Name": r['Brand Name'],
             "Category": r['Category'],
             "Item Name": r['Item Name'],
+            "Item Variant": r['Item Variant'],
             "Metric Value": f"{round(r['Dis%']*100, 2)}%",
             "MTD Net Sales": round(r['Net_Sales'], 2),
             "Action Item": "Review Campaign Discounts & Aggregator Promo Margins"
@@ -567,7 +583,7 @@ def write_sheet(sheet_name, df):
     except Exception as e:
         print(f"❌ Error updating tab {sheet_name}: {e}")
 
-# Write all required sheets (Data tab omitted to stay within sheet cell limits)
+# Write all required sheets
 write_sheet("Overall", df_overall)
 write_sheet("FTD/MTD", df_ftd_mtd)
 write_sheet("Performance", df_perf)
@@ -581,12 +597,6 @@ write_sheet("Boba Bar", df_boba)
 # 8. MORNING EMAIL NOTIFICATION
 # =========================================================
 def send_morning_email_notification():
-    import smtplib
-    import os
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    # Sender Credentials
     EMAIL_USER = os.environ.get("EMAIL_USER", "mis2@frozenbottle.in")
     EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
@@ -594,7 +604,6 @@ def send_morning_email_notification():
         print("❌ EMAIL_PASS environment variable is missing. Skipping email notification.")
         return
 
-    # Strictly specified recipients list
     target_recipients = [
         "vivek@frozenbottle.in",
         "faraz@frozenbottle.in",
