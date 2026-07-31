@@ -1,5 +1,6 @@
 import os
 import time
+import jwt
 import requests
 import pandas as pd
 import gspread
@@ -12,20 +13,34 @@ from datetime import datetime, timedelta
 
 BASE_URL = "https://api.ristaapps.com/v1"
 
-# Fetch environment variables directly from GitHub Secrets / System Environment
+# Fetch environment variables
 API_KEY = os.environ["API_KEY"]
 SECRET_KEY = os.environ["SECRET_KEY"]
 
+# If CHANNEL_ID exists in secrets, use it; otherwise fallback to API_KEY or default
+CHANNEL_ID = os.environ.get("CHANNEL_ID", API_KEY) 
+
+def generate_jwt():
+    """Generates a dynamic JWT signed with SECRET_KEY."""
+    payload = {
+        "apiKey": API_KEY,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600
+    }
+    encoded = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    return encoded.decode("utf-8") if isinstance(encoded, bytes) else encoded
+
 def headers():
     """
-    Returns required HTTP headers for Rista API requests.
-    Rista natively expects x-api-key and x-channel-id.
+    Returns complete HTTP headers matching Rista's standard specification.
     """
+    token = generate_jwt()
     return {
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {token}",
         "x-api-key": API_KEY,
-        "x-channel-id": SECRET_KEY,  # Map your secret key / channel ID parameter here
-        "x-client-id": API_KEY       # Fallback header used in some Rista API versions
+        "x-channel-id": CHANNEL_ID,
+        "x-secret-key": SECRET_KEY
     }
 
 # =========================================================
@@ -47,9 +62,6 @@ branches = ["BRANCH_001"]
 
 def fetch_inventory_data():
     print("--- Fetching Inventory Data ---")
-    
-    # Debugging check (prints key lengths to verify GitHub Secrets aren't empty)
-    print(f"🔑 API_KEY length: {len(API_KEY)} | SECRET_KEY length: {len(SECRET_KEY)}")
     
     # 1. Fetch Inventory Transfers (GET)
     transfer_url = f"{BASE_URL}/inventory/transfer/page"
