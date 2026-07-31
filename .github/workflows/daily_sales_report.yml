@@ -1,9 +1,7 @@
 name: Daily Item Level Sales Report
 
 on:
-  schedule:
-    # Runs daily at 04:00 AM UTC (09:30 AM IST)
-    - cron: '0 4 * * *'
+
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
@@ -31,6 +29,4 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          EMAIL_CC: ${{ secrets.EMAIL_CC }}
         run: python sales_report_automation.py
