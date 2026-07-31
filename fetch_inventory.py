@@ -26,58 +26,51 @@ sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 # --- API Setup ---
 base_url = "https://api.ristaapps.com"
 
-# API headers
+# Reverted to standard Bearer token authorization format
 headers = {
-    "x-api-key": api_key,
-    "x-secret-key": secret_key,
+    "Authorization": f"Bearer {api_key}",
     "Content-Type": "application/json"
 }
 
-def fetch_data(endpoint, method="GET", params=None, payload=None):
+def safe_fetch(endpoint, method="GET", payload=None):
+    """Fetches data and handles errors gracefully so script doesn't crash."""
     url = base_url + endpoint
-    print(f"Calling: {url}")
+    print(f"Calling ({method}): {url}")
     
     try:
         if method == "GET":
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers)
         else:
             response = requests.post(url, headers=headers, json=payload or {})
             
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        print(f"✅ Success fetching {endpoint}")
+        return data.get("data", []) if isinstance(data, dict) else data
         
-    except requests.exceptions.HTTPError as e:
-        print(f"\n❌ API Call Failed for {endpoint}")
-        print(f"Status Code: {response.status_code}")
-        print(f"Server Message: {response.text}\n")
-        raise e
+    except Exception as e:
+        print(f"⚠️ Warning: Call failed for {endpoint} | Error: {e}")
+        return []
 
 # --- Fetch Data ---
+print("\n--- Fetching Data ---")
+transfer_data = safe_fetch("/inventory/transfer/page", "GET")
+grn_data = safe_fetch("/inventory/grn/page", "GET")
+stock_data = safe_fetch("/inventory/item/stock", "POST")
 
-# TEMPORARILY COMMENTED OUT - Will update once correct endpoint is provided
-# transfer = fetch_data("/inventory/transfer/page", "GET")
-df_transfer = pd.DataFrame() 
+# --- Process & Combine ---
+df_transfer = pd.DataFrame(transfer_data)
+df_grn = pd.DataFrame(grn_data)
+df_stock = pd.DataFrame(stock_data)
 
-print("⏳ Fetching GRN data...")
-grn = fetch_data("/inventory/grn/page", "GET")
-
-print("⏳ Fetching Stock data...")
-stock = fetch_data("/inventory/item/stock", "POST")
-
-# --- Combine Data ---
-df_grn = pd.DataFrame(grn.get("data", []))
-df_stock = pd.DataFrame(stock.get("data", []))
-
-# Collect non-empty DataFrames
 dataframes = [df for df in [df_transfer, df_grn, df_stock] if not df.empty]
 
 if dataframes:
     combined = pd.concat(dataframes, ignore_index=True)
-    combined = combined.fillna("")  # Replace NaN with empty strings for Google Sheets
+    combined = combined.fillna("")
     
-    # --- Push to Sheet ---
     sheet.clear()
     sheet.update([combined.columns.tolist()] + combined.values.tolist())
-    print("✅ GRN and Stock data pushed to Google Sheet successfully!")
+    print("\n✅ Available inventory data pushed to Google Sheet successfully!")
 else:
-    print("⚠️ No data returned from endpoints.")
+    print("\n❌ No data was retrieved from any endpoint. Check endpoint routes or credentials.")
