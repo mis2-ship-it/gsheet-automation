@@ -13,15 +13,16 @@ from datetime import datetime, timedelta
 
 BASE_URL = "https://api.ristaapps.com/v1"
 
-API_KEY = os.getenv("RISTA_API_KEY", "YOUR_API_KEY_HERE")
-CHANNEL_ID = os.getenv("RISTA_CHANNEL_ID", "YOUR_CHANNEL_ID_HERE")
+# Fetch environment variables directly
+API_KEY = os.environ["API_KEY"]
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 def headers():
     """Returns required HTTP headers for Rista API requests."""
     return {
         "Content-Type": "application/json",
         "x-api-key": API_KEY,
-        "x-channel-id": CHANNEL_ID
+        "x-channel-id": SECRET_KEY
     }
 
 # =========================================================
@@ -34,7 +35,7 @@ last_week_dt = today_dt - timedelta(days=7)
 today = today_dt.strftime("%Y-%m-%d")
 last_week = last_week_dt.strftime("%Y-%m-%d")
 
-branches = ["BRANCH_001"] 
+branches = ["BRANCH_001"]
 
 # =========================================================
 # 📦 FETCH INVENTORY DATA
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     # Execute inventory call
     transfer_data, grn_data, stock_data = fetch_inventory_data()
     
-    # Optional Summary Output
+    # Summary Output
     print("\n--- Summary of Results ---")
     print(f"Transfer Data Keys: {list(transfer_data.keys()) if isinstance(transfer_data, dict) else 'List Response'}")
     print(f"GRN Data Keys: {list(grn_data.keys()) if isinstance(grn_data, dict) else 'List Response'}")
