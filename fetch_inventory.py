@@ -26,7 +26,7 @@ sheet = client.open_by_key(sheet_id).worksheet(tab_name)
 # --- API Setup ---
 base_url = "https://api.ristaapps.com"
 
-# Updated headers to send both API_KEY and SECRET_KEY
+# API headers
 headers = {
     "x-api-key": api_key,
     "x-secret-key": secret_key,
@@ -53,23 +53,31 @@ def fetch_data(endpoint, method="GET", params=None, payload=None):
         raise e
 
 # --- Fetch Data ---
-transfer = fetch_data("/inventory/transfer/page", "GET")
+
+# TEMPORARILY COMMENTED OUT - Will update once correct endpoint is provided
+# transfer = fetch_data("/inventory/transfer/page", "GET")
+df_transfer = pd.DataFrame() 
+
+print("⏳ Fetching GRN data...")
 grn = fetch_data("/inventory/grn/page", "GET")
+
+print("⏳ Fetching Stock data...")
 stock = fetch_data("/inventory/item/stock", "POST")
 
-# --- Combine ---
-df_transfer = pd.DataFrame(transfer.get("data", []))
+# --- Combine Data ---
 df_grn = pd.DataFrame(grn.get("data", []))
 df_stock = pd.DataFrame(stock.get("data", []))
 
+# Collect non-empty DataFrames
 dataframes = [df for df in [df_transfer, df_grn, df_stock] if not df.empty]
 
 if dataframes:
     combined = pd.concat(dataframes, ignore_index=True)
-    combined = combined.fillna("")
+    combined = combined.fillna("")  # Replace NaN with empty strings for Google Sheets
     
+    # --- Push to Sheet ---
     sheet.clear()
     sheet.update([combined.columns.tolist()] + combined.values.tolist())
-    print("✅ Inventory data pushed to Google Sheet successfully!")
+    print("✅ GRN and Stock data pushed to Google Sheet successfully!")
 else:
     print("⚠️ No data returned from endpoints.")
