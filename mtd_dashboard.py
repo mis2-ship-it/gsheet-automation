@@ -312,3 +312,158 @@ print("TODAY SOURCE SUMMARY")
 print("=" * 60)
 
 print(source_summary.round(2))
+
+# =========================================================
+# BRANCH SUMMARY
+# =========================================================
+
+branch_summary = (
+    today_df
+    .groupby("Branch")
+    .agg(
+        Gross=("Gross Sales","sum"),
+        Net=("Net Sales","sum"),
+        Discount=("Discount","sum"),
+        Orders=("Orders","sum")
+    )
+    .reset_index()
+)
+
+branch_summary["AOV"] = (
+    branch_summary["Net"]
+    /
+    branch_summary["Orders"].replace(0,1)
+)
+
+branch_summary["Dis %"] = (
+    branch_summary["Discount"]
+    /
+    branch_summary["Gross"].replace(0,1)
+) * 100
+
+branch_summary["Contribution %"] = (
+    branch_summary["Net"]
+    /
+    branch_summary["Net"].sum()
+) * 100
+
+branch_summary = (
+    branch_summary
+    .sort_values("Net", ascending=False)
+    .reset_index(drop=True)
+)
+
+print("="*60)
+print("TODAY BRANCH SUMMARY")
+print("="*60)
+
+print(branch_summary.round(2))
+
+# =========================================================
+# SESSION SUMMARY
+# =========================================================
+
+session_summary = (
+    today_df
+    .groupby("Session")
+    .agg(
+        Gross=("Gross Sales", "sum"),
+        Net=("Net Sales", "sum"),
+        Discount=("Discount", "sum"),
+        Orders=("Orders", "sum")
+    )
+    .reset_index()
+)
+
+session_summary["AOV"] = (
+    session_summary["Net"]
+    /
+    session_summary["Orders"].replace(0, 1)
+)
+
+session_summary["Dis %"] = (
+    session_summary["Discount"]
+    /
+    session_summary["Gross"].replace(0, 1)
+) * 100
+
+session_summary["Contribution %"] = (
+    session_summary["Net"]
+    /
+    session_summary["Net"].sum()
+) * 100
+
+# Custom Session Order
+session_order = [
+    "Breakfast",
+    "Lunch",
+    "Snacks",
+    "Dinner",
+    "Late Night"
+]
+
+session_summary["Session"] = pd.Categorical(
+    session_summary["Session"],
+    categories=session_order,
+    ordered=True
+)
+
+session_summary = (
+    session_summary
+    .sort_values("Session")
+    .reset_index(drop=True)
+)
+
+print("=" * 60)
+print("TODAY SESSION SUMMARY")
+print("=" * 60)
+
+print(session_summary.round(2))
+
+# =========================================================
+# REGION SUMMARY
+# =========================================================
+
+region_summary = (
+    today_df
+    .groupby("Region")
+    .agg(
+        Gross=("Gross Sales","sum"),
+        Net=("Net Sales","sum"),
+        Discount=("Discount","sum"),
+        Orders=("Orders","sum")
+    )
+    .reset_index()
+)
+
+region_summary["AOV"] = (
+    region_summary["Net"]
+    /
+    region_summary["Orders"].replace(0,1)
+)
+
+region_summary["Dis %"] = (
+    region_summary["Discount"]
+    /
+    region_summary["Gross"].replace(0,1)
+) * 100
+
+region_summary["Contribution %"] = (
+    region_summary["Net"]
+    /
+    region_summary["Net"].sum()
+) * 100
+
+region_summary = (
+    region_summary
+    .sort_values("Net", ascending=False)
+    .reset_index(drop=True)
+)
+
+print("="*60)
+print("TODAY REGION SUMMARY")
+print("="*60)
+
+print(region_summary.round(2))
+
+
