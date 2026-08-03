@@ -172,13 +172,11 @@ IST = pytz.timezone("Asia/Kolkata")
 
 now = datetime.now(IST)
 
-# Business day starts at 09:00 AM IST
-if now.hour < 9:
-    business_day = (now - timedelta(days=1)).date()
-else:
-    business_day = now.date()
+# =========================================================
+# BUSINESS DATE
+# =========================================================
 
-today = pd.Timestamp(business_day)
+today = final_df["Date"].max()
 
 last_week = today - timedelta(days=7)
 last_2_week = today - timedelta(days=14)
@@ -189,13 +187,11 @@ print("=" * 60)
 print("DATE CHECK")
 print("=" * 60)
 
-print("Current IST :", now.strftime("%Y-%m-%d %H:%M:%S"))
-print("Business Day:", today.date())
-print("Last Week   :", last_week.date())
-print("Last 2 Week :", last_2_week.date())
-print("Last Month  :", last_month.date())
-print("Last Year   :", last_year.date())
-
+print("Today      :", today.date())
+print("Last Week  :", last_week.date())
+print("Last 2 Week:", last_2_week.date())
+print("Last Month :", last_month.date())
+print("Last Year  :", last_year.date())
 
 # =========================================================
 # FILTER DATA
