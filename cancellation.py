@@ -163,7 +163,7 @@ if not df_list:
     print("❌ No data fetched")
     exit()
 
-df = pd.concat(df_list, ignore_ignore=True)
+df = pd.concat(df_list, ignore_index=True)
 print("✅ Total rows fetched:", len(df))
 
 # =========================================================
