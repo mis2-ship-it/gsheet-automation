@@ -53,3 +53,33 @@ print("COLUMN LIST")
 print("=" * 60)
 
 print(final_df.columns.tolist())
+
+# =========================================================
+# DATE PREPARATION
+# =========================================================
+
+from datetime import datetime, timedelta
+
+final_df["Date"] = pd.to_datetime(
+    final_df["Date"]
+)
+
+today = final_df["Date"].max()
+
+last_week = today - timedelta(days=7)
+
+last_2_week = today - timedelta(days=14)
+
+last_month = today - pd.DateOffset(months=1)
+
+last_year = today - pd.DateOffset(years=1)
+
+print("=" * 60)
+print("DATE CHECK")
+print("=" * 60)
+
+print("Today      :", today.date())
+print("Last Week  :", last_week.date())
+print("Last 2 Week:", last_2_week.date())
+print("Last Month :", last_month.date())
+print("Last Year  :", last_year.date())
