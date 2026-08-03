@@ -164,9 +164,15 @@ final_df["Date"] = pd.to_datetime(
 # BUSINESS DATE
 # =========================================================
 
-now = datetime.now()
+from datetime import datetime, timedelta
+import pandas as pd
+import pytz
 
-# Business day starts at 09:00 AM
+IST = pytz.timezone("Asia/Kolkata")
+
+now = datetime.now(IST)
+
+# Business day starts at 09:00 AM IST
 if now.hour < 9:
     business_day = (now - timedelta(days=1)).date()
 else:
@@ -183,11 +189,13 @@ print("=" * 60)
 print("DATE CHECK")
 print("=" * 60)
 
-print("Today      :", today.date())
-print("Last Week  :", last_week.date())
-print("Last 2 Week:", last_2_week.date())
-print("Last Month :", last_month.date())
-print("Last Year  :", last_year.date())
+print("Current IST :", now.strftime("%Y-%m-%d %H:%M:%S"))
+print("Business Day:", today.date())
+print("Last Week   :", last_week.date())
+print("Last 2 Week :", last_2_week.date())
+print("Last Month  :", last_month.date())
+print("Last Year   :", last_year.date())
+
 
 # =========================================================
 # FILTER DATA
@@ -222,7 +230,6 @@ print("LW Rows        :", len(lw_df))
 print("L2W Rows       :", len(l2w_df))
 print("MoM Rows       :", len(mom_df))
 print("LY Rows        :", len(ly_df))
-
 # =========================================================
 # STORE TYPE SPLIT
 # =========================================================
