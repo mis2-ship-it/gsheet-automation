@@ -10,25 +10,25 @@ print("🚀 MTD DASHBOARD STARTED")
 print("=" * 60)
 
 # =========================================================
-# FIND ALL MONTHLY CSV FILES
+# FIND LATEST MONTHLY CSV
 # =========================================================
 
 BASE_FOLDER = Path("monthly_data")
 
-csv_files = sorted(
+csv_files = list(
     BASE_FOLDER.rglob("*.csv")
 )
 
 print(f"📂 CSV Files Found : {len(csv_files)}")
 
-if len(csv_files) == 0:
+if not csv_files:
     raise Exception("❌ No Monthly CSV Files Found")
 
-# =========================================================
-# LATEST MONTH FILE
-# =========================================================
-
-latest_csv = csv_files[-1]
+# Pick newest file by modified time
+latest_csv = max(
+    csv_files,
+    key=lambda x: x.stat().st_mtime
+)
 
 print(f"📄 Latest File : {latest_csv}")
 
