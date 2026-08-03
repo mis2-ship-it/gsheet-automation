@@ -417,6 +417,37 @@ push_sheet(
 )
 
 # =========================================================
+# BRANCH LW GROWTH
+# =========================================================
+
+branch_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Branch",
+    "LW"
+)
+
+push_sheet(
+    "Dashboard_Branch_LW",
+    branch_lw
+)
+
+# =========================================================
+# BRAND L2W GROWTH
+# =========================================================
+
+brand_l2w = growth_summary(
+    coco_df,
+    l2w_df,
+    "Brand Name",
+    "L2W"
+)
+
+push_sheet(
+    "Dashboard_Brand_L2W",
+    brand_l2w
+)
+# =========================================================
 # SOURCE LW GROWTH
 # =========================================================
 
@@ -436,6 +467,28 @@ print(source_lw)
 push_sheet(
     "Dashboard_Source_LW",
     source_lw
+)
+
+# =========================================================
+# SOURCE L2W GROWTH
+# =========================================================
+
+source_l2w = growth_summary(
+    coco_df,
+    l2w_df,
+    "Source",
+    "L2W"
+)
+
+print("=" * 60)
+print("SOURCE L2W")
+print("=" * 60)
+
+print(source_l2w)
+
+push_sheet(
+    "Dashboard_Source_L2W",
+    source_l2w
 )
 # =========================================================
 # REGION LW GROWTH
@@ -460,6 +513,27 @@ push_sheet(
 )
 
 # =========================================================
+# REGION L2W GROWTH
+# =========================================================
+
+region_l2w = growth_summary(
+    coco_df,
+    l2w_df,
+    "Region",
+    "L2W"
+)
+
+print("=" * 60)
+print("REGION L2W")
+print("=" * 60)
+
+print(region_l2w)
+
+push_sheet(
+    "Dashboard_Region_L2W",
+    region_l2w
+)
+# =========================================================
 # SESSION LW GROWTH
 # =========================================================
 
@@ -482,6 +556,27 @@ push_sheet(
 )
 
 # =========================================================
+# SESSION L2W GROWTH
+# =========================================================
+
+session_l2w = growth_summary(
+    coco_df,
+    l2w_df,
+    "Session",
+    "L2W"
+)
+
+print("=" * 60)
+print("SESSION L2W")
+print("=" * 60)
+
+print(session_l2w)
+
+push_sheet(
+    "Dashboard_Session_L2W",
+    session_l2w
+)
+# =========================================================
 # BRANCH LW GROWTH
 # =========================================================
 
@@ -501,6 +596,28 @@ print(branch_lw)
 push_sheet(
     "Dashboard_Branch_LW",
     branch_lw
+)
+
+# =========================================================
+# BRANCH L2W GROWTH
+# =========================================================
+
+branch_l2w = growth_summary(
+    coco_df,
+    l2w_df,
+    "Branch",
+    "L2W"
+)
+
+print("=" * 60)
+print("BRANCH L2W")
+print("=" * 60)
+
+print(branch_l2w)
+
+push_sheet(
+    "Dashboard_Branch_L2W",
+    branch_l2w
 )
 # =========================================================
 # SOURCE SUMMARY
