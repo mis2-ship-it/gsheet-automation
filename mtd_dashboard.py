@@ -4,10 +4,52 @@
 
 from pathlib import Path
 import pandas as pd
+import gspread
+import json
+import os
+
+from google.oauth2.service_account import Credentials
 
 print("=" * 60)
 print("🚀 MTD DASHBOARD STARTED")
 print("=" * 60)
+
+
+# ---------------- GOOGLE ---------------- #
+
+creds = Credentials.from_service_account_info(...)
+
+client = gspread.authorize(creds)
+
+sheet_url = "https://docs.google.com/spreadsheets/d/1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY/edit"
+
+print("✅ Connected to Google Sheet")
+
+# =========================================================
+# PUSH DATAFRAME TO GOOGLE SHEET
+# =========================================================
+
+def push(sheet_name, df):
+
+    try:
+        ws = spreadsheet.worksheet(sheet_name)
+
+    except:
+
+        ws = spreadsheet.add_worksheet(
+            title=sheet_name,
+            rows="5000",
+            cols="30"
+        )
+
+    ws.clear()
+
+    ws.update(
+        [df.columns.tolist()] +
+        df.astype(str).values.tolist()
+    )
+
+    print(f"✅ Updated : {sheet_name}")
 
 # =========================================================
 # FIND LATEST MONTHLY CSV
@@ -193,6 +235,48 @@ print("COCO      :", len(coco_df))
 print("FOFO      :", len(fofo_df))
 
 # =========================================================
+# UNIVERSAL SUMMARY BUILDER
+# =========================================================
+
+def build_summary(df, column):
+
+    summary = (
+        df.groupby(column)
+        .agg(
+            Gross=("Gross Sales", "sum"),
+            Net=("Net Sales", "sum"),
+            Discount=("Discount", "sum"),
+            Orders=("Orders", "sum")
+        )
+        .reset_index()
+    )
+
+    summary["AOV"] = (
+        summary["Net"]
+        /
+        summary["Orders"].replace(0, 1)
+    )
+
+    summary["Dis %"] = (
+        summary["Discount"]
+        /
+        summary["Gross"].replace(0, 1)
+    ) * 100
+
+    summary["Contribution %"] = (
+        summary["Net"]
+        /
+        summary["Net"].sum()
+    ) * 100
+
+    summary = summary.sort_values(
+        "Net",
+        ascending=False
+    ).reset_index(drop=True)
+
+    return summary
+
+# =========================================================
 # KPI SUMMARY
 # =========================================================
 
@@ -338,49 +422,22 @@ def growth_summary(current_df, previous_df, group_col, period_name):
     return df.round(2)
 
 # =========================================================
-# BRAND SUMMARY
+# TODAY BRAND SUMMARY
 # =========================================================
 
-brand_summary = (
-    coco_df
-    .groupby("Brand Name")
-    .agg(
-        Gross=("Gross Sales", "sum"),
-        Net=("Net Sales", "sum"),
-        Discount=("Discount", "sum"),
-        Orders=("Orders", "sum")
-    )
-    .reset_index()
-)
-
-brand_summary["AOV"] = (
-    brand_summary["Net"]
-    /
-    brand_summary["Orders"].replace(0, 1)
-)
-
-brand_summary["Dis %"] = (
-    brand_summary["Discount"]
-    /
-    brand_summary["Gross"].replace(0, 1)
-) * 100
-
-brand_summary["Contribution %"] = (
-    brand_summary["Net"]
-    /
-    brand_summary["Net"].sum()
-) * 100
-
-brand_summary = brand_summary.sort_values(
-    "Net",
-    ascending=False
+brand_summary = build_summary(
+    coco_df,
+    "Brand Name"
 )
 
 print("=" * 60)
 print("TODAY BRAND SUMMARY")
 print("=" * 60)
 
-print(
+print(brand_summary.round(2))
+
+push(
+    "Dashboard_Brand",
     brand_summary.round(2)
 )
 
@@ -397,10 +454,11 @@ push(
 # BRAND LW GROWTH
 # =========================================================
 
-brand_lw = growth_summary(
-    coco_df,
+brand_summary = add_growth(
+    brand_summary,
     lw_df,
-    "Brand Name"
+    "Brand Name",
+    "LW"
 )
 
 print("="*60)
@@ -416,21 +474,6 @@ push(
     brand_lw.round(2)
 )
 
-# =========================================================
-# BRANCH LW GROWTH
-# =========================================================
-
-branch_lw = growth_summary(
-    coco_df,
-    lw_df,
-    "Branch",
-    "LW"
-)
-
-push(
-    "Dashboard_Branch_LW",
-    branch_lw
-)
 
 # =========================================================
 # BRAND L2W GROWTH
@@ -447,12 +490,88 @@ push(
     "Dashboard_Brand_L2W",
     brand_l2w
 )
+
+# =========================================================
+# UNIVERSAL GROWTH CALCULATOR
+# =========================================================
+
+def add_growth(current_df, compare_df, column, suffix):
+
+    compare = (
+        compare_df.groupby(column)
+        .agg(
+            Compare_Net=("Net Sales", "sum")
+        )
+        .reset_index()
+    )
+
+    current_df = current_df.merge(
+        compare,
+        on=column,
+        how="left"
+    )
+
+    current_df["Compare_Net"] = (
+        current_df["Compare_Net"]
+        .fillna(0)
+    )
+
+    current_df[f"{suffix} Growth %"] = (
+        (
+            current_df["Net"]
+            - current_df["Compare_Net"]
+        )
+        /
+        current_df["Compare_Net"].replace(0, pd.NA)
+    ) * 100
+
+    current_df[f"{suffix} Growth %"] = (
+        current_df[f"{suffix} Growth %"]
+        .fillna(0)
+        .round(1)
+    )
+
+    current_df.drop(
+        columns="Compare_Net",
+        inplace=True
+    )
+
+    return current_df
+
+# =========================================================
+# TODAY SOURCE SUMMARY
+# =========================================================
+
+source_summary = build_summary(
+    coco_df,
+    "Source"
+)
+
+print("=" * 60)
+print("TODAY SOURCE SUMMARY")
+print("=" * 60)
+
+print(source_summary.round(2))
+
+push(
+    "Dashboard_Source",
+    source_summary.round(2)
+)
+# =========================================================
+# PUSH SOURCE SUMMARY
+# =========================================================
+
+push(
+    "Dashboard_Source",
+    source_summary.round(2)
+)
+
 # =========================================================
 # SOURCE LW GROWTH
 # =========================================================
 
-source_lw = growth_summary(
-    coco_df,
+source_summary = add_growth(
+    source_summary,
     lw_df,
     "Source",
     "LW"
@@ -473,8 +592,8 @@ push(
 # SOURCE L2W GROWTH
 # =========================================================
 
-source_l2w = growth_summary(
-    coco_df,
+source_summary = add_growth(
+    source_summary,
     l2w_df,
     "Source",
     "L2W"
@@ -490,55 +609,146 @@ push(
     "Dashboard_Source_L2W",
     source_l2w
 )
+
+
 # =========================================================
-# REGION LW GROWTH
+# TODAY BRANCH SUMMARY
 # =========================================================
 
-region_lw = growth_summary(
+branch_summary = build_summary(
     coco_df,
+    "Branch"
+)
+
+print("=" * 60)
+print("TODAY BRANCH SUMMARY")
+print("=" * 60)
+
+print(branch_summary.round(2))
+
+push(
+    "Dashboard_Branch",
+    branch_summary.round(2)
+)
+# =========================================================
+# PUSH BRANCH SUMMARY
+# =========================================================
+
+push(
+    "Dashboard_Branch",
+    branch_summary
+        .head(20)
+        .round(2)
+)
+
+# =========================================================
+# BRANCH LW GROWTH
+# =========================================================
+
+branch_summary = add_growth(
+    branch_summary,
     lw_df,
-    "Region",
+    "Branch",
     "LW"
 )
 
 print("=" * 60)
-print("REGION LW")
+print("BRANCH LW")
 print("=" * 60)
 
-print(region_lw)
+print(branch_lw)
 
 push(
-    "Dashboard_Region_LW",
-    region_lw
+    "Dashboard_Branch_LW",
+    branch_lw
 )
 
+
 # =========================================================
-# REGION L2W GROWTH
+# BRANCH L2W GROWTH
 # =========================================================
 
-region_l2w = growth_summary(
-    coco_df,
+branch_summary = add_growth(
+    branch_summary,
     l2w_df,
-    "Region",
+    "Branch",
     "L2W"
 )
 
 print("=" * 60)
-print("REGION L2W")
+print("BRANCH L2W")
 print("=" * 60)
 
-print(region_l2w)
+print(branch_l2w)
 
 push(
-    "Dashboard_Region_L2W",
-    region_l2w
+    "Dashboard_Branch_L2W",
+    branch_l2w
 )
+# =========================================================
+# TODAY SESSION SUMMARY
+# =========================================================
+
+session_summary = build_summary(
+    coco_df,
+    "Session"
+)
+
+session_order = [
+    "Breakfast",
+    "Lunch",
+    "Snacks",
+    "Dinner",
+    "Late Night"
+]
+
+session_summary["Session"] = session_summary["Session"].fillna("Others")
+
+session_summary["Sort"] = (
+    session_summary["Session"]
+    .map({
+        "Breakfast": 1,
+        "Lunch": 2,
+        "Snacks": 3,
+        "Dinner": 4,
+        "Late Night": 5
+    })
+    .fillna(99)
+)
+
+session_summary = (
+    session_summary
+    .sort_values("Sort")
+    .drop(columns="Sort")
+    .reset_index(drop=True)
+)
+
+print("=" * 60)
+print("TODAY SESSION SUMMARY")
+print("=" * 60)
+
+print(session_summary.round(2))
+
+push(
+    "Dashboard_Session",
+    session_summary.round(2)
+)
+
+# =========================================================
+# PUSH SESSION SUMMARY
+# =========================================================
+
+push(
+    "Dashboard_Session",
+    session_summary.round(2)
+)
+
 # =========================================================
 # SESSION LW GROWTH
 # =========================================================
 
-session_lw = growth_summary(
-    coco_df,
+session_summary = add_growth(
+    session_summary,
     lw_df,
     "Session",
     "LW"
@@ -559,8 +769,8 @@ push(
 # SESSION L2W GROWTH
 # =========================================================
 
-session_l2w = growth_summary(
-    coco_df,
+session_summary = add_growth(
+    session_summary,
     l2w_df,
     "Session",
     "L2W"
@@ -576,296 +786,27 @@ push(
     "Dashboard_Session_L2W",
     session_l2w
 )
+
+
 # =========================================================
-# BRANCH LW GROWTH
+# TODAY REGION SUMMARY
 # =========================================================
 
-branch_lw = growth_summary(
+region_summary = build_summary(
     coco_df,
-    lw_df,
-    "Branch",
-    "LW"
+    "Region"
 )
 
 print("=" * 60)
-print("BRANCH LW")
-print("=" * 60)
-
-print(branch_lw)
-
-push(
-    "Dashboard_Branch_LW",
-    branch_lw
-)
-
-# =========================================================
-# BRANCH L2W GROWTH
-# =========================================================
-
-branch_l2w = growth_summary(
-    coco_df,
-    l2w_df,
-    "Branch",
-    "L2W"
-)
-
-print("=" * 60)
-print("BRANCH L2W")
-print("=" * 60)
-
-print(branch_l2w)
-
-push(
-    "Dashboard_Branch_L2W",
-    branch_l2w
-)
-# =========================================================
-# SOURCE SUMMARY
-# =========================================================
-
-source_summary = (
-    coco_df
-    .groupby("Source")
-    .agg(
-        Gross=("Gross Sales", "sum"),
-        Net=("Net Sales", "sum"),
-        Discount=("Discount", "sum"),
-        Orders=("Orders", "sum")
-    )
-    .reset_index()
-)
-
-source_summary["AOV"] = (
-    source_summary["Net"]
-    /
-    source_summary["Orders"].replace(0, 1)
-)
-
-source_summary["Dis %"] = (
-    source_summary["Discount"]
-    /
-    source_summary["Gross"].replace(0, 1)
-) * 100
-
-source_summary["Contribution %"] = (
-    source_summary["Net"]
-    /
-    source_summary["Net"].sum()
-) * 100
-
-source_summary = source_summary.sort_values(
-    "Net",
-    ascending=False
-)
-
-print("=" * 60)
-print("TODAY SOURCE SUMMARY")
-print("=" * 60)
-
-print(source_summary.round(2))
-
-# =========================================================
-# PUSH SOURCE SUMMARY
-# =========================================================
-
-push(
-    "Dashboard_Source",
-    source_summary.round(2)
-)
-
-# =========================================================
-# BRANCH SUMMARY
-# =========================================================
-
-branch_summary = (
-    coco_df
-    .groupby("Branch")
-    .agg(
-        Gross=("Gross Sales","sum"),
-        Net=("Net Sales","sum"),
-        Discount=("Discount","sum"),
-        Orders=("Orders","sum")
-    )
-    .reset_index()
-)
-
-branch_summary["AOV"] = (
-    branch_summary["Net"]
-    /
-    branch_summary["Orders"].replace(0,1)
-)
-
-branch_summary["Dis %"] = (
-    branch_summary["Discount"]
-    /
-    branch_summary["Gross"].replace(0,1)
-) * 100
-
-branch_summary["Contribution %"] = (
-    branch_summary["Net"]
-    /
-    branch_summary["Net"].sum()
-) * 100
-
-branch_summary = (
-    branch_summary
-    .sort_values("Net", ascending=False)
-    .reset_index(drop=True)
-)
-
-print("="*60)
-print("TODAY BRANCH SUMMARY")
-print("="*60)
-
-print(
-    branch_summary
-    .head(20)
-    .round(2)
-)
-
-# =========================================================
-# PUSH BRANCH SUMMARY
-# =========================================================
-
-push(
-    "Dashboard_Branch",
-    branch_summary
-        .head(20)
-        .round(2)
-)
-# =========================================================
-# SESSION SUMMARY
-# =========================================================
-
-# Keep only valid sessions
-session_df = coco_df.copy()
-
-session_df["Session"] = (
-    session_df["Session"]
-    .fillna("")
-    .astype(str)
-    .str.strip()
-)
-
-session_df = session_df[
-    session_df["Session"] != ""
-]
-
-session_summary = (
-    session_df
-    .groupby("Session", as_index=False)
-    .agg(
-        Gross=("Gross Sales", "sum"),
-        Net=("Net Sales", "sum"),
-        Discount=("Discount", "sum"),
-        Orders=("Orders", "sum")
-    )
-)
-
-session_summary["AOV"] = (
-    session_summary["Net"]
-    /
-    session_summary["Orders"].replace(0, 1)
-)
-
-session_summary["Dis %"] = (
-    session_summary["Discount"]
-    /
-    session_summary["Gross"].replace(0, 1)
-) * 100
-
-session_summary["Contribution %"] = (
-    session_summary["Net"]
-    /
-    session_summary["Net"].sum()
-) * 100
-
-# =========================================================
-# BUSINESS ORDER
-# =========================================================
-
-session_order = {
-    "Breakfast": 1,
-    "Lunch": 2,
-    "Snacks": 3,
-    "Dinner": 4,
-    "Late Night": 5
-}
-
-session_summary["Sort"] = (
-    session_summary["Session"]
-    .map(session_order)
-    .fillna(999)
-)
-
-session_summary = (
-    session_summary
-    .sort_values("Sort")
-    .drop(columns="Sort")
-    .reset_index(drop=True)
-)
-
-print("=" * 60)
-print("TODAY SESSION SUMMARY")
-print("=" * 60)
-
-print(session_summary.round(2))
-
-# =========================================================
-# PUSH SESSION SUMMARY
-# =========================================================
-
-push(
-    "Dashboard_Session",
-    session_summary.round(2)
-)
-
-# =========================================================
-# REGION SUMMARY
-# =========================================================
-
-region_summary = (
-    coco_df
-    .groupby("Region")
-    .agg(
-        Gross=("Gross Sales","sum"),
-        Net=("Net Sales","sum"),
-        Discount=("Discount","sum"),
-        Orders=("Orders","sum")
-    )
-    .reset_index()
-)
-
-region_summary["AOV"] = (
-    region_summary["Net"]
-    /
-    region_summary["Orders"].replace(0,1)
-)
-
-region_summary["Dis %"] = (
-    region_summary["Discount"]
-    /
-    region_summary["Gross"].replace(0,1)
-) * 100
-
-region_summary["Contribution %"] = (
-    region_summary["Net"]
-    /
-    region_summary["Net"].sum()
-) * 100
-
-region_summary = (
-    region_summary
-    .sort_values("Net", ascending=False)
-    .reset_index(drop=True)
-)
-
-print("="*60)
 print("TODAY REGION SUMMARY")
-print("="*60)
+print("=" * 60)
 
 print(region_summary.round(2))
 
+push(
+    "Dashboard_Region",
+    region_summary.round(2)
+)
 # =========================================================
 # PUSH REGION SUMMARY
 # =========================================================
@@ -876,29 +817,49 @@ push(
 )
 
 # =========================================================
-# PUSH DATAFRAME TO GOOGLE SHEET
+# REGION LW GROWTH
 # =========================================================
 
-def push(sheet_name, df):
+region_summary = add_growth(
+    region_summary,
+    lw_df,
+    "Region",
+    "LW"
+)
 
-    try:
-        ws = spreadsheet.worksheet(sheet_name)
+print("=" * 60)
+print("REGION LW")
+print("=" * 60)
 
-    except:
+print(region_lw)
 
-        ws = spreadsheet.add_worksheet(
-            title=sheet_name,
-            rows="5000",
-            cols="30"
-        )
+push(
+    "Dashboard_Region_LW",
+    region_lw
+)
 
-    ws.clear()
+# =========================================================
+# REGION L2W GROWTH
+# =========================================================
 
-    ws.update(
-        [df.columns.tolist()] +
-        df.astype(str).values.tolist()
-    )
+region_summary = add_growth(
+    region_summary,
+    l2w_df,
+    "Region",
+    "L2W"
+)
 
-    print(f"✅ Updated : {sheet_name}")
+print("=" * 60)
+print("REGION L2W")
+print("=" * 60)
+
+print(region_l2w)
+
+push(
+    "Dashboard_Region_L2W",
+    region_l2w
+)
+
+
 
 
