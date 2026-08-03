@@ -637,6 +637,27 @@ mtd_summary.columns = [
     "Orders"
 ]
 
+# =========================================================
+# KEEP ONLY CURRENT MONTH
+# =========================================================
+
+current_month = today.month
+current_year = today.year
+
+mtd_summary["Date"] = pd.to_datetime(mtd_summary["Date"])
+
+mtd_summary = mtd_summary[
+    (mtd_summary["Date"].dt.month == current_month) &
+    (mtd_summary["Date"].dt.year == current_year)
+].copy()
+
+print("Current Month Rows :", len(mtd_summary))
+print(
+    "Date Range :",
+    mtd_summary["Date"].min().date(),
+    "→",
+    mtd_summary["Date"].max().date()
+)
 
 # =========================================================
 # AOV + DIS%
