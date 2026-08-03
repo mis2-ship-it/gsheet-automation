@@ -433,76 +433,6 @@ def growth_summary(current_df, previous_df, group_col, period_name):
     return df.round(2)
 
 # =========================================================
-# TODAY BRAND SUMMARY
-# =========================================================
-
-brand_summary = build_summary(
-    coco_df,
-    "Brand Name"
-)
-
-print("=" * 60)
-print("TODAY BRAND SUMMARY")
-print("=" * 60)
-
-print(brand_summary.round(2))
-
-push(
-    "Dashboard_Brand",
-    brand_summary.round(2)
-)
-
-# =========================================================
-# PUSH BRAND SUMMARY
-# =========================================================
-
-push(
-    "Dashboard_Brand",
-    brand_summary.round(2)
-)
-
-# =========================================================
-# BRAND LW GROWTH
-# =========================================================
-
-brand_summary = add_growth(
-    brand_summary,
-    lw_df,
-    "Brand Name",
-    "LW"
-)
-
-print("="*60)
-print("BRAND LW GROWTH")
-print("="*60)
-
-print(
-    brand_lw.round(2)
-)
-
-push(
-    "Dashboard_Brand_LW",
-    brand_lw.round(2)
-)
-
-
-# =========================================================
-# BRAND L2W GROWTH
-# =========================================================
-
-brand_l2w = growth_summary(
-    coco_df,
-    l2w_df,
-    "Brand Name",
-    "L2W"
-)
-
-push(
-    "Dashboard_Brand_L2W",
-    brand_l2w
-)
-
-# =========================================================
 # UNIVERSAL GROWTH CALCULATOR
 # =========================================================
 
@@ -549,6 +479,79 @@ def add_growth(current_df, compare_df, column, suffix):
 
     return current_df
 
+
+# =========================================================
+# TODAY BRAND SUMMARY
+# =========================================================
+
+brand_summary = build_summary(
+    coco_df,
+    "Brand Name"
+)
+
+print("=" * 60)
+print("TODAY BRAND SUMMARY")
+print("=" * 60)
+
+print(brand_summary.round(2))
+
+push(
+    "Dashboard_Brand",
+    brand_summary.round(2)
+)
+
+# =========================================================
+# PUSH BRAND SUMMARY
+# =========================================================
+
+push(
+    "Dashboard_Brand",
+    brand_summary.round(2)
+)
+
+# =========================================================
+# BRAND LW GROWTH
+# =========================================================
+
+brand_summary = add_growth(
+    brand_summary.copy(),
+    lw_df,
+    "Brand Name",
+    "LW"
+)
+
+print("="*60)
+print("BRAND LW GROWTH")
+print("="*60)
+
+print(
+    brand_lw.round(2)
+)
+
+push(
+    "Dashboard_Brand_LW",
+    brand_lw.round(2)
+)
+
+
+# =========================================================
+# BRAND L2W GROWTH
+# =========================================================
+
+brand_l2w = add_growth(
+    brand_summary.copy(),
+    coco_df,
+    l2w_df,
+    "Brand Name",
+    "L2W"
+)
+
+push(
+    "Dashboard_Brand_L2W",
+    brand_l2w
+)
+
+
 # =========================================================
 # TODAY SOURCE SUMMARY
 # =========================================================
@@ -582,7 +585,7 @@ push(
 # =========================================================
 
 source_summary = add_growth(
-    source_summary,
+    source_summary.copy(),
     lw_df,
     "Source",
     "LW"
@@ -604,7 +607,7 @@ push(
 # =========================================================
 
 source_summary = add_growth(
-    source_summary,
+    source_summary.copy(),
     l2w_df,
     "Source",
     "L2W"
@@ -657,7 +660,7 @@ push(
 # =========================================================
 
 branch_summary = add_growth(
-    branch_summary,
+    branch_summary.copy(),
     lw_df,
     "Branch",
     "LW"
@@ -680,7 +683,7 @@ push(
 # =========================================================
 
 branch_summary = add_growth(
-    branch_summary,
+    branch_summary.copy(),
     l2w_df,
     "Branch",
     "L2W"
@@ -759,7 +762,7 @@ push(
 # =========================================================
 
 session_summary = add_growth(
-    session_summary,
+    session_summary.copy(),
     lw_df,
     "Session",
     "LW"
@@ -781,7 +784,7 @@ push(
 # =========================================================
 
 session_summary = add_growth(
-    session_summary,
+    session_summary.copy(),
     l2w_df,
     "Session",
     "L2W"
@@ -832,7 +835,7 @@ push(
 # =========================================================
 
 region_summary = add_growth(
-    region_summary,
+    region_summary.copy(),
     lw_df,
     "Region",
     "LW"
@@ -854,7 +857,7 @@ push(
 # =========================================================
 
 region_summary = add_growth(
-    region_summary,
+    region_summary.copy(),
     l2w_df,
     "Region",
     "L2W"
