@@ -171,6 +171,28 @@ print("MoM Rows       :", len(mom_df))
 print("LY Rows        :", len(ly_df))
 
 # =========================================================
+# STORE TYPE SPLIT
+# =========================================================
+
+pan_df = today_df.copy()
+
+coco_df = today_df[
+    today_df["Store Type"] == "COCO"
+].copy()
+
+fofo_df = today_df[
+    today_df["Store Type"] == "FOFO"
+].copy()
+
+print("=" * 60)
+print("STORE TYPE")
+print("=" * 60)
+
+print("PAN INDIA :", len(pan_df))
+print("COCO      :", len(coco_df))
+print("FOFO      :", len(fofo_df))
+
+# =========================================================
 # KPI SUMMARY
 # =========================================================
 
@@ -208,25 +230,43 @@ def get_kpi(df):
     }
 
 
-today_kpi = get_kpi(today_df)
+pan_kpi = get_kpi(pan_df)
+coco_kpi = get_kpi(coco_df)
+fofo_kpi = get_kpi(fofo_df)
 lw_kpi = get_kpi(lw_df)
 l2w_kpi = get_kpi(l2w_df)
 mom_kpi = get_kpi(mom_df)
 ly_kpi = get_kpi(ly_df)
 
-print("=" * 60)
-print("TODAY KPI")
-print("=" * 60)
+print("="*70)
+print("PAN INDIA vs COCO vs FOFO")
+print("="*70)
 
-for key, value in today_kpi.items():
-    print(f"{key:12} : {value}")
+kpis = [
+    "Gross",
+    "Net",
+    "Discount",
+    "Orders",
+    "Qty",
+    "AOV",
+    "Dis %"
+]
+
+for k in kpis:
+
+    print(
+        f"{k:<12}"
+        f" PAN={pan_kpi[k]}"
+        f" | COCO={coco_kpi[k]}"
+        f" | FOFO={fofo_kpi[k]}"
+    )
 
 # =========================================================
 # BRAND SUMMARY
 # =========================================================
 
 brand_summary = (
-    today_df
+    coco_df
     .groupby("Brand Name")
     .agg(
         Gross=("Gross Sales", "sum"),
@@ -273,7 +313,7 @@ print(
 # =========================================================
 
 source_summary = (
-    today_df
+    coco_df
     .groupby("Source")
     .agg(
         Gross=("Gross Sales", "sum"),
@@ -318,7 +358,7 @@ print(source_summary.round(2))
 # =========================================================
 
 branch_summary = (
-    today_df
+    coco_df
     .groupby("Branch")
     .agg(
         Gross=("Gross Sales","sum"),
@@ -364,7 +404,7 @@ print(branch_summary.round(2))
 # =========================================================
 
 session_summary = (
-    today_df
+    coco_df
     .groupby("Session")
     .agg(
         Gross=("Gross Sales", "sum"),
@@ -425,7 +465,7 @@ print(session_summary.round(2))
 # =========================================================
 
 region_summary = (
-    today_df
+    coco_df
     .groupby("Region")
     .agg(
         Gross=("Gross Sales","sum"),
