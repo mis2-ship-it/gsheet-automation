@@ -31,57 +31,6 @@ def headers():
         "x-api-token": get_token(),
         "content-type": "application/json"
     }
-# =========================================================
-# 🧠 CANCELLATION GROUPING
-# =========================================================
-def classify_reason(reason):
-
-    reason = str(reason).lower()
-
-    # Store Closed
-    if any(x in reason for x in [
-        "closed",
-        "restaurant is now closed",
-        "store closed"
-    ]):
-        return "Store Closed"
-
-    # Store Busy / Delay
-    elif any(x in reason for x in [
-        "running late",
-        "busy",
-        "delay",
-        "preparation"
-    ]):
-        return "Store Busy"
-
-    # Out of Stock
-    elif any(x in reason for x in [
-        "out of stock",
-        "not available",
-        "unavailable",
-        "item unavailable"
-    ]):
-        return "Out of Stock"
-
-    # Customer Cancelled
-    elif any(x in reason for x in [
-        "customer",
-        "cancelled by customer"
-    ]):
-        return "Customer Cancelled"
-
-    # Payment Issues
-    elif any(x in reason for x in [
-        "payment",
-        "gateway",
-        "transaction",
-        "declined"
-    ]):
-        return "Payment Issue"
-
-    else:
-        return "Other"
 
 # =========================================================
 # 🔐 GOOGLE SHEETS
@@ -99,13 +48,8 @@ spreadsheet = client.open("Cancellation Dashboard")
 
 raw_ws = spreadsheet.worksheet("Cancellation_Tracker")
 try:
-
-    alert_ws = spreadsheet.worksheet(
-        "Alert_History"
-    )
-
+    alert_ws = spreadsheet.worksheet("Alert_History")
 except:
-
     alert_ws = spreadsheet.add_worksheet(
         title="Alert_History",
         rows=100000,
@@ -118,7 +62,6 @@ reason_data = reason_ws.get_all_records()
 reason_map_df = pd.DataFrame(reason_data)
 
 print("✅ Reason Map Loaded:", len(reason_map_df))
-
 print("✅ Google Connected")
 
 # =========================================================
@@ -161,14 +104,8 @@ print("🏪 Branch count:", len(branches))
 df_list = []
 
 for branch in branches:
-
     try:
-
-        # =====================================================
-        # ⏰ LAST 5 MINUTES WINDOW
-        # =====================================================
         to_time = datetime.utcnow()
-
         from_time = to_time - timedelta(minutes=5)
 
         from_time_str = from_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -176,116 +113,71 @@ for branch in branches:
 
         print(f"🔍 Fetching {branch} | {from_time_str} → {to_time_str}")
 
-        # =====================================================
-        # 📡 API CALL
-        # =====================================================
         r = requests.get(
-        "https://api.ristaapps.com/v1/sales/page",
-        headers=headers(),
-        params={
-            "branch": branch,
-            "day": today,
-            "fromDate": from_time_str,
-            "toDate": to_time_str,
-            "page": 1,
-            "pageSize": 500,
-            "sort": "desc"
-        },
-        timeout=30
-    )
+            "https://api.ristaapps.com/v1/sales/page",
+            headers=headers(),
+            params={
+                "branch": branch,
+                "day": today,
+                "fromDate": from_time_str,
+                "toDate": to_time_str,
+                "page": 1,
+                "pageSize": 500,
+                "sort": "desc"
+            },
+            timeout=30
+        )
 
-        # =====================================================
-        # ❌ STATUS CHECK
-        # =====================================================
         if r.status_code != 200:
-
             print(f"❌ API Error {branch}: {r.status_code}")
-            print(r.text)
-
             continue
 
-        # =====================================================
-        # 📦 RESPONSE
-        # =====================================================
         resp = r.json()
-
         data = []
 
-        # CASE 1 → DICT RESPONSE
         if isinstance(resp, dict):
-
-            # /sales/page format
             if "data" in resp:
-
                 if isinstance(resp["data"], dict):
-
                     data = resp["data"].get("rows", [])
-
                 elif isinstance(resp["data"], list):
-
                     data = resp["data"]
-
-        # CASE 2 → LIST RESPONSE
         elif isinstance(resp, list):
-
             data = resp
 
-        # =====================================================
-        # 📊 DATAFRAME
-        # =====================================================
         if data:
-
             temp_df = pd.json_normalize(data)
-
-            # Add branchName if missing
             if "branchName" not in temp_df.columns:
-
                 temp_df["branchName"] = branch
-
             df_list.append(temp_df)
-
             print(f"✅ {branch} → {len(temp_df)} rows")
-
         else:
-
             print(f"⚠️ No data → {branch}")
 
     except Exception as e:
-
         print(f"❌ Error {branch}: {e}")
 
 # =========================================================
 # 🔗 COMBINE ALL DATA
 # =========================================================
 if not df_list:
-
     print("❌ No data fetched")
     exit()
 
-df = pd.concat(df_list, ignore_index=True)
-
+df = pd.concat(df_list, ignore_ignore=True)
 print("✅ Total rows fetched:", len(df))
 
 # =========================================================
 # 🔻 FILTER CANCELLED ONLY
 # =========================================================
 status_col = None
-
-possible_status_cols = [
-    "status",
-    "orderStatus",
-    "invoiceStatus"
-]
+possible_status_cols = ["status", "orderStatus", "invoiceStatus"]
 
 for col in possible_status_cols:
-
     if col in df.columns:
-
         status_col = col
         break
 
 if not status_col:
-
     print("❌ Status column not found")
     print(df.columns.tolist())
     exit()
@@ -300,26 +192,36 @@ cancel_df = df[
 print("🚨 Cancellation Found:", len(cancel_df))
 
 # =========================================================
-# 🧾 CANCEL REASON EXTRACTION
+# 🧾 CANCEL REASON EXTRACTION (RISTA API)
 # =========================================================
-
 if "statusInfo.reason" in cancel_df.columns:
-
     cancel_df["cancelReason"] = (
         cancel_df["statusInfo.reason"]
         .fillna("")
         .astype(str)
         .str.strip()
     )
-
 else:
     cancel_df["cancelReason"] = ""
 
-# Debug check
-print(cancel_df[
-    ["invoiceNumber", "cancelReason"]
-].head())
+# =========================================================
+# 🔍 PRINT ALL RISTA CANCELLATION REASONS
+# =========================================================
+print("\n" + "="*50)
+print("📌 UNIQUE CANCELLATION REASONS FROM RISTA API:")
+print("="*50)
 
+unique_reasons = cancel_df["cancelReason"].value_counts()
+
+if unique_reasons.empty:
+    print("⚠️ No cancellation reasons found in this run.")
+else:
+    for reason, count in unique_reasons.items():
+        print(f" • '{reason}' -> Count: {count}")
+
+print("="*50 + "\n")
+
+# Rest of your script continues...
 # =========================================================
 # 🔁 STANDARDIZE INVOICE NUMBER
 # =========================================================
