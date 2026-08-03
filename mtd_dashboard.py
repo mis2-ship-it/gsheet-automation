@@ -32,6 +32,8 @@ client = gspread.authorize(creds)
 
 sheet_url = "https://docs.google.com/spreadsheets/d/1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY/edit"
 
+spreadsheet = client.open_by_url(sheet_url)
+
 print("✅ Connected to Google Sheet")
 
 # =========================================================
