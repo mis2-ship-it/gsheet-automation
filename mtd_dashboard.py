@@ -616,39 +616,61 @@ push(
 )
 
 print(branch_l2w.round(2))
+# =========================================================
+# TODAY SESSION SUMMARY
+# =========================================================
+
+session_summary = build_summary(
+    coco_df,
+    "Session"
+)
+
+# ---------------------------------------------
+# Replace Blank Sessions
+# ---------------------------------------------
+session_summary["Session"] = (
+    session_summary["Session"]
+    .fillna("Others")
+    .replace("", "Others")
+)
+
+# ---------------------------------------------
+# Session Sort Order
+# ---------------------------------------------
+session_order = {
+    "Breakfast": 1,
+    "Lunch": 2,
+    "Snacks": 3,
+    "Dinner": 4,
+    "Late Night": 5,
+    "Others": 99
+}
+
+session_summary["Sort"] = (
+    session_summary["Session"]
+    .map(session_order)
+    .fillna(99)
+)
+
+session_summary = (
+    session_summary
+    .sort_values("Sort")
+    .drop(columns="Sort")
+    .reset_index(drop=True)
+)
+
+print("=" * 60)
+print("TODAY SESSION SUMMARY")
+print("=" * 60)
+
+print(session_summary.round(2))
 
 push(
     "Dashboard_Session",
     session_summary.round(2)
 )
 
-session_lw = add_growth(
-    session_summary.copy(),
-    lw_df,
-    "Session",
-    "LW"
-)
-
-push(
-    "Dashboard_Session_LW",
-    session_lw.round(2)
-)
-
-print(session_lw.round(2))
-
-session_l2w = add_growth(
-    session_summary.copy(),
-    l2w_df,
-    "Session",
-    "L2W"
-)
-
-push(
-    "Dashboard_Session_L2W",
-    session_l2w.round(2)
-)
-
-print(session_l2w.round(2))
+# Region Summary
 
 region_summary = build_summary(
     coco_df,
