@@ -73,14 +73,23 @@ final_df["Date"] = pd.to_datetime(
     final_df["Date"]
 )
 
-today = final_df["Date"].max()
+# =========================================================
+# BUSINESS DATE
+# =========================================================
+
+now = datetime.now()
+
+# Business day starts at 09:00 AM
+if now.hour < 9:
+    business_day = (now - timedelta(days=1)).date()
+else:
+    business_day = now.date()
+
+today = pd.Timestamp(business_day)
 
 last_week = today - timedelta(days=7)
-
 last_2_week = today - timedelta(days=14)
-
 last_month = today - pd.DateOffset(months=1)
-
 last_year = today - pd.DateOffset(years=1)
 
 print("=" * 60)
