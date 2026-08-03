@@ -492,7 +492,6 @@ brand_summary = build_summary(
 print("=" * 60)
 print("TODAY BRAND SUMMARY")
 print("=" * 60)
-
 print(brand_summary.round(2))
 
 push(
@@ -501,353 +500,190 @@ push(
 )
 
 # =========================================================
-# BRAND LW GROWTH
+# BRAND LW
 # =========================================================
 
-brand_summary = add_growth(
+brand_lw = add_growth(
     brand_summary.copy(),
     lw_df,
     "Brand Name",
     "LW"
 )
 
-print("="*60)
+print("=" * 60)
 print("BRAND LW GROWTH")
-print("="*60)
-
-print(
-    brand_lw.round(2)
-)
+print("=" * 60)
+print(brand_lw.round(2))
 
 push(
     "Dashboard_Brand_LW",
     brand_lw.round(2)
 )
 
-
 # =========================================================
-# BRAND L2W GROWTH
+# BRAND L2W
 # =========================================================
 
 brand_l2w = add_growth(
     brand_summary.copy(),
-    coco_df,
     l2w_df,
     "Brand Name",
     "L2W"
 )
 
-push(
-    "Dashboard_Brand_L2W",
-    brand_l2w
-)
-
-print("="*60)
+print("=" * 60)
 print("BRAND L2W GROWTH")
-print("="*60)
-
-print(
-    brand_l2w.round(2)
-)
+print("=" * 60)
+print(brand_l2w.round(2))
 
 push(
     "Dashboard_Brand_L2W",
     brand_l2w.round(2)
 )
-
-
-# =========================================================
-# TODAY SOURCE SUMMARY
-# =========================================================
 
 source_summary = build_summary(
     coco_df,
     "Source"
 )
 
-print("=" * 60)
-print("TODAY SOURCE SUMMARY")
-print("=" * 60)
-
-print(source_summary.round(2))
-
 push(
     "Dashboard_Source",
     source_summary.round(2)
 )
 
-
-# =========================================================
-# SOURCE LW GROWTH
-# =========================================================
-
-source_summary = add_growth(
+source_lw = add_growth(
     source_summary.copy(),
     lw_df,
     "Source",
     "LW"
 )
 
-print("="*60)
-print("SOURCE LW GROWTH")
-print("="*60)
-
-print(source_lw.round(2))
-
 push(
     "Dashboard_Source_LW",
     source_lw.round(2)
 )
-# =========================================================
-# SOURCE L2W GROWTH
-# =========================================================
 
-source_summary = add_growth(
+print(source_lw.round(2))
+
+source_l2w = add_growth(
     source_summary.copy(),
     l2w_df,
     "Source",
     "L2W"
 )
-
-print("="*60)
-print("SOURCE L2W GROWTH")
-print("="*60)
-
-print(source_l2w.round(2))
 
 push(
     "Dashboard_Source_L2W",
     source_l2w.round(2)
 )
 
-
-# =========================================================
-# TODAY BRANCH SUMMARY
-# =========================================================
+print(source_l2w.round(2))
 
 branch_summary = build_summary(
     coco_df,
     "Branch"
 )
 
-print("=" * 60)
-print("TODAY BRANCH SUMMARY")
-print("=" * 60)
-
-print(branch_summary.round(2))
-
 push(
     "Dashboard_Branch",
     branch_summary.round(2)
 )
 
-
-# =========================================================
-# BRANCH LW GROWTH
-# =========================================================
-
-branch_summary = add_growth(
+branch_lw = add_growth(
     branch_summary.copy(),
     lw_df,
     "Branch",
     "LW"
 )
-
-print("="*60)
-print("BRANCH LW GROWTH")
-print("="*60)
-
-print(branch_lw.round(2))
 
 push(
     "Dashboard_Branch_LW",
     branch_lw.round(2)
 )
 
+print(branch_lw.round(2))
 
-# =========================================================
-# BRANCH L2W GROWTH
-# =========================================================
-
-branch_summary = add_growth(
+branch_l2w = add_growth(
     branch_summary.copy(),
     l2w_df,
     "Branch",
     "L2W"
 )
 
-print("="*60)
-print("BRANCH L2W GROWTH")
-print("="*60)
-
-print(branch_l2w.round(2))
-
 push(
     "Dashboard_Branch_L2W",
     branch_l2w.round(2)
 )
-# =========================================================
-# TODAY SESSION SUMMARY
-# =========================================================
 
-session_summary = build_summary(
-    coco_df,
-    "Session"
-)
-
-session_order = [
-    "Breakfast",
-    "Lunch",
-    "Snacks",
-    "Dinner",
-    "Late Night"
-]
-
-session_summary["Session"] = session_summary["Session"].fillna("Others")
-
-session_summary["Sort"] = (
-    session_summary["Session"]
-    .map({
-        "Breakfast": 1,
-        "Lunch": 2,
-        "Snacks": 3,
-        "Dinner": 4,
-        "Late Night": 5
-    })
-    .fillna(99)
-)
-
-session_summary = (
-    session_summary
-    .sort_values("Sort")
-    .drop(columns="Sort")
-    .reset_index(drop=True)
-)
-
-print("=" * 60)
-print("TODAY SESSION SUMMARY")
-print("=" * 60)
-
-print(session_summary.round(2))
+print(branch_l2w.round(2))
 
 push(
     "Dashboard_Session",
     session_summary.round(2)
 )
 
-
-
-# =========================================================
-# SESSION LW GROWTH
-# =========================================================
-
-session_summary = add_growth(
+session_lw = add_growth(
     session_summary.copy(),
     lw_df,
     "Session",
     "LW"
 )
-
-print("="*60)
-print("SESSION LW GROWTH")
-print("="*60)
-
-print(session_lw.round(2))
 
 push(
     "Dashboard_Session_LW",
     session_lw.round(2)
 )
 
-# =========================================================
-# SESSION L2W GROWTH
-# =========================================================
+print(session_lw.round(2))
 
-session_summary = add_growth(
+session_l2w = add_growth(
     session_summary.copy(),
     l2w_df,
     "Session",
     "L2W"
 )
 
-print("="*60)
-print("SESSION L2W GROWTH")
-print("="*60)
-
-print(session_l2w.round(2))
-
 push(
     "Dashboard_Session_L2W",
     session_l2w.round(2)
 )
 
-
-
-# =========================================================
-# TODAY REGION SUMMARY
-# =========================================================
+print(session_l2w.round(2))
 
 region_summary = build_summary(
     coco_df,
     "Region"
 )
 
-print("=" * 60)
-print("TODAY REGION SUMMARY")
-print("=" * 60)
-
-print(region_summary.round(2))
-
 push(
     "Dashboard_Region",
     region_summary.round(2)
 )
 
-
-# =========================================================
-# REGION LW GROWTH
-# =========================================================
-
-region_summary = add_growth(
+region_lw = add_growth(
     region_summary.copy(),
     lw_df,
     "Region",
     "LW"
 )
 
-print("="*60)
-print("REGION LW GROWTH")
-print("="*60)
-
-print(region_lw.round(2))
-
 push(
     "Dashboard_Region_LW",
     region_lw.round(2)
 )
 
+print(region_lw.round(2))
 
-# =========================================================
-# REGION L2W GROWTH
-# =========================================================
-
-region_summary = add_growth(
+region_l2w = add_growth(
     region_summary.copy(),
     l2w_df,
     "Region",
     "L2W"
 )
 
-print("="*60)
-print("REGION L2W GROWTH")
-print("="*60)
-
-print(region_l2w.round(2))
-
 push(
     "Dashboard_Region_L2W",
     region_l2w.round(2)
 )
 
-
-
+print(region_l2w.round(2))
