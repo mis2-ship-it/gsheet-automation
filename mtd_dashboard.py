@@ -501,15 +501,6 @@ push(
 )
 
 # =========================================================
-# PUSH BRAND SUMMARY
-# =========================================================
-
-push(
-    "Dashboard_Brand",
-    brand_summary.round(2)
-)
-
-# =========================================================
 # BRAND LW GROWTH
 # =========================================================
 
@@ -549,6 +540,19 @@ brand_l2w = add_growth(
 push(
     "Dashboard_Brand_L2W",
     brand_l2w
+)
+
+print("="*60)
+print("BRAND L2W GROWTH")
+print("="*60)
+
+print(
+    brand_l2w.round(2)
+)
+
+push(
+    "Dashboard_Brand_L2W",
+    brand_l2w.round(2)
 )
 
 
