@@ -284,6 +284,60 @@ kpi_table = pd.DataFrame({
 print(kpi_table)
 
 # =========================================================
+# GENERIC GROWTH SUMMARY
+# =========================================================
+
+def growth_summary(current_df, previous_df, group_col, period_name):
+
+    curr = (
+        current_df
+        .groupby(group_col)
+        .agg(
+            Gross=("Gross Sales","sum"),
+            Net=("Net Sales","sum"),
+            Orders=("Orders","sum")
+        )
+        .reset_index()
+    )
+
+    prev = (
+        previous_df
+        .groupby(group_col)
+        .agg(
+            Gross_Previous=("Gross Sales","sum"),
+            Net_Previous=("Net Sales","sum"),
+            Orders_Previous=("Orders","sum")
+        )
+        .reset_index()
+    )
+
+    df = curr.merge(
+        prev,
+        on=group_col,
+        how="left"
+    ).fillna(0)
+
+    df[f"{period_name} Gross %"] = (
+        (df["Gross"] - df["Gross_Previous"])
+        /
+        df["Gross_Previous"].replace(0,1)
+    ) * 100
+
+    df[f"{period_name} Net %"] = (
+        (df["Net"] - df["Net_Previous"])
+        /
+        df["Net_Previous"].replace(0,1)
+    ) * 100
+
+    df[f"{period_name} Orders %"] = (
+        (df["Orders"] - df["Orders_Previous"])
+        /
+        df["Orders_Previous"].replace(0,1)
+    ) * 100
+
+    return df.round(2)
+
+# =========================================================
 # BRAND SUMMARY
 # =========================================================
 
@@ -331,6 +385,124 @@ print(
 )
 
 # =========================================================
+# PUSH BRAND SUMMARY
+# =========================================================
+
+push_sheet(
+    "Dashboard_Brand",
+    brand_summary.round(2)
+)
+
+# =========================================================
+# BRAND LW GROWTH
+# =========================================================
+
+brand_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Brand Name"
+)
+
+print("="*60)
+print("BRAND LW GROWTH")
+print("="*60)
+
+print(
+    brand_lw.round(2)
+)
+
+push_sheet(
+    "Dashboard_Brand_LW",
+    brand_lw.round(2)
+)
+
+# =========================================================
+# SOURCE LW GROWTH
+# =========================================================
+
+source_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Source",
+    "LW"
+)
+
+print("=" * 60)
+print("SOURCE LW")
+print("=" * 60)
+
+print(source_lw)
+
+push_sheet(
+    "Dashboard_Source_LW",
+    source_lw
+)
+# =========================================================
+# REGION LW GROWTH
+# =========================================================
+
+region_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Region",
+    "LW"
+)
+
+print("=" * 60)
+print("REGION LW")
+print("=" * 60)
+
+print(region_lw)
+
+push_sheet(
+    "Dashboard_Region_LW",
+    region_lw
+)
+
+# =========================================================
+# SESSION LW GROWTH
+# =========================================================
+
+session_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Session",
+    "LW"
+)
+
+print("=" * 60)
+print("SESSION LW")
+print("=" * 60)
+
+print(session_lw)
+
+push_sheet(
+    "Dashboard_Session_LW",
+    session_lw
+)
+
+# =========================================================
+# BRANCH LW GROWTH
+# =========================================================
+
+branch_lw = growth_summary(
+    coco_df,
+    lw_df,
+    "Branch",
+    "LW"
+)
+
+print("=" * 60)
+print("BRANCH LW")
+print("=" * 60)
+
+print(branch_lw)
+
+push_sheet(
+    "Dashboard_Branch_LW",
+    branch_lw
+)
+# =========================================================
 # SOURCE SUMMARY
 # =========================================================
 
@@ -374,6 +546,15 @@ print("TODAY SOURCE SUMMARY")
 print("=" * 60)
 
 print(source_summary.round(2))
+
+# =========================================================
+# PUSH SOURCE SUMMARY
+# =========================================================
+
+push_sheet(
+    "Dashboard_Source",
+    source_summary.round(2)
+)
 
 # =========================================================
 # BRANCH SUMMARY
@@ -425,6 +606,16 @@ print(
     .round(2)
 )
 
+# =========================================================
+# PUSH BRANCH SUMMARY
+# =========================================================
+
+push_sheet(
+    "Dashboard_Branch",
+    branch_summary
+        .head(20)
+        .round(2)
+)
 # =========================================================
 # SESSION SUMMARY
 # =========================================================
@@ -504,6 +695,15 @@ print("=" * 60)
 print(session_summary.round(2))
 
 # =========================================================
+# PUSH SESSION SUMMARY
+# =========================================================
+
+push_sheet(
+    "Dashboard_Session",
+    session_summary.round(2)
+)
+
+# =========================================================
 # REGION SUMMARY
 # =========================================================
 
@@ -548,5 +748,40 @@ print("TODAY REGION SUMMARY")
 print("="*60)
 
 print(region_summary.round(2))
+
+# =========================================================
+# PUSH REGION SUMMARY
+# =========================================================
+
+push_sheet(
+    "Dashboard_Region",
+    region_summary.round(2)
+)
+
+# =========================================================
+# PUSH DATAFRAME TO GOOGLE SHEET
+# =========================================================
+
+def push_sheet(sheet_name, df):
+
+    try:
+        ws = spreadsheet.worksheet(sheet_name)
+
+    except:
+
+        ws = spreadsheet.add_worksheet(
+            title=sheet_name,
+            rows="5000",
+            cols="30"
+        )
+
+    ws.clear()
+
+    ws.update(
+        [df.columns.tolist()] +
+        df.astype(str).values.tolist()
+    )
+
+    print(f"✅ Updated : {sheet_name}")
 
 
