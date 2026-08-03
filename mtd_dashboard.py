@@ -267,3 +267,48 @@ print("=" * 60)
 print(
     brand_summary.round(2)
 )
+
+# =========================================================
+# SOURCE SUMMARY
+# =========================================================
+
+source_summary = (
+    today_df
+    .groupby("Source")
+    .agg(
+        Gross=("Gross Sales", "sum"),
+        Net=("Net Sales", "sum"),
+        Discount=("Discount", "sum"),
+        Orders=("Orders", "sum")
+    )
+    .reset_index()
+)
+
+source_summary["AOV"] = (
+    source_summary["Net"]
+    /
+    source_summary["Orders"].replace(0, 1)
+)
+
+source_summary["Dis %"] = (
+    source_summary["Discount"]
+    /
+    source_summary["Gross"].replace(0, 1)
+) * 100
+
+source_summary["Contribution %"] = (
+    source_summary["Net"]
+    /
+    source_summary["Net"].sum()
+) * 100
+
+source_summary = source_summary.sort_values(
+    "Net",
+    ascending=False
+)
+
+print("=" * 60)
+print("TODAY SOURCE SUMMARY")
+print("=" * 60)
+
+print(source_summary.round(2))
