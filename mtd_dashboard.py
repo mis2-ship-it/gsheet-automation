@@ -388,7 +388,7 @@ print(
 # PUSH BRAND SUMMARY
 # =========================================================
 
-push_sheet(
+push(
     "Dashboard_Brand",
     brand_summary.round(2)
 )
@@ -411,7 +411,7 @@ print(
     brand_lw.round(2)
 )
 
-push_sheet(
+push(
     "Dashboard_Brand_LW",
     brand_lw.round(2)
 )
@@ -427,7 +427,7 @@ branch_lw = growth_summary(
     "LW"
 )
 
-push_sheet(
+push(
     "Dashboard_Branch_LW",
     branch_lw
 )
@@ -443,7 +443,7 @@ brand_l2w = growth_summary(
     "L2W"
 )
 
-push_sheet(
+push(
     "Dashboard_Brand_L2W",
     brand_l2w
 )
@@ -464,7 +464,7 @@ print("=" * 60)
 
 print(source_lw)
 
-push_sheet(
+push(
     "Dashboard_Source_LW",
     source_lw
 )
@@ -486,7 +486,7 @@ print("=" * 60)
 
 print(source_l2w)
 
-push_sheet(
+push(
     "Dashboard_Source_L2W",
     source_l2w
 )
@@ -507,7 +507,7 @@ print("=" * 60)
 
 print(region_lw)
 
-push_sheet(
+push(
     "Dashboard_Region_LW",
     region_lw
 )
@@ -529,7 +529,7 @@ print("=" * 60)
 
 print(region_l2w)
 
-push_sheet(
+push(
     "Dashboard_Region_L2W",
     region_l2w
 )
@@ -550,7 +550,7 @@ print("=" * 60)
 
 print(session_lw)
 
-push_sheet(
+push(
     "Dashboard_Session_LW",
     session_lw
 )
@@ -572,7 +572,7 @@ print("=" * 60)
 
 print(session_l2w)
 
-push_sheet(
+push(
     "Dashboard_Session_L2W",
     session_l2w
 )
@@ -593,7 +593,7 @@ print("=" * 60)
 
 print(branch_lw)
 
-push_sheet(
+push(
     "Dashboard_Branch_LW",
     branch_lw
 )
@@ -615,7 +615,7 @@ print("=" * 60)
 
 print(branch_l2w)
 
-push_sheet(
+push(
     "Dashboard_Branch_L2W",
     branch_l2w
 )
@@ -668,7 +668,7 @@ print(source_summary.round(2))
 # PUSH SOURCE SUMMARY
 # =========================================================
 
-push_sheet(
+push(
     "Dashboard_Source",
     source_summary.round(2)
 )
@@ -727,7 +727,7 @@ print(
 # PUSH BRANCH SUMMARY
 # =========================================================
 
-push_sheet(
+push(
     "Dashboard_Branch",
     branch_summary
         .head(20)
@@ -815,7 +815,7 @@ print(session_summary.round(2))
 # PUSH SESSION SUMMARY
 # =========================================================
 
-push_sheet(
+push(
     "Dashboard_Session",
     session_summary.round(2)
 )
@@ -870,7 +870,7 @@ print(region_summary.round(2))
 # PUSH REGION SUMMARY
 # =========================================================
 
-push_sheet(
+push(
     "Dashboard_Region",
     region_summary.round(2)
 )
@@ -879,7 +879,7 @@ push_sheet(
 # PUSH DATAFRAME TO GOOGLE SHEET
 # =========================================================
 
-def push_sheet(sheet_name, df):
+def push(sheet_name, df):
 
     try:
         ws = spreadsheet.worksheet(sheet_name)
