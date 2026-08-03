@@ -24,10 +24,44 @@ print(f"📂 CSV Files Found : {len(csv_files)}")
 if not csv_files:
     raise Exception("❌ No Monthly CSV Files Found")
 
-# Pick newest file by modified time
+import re
+from datetime import datetime
+
+# =========================================================
+# PICK LATEST FILE BY FILE NAME
+# =========================================================
+
+month_map = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12,
+}
+
+def extract_month_year(path):
+
+    m = re.search(r"MTD_(\w{3})_(\d{2})\.csv", path.name)
+
+    if not m:
+        return datetime(1900, 1, 1)
+
+    month = month_map[m.group(1)]
+    year = 2000 + int(m.group(2))
+
+    return datetime(year, month, 1)
+
+
 latest_csv = max(
     csv_files,
-    key=lambda x: x.stat().st_mtime
+    key=extract_month_year
 )
 
 print(f"📄 Latest File : {latest_csv}")
