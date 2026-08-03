@@ -44,9 +44,7 @@ def push(sheet_name, df):
 
     try:
         ws = spreadsheet.worksheet(sheet_name)
-
     except:
-
         ws = spreadsheet.add_worksheet(
             title=sheet_name,
             rows="5000",
@@ -55,10 +53,9 @@ def push(sheet_name, df):
 
     ws.clear()
 
-    ws.update(
-        [df.columns.tolist()] +
-        df.astype(str).values.tolist()
-    )
+    data = [df.columns.tolist()] + df.fillna("").values.tolist()
+
+    ws.update(data)
 
     print(f"✅ Updated : {sheet_name}")
 
