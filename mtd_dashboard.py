@@ -125,16 +125,26 @@ final_df = pd.read_csv(
     low_memory=False
 )
 
+# =========================================================
+# CLEAN DATA
+# =========================================================
+
+final_df["Date"] = pd.to_datetime(final_df["Date"])
+
+final_df["Store Type"] = (
+    final_df["Store Type"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
 print("=" * 60)
 print("TOTAL ROWS :", len(final_df))
 print("TOTAL COLUMNS :", len(final_df.columns))
 print("=" * 60)
 
 print(final_df.head())
-
-print("=" * 60)
-print("COLUMN LIST")
-print("=" * 60)
 
 print("=" * 60)
 print("DATE RANGE CHECK")
@@ -147,82 +157,75 @@ print()
 
 print(final_df["Date"].value_counts().sort_index())
 
-# =========================================================
-# DATE PREPARATION
-# =========================================================
+print("=" * 60)
+print("STORE TYPE VALUES (FULL DATA)")
+print("=" * 60)
 
-from datetime import datetime, timedelta
-
-final_df["Date"] = pd.to_datetime(
-    final_df["Date"]
-)
+print(final_df["Store Type"].value_counts(dropna=False))
 
 # =========================================================
 # BUSINESS DATE
 # =========================================================
 
-from datetime import datetime, timedelta
-import pandas as pd
-import pytz
+available_dates = sorted(final_df["Date"].dropna().unique())
 
-IST = pytz.timezone("Asia/Kolkata")
+today = available_dates[-1]
 
-now = datetime.now(IST)
+def nearest_available(target_date):
+    valid = [d for d in available_dates if d <= target_date]
+    return valid[-1] if valid else None
 
-# =========================================================
-# BUSINESS DATE
-# =========================================================
-
-today = final_df["Date"].max()
-
-last_week = today - timedelta(days=7)
-last_2_week = today - timedelta(days=14)
-last_month = today - pd.DateOffset(months=1)
-last_year = today - pd.DateOffset(years=1)
+last_week = nearest_available(today - timedelta(days=7))
+last_2_week = nearest_available(today - timedelta(days=14))
+last_month = nearest_available(today - pd.DateOffset(months=1))
+last_year = nearest_available(today - pd.DateOffset(years=1))
 
 print("=" * 60)
 print("DATE CHECK")
 print("=" * 60)
 
 print("Today      :", today.date())
-print("Last Week  :", last_week.date())
-print("Last 2 Week:", last_2_week.date())
-print("Last Month :", last_month.date())
-print("Last Year  :", last_year.date())
+print("Last Week  :", last_week.date() if last_week is not None else "NA")
+print("Last 2 Week:", last_2_week.date() if last_2_week is not None else "NA")
+print("Last Month :", last_month.date() if last_month is not None else "NA")
+print("Last Year  :", last_year.date() if last_year is not None else "NA")
 
 # =========================================================
 # FILTER DATA
 # =========================================================
 
-today_df = final_df[
-    final_df["Date"] == today
-].copy()
+today_df = final_df[final_df["Date"] == today].copy()
 
-lw_df = final_df[
-    final_df["Date"] == last_week
-].copy()
+lw_df = (
+    final_df[final_df["Date"] == last_week].copy()
+    if last_week is not None else pd.DataFrame(columns=final_df.columns)
+)
 
-l2w_df = final_df[
-    final_df["Date"] == last_2_week
-].copy()
+l2w_df = (
+    final_df[final_df["Date"] == last_2_week].copy()
+    if last_2_week is not None else pd.DataFrame(columns=final_df.columns)
+)
 
-mom_df = final_df[
-    final_df["Date"] == last_month
-].copy()
+mom_df = (
+    final_df[final_df["Date"] == last_month].copy()
+    if last_month is not None else pd.DataFrame(columns=final_df.columns)
+)
 
-ly_df = final_df[
-    final_df["Date"] == last_year
-].copy()
+ly_df = (
+    final_df[final_df["Date"] == last_year].copy()
+    if last_year is not None else pd.DataFrame(columns=final_df.columns)
+)
 
 print("=" * 60)
 print("FILTER CHECK")
 print("=" * 60)
 
-print("Today Rows     :", len(today_df))
-print("LW Rows        :", len(lw_df))
-print("L2W Rows       :", len(l2w_df))
-print("MoM Rows       :", len(mom_df))
-print("LY Rows        :", len(ly_df))
+print("Today Rows :", len(today_df))
+print("LW Rows    :", len(lw_df))
+print("L2W Rows   :", len(l2w_df))
+print("MoM Rows   :", len(mom_df))
+print("LY Rows    :", len(ly_df))
+
 # =========================================================
 # STORE TYPE SPLIT
 # =========================================================
@@ -238,7 +241,13 @@ fofo_df = today_df[
 ].copy()
 
 print("=" * 60)
-print("STORE TYPE")
+print("STORE TYPE VALUES (TODAY)")
+print("=" * 60)
+
+print(today_df["Store Type"].value_counts(dropna=False))
+
+print("=" * 60)
+print("STORE TYPE SPLIT")
 print("=" * 60)
 
 print("PAN INDIA :", len(pan_df))
