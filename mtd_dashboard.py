@@ -17,7 +17,16 @@ print("=" * 60)
 
 # ---------------- GOOGLE ---------------- #
 
-creds = Credentials.from_service_account_info(...)
+
+creds = Credentials.from_service_account_info(
+    json.loads(
+        os.environ["GOOGLE_CREDENTIALS"]
+    ),
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
 
 client = gspread.authorize(creds)
 
