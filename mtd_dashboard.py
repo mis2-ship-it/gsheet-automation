@@ -52,7 +52,16 @@ print("=" * 60)
 print("COLUMN LIST")
 print("=" * 60)
 
-print(final_df.columns.tolist())
+print("=" * 60)
+print("DATE RANGE CHECK")
+print("=" * 60)
+
+print("Min Date :", final_df["Date"].min())
+print("Max Date :", final_df["Date"].max())
+
+print()
+
+print(final_df["Date"].value_counts().sort_index())
 
 # =========================================================
 # DATE PREPARATION
