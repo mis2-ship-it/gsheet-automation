@@ -670,6 +670,51 @@ push(
     session_summary.round(2)
 )
 
+# =========================================================
+# SESSION LW GROWTH
+# =========================================================
+
+session_lw = add_growth(
+    session_summary.copy(),
+    lw_df,
+    "Session",
+    "LW"
+)
+
+print("=" * 60)
+print("SESSION LW GROWTH")
+print("=" * 60)
+
+print(session_lw.round(2))
+
+push(
+    "Dashboard_Session_LW",
+    session_lw.round(2)
+)
+
+
+# =========================================================
+# SESSION L2W GROWTH
+# =========================================================
+
+session_l2w = add_growth(
+    session_summary.copy(),
+    l2w_df,
+    "Session",
+    "L2W"
+)
+
+print("=" * 60)
+print("SESSION L2W GROWTH")
+print("=" * 60)
+
+print(session_l2w.round(2))
+
+push(
+    "Dashboard_Session_L2W",
+    session_l2w.round(2)
+)
+
 # Region Summary
 
 region_summary = build_summary(
