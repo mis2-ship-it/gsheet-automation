@@ -83,3 +83,37 @@ print("Last Week  :", last_week.date())
 print("Last 2 Week:", last_2_week.date())
 print("Last Month :", last_month.date())
 print("Last Year  :", last_year.date())
+
+# =========================================================
+# FILTER DATA
+# =========================================================
+
+today_df = final_df[
+    final_df["Date"] == today
+].copy()
+
+lw_df = final_df[
+    final_df["Date"] == last_week
+].copy()
+
+l2w_df = final_df[
+    final_df["Date"] == last_2_week
+].copy()
+
+mom_df = final_df[
+    final_df["Date"] == last_month
+].copy()
+
+ly_df = final_df[
+    final_df["Date"] == last_year
+].copy()
+
+print("=" * 60)
+print("FILTER CHECK")
+print("=" * 60)
+
+print("Today Rows     :", len(today_df))
+print("LW Rows        :", len(lw_df))
+print("L2W Rows       :", len(l2w_df))
+print("MoM Rows       :", len(mom_df))
+print("LY Rows        :", len(ly_df))
