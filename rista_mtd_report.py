@@ -694,7 +694,7 @@ mtd_summary["Discount Bucket"] = pd.cut(
 
 
 # =========================================================
-# SAVE CSV
+# SAVE / UPDATE MONTHLY CSV
 # =========================================================
 
 csv_path.parent.mkdir(
@@ -702,11 +702,77 @@ csv_path.parent.mkdir(
     exist_ok=True
 )
 
-mtd_summary.to_csv(
+# -----------------------------
+# Existing CSV
+# -----------------------------
+
+if csv_path.exists():
+
+    print("📂 Existing Monthly CSV Found")
+
+    old_df = pd.read_csv(
+        csv_path,
+        low_memory=False
+    )
+
+    old_df["Date"] = pd.to_datetime(
+        old_df["Date"]
+    )
+
+    mtd_summary["Date"] = pd.to_datetime(
+        mtd_summary["Date"]
+    )
+
+    # Refresh starts from the earliest date in current pull
+    refresh_from = mtd_summary["Date"].min()
+
+    print("Refreshing From :", refresh_from.date())
+
+    # Keep older records
+    keep_df = old_df[
+        old_df["Date"] < refresh_from
+    ].copy()
+
+    print("Keeping Rows :", len(keep_df))
+    print("Replacing Rows :", len(old_df) - len(keep_df))
+
+    # Remove duplicate columns if any
+    keep_df = keep_df.loc[:, ~keep_df.columns.duplicated()]
+    mtd_summary = mtd_summary.loc[:, ~mtd_summary.columns.duplicated()]
+
+    # Merge
+    final_csv = pd.concat(
+        [keep_df, mtd_summary],
+        ignore_index=True
+    )
+
+    # Remove accidental duplicate rows
+    final_csv = final_csv.drop_duplicates()
+
+else:
+
+    print("🆕 Creating Monthly CSV")
+
+    final_csv = mtd_summary.copy()
+
+# -----------------------------
+# Sort
+# -----------------------------
+
+final_csv = final_csv.sort_values(
+    ["Date", "Branch", "Brand Name"]
+)
+
+# -----------------------------
+# Save
+# -----------------------------
+
+final_csv.to_csv(
     csv_path,
     index=False
 )
 
-print("✅ CSV Saved Successfully")
+print("✅ Monthly CSV Updated")
+print("Total Rows :", len(final_csv))
 
 
