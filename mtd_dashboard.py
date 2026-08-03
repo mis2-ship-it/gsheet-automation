@@ -126,3 +126,54 @@ print("LW Rows        :", len(lw_df))
 print("L2W Rows       :", len(l2w_df))
 print("MoM Rows       :", len(mom_df))
 print("LY Rows        :", len(ly_df))
+
+# =========================================================
+# KPI SUMMARY
+# =========================================================
+
+def get_kpi(df):
+
+    if df.empty:
+
+        return {
+            "Gross": 0,
+            "Net": 0,
+            "Discount": 0,
+            "Orders": 0,
+            "Qty": 0,
+            "AOV": 0,
+            "Dis %": 0
+        }
+
+    gross = df["Gross Sales"].sum()
+    net = df["Net Sales"].sum()
+    discount = df["Discount"].sum()
+    orders = df["Orders"].sum()
+    qty = df["Quantity"].sum()
+
+    aov = net / orders if orders else 0
+    dis_pct = (discount / gross * 100) if gross else 0
+
+    return {
+        "Gross": round(gross, 2),
+        "Net": round(net, 2),
+        "Discount": round(discount, 2),
+        "Orders": int(orders),
+        "Qty": round(qty, 2),
+        "AOV": round(aov, 2),
+        "Dis %": round(dis_pct, 2)
+    }
+
+
+today_kpi = get_kpi(today_df)
+lw_kpi = get_kpi(lw_df)
+l2w_kpi = get_kpi(l2w_df)
+mom_kpi = get_kpi(mom_df)
+ly_kpi = get_kpi(ly_df)
+
+print("=" * 60)
+print("TODAY KPI")
+print("=" * 60)
+
+for key, value in today_kpi.items():
+    print(f"{key:12} : {value}")
