@@ -220,3 +220,50 @@ print("=" * 60)
 
 for key, value in today_kpi.items():
     print(f"{key:12} : {value}")
+
+# =========================================================
+# BRAND SUMMARY
+# =========================================================
+
+brand_summary = (
+    today_df
+    .groupby("Brand Name")
+    .agg(
+        Gross=("Gross Sales", "sum"),
+        Net=("Net Sales", "sum"),
+        Discount=("Discount", "sum"),
+        Orders=("Orders", "sum")
+    )
+    .reset_index()
+)
+
+brand_summary["AOV"] = (
+    brand_summary["Net"]
+    /
+    brand_summary["Orders"].replace(0, 1)
+)
+
+brand_summary["Dis %"] = (
+    brand_summary["Discount"]
+    /
+    brand_summary["Gross"].replace(0, 1)
+) * 100
+
+brand_summary["Contribution %"] = (
+    brand_summary["Net"]
+    /
+    brand_summary["Net"].sum()
+) * 100
+
+brand_summary = brand_summary.sort_values(
+    "Net",
+    ascending=False
+)
+
+print("=" * 60)
+print("TODAY BRAND SUMMARY")
+print("=" * 60)
+
+print(
+    brand_summary.round(2)
+)
