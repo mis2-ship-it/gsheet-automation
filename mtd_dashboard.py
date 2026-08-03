@@ -238,28 +238,50 @@ l2w_kpi = get_kpi(l2w_df)
 mom_kpi = get_kpi(mom_df)
 ly_kpi = get_kpi(ly_df)
 
-print("="*70)
+print("="*95)
 print("PAN INDIA vs COCO vs FOFO")
-print("="*70)
+print("="*95)
 
-kpis = [
-    "Gross",
-    "Net",
-    "Discount",
-    "Orders",
-    "Qty",
-    "AOV",
-    "Dis %"
-]
+kpi_table = pd.DataFrame({
+    "Metric":[
+        "Gross",
+        "Net",
+        "Discount",
+        "Orders",
+        "Qty",
+        "AOV",
+        "Dis %"
+    ],
+    "PAN INDIA":[
+        pan_kpi["Gross"],
+        pan_kpi["Net"],
+        pan_kpi["Discount"],
+        pan_kpi["Orders"],
+        pan_kpi["Qty"],
+        pan_kpi["AOV"],
+        pan_kpi["Dis %"]
+    ],
+    "COCO":[
+        coco_kpi["Gross"],
+        coco_kpi["Net"],
+        coco_kpi["Discount"],
+        coco_kpi["Orders"],
+        coco_kpi["Qty"],
+        coco_kpi["AOV"],
+        coco_kpi["Dis %"]
+    ],
+    "FOFO":[
+        fofo_kpi["Gross"],
+        fofo_kpi["Net"],
+        fofo_kpi["Discount"],
+        fofo_kpi["Orders"],
+        fofo_kpi["Qty"],
+        fofo_kpi["AOV"],
+        fofo_kpi["Dis %"]
+    ]
+})
 
-for k in kpis:
-
-    print(
-        f"{k:<12}"
-        f" PAN={pan_kpi[k]}"
-        f" | COCO={coco_kpi[k]}"
-        f" | FOFO={fofo_kpi[k]}"
-    )
+print(kpi_table)
 
 # =========================================================
 # BRAND SUMMARY
@@ -397,22 +419,39 @@ print("="*60)
 print("TODAY BRANCH SUMMARY")
 print("="*60)
 
-print(branch_summary.round(2))
+print(
+    branch_summary
+    .head(20)
+    .round(2)
+)
 
 # =========================================================
 # SESSION SUMMARY
 # =========================================================
 
+# Keep only valid sessions
+session_df = coco_df.copy()
+
+session_df["Session"] = (
+    session_df["Session"]
+    .fillna("")
+    .astype(str)
+    .str.strip()
+)
+
+session_df = session_df[
+    session_df["Session"] != ""
+]
+
 session_summary = (
-    coco_df
-    .groupby("Session")
+    session_df
+    .groupby("Session", as_index=False)
     .agg(
         Gross=("Gross Sales", "sum"),
         Net=("Net Sales", "sum"),
         Discount=("Discount", "sum"),
         Orders=("Orders", "sum")
     )
-    .reset_index()
 )
 
 session_summary["AOV"] = (
@@ -433,24 +472,28 @@ session_summary["Contribution %"] = (
     session_summary["Net"].sum()
 ) * 100
 
-# Custom Session Order
-session_order = [
-    "Breakfast",
-    "Lunch",
-    "Snacks",
-    "Dinner",
-    "Late Night"
-]
+# =========================================================
+# BUSINESS ORDER
+# =========================================================
 
-session_summary["Session"] = pd.Categorical(
-    session_summary["Session"],
-    categories=session_order,
-    ordered=True
+session_order = {
+    "Breakfast": 1,
+    "Lunch": 2,
+    "Snacks": 3,
+    "Dinner": 4,
+    "Late Night": 5
+}
+
+session_summary["Sort"] = (
+    session_summary["Session"]
+    .map(session_order)
+    .fillna(999)
 )
 
 session_summary = (
     session_summary
-    .sort_values("Session")
+    .sort_values("Sort")
+    .drop(columns="Sort")
     .reset_index(drop=True)
 )
 
