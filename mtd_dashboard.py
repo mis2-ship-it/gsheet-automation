@@ -571,14 +571,7 @@ push(
     "Dashboard_Source",
     source_summary.round(2)
 )
-# =========================================================
-# PUSH SOURCE SUMMARY
-# =========================================================
 
-push(
-    "Dashboard_Source",
-    source_summary.round(2)
-)
 
 # =========================================================
 # SOURCE LW GROWTH
@@ -591,17 +584,16 @@ source_summary = add_growth(
     "LW"
 )
 
-print("=" * 60)
-print("SOURCE LW")
-print("=" * 60)
+print("="*60)
+print("SOURCE LW GROWTH")
+print("="*60)
 
-print(source_lw)
+print(source_lw.round(2))
 
 push(
     "Dashboard_Source_LW",
-    source_lw
+    source_lw.round(2)
 )
-
 # =========================================================
 # SOURCE L2W GROWTH
 # =========================================================
@@ -613,15 +605,15 @@ source_summary = add_growth(
     "L2W"
 )
 
-print("=" * 60)
-print("SOURCE L2W")
-print("=" * 60)
+print("="*60)
+print("SOURCE L2W GROWTH")
+print("="*60)
 
-print(source_l2w)
+print(source_l2w.round(2))
 
 push(
     "Dashboard_Source_L2W",
-    source_l2w
+    source_l2w.round(2)
 )
 
 
@@ -644,16 +636,7 @@ push(
     "Dashboard_Branch",
     branch_summary.round(2)
 )
-# =========================================================
-# PUSH BRANCH SUMMARY
-# =========================================================
 
-push(
-    "Dashboard_Branch",
-    branch_summary
-        .head(20)
-        .round(2)
-)
 
 # =========================================================
 # BRANCH LW GROWTH
@@ -666,15 +649,15 @@ branch_summary = add_growth(
     "LW"
 )
 
-print("=" * 60)
-print("BRANCH LW")
-print("=" * 60)
+print("="*60)
+print("BRANCH LW GROWTH")
+print("="*60)
 
-print(branch_lw)
+print(branch_lw.round(2))
 
 push(
     "Dashboard_Branch_LW",
-    branch_lw
+    branch_lw.round(2)
 )
 
 
@@ -689,15 +672,15 @@ branch_summary = add_growth(
     "L2W"
 )
 
-print("=" * 60)
-print("BRANCH L2W")
-print("=" * 60)
+print("="*60)
+print("BRANCH L2W GROWTH")
+print("="*60)
 
-print(branch_l2w)
+print(branch_l2w.round(2))
 
 push(
     "Dashboard_Branch_L2W",
-    branch_l2w
+    branch_l2w.round(2)
 )
 # =========================================================
 # TODAY SESSION SUMMARY
@@ -748,14 +731,7 @@ push(
     session_summary.round(2)
 )
 
-# =========================================================
-# PUSH SESSION SUMMARY
-# =========================================================
 
-push(
-    "Dashboard_Session",
-    session_summary.round(2)
-)
 
 # =========================================================
 # SESSION LW GROWTH
@@ -768,15 +744,15 @@ session_summary = add_growth(
     "LW"
 )
 
-print("=" * 60)
-print("SESSION LW")
-print("=" * 60)
+print("="*60)
+print("SESSION LW GROWTH")
+print("="*60)
 
-print(session_lw)
+print(session_lw.round(2))
 
 push(
     "Dashboard_Session_LW",
-    session_lw
+    session_lw.round(2)
 )
 
 # =========================================================
@@ -790,16 +766,17 @@ session_summary = add_growth(
     "L2W"
 )
 
-print("=" * 60)
-print("SESSION L2W")
-print("=" * 60)
+print("="*60)
+print("SESSION L2W GROWTH")
+print("="*60)
 
-print(session_l2w)
+print(session_l2w.round(2))
 
 push(
     "Dashboard_Session_L2W",
-    session_l2w
+    session_l2w.round(2)
 )
+
 
 
 # =========================================================
@@ -821,14 +798,7 @@ push(
     "Dashboard_Region",
     region_summary.round(2)
 )
-# =========================================================
-# PUSH REGION SUMMARY
-# =========================================================
 
-push(
-    "Dashboard_Region",
-    region_summary.round(2)
-)
 
 # =========================================================
 # REGION LW GROWTH
@@ -841,16 +811,17 @@ region_summary = add_growth(
     "LW"
 )
 
-print("=" * 60)
-print("REGION LW")
-print("=" * 60)
+print("="*60)
+print("REGION LW GROWTH")
+print("="*60)
 
-print(region_lw)
+print(region_lw.round(2))
 
 push(
     "Dashboard_Region_LW",
-    region_lw
+    region_lw.round(2)
 )
+
 
 # =========================================================
 # REGION L2W GROWTH
@@ -863,17 +834,16 @@ region_summary = add_growth(
     "L2W"
 )
 
-print("=" * 60)
-print("REGION L2W")
-print("=" * 60)
+print("="*60)
+print("REGION L2W GROWTH")
+print("="*60)
 
-print(region_l2w)
+print(region_l2w.round(2))
 
 push(
     "Dashboard_Region_L2W",
-    region_l2w
+    region_l2w.round(2)
 )
-
 
 
 
