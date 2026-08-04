@@ -165,92 +165,205 @@ print(final_df["Store Type"].value_counts(dropna=False))
 # BUSINESS DATE
 # =========================================================
 
-available_dates = sorted(final_df["Date"].dropna().unique())
+available_dates = sorted(
+    final_df["Date"]
+    .dropna()
+    .unique()
+)
 
-today = available_dates[-1]
+# Latest available date in CSV (FTD)
+ftd_date = available_dates[-1]
 
+# Month Start for MTD
+mtd_start = pd.Timestamp(
+    year=ftd_date.year,
+    month=ftd_date.month,
+    day=1
+)
+
+# Helper function
 def nearest_available(target_date):
     valid = [d for d in available_dates if d <= target_date]
     return valid[-1] if valid else None
 
-last_week = nearest_available(today - timedelta(days=7))
-last_2_week = nearest_available(today - timedelta(days=14))
-last_month = nearest_available(today - pd.DateOffset(months=1))
-last_year = nearest_available(today - pd.DateOffset(years=1))
+last_week = nearest_available(ftd_date - timedelta(days=7))
+last_2_week = nearest_available(ftd_date - timedelta(days=14))
+last_month = nearest_available(ftd_date - pd.DateOffset(months=1))
+last_year = nearest_available(ftd_date - pd.DateOffset(years=1))
 
 print("=" * 60)
 print("DATE CHECK")
 print("=" * 60)
 
-print("Today      :", today.date())
+print("FTD Date   :", ftd_date.date())
+print("MTD Start  :", mtd_start.date())
 print("Last Week  :", last_week.date() if last_week is not None else "NA")
 print("Last 2 Week:", last_2_week.date() if last_2_week is not None else "NA")
 print("Last Month :", last_month.date() if last_month is not None else "NA")
 print("Last Year  :", last_year.date() if last_year is not None else "NA")
 
+
 # =========================================================
 # FILTER DATA
 # =========================================================
 
-today_df = final_df[final_df["Date"] == today].copy()
+# ---------- FTD ----------
 
-lw_df = (
-    final_df[final_df["Date"] == last_week].copy()
-    if last_week is not None else pd.DataFrame(columns=final_df.columns)
-)
+ftd_df = final_df.loc[
+    final_df["Date"].eq(ftd_date)
+].copy()
 
-l2w_df = (
-    final_df[final_df["Date"] == last_2_week].copy()
-    if last_2_week is not None else pd.DataFrame(columns=final_df.columns)
-)
+# ---------- MTD ----------
 
-mom_df = (
-    final_df[final_df["Date"] == last_month].copy()
-    if last_month is not None else pd.DataFrame(columns=final_df.columns)
-)
+mtd_df = final_df.loc[
+    (final_df["Date"] >= mtd_start) &
+    (final_df["Date"] <= ftd_date)
+].copy()
 
-ly_df = (
-    final_df[final_df["Date"] == last_year].copy()
-    if last_year is not None else pd.DataFrame(columns=final_df.columns)
-)
+# ---------- Comparison ----------
+
+lw_df = final_df.loc[
+    final_df["Date"].eq(last_week)
+].copy()
+
+l2w_df = final_df.loc[
+    final_df["Date"].eq(last_2_week)
+].copy()
+
+mom_df = final_df.loc[
+    final_df["Date"].eq(last_month)
+].copy()
+
+ly_df = final_df.loc[
+    final_df["Date"].eq(last_year)
+].copy()
 
 print("=" * 60)
 print("FILTER CHECK")
 print("=" * 60)
 
-print("Today Rows :", len(today_df))
+print("FTD Rows   :", len(ftd_df))
+print("MTD Rows   :", len(mtd_df))
 print("LW Rows    :", len(lw_df))
 print("L2W Rows   :", len(l2w_df))
 print("MoM Rows   :", len(mom_df))
 print("LY Rows    :", len(ly_df))
 
+
 # =========================================================
 # STORE TYPE SPLIT
 # =========================================================
 
-pan_df = today_df.copy()
+# ---------- FTD ----------
 
-coco_df = today_df[
-    today_df["Store Type"] == "COCO"
+ftd_pan_df = ftd_df.copy()
+
+ftd_coco_df = ftd_df[
+    ftd_df["Store Type"] == "COCO"
 ].copy()
 
-fofo_df = today_df[
-    today_df["Store Type"] == "FOFO"
+ftd_fofo_df = ftd_df[
+    ftd_df["Store Type"] == "FOFO"
 ].copy()
 
-print("=" * 60)
-print("STORE TYPE VALUES (TODAY)")
-print("=" * 60)
 
-print(today_df["Store Type"].value_counts(dropna=False))
+# ---------- MTD ----------
+
+mtd_pan_df = mtd_df.copy()
+
+mtd_coco_df = mtd_df[
+    mtd_df["Store Type"] == "COCO"
+].copy()
+
+mtd_fofo_df = mtd_df[
+    mtd_df["Store Type"] == "FOFO"
+].copy()
+
 
 print("=" * 60)
 print("STORE TYPE SPLIT")
 print("=" * 60)
 
-print("PAN INDIA :", len(pan_df))
-print("COCO      :", len(coco_df))
-print("FOFO      :", len(fofo_df))
+print("FTD PAN  :", len(ftd_pan_df))
+print("FTD COCO :", len(ftd_coco_df))
+print("FTD FOFO :", len(ftd_fofo_df))
+
+print("-" * 60)
+
+print("MTD PAN  :", len(mtd_pan_df))
+print("MTD COCO :", len(mtd_coco_df))
+print("MTD FOFO :", len(mtd_fofo_df))
+
+# =========================================================
+# STORE TYPE SPLIT
+# =========================================================
+
+# ===========================
+# FTD
+# ===========================
+
+ftd_pan_df = ftd_df.copy()
+
+ftd_coco_df = ftd_df[
+    ftd_df["Store Type"] == "COCO"
+].copy()
+
+ftd_fofo_df = ftd_df[
+    ftd_df["Store Type"] == "FOFO"
+].copy()
+
+# ===========================
+# MTD
+# ===========================
+
+mtd_pan_df = mtd_df.copy()
+
+mtd_coco_df = mtd_df[
+    mtd_df["Store Type"] == "COCO"
+].copy()
+
+mtd_fofo_df = mtd_df[
+    mtd_df["Store Type"] == "FOFO"
+].copy()
+
+
+print("=" * 60)
+print("STORE TYPE VALUES (FTD)")
+print("=" * 60)
+
+print(
+    ftd_df["Store Type"].value_counts(dropna=False)
+)
+
+print()
+
+print("=" * 60)
+print("STORE TYPE VALUES (MTD)")
+print("=" * 60)
+
+print(
+    mtd_df["Store Type"].value_counts(dropna=False)
+)
+
+print()
+
+print("=" * 60)
+print("STORE TYPE SPLIT")
+print("=" * 60)
+
+print("--------------- FTD ----------------")
+
+print("PAN INDIA :", len(ftd_pan_df))
+print("COCO      :", len(ftd_coco_df))
+print("FOFO      :", len(ftd_fofo_df))
+
+print()
+
+print("--------------- MTD ----------------")
+
+print("PAN INDIA :", len(mtd_pan_df))
+print("COCO      :", len(mtd_coco_df))
+print("FOFO      :", len(mtd_fofo_df))
 
 # =========================================================
 # UNIVERSAL SUMMARY BUILDER
@@ -332,17 +445,32 @@ def get_kpi(df):
     }
 
 
-pan_kpi = get_kpi(pan_df)
-coco_kpi = get_kpi(coco_df)
-fofo_kpi = get_kpi(fofo_df)
+# =========================================================
+# KPI SUMMARY
+# =========================================================
+
+# ---------- FTD ----------
+
+ftd_pan_kpi = get_kpi(ftd_pan_df)
+ftd_coco_kpi = get_kpi(ftd_coco_df)
+ftd_fofo_kpi = get_kpi(ftd_fofo_df)
+
+# ---------- MTD ----------
+
+mtd_pan_kpi = get_kpi(mtd_pan_df)
+mtd_coco_kpi = get_kpi(mtd_coco_df)
+mtd_fofo_kpi = get_kpi(mtd_fofo_df)
+
+# ---------- Comparison ----------
+
 lw_kpi = get_kpi(lw_df)
 l2w_kpi = get_kpi(l2w_df)
 mom_kpi = get_kpi(mom_df)
 ly_kpi = get_kpi(ly_df)
 
-print("="*95)
-print("PAN INDIA vs COCO vs FOFO")
-print("="*95)
+print("=" * 100)
+print("FTD KPI vs MTD KPI")
+print("=" * 100)
 
 # =========================================================
 # EMAIL DATA
@@ -360,37 +488,75 @@ compare_df = pd.DataFrame({
         "Dis %"
     ],
 
-    "PAN INDIA":[
-        pan_kpi["Gross"],
-        pan_kpi["Net"],
-        pan_kpi["Discount"],
-        pan_kpi["Orders"],
-        pan_kpi["Qty"],
-        pan_kpi["AOV"],
-        pan_kpi["Dis %"]
+    # ---------------- FTD ----------------
+
+    "FTD PAN":[
+        ftd_pan_kpi["Gross"],
+        ftd_pan_kpi["Net"],
+        ftd_pan_kpi["Discount"],
+        ftd_pan_kpi["Orders"],
+        ftd_pan_kpi["Qty"],
+        ftd_pan_kpi["AOV"],
+        ftd_pan_kpi["Dis %"]
     ],
 
-    "COCO":[
-        coco_kpi["Gross"],
-        coco_kpi["Net"],
-        coco_kpi["Discount"],
-        coco_kpi["Orders"],
-        coco_kpi["Qty"],
-        coco_kpi["AOV"],
-        coco_kpi["Dis %"]
+    "FTD COCO":[
+        ftd_coco_kpi["Gross"],
+        ftd_coco_kpi["Net"],
+        ftd_coco_kpi["Discount"],
+        ftd_coco_kpi["Orders"],
+        ftd_coco_kpi["Qty"],
+        ftd_coco_kpi["AOV"],
+        ftd_coco_kpi["Dis %"]
     ],
 
-    "FOFO":[
-        fofo_kpi["Gross"],
-        fofo_kpi["Net"],
-        fofo_kpi["Discount"],
-        fofo_kpi["Orders"],
-        fofo_kpi["Qty"],
-        fofo_kpi["AOV"],
-        fofo_kpi["Dis %"]
+    "FTD FOFO":[
+        ftd_fofo_kpi["Gross"],
+        ftd_fofo_kpi["Net"],
+        ftd_fofo_kpi["Discount"],
+        ftd_fofo_kpi["Orders"],
+        ftd_fofo_kpi["Qty"],
+        ftd_fofo_kpi["AOV"],
+        ftd_fofo_kpi["Dis %"]
+    ],
+
+    # ---------------- MTD ----------------
+
+    "MTD PAN":[
+        mtd_pan_kpi["Gross"],
+        mtd_pan_kpi["Net"],
+        mtd_pan_kpi["Discount"],
+        mtd_pan_kpi["Orders"],
+        mtd_pan_kpi["Qty"],
+        mtd_pan_kpi["AOV"],
+        mtd_pan_kpi["Dis %"]
+    ],
+
+    "MTD COCO":[
+        mtd_coco_kpi["Gross"],
+        mtd_coco_kpi["Net"],
+        mtd_coco_kpi["Discount"],
+        mtd_coco_kpi["Orders"],
+        mtd_coco_kpi["Qty"],
+        mtd_coco_kpi["AOV"],
+        mtd_coco_kpi["Dis %"]
+    ],
+
+    "MTD FOFO":[
+        mtd_fofo_kpi["Gross"],
+        mtd_fofo_kpi["Net"],
+        mtd_fofo_kpi["Discount"],
+        mtd_fofo_kpi["Orders"],
+        mtd_fofo_kpi["Qty"],
+        mtd_fofo_kpi["AOV"],
+        mtd_fofo_kpi["Dis %"]
     ]
 
 }).round(2)
+
+print("=" * 100)
+print("FTD vs MTD KPI")
+print("=" * 100)
 
 print(compare_df)
 
@@ -509,295 +675,546 @@ print("LW Net :", lw_df["Net Sales"].sum())
 print("L2W Net:", l2w_df["Net Sales"].sum())
 
 # =========================================================
-# TODAY BRAND SUMMARY
+# FTD BRAND SUMMARY
 # =========================================================
 
-brand_summary = build_summary(
-    coco_df,
+ftd_brand_summary = build_summary(
+    ftd_coco_df,
     "Brand Name"
 )
 
 print("=" * 60)
-print("TODAY BRAND SUMMARY")
+print("FTD BRAND SUMMARY")
 print("=" * 60)
-print(brand_summary.round(2))
+
+print(ftd_brand_summary.round(2))
 
 push(
-    "Dashboard_Brand",
-    brand_summary.round(2)
+    "Dashboard_Brand_FTD",
+    ftd_brand_summary.round(2)
 )
 
 # =========================================================
-# BRAND LW
+# MTD BRAND SUMMARY
 # =========================================================
 
-brand_lw = add_growth(
-    brand_summary.copy(),
+mtd_brand_summary = build_summary(
+    mtd_coco_df,
+    "Brand Name"
+)
+
+print("=" * 60)
+print("MTD BRAND SUMMARY")
+print("=" * 60)
+
+print(mtd_brand_summary.round(2))
+
+push(
+    "Dashboard_Brand_MTD",
+    mtd_brand_summary.round(2)
+
+)
+
+# =========================================================
+# FTD BRAND LW
+# =========================================================
+
+ftd_brand_lw = add_growth(
+    ftd_brand_summary.copy(),
     lw_df,
     "Brand Name",
     "LW"
 )
 
 print("=" * 60)
-print("BRAND LW GROWTH")
+print("FTD BRAND LW")
 print("=" * 60)
-print(brand_lw.round(2))
+
+print(ftd_brand_lw.round(2))
 
 push(
-    "Dashboard_Brand_LW",
-    brand_lw.round(2)
+    "Dashboard_Brand_FTD_LW",
+    ftd_brand_lw.round(2)
 )
 
 # =========================================================
-# BRAND L2W
+# MTD BRAND LW
 # =========================================================
 
-brand_l2w = add_growth(
-    brand_summary.copy(),
+mtd_brand_lw = add_growth(
+    mtd_brand_summary.copy(),
+    lw_df,
+    "Brand Name",
+    "LW"
+)
+
+push(
+    "Dashboard_Brand_MTD_LW",
+    mtd_brand_lw.round(2)
+)
+
+# =========================================================
+# FTD BRAND L2W
+# =========================================================
+
+ftd_brand_l2w = add_growth(
+    ftd_brand_summary.copy(),
     l2w_df,
     "Brand Name",
     "L2W"
 )
 
-print("=" * 60)
-print("BRAND L2W GROWTH")
-print("=" * 60)
-print(brand_l2w.round(2))
-
 push(
-    "Dashboard_Brand_L2W",
-    brand_l2w.round(2)
+    "Dashboard_Brand_FTD_L2W",
+    ftd_brand_l2w.round(2)
 )
 
-source_summary = build_summary(
-    coco_df,
+# =========================================================
+# MTD BRAND L2W
+# =========================================================
+
+mtd_brand_l2w = add_growth(
+    mtd_brand_summary.copy(),
+    l2w_df,
+    "Brand Name",
+    "L2W"
+)
+
+push(
+    "Dashboard_Brand_MTD_L2W",
+    mtd_brand_l2w.round(2)
+)
+
+# =========================================================
+# FTD SOURCE SUMMARY
+# =========================================================
+
+ftd_source_summary = build_summary(
+    ftd_coco_df,
     "Source"
 )
 
 push(
-    "Dashboard_Source",
-    source_summary.round(2)
+    "Dashboard_Source_FTD",
+    ftd_source_summary.round(2)
 )
 
-source_lw = add_growth(
-    source_summary.copy(),
+# =========================================================
+# MTD SOURCE SUMMARY
+# =========================================================
+
+mtd_source_summary = build_summary(
+    mtd_coco_df,
+    "Source"
+)
+
+push(
+    "Dashboard_Source_MTD",
+    mtd_source_summary.round(2)
+)
+
+# =========================================================
+# FTD SOURCE LW
+# =========================================================
+
+ftd_source_lw = add_growth(
+    ftd_source_summary.copy(),
     lw_df,
     "Source",
     "LW"
 )
 
 push(
-    "Dashboard_Source_LW",
-    source_lw.round(2)
+    "Dashboard_Source_FTD_LW",
+    ftd_source_lw.round(2)
 )
 
-print(source_lw.round(2))
+# =========================================================
+# MTD SOURCE LW
+# =========================================================
 
-source_l2w = add_growth(
-    source_summary.copy(),
+mtd_source_lw = add_growth(
+    mtd_source_summary.copy(),
+    lw_df,
+    "Source",
+    "LW"
+)
+
+push(
+    "Dashboard_Source_MTD_LW",
+    mtd_source_lw.round(2)
+)
+
+# =========================================================
+# FTD SOURCE L2W
+# =========================================================
+
+ftd_source_l2w = add_growth(
+    ftd_source_summary.copy(),
     l2w_df,
     "Source",
     "L2W"
 )
 
 push(
-    "Dashboard_Source_L2W",
-    source_l2w.round(2)
+    "Dashboard_Source_FTD_L2W",
+    ftd_source_l2w.round(2)
 )
 
-print(source_l2w.round(2))
-
 # =========================================================
-# TODAY BRANCH SUMMARY
+# MTD SOURCE L2W
 # =========================================================
 
-branch_summary = build_summary(
-    coco_df,
+mtd_source_l2w = add_growth(
+    mtd_source_summary.copy(),
+    l2w_df,
+    "Source",
+    "L2W"
+)
+
+push(
+    "Dashboard_Source_MTD_L2W",
+    mtd_source_l2w.round(2)
+)
+
+# =========================================================
+# FTD BRANCH SUMMARY
+# =========================================================
+
+ftd_branch_summary = build_summary(
+    ftd_coco_df,
     "Branch"
 )
 
 push(
-    "Dashboard_Branch",
-    branch_summary.round(2)
+    "Dashboard_Branch_FTD",
+    ftd_branch_summary.round(2)
 )
 
 # =========================================================
-# TOP 10 BRANCHES FOR EMAIL
+# MTD BRANCH SUMMARY
+# =========================================================
+
+mtd_branch_summary = build_summary(
+    mtd_coco_df,
+    "Branch"
+)
+
+push(
+    "Dashboard_Branch_MTD",
+    mtd_branch_summary.round(2)
+)
+
+# =========================================================
+# TOP 10 BRANCHES (EMAIL)
 # =========================================================
 
 top_branch_df = (
-    branch_summary
+    ftd_branch_summary
     .sort_values("Net", ascending=False)
     .head(10)
 )
 
-branch_lw = add_growth(
-    branch_summary.copy(),
+# =========================================================
+# FTD BRANCH LW
+# =========================================================
+
+ftd_branch_lw = add_growth(
+    ftd_branch_summary.copy(),
     lw_df,
     "Branch",
     "LW"
 )
 
 push(
-    "Dashboard_Branch_LW",
-    branch_lw.round(2)
+    "Dashboard_Branch_FTD_LW",
+    ftd_branch_lw.round(2)
 )
 
-print(branch_lw.round(2))
+# =========================================================
+# MTD BRANCH LW
+# =========================================================
 
+mtd_branch_lw = add_growth(
+    mtd_branch_summary.copy(),
+    lw_df,
+    "Branch",
+    "LW"
+)
 
+push(
+    "Dashboard_Branch_MTD_LW",
+    mtd_branch_lw.round(2)
+)
 
-branch_l2w = add_growth(
-    branch_summary.copy(),
+# =========================================================
+# FTD BRANCH L2W
+# =========================================================
+
+ftd_branch_l2w = add_growth(
+    ftd_branch_summary.copy(),
     l2w_df,
     "Branch",
     "L2W"
 )
 
 push(
-    "Dashboard_Branch_L2W",
-    branch_l2w.round(2)
+    "Dashboard_Branch_FTD_L2W",
+    ftd_branch_l2w.round(2)
 )
 
-print(branch_l2w.round(2))
 # =========================================================
-# TODAY SESSION SUMMARY
+# MTD BRANCH L2W
 # =========================================================
 
-session_summary = build_summary(
-    coco_df,
+mtd_branch_l2w = add_growth(
+    mtd_branch_summary.copy(),
+    l2w_df,
+    "Branch",
+    "L2W"
+)
+
+push(
+    "Dashboard_Branch_MTD_L2W",
+    mtd_branch_l2w.round(2)
+)
+
+# =========================================================
+# FTD SESSION SUMMARY
+# =========================================================
+
+ftd_session_summary = build_summary(
+    ftd_coco_df,
     "Session"
 )
 
-# ---------------------------------------------
-# Replace Blank Sessions
-# ---------------------------------------------
-session_summary["Session"] = (
-    session_summary["Session"]
+ftd_session_summary["Session"] = (
+    ftd_session_summary["Session"]
     .fillna("Others")
     .replace("", "Others")
 )
 
-# ---------------------------------------------
-# Session Sort Order
-# ---------------------------------------------
 session_order = {
     "Breakfast": 1,
     "Lunch": 2,
     "Snacks": 3,
     "Dinner": 4,
     "Late Night": 5,
+    "Closing": 6,
     "Others": 99
 }
 
-session_summary["Sort"] = (
-    session_summary["Session"]
+ftd_session_summary["Sort"] = (
+    ftd_session_summary["Session"]
     .map(session_order)
     .fillna(99)
 )
 
-session_summary = (
-    session_summary
+ftd_session_summary = (
+    ftd_session_summary
     .sort_values("Sort")
     .drop(columns="Sort")
     .reset_index(drop=True)
 )
 
-print("=" * 60)
-print("TODAY SESSION SUMMARY")
-print("=" * 60)
-
-print(session_summary.round(2))
-
 push(
-    "Dashboard_Session",
-    session_summary.round(2)
+    "Dashboard_Session_FTD",
+    ftd_session_summary.round(2)
 )
 
 # =========================================================
-# SESSION LW GROWTH
+# MTD SESSION SUMMARY
 # =========================================================
 
-session_lw = add_growth(
-    session_summary.copy(),
+mtd_session_summary = build_summary(
+    mtd_coco_df,
+    "Session"
+)
+
+mtd_session_summary["Session"] = (
+    mtd_session_summary["Session"]
+    .fillna("Others")
+    .replace("", "Others")
+)
+
+mtd_session_summary["Sort"] = (
+    mtd_session_summary["Session"]
+    .map(session_order)
+    .fillna(99)
+)
+
+mtd_session_summary = (
+    mtd_session_summary
+    .sort_values("Sort")
+    .drop(columns="Sort")
+    .reset_index(drop=True)
+)
+
+push(
+    "Dashboard_Session_MTD",
+    mtd_session_summary.round(2)
+)
+
+# =========================================================
+# FTD SESSION LW
+# =========================================================
+
+ftd_session_lw = add_growth(
+    ftd_session_summary.copy(),
     lw_df,
     "Session",
     "LW"
 )
 
-print("=" * 60)
-print("SESSION LW GROWTH")
-print("=" * 60)
-
-print(session_lw.round(2))
-
 push(
-    "Dashboard_Session_LW",
-    session_lw.round(2)
+    "Dashboard_Session_FTD_LW",
+    ftd_session_lw.round(2)
 )
 
+# =========================================================
+# MTD SESSION LW
+# =========================================================
+
+mtd_session_lw = add_growth(
+    mtd_session_summary.copy(),
+    lw_df,
+    "Session",
+    "LW"
+)
+
+push(
+    "Dashboard_Session_MTD_LW",
+    mtd_session_lw.round(2)
+)
 
 # =========================================================
-# SESSION L2W GROWTH
+# FTD SESSION L2W
 # =========================================================
 
-session_l2w = add_growth(
-    session_summary.copy(),
+ftd_session_l2w = add_growth(
+    ftd_session_summary.copy(),
     l2w_df,
     "Session",
     "L2W"
 )
 
-print("=" * 60)
-print("SESSION L2W GROWTH")
-print("=" * 60)
-
-print(session_l2w.round(2))
-
 push(
-    "Dashboard_Session_L2W",
-    session_l2w.round(2)
+    "Dashboard_Session_FTD_L2W",
+    ftd_session_l2w.round(2)
 )
 
-# Region Summary
+# =========================================================
+# MTD SESSION L2W
+# =========================================================
 
-region_summary = build_summary(
-    coco_df,
+mtd_session_l2w = add_growth(
+    mtd_session_summary.copy(),
+    l2w_df,
+    "Session",
+    "L2W"
+)
+
+push(
+    "Dashboard_Session_MTD_L2W",
+    mtd_session_l2w.round(2)
+)
+
+# =========================================================
+# FTD REGION SUMMARY
+# =========================================================
+
+ftd_region_summary = build_summary(
+    ftd_coco_df,
     "Region"
 )
 
 push(
-    "Dashboard_Region",
-    region_summary.round(2)
+    "Dashboard_Region_FTD",
+    ftd_region_summary.round(2)
 )
 
-region_lw = add_growth(
-    region_summary.copy(),
+# =========================================================
+# MTD REGION SUMMARY
+# =========================================================
+
+mtd_region_summary = build_summary(
+    mtd_coco_df,
+    "Region"
+)
+
+push(
+    "Dashboard_Region_MTD",
+    mtd_region_summary.round(2)
+)
+
+# =========================================================
+# FTD REGION LW
+# =========================================================
+
+ftd_region_lw = add_growth(
+    ftd_region_summary.copy(),
     lw_df,
     "Region",
     "LW"
 )
 
 push(
-    "Dashboard_Region_LW",
-    region_lw.round(2)
+    "Dashboard_Region_FTD_LW",
+    ftd_region_lw.round(2)
 )
 
-print(region_lw.round(2))
+# =========================================================
+# MTD REGION LW
+# =========================================================
 
-region_l2w = add_growth(
-    region_summary.copy(),
+mtd_region_lw = add_growth(
+    mtd_region_summary.copy(),
+    lw_df,
+    "Region",
+    "LW"
+)
+
+push(
+    "Dashboard_Region_MTD_LW",
+    mtd_region_lw.round(2)
+)
+
+# =========================================================
+# FTD REGION L2W
+# =========================================================
+
+ftd_region_l2w = add_growth(
+    ftd_region_summary.copy(),
     l2w_df,
     "Region",
     "L2W"
 )
 
 push(
-    "Dashboard_Region_L2W",
-    region_l2w.round(2)
+    "Dashboard_Region_FTD_L2W",
+    ftd_region_l2w.round(2)
 )
 
-print(region_l2w.round(2))
+# =========================================================
+# MTD REGION L2W
+# =========================================================
+
+mtd_region_l2w = add_growth(
+    mtd_region_summary.copy(),
+    l2w_df,
+    "Region",
+    "L2W"
+)
+
+push(
+    "Dashboard_Region_MTD_L2W",
+    mtd_region_l2w.round(2)
+)
+
+
+# =========================================================
+# EMAIL KPI (FTD vs MTD)
+# =========================================================
 
 kpi_df = pd.DataFrame({
 
@@ -806,19 +1223,29 @@ kpi_df = pd.DataFrame({
         "Net Revenue",
         "Discount",
         "Orders",
+        "Qty",
         "AOV",
         "Discount %"
     ],
 
-    "Value":[
+    "FTD":[
+        ftd_pan_kpi["Gross"],
+        ftd_pan_kpi["Net"],
+        ftd_pan_kpi["Discount"],
+        ftd_pan_kpi["Orders"],
+        ftd_pan_kpi["Qty"],
+        ftd_pan_kpi["AOV"],
+        f'{ftd_pan_kpi["Dis %"]:.2f}%'
+    ],
 
+    "MTD":[
         pan_kpi["Gross"],
         pan_kpi["Net"],
         pan_kpi["Discount"],
         pan_kpi["Orders"],
+        pan_kpi["Qty"],
         pan_kpi["AOV"],
-        pan_kpi["Dis %"]
-
+        f'{pan_kpi["Dis %"]:.2f}%'
     ]
 
 })
@@ -949,75 +1376,153 @@ color:#0A7D32;
 
 <div class="kpi">
 
-<div class="card">
-Gross
-<div class="value">
-₹{pan_kpi["Gross"]:,.0f}
-</div>
+    <!-- Gross -->
+    <div class="card">
+        <b>Gross Revenue</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            ₹{ftd_pan_kpi["Gross"]:,.0f}
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            ₹{mtd_pan_kpi["Gross"]:,.0f}
+        </div>
+    </div>
+
+    <!-- Net -->
+    <div class="card">
+        <b>Net Revenue</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            ₹{ftd_pan_kpi["Net"]:,.0f}
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            ₹{mtd_pan_kpi["Net"]:,.0f}
+        </div>
+    </div>
+
+    <!-- Orders -->
+    <div class="card">
+        <b>Orders</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            {int(ftd_pan_kpi["Orders"]):,}
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            {int(mtd_pan_kpi["Orders"]):,}
+        </div>
+    </div>
+
+    <!-- Qty -->
+    <div class="card">
+        <b>Qty</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            {int(ftd_pan_kpi["Qty"]):,}
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            {int(mtd_pan_kpi["Qty"]):,}
+        </div>
+    </div>
+
+    <!-- AOV -->
+    <div class="card">
+        <b>AOV</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            ₹{ftd_pan_kpi["AOV"]:,.0f}
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            ₹{mtd_pan_kpi["AOV"]:,.0f}
+        </div>
+    </div>
+
+    <!-- Discount % -->
+    <div class="card">
+        <b>Discount %</b><br><br>
+
+        <span style="color:#777;">FTD</span>
+        <div class="value">
+            {ftd_pan_kpi["Dis %"]:.1f}%
+        </div>
+
+        <hr>
+
+        <span style="color:#777;">MTD</span>
+        <div class="value">
+            {mtd_pan_kpi["Dis %"]:.1f}%
+        </div>
+    </div>
+
 </div>
 
-<div class="card">
-Net
-<div class="value">
-₹{pan_kpi["Net"]:,.0f}
-</div>
-</div>
-
-<div class="card">
-Orders
-<div class="value">
-{int(pan_kpi["Orders"]):,}
-</div>
-</div>
-
-<div class="card">
-AOV
-<div class="value">
-₹{pan_kpi["AOV"]:,.0f}
-</div>
-</div>
-
-<div class="card">
-Discount
-<div class="value">
-{pan_kpi["Dis %"]:.1f}%
-</div>
-</div>
-
-</div>
-
-<h3>KPI Summary</h3>
+<h3>📊 FTD vs MTD KPI Summary</h3>
 
 {html_table(kpi_df)}
 
-<h3>COCO vs FOFO</h3>
+<br>
+
+<h3>🏢 COCO vs FOFO (FTD | MTD)</h3>
 
 {html_table(compare_df)}
 
-<h3>Brand Summary</h3>
+<br>
+
+<h3>🏷 Brand Performance (FTD | MTD)</h3>
 
 {html_table(brand_summary)}
 
-<h3>Source Summary</h3>
+<br>
+
+<h3>🛒 Source Performance (FTD | MTD)</h3>
 
 {html_table(source_summary)}
 
-<h3>Region Summary</h3>
+<br>
+
+<h3>🌎 Region Performance (FTD | MTD)</h3>
 
 {html_table(region_summary)}
 
-<h3>Session Summary</h3>
+<br>
+
+<h3>🕒 Session Performance (FTD | MTD)</h3>
 
 {html_table(session_summary)}
 
-<h3>Top 10 Branches</h3>
+<br>
+
+<h3>🏪 Top 10 Branches (FTD | MTD)</h3>
 
 {html_table(top_branch_df)}
 
 </body>
 
 </html>
-
 """
 def send_mail(subject, body):
 
