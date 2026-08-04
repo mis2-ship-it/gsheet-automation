@@ -812,12 +812,12 @@ kpi_df = pd.DataFrame({
 
     "Value":[
 
-        pan_summary["Gross"],
-        pan_summary["Net"],
-        pan_summary["Discount"],
-        pan_summary["Orders"],
-        pan_summary["AOV"],
-        pan_summary["Dis %"]
+        pan_kpi["Gross"],
+        pan_kpi["Net"],
+        pan_kpi["Discount"],
+        pan_kpi["Orders"],
+        pan_kpi["AOV"],
+        pan_kpi["Dis %"]
 
     ]
 
@@ -941,35 +941,35 @@ color:#0A7D32;
 <div class="card">
 Gross
 <div class="value">
-₹{pan_summary["Gross"]:,.0f}
+₹{pan_kpi["Gross"]:,.0f}
 </div>
 </div>
 
 <div class="card">
 Net
 <div class="value">
-₹{pan_summary["Net"]:,.0f}
+₹{pan_kpi["Net"]:,.0f}
 </div>
 </div>
 
 <div class="card">
 Orders
 <div class="value">
-{int(pan_summary["Orders"]):,}
+{int(pan_kpi["Orders"]):,}
 </div>
 </div>
 
 <div class="card">
 AOV
 <div class="value">
-₹{pan_summary["AOV"]:,.0f}
+₹{pan_kpi["AOV"]:,.0f}
 </div>
 </div>
 
 <div class="card">
 Discount
 <div class="value">
-{pan_summary["Dis %"]:.1f}%
+{pan_kpi["Dis %"]:.1f}%
 </div>
 </div>
 
