@@ -32,7 +32,12 @@ jobs:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
 
-      
+                    # Add these two so rista_live.py can access the Rista API
+          API_KEY: ${{ secrets.API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
         run: |
           echo "Running MTD Dashboard..."
           python mtd_dashboard.py
+
+
