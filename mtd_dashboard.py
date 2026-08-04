@@ -837,7 +837,7 @@ SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
 EMAIL = "mis2@frozenbottle.in"
-PASSWORD = "Your App Password"
+PASSWORD = os.environ["EMAIL_PASS"]
 
 TO = [
     "mis2@frozenbottle.in"
