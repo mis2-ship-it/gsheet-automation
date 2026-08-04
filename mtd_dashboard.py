@@ -1,1746 +1,428 @@
-# =========================================================
-# IMPORTS
-# =========================================================
+# name: mtd_dashboard.py
+# Send COCO-only dashboard by email. No Google Sheets pushes.
 
 from datetime import datetime, timedelta
 from pathlib import Path
 import pandas as pd
-import gspread
 import json
 import os
 import re
-from google.oauth2.service_account import Credentials
-
-print("=" * 60)
-print("🚀 MTD DASHBOARD STARTED")
-print("=" * 60)
-
-
-# ---------------- GOOGLE ---------------- #
-
-
-creds = Credentials.from_service_account_info(
-    json.loads(
-        os.environ["GOOGLE_CREDENTIALS"]
-    ),
-    scopes=[
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-)
-
-client = gspread.authorize(creds)
-
-sheet_url = "https://docs.google.com/spreadsheets/d/1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY/edit"
-
-spreadsheet = client.open_by_url(sheet_url)
-
-print("✅ Connected to Google Sheet")
-
-# =========================================================
-# PUSH DATAFRAME TO GOOGLE SHEET
-# =========================================================
-
-import time
-
-def push(sheet_name, df):
-
-    try:
-        ws = spreadsheet.worksheet(sheet_name)
-
-    except Exception:
-
-        ws = spreadsheet.add_worksheet(
-            title=sheet_name,
-            rows="5000",
-            cols="30"
-        )
-
-    # Prepare Data
-    data = [
-        df.columns.tolist()
-    ] + (
-        df.fillna("")
-        .values
-        .tolist()
-    )
-
-    # Clear existing data
-    ws.batch_clear(["A:Z"])
-
-    # Update from A1
-    ws.update(
-        "A1",
-        data,
-        value_input_option="USER_ENTERED"
-    )
-
-    # Prevent Google API quota error
-    time.sleep(2)
-
-    print(f"✅ Updated : {sheet_name}")
-
-# =========================================================
-# FIND LATEST MONTHLY CSV
-# =========================================================
-
-BASE_FOLDER = Path("monthly_data")
-
-csv_files = list(
-    BASE_FOLDER.rglob("*.csv")
-)
-
-print(f"📂 CSV Files Found : {len(csv_files)}")
-
-if not csv_files:
-    raise Exception("❌ No Monthly CSV Files Found")
-
-# =========================================================
-# PICK LATEST FILE BY FILE NAME
-# =========================================================
-
-month_map = {
-    "Jan": 1,
-    "Feb": 2,
-    "Mar": 3,
-    "Apr": 4,
-    "May": 5,
-    "Jun": 6,
-    "Jul": 7,
-    "Aug": 8,
-    "Sep": 9,
-    "Oct": 10,
-    "Nov": 11,
-    "Dec": 12,
-}
-
-def extract_month_year(path):
-
-    m = re.search(r"MTD_(\w{3})_(\d{2})\.csv", path.name)
-
-    if not m:
-        return datetime(1900, 1, 1)
-
-    month = month_map[m.group(1)]
-    year = 2000 + int(m.group(2))
-
-    return datetime(year, month, 1)
-
-
-latest_csv = max(
-    csv_files,
-    key=extract_month_year
-)
-
-print(f"📄 Latest File : {latest_csv}")
-
-# =========================================================
-# READ CSV
-# =========================================================
-
-final_df = pd.read_csv(
-    latest_csv,
-    low_memory=False
-)
-
-# =========================================================
-# CLEAN DATA
-# =========================================================
-
-final_df["Date"] = pd.to_datetime(final_df["Date"])
-
-final_df["Store Type"] = (
-    final_df["Store Type"]
-    .fillna("")
-    .astype(str)
-    .str.strip()
-    .str.upper()
-)
-
-print("=" * 60)
-print("TOTAL ROWS :", len(final_df))
-print("TOTAL COLUMNS :", len(final_df.columns))
-print("=" * 60)
-
-print(final_df.head())
-
-print("=" * 60)
-print("DATE RANGE CHECK")
-print("=" * 60)
-
-print("Min Date :", final_df["Date"].min())
-print("Max Date :", final_df["Date"].max())
-
-print()
-
-print(final_df["Date"].value_counts().sort_index())
-
-print("=" * 60)
-print("STORE TYPE VALUES (FULL DATA)")
-print("=" * 60)
-
-print(final_df["Store Type"].value_counts(dropna=False))
-
-# =========================================================
-# BUSINESS DATE
-# =========================================================
-
-available_dates = sorted(
-    final_df["Date"]
-    .dropna()
-    .unique()
-)
-
-# Latest available date in CSV (FTD)
-ftd_date = available_dates[-1]
-
-# Month Start for MTD
-mtd_start = pd.Timestamp(
-    year=ftd_date.year,
-    month=ftd_date.month,
-    day=1
-)
-
-# Helper function
-def nearest_available(target_date):
-    valid = [d for d in available_dates if d <= target_date]
-    return valid[-1] if valid else None
-
-last_week = nearest_available(ftd_date - timedelta(days=7))
-last_2_week = nearest_available(ftd_date - timedelta(days=14))
-last_month = nearest_available(ftd_date - pd.DateOffset(months=1))
-last_year = nearest_available(ftd_date - pd.DateOffset(years=1))
-
-print("=" * 60)
-print("DATE CHECK")
-print("=" * 60)
-
-print("FTD Date   :", ftd_date.date())
-print("MTD Start  :", mtd_start.date())
-print("Last Week  :", last_week.date() if last_week is not None else "NA")
-print("Last 2 Week:", last_2_week.date() if last_2_week is not None else "NA")
-print("Last Month :", last_month.date() if last_month is not None else "NA")
-print("Last Year  :", last_year.date() if last_year is not None else "NA")
-
-
-# =========================================================
-# FILTER DATA
-# =========================================================
-
-# ---------- FTD ----------
-
-ftd_df = final_df.loc[
-    final_df["Date"].eq(ftd_date)
-].copy()
-
-# ---------- MTD ----------
-
-mtd_df = final_df.loc[
-    (final_df["Date"] >= mtd_start) &
-    (final_df["Date"] <= ftd_date)
-].copy()
-
-# ---------- Comparison ----------
-# Compare by date (normalize timestamps) to avoid time-of-day mismatches
-def _to_date_safe(x):
-    return pd.to_datetime(x).date() if x is not None else None
-
-lw_date = _to_date_safe(last_week)
-l2w_date = _to_date_safe(last_2_week)
-mom_date = _to_date_safe(last_month)
-ly_date = _to_date_safe(last_year)
-
-if lw_date is not None:
-    lw_df = final_df.loc[
-        final_df["Date"].dt.date == lw_date
-    ].copy()
-else:
-    lw_df = final_df.iloc[0:0].copy()
-
-if l2w_date is not None:
-    l2w_df = final_df.loc[
-        final_df["Date"].dt.date == l2w_date
-    ].copy()
-else:
-    l2w_df = final_df.iloc[0:0].copy()
-
-if mom_date is not None:
-    mom_df = final_df.loc[
-        final_df["Date"].dt.date == mom_date
-    ].copy()
-else:
-    mom_df = final_df.iloc[0:0].copy()
-
-if ly_date is not None:
-    ly_df = final_df.loc[
-        final_df["Date"].dt.date == ly_date
-    ].copy()
-else:
-    ly_df = final_df.iloc[0:0].copy()
-
-print("=" * 60)
-print("FILTER CHECK")
-print("=" * 60)
-
-print("FTD Rows   :", len(ftd_df))
-print("MTD Rows   :", len(mtd_df))
-print("LW Date    :", lw_date, "→ rows:", len(lw_df))
-print("L2W Date   :", l2w_date, "→ rows:", len(l2w_df))
-print("MoM Date   :", mom_date, "→ rows:", len(mom_df))
-print("LY Date    :", ly_date, "→ rows:", len(ly_df))
-# =========================================================
-# STORE TYPE SPLIT
-# =========================================================
-
-# ---------- FTD ----------
-
-ftd_pan_df = ftd_df.copy()
-
-ftd_coco_df = ftd_df[
-    ftd_df["Store Type"] == "COCO"
-].copy()
-
-ftd_fofo_df = ftd_df[
-    ftd_df["Store Type"] == "FOFO"
-].copy()
-
-
-# ---------- MTD ----------
-
-mtd_pan_df = mtd_df.copy()
-
-mtd_coco_df = mtd_df[
-    mtd_df["Store Type"] == "COCO"
-].copy()
-
-mtd_fofo_df = mtd_df[
-    mtd_df["Store Type"] == "FOFO"
-].copy()
-
-
-print("=" * 60)
-print("STORE TYPE SPLIT")
-print("=" * 60)
-
-print("FTD PAN  :", len(ftd_pan_df))
-print("FTD COCO :", len(ftd_coco_df))
-print("FTD FOFO :", len(ftd_fofo_df))
-
-print("-" * 60)
-
-print("MTD PAN  :", len(mtd_pan_df))
-print("MTD COCO :", len(mtd_coco_df))
-print("MTD FOFO :", len(mtd_fofo_df))
-
-# =========================================================
-# STORE TYPE SPLIT
-# =========================================================
-
-# ===========================
-# FTD
-# ===========================
-
-ftd_pan_df = ftd_df.copy()
-
-ftd_coco_df = ftd_df[
-    ftd_df["Store Type"] == "COCO"
-].copy()
-
-ftd_fofo_df = ftd_df[
-    ftd_df["Store Type"] == "FOFO"
-].copy()
-
-# ===========================
-# MTD
-# ===========================
-
-mtd_pan_df = mtd_df.copy()
-
-mtd_coco_df = mtd_df[
-    mtd_df["Store Type"] == "COCO"
-].copy()
-
-mtd_fofo_df = mtd_df[
-    mtd_df["Store Type"] == "FOFO"
-].copy()
-
-
-print("=" * 60)
-print("STORE TYPE VALUES (FTD)")
-print("=" * 60)
-
-print(
-    ftd_df["Store Type"].value_counts(dropna=False)
-)
-
-print()
-
-print("=" * 60)
-print("STORE TYPE VALUES (MTD)")
-print("=" * 60)
-
-print(
-    mtd_df["Store Type"].value_counts(dropna=False)
-)
-
-print()
-
-print("=" * 60)
-print("STORE TYPE SPLIT")
-print("=" * 60)
-
-print("--------------- FTD ----------------")
-
-print("PAN INDIA :", len(ftd_pan_df))
-print("COCO      :", len(ftd_coco_df))
-print("FOFO      :", len(ftd_fofo_df))
-
-print()
-
-print("--------------- MTD ----------------")
-
-print("PAN INDIA :", len(mtd_pan_df))
-print("COCO      :", len(mtd_coco_df))
-print("FOFO      :", len(mtd_fofo_df))
-
-# =========================================================
-# UNIVERSAL SUMMARY BUILDER
-# =========================================================
-
-def build_summary(df, column):
-
-    summary = (
-        df.groupby(column)
-        .agg(
-            Gross=("Gross Sales", "sum"),
-            Net=("Net Sales", "sum"),
-            Discount=("Discount", "sum"),
-            Orders=("Orders", "sum")
-        )
-        .reset_index()
-    )
-
-    summary["AOV"] = (
-        summary["Net"]
-        /
-        summary["Orders"].replace(0, 1)
-    )
-
-    summary["Dis %"] = (
-        summary["Discount"]
-        /
-        summary["Gross"].replace(0, 1)
-    ) * 100
-
-    summary["Contribution %"] = (
-        summary["Net"]
-        /
-        summary["Net"].sum()
-    ) * 100
-
-    summary = summary.sort_values(
-        "Net",
-        ascending=False
-    ).reset_index(drop=True)
-
-    return summary
-
-# =========================================================
-# KPI SUMMARY
-# =========================================================
-
-def get_kpi(df):
-
-    if df.empty:
-
-        return {
-            "Gross": 0,
-            "Net": 0,
-            "Discount": 0,
-            "Orders": 0,
-            "Qty": 0,
-            "AOV": 0,
-            "Dis %": 0
-        }
-
-    gross = df["Gross Sales"].sum()
-    net = df["Net Sales"].sum()
-    discount = df["Discount"].sum()
-    orders = df["Orders"].sum()
-    # Qty removed — keep a stable placeholder so existing code referencing Qty keeps working
-    qty = 0
-
-    aov = net / orders if orders else 0
-    dis_pct = (discount / gross * 100) if gross else 0
-
-    return {
-        "Gross": round(gross, 2),
-        "Net": round(net, 2),
-        "Discount": round(discount, 2),
-        "Orders": int(orders),
-        "Qty": round(qty, 2),
-        "AOV": round(aov, 2),
-        "Dis %": round(dis_pct, 2)
-    }
-
-
-# =========================================================
-# KPI SUMMARY
-# =========================================================
-
-# ---------- FTD ----------
-
-ftd_pan_kpi = get_kpi(ftd_pan_df)
-ftd_coco_kpi = get_kpi(ftd_coco_df)
-ftd_fofo_kpi = get_kpi(ftd_fofo_df)
-
-# ---------- MTD ----------
-
-mtd_pan_kpi = get_kpi(mtd_pan_df)
-mtd_coco_kpi = get_kpi(mtd_coco_df)
-mtd_fofo_kpi = get_kpi(mtd_fofo_df)
-
-# ---------- Comparison ----------
-
-lw_kpi = get_kpi(lw_df)
-l2w_kpi = get_kpi(l2w_df)
-mom_kpi = get_kpi(mom_df)
-ly_kpi = get_kpi(ly_df)
-
-print("=" * 100)
-print("FTD KPI vs MTD KPI")
-print("=" * 100)
-
-# =========================================================
-# EMAIL DATA
-# =========================================================
-
-compare_df = pd.DataFrame({
-
-    "Metric":[
-        "Gross",
-        "Net",
-        "Discount",
-        "Orders",
-        "Qty",
-        "AOV",
-        "Dis %"
-    ],
-
-    # ---------------- FTD ----------------
-
-    "FTD PAN":[
-        ftd_pan_kpi["Gross"],
-        ftd_pan_kpi["Net"],
-        ftd_pan_kpi["Discount"],
-        ftd_pan_kpi["Orders"],
-        ftd_pan_kpi["Qty"],
-        ftd_pan_kpi["AOV"],
-        ftd_pan_kpi["Dis %"]
-    ],
-
-    "FTD COCO":[
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Discount"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["Qty"],
-        ftd_coco_kpi["AOV"],
-        ftd_coco_kpi["Dis %"]
-    ],
-
-    "FTD FOFO":[
-        ftd_fofo_kpi["Gross"],
-        ftd_fofo_kpi["Net"],
-        ftd_fofo_kpi["Discount"],
-        ftd_fofo_kpi["Orders"],
-        ftd_fofo_kpi["Qty"],
-        ftd_fofo_kpi["AOV"],
-        ftd_fofo_kpi["Dis %"]
-    ],
-
-    # ---------------- MTD ----------------
-
-    "MTD PAN":[
-        mtd_pan_kpi["Gross"],
-        mtd_pan_kpi["Net"],
-        mtd_pan_kpi["Discount"],
-        mtd_pan_kpi["Orders"],
-        mtd_pan_kpi["Qty"],
-        mtd_pan_kpi["AOV"],
-        mtd_pan_kpi["Dis %"]
-    ],
-
-    "MTD COCO":[
-        mtd_coco_kpi["Gross"],
-        mtd_coco_kpi["Net"],
-        mtd_coco_kpi["Discount"],
-        mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["Qty"],
-        mtd_coco_kpi["AOV"],
-        mtd_coco_kpi["Dis %"]
-    ],
-
-    "MTD FOFO":[
-        mtd_fofo_kpi["Gross"],
-        mtd_fofo_kpi["Net"],
-        mtd_fofo_kpi["Discount"],
-        mtd_fofo_kpi["Orders"],
-        mtd_fofo_kpi["Qty"],
-        mtd_fofo_kpi["AOV"],
-        mtd_fofo_kpi["Dis %"]
-    ]
-
-}).round(2)
-
-print("=" * 100)
-print("FTD vs MTD KPI")
-print("=" * 100)
-
-print(compare_df)
-
-# =========================================================
-# GENERIC GROWTH SUMMARY
-# =========================================================
-
-def growth_summary(current_df, previous_df, group_col, period_name):
-
-    curr = (
-        current_df
-        .groupby(group_col)
-        .agg(
-            Gross=("Gross Sales","sum"),
-            Net=("Net Sales","sum"),
-            Orders=("Orders","sum")
-        )
-        .reset_index()
-    )
-
-    prev = (
-        previous_df
-        .groupby(group_col)
-        .agg(
-            Gross_Previous=("Gross Sales","sum"),
-            Net_Previous=("Net Sales","sum"),
-            Orders_Previous=("Orders","sum")
-        )
-        .reset_index()
-    )
-
-    df = curr.merge(
-        prev,
-        on=group_col,
-        how="left"
-    ).fillna(0)
-
-    df[f"{period_name} Gross %"] = (
-        (df["Gross"] - df["Gross_Previous"])
-        /
-        df["Gross_Previous"].replace(0,1)
-    ) * 100
-
-    df[f"{period_name} Net %"] = (
-        (df["Net"] - df["Net_Previous"])
-        /
-        df["Net_Previous"].replace(0,1)
-    ) * 100
-
-    df[f"{period_name} Orders %"] = (
-        (df["Orders"] - df["Orders_Previous"])
-        /
-        df["Orders_Previous"].replace(0,1)
-    ) * 100
-
-    return df.round(2)
-
-# =========================================================
-# UNIVERSAL GROWTH CALCULATOR
-# =========================================================
-
-def add_growth(current_df, compare_df, column, suffix):
-
-    compare = (
-        compare_df.groupby(column)
-        .agg(
-            Compare_Net=("Net Sales", "sum")
-        )
-        .reset_index()
-    )
-
-    current_df = current_df.merge(
-        compare,
-        on=column,
-        how="left"
-    )
-
-    current_df["Compare_Net"] = (
-        current_df["Compare_Net"]
-        .fillna(0)
-    )
-
-    current_df[f"{suffix} Growth %"] = (
-        (
-            current_df["Net"]
-            - current_df["Compare_Net"]
-        )
-        /
-        current_df["Compare_Net"].replace(0, pd.NA)
-    ) * 100
-
-    current_df[f"{suffix} Growth %"] = (
-        current_df[f"{suffix} Growth %"]
-        .fillna(0)
-        .round(1)
-    )
-
-    current_df.drop(
-        columns="Compare_Net",
-        inplace=True
-    )
-
-    return current_df
-
-print("="*60)
-print("LW Dates")
-print("="*60)
-print(lw_df["Date"].value_counts())
-
-print("="*60)
-print("L2W Dates")
-print("="*60)
-print(l2w_df["Date"].value_counts())
-
-print("LW Net :", lw_df["Net Sales"].sum())
-print("L2W Net:", l2w_df["Net Sales"].sum())
-
-# =========================================================
-# FTD BRAND SUMMARY
-# =========================================================
-
-ftd_brand_summary = build_summary(
-    ftd_coco_df,
-    "Brand Name"
-)
-
-print("=" * 60)
-print("FTD BRAND SUMMARY")
-print("=" * 60)
-
-print(ftd_brand_summary.round(2))
-
-push(
-    "Dashboard_Brand_FTD",
-    ftd_brand_summary.round(2)
-)
-
-# =========================================================
-# MTD BRAND SUMMARY
-# =========================================================
-
-mtd_brand_summary = build_summary(
-    mtd_coco_df,
-    "Brand Name"
-)
-
-print("=" * 60)
-print("MTD BRAND SUMMARY")
-print("=" * 60)
-
-print(mtd_brand_summary.round(2))
-
-push(
-    "Dashboard_Brand_MTD",
-    mtd_brand_summary.round(2)
-
-)
-
-# -----------------------
-# COCO: FTD vs LW (same day) comparisons
-# Inserted: builds Brand / Region / Source comparisons for COCO only
-# -----------------------
-
-# Helper normalizers (self-contained)
-def normalize_region_local(x):
-    if pd.isna(x):
-        return "Others"
-    s = str(x).strip().upper()
-    if s.startswith("KA"):
-        return "KA"
-    if s.startswith("MH"):
-        return "MH"
-    if s in ("TN", "TAMIL NADU"):
-        return "TN"
-    if s.startswith("KER") or s == "KERALA":
-        return "KL"
-    return s
-
-def normalize_source_local(x):
-    if pd.isna(x):
-        return "Others"
-    s = str(x).strip().lower()
-    if "swiggy" in s:
-        return "Swiggy"
-    if "zomato" in s:
-        return "Zomato"
-    if "own" in s or "ownly" in s:
-        return "Ownly"
-    if "store" in s or "in store" in s or "instore" in s:
-        return "In Store"
-    return "Others"
-
-# Ensure we have lw_df available (last_week same-day snapshot)
-lw_coco = lw_df[lw_df.get("Store Type", "") == "COCO"] if "Store Type" in lw_df.columns else lw_df.copy()
-
-# 1) Brand level comparison (Brand Name | FTD | LW | Growth%)
-ftd_brand = (
-    ftd_coco_df
-    .groupby("Brand Name", dropna=False)
-    .agg(FTD=("Net Sales", "sum"))
-    .reset_index()
-)
-
-lw_brand = (
-    lw_coco
-    .groupby("Brand Name", dropna=False)
-    .agg(LW=("Net Sales", "sum"))
-    .reset_index()
-)
-
-brand_comp = pd.merge(ftd_brand, lw_brand, on="Brand Name", how="outer").fillna(0)
-brand_comp["Growth %"] = ((brand_comp["FTD"] - brand_comp["LW"]) / brand_comp["LW"].replace(0, 1)) * 100
-brand_comp = brand_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
-push("Dashboard_COCO_Brand_Compare", brand_comp.round(2))
-print("✅ COCO Brand comparison built and pushed")
-
-# 2) Region level comparison
-ftd_region = (
-    ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region_local))
-    .groupby("RegionNorm", dropna=False)
-    .agg(FTD=("Net Sales", "sum"))
-    .reset_index()
-)
-
-lw_region = (
-    lw_coco.assign(RegionNorm=lw_coco["Region"].apply(normalize_region_local))
-    .groupby("RegionNorm", dropna=False)
-    .agg(LW=("Net Sales", "sum"))
-    .reset_index()
-)
-
-region_comp = pd.merge(ftd_region, lw_region, on="RegionNorm", how="outer").fillna(0)
-region_comp["Growth %"] = ((region_comp["FTD"] - region_comp["LW"]) / region_comp["LW"].replace(0, 1)) * 100
-region_comp = region_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
-push("Dashboard_COCO_Region_Compare", region_comp.round(2))
-print("✅ COCO Region comparison built and pushed")
-
-# 3) Source level comparison
-ftd_source = (
-    ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source_local))
-    .groupby("SourceNorm", dropna=False)
-    .agg(FTD=("Net Sales", "sum"))
-    .reset_index()
-)
-
-lw_source = (
-    lw_coco.assign(SourceNorm=lw_coco["Source"].apply(normalize_source_local))
-    .groupby("SourceNorm", dropna=False)
-    .agg(LW=("Net Sales", "sum"))
-    .reset_index()
-)
-
-source_comp = pd.merge(ftd_source, lw_source, on="SourceNorm", how="outer").fillna(0)
-source_comp["Growth %"] = ((source_comp["FTD"] - source_comp["LW"]) / source_comp["LW"].replace(0, 1)) * 100
-source_comp = source_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
-push("Dashboard_COCO_Source_Compare", source_comp.round(2))
-print("✅ COCO Source comparison built and pushed")
-
-# =========================================================
-# FTD BRAND LW
-# =========================================================
-
-ftd_brand_lw = add_growth(
-    ftd_brand_summary.copy(),
-    lw_df,
-    "Brand Name",
-    "LW"
-)
-
-print("=" * 60)
-print("FTD BRAND LW")
-print("=" * 60)
-
-print(ftd_brand_lw.round(2))
-
-push(
-    "Dashboard_Brand_FTD_LW",
-    ftd_brand_lw.round(2)
-)
-
-# =========================================================
-# MTD BRAND LW
-# =========================================================
-
-mtd_brand_lw = add_growth(
-    mtd_brand_summary.copy(),
-    lw_df,
-    "Brand Name",
-    "LW"
-)
-
-push(
-    "Dashboard_Brand_MTD_LW",
-    mtd_brand_lw.round(2)
-)
-
-# =========================================================
-# FTD BRAND L2W
-# =========================================================
-
-ftd_brand_l2w = add_growth(
-    ftd_brand_summary.copy(),
-    l2w_df,
-    "Brand Name",
-    "L2W"
-)
-
-push(
-    "Dashboard_Brand_FTD_L2W",
-    ftd_brand_l2w.round(2)
-)
-
-# =========================================================
-# MTD BRAND L2W
-# =========================================================
-
-mtd_brand_l2w = add_growth(
-    mtd_brand_summary.copy(),
-    l2w_df,
-    "Brand Name",
-    "L2W"
-)
-
-push(
-    "Dashboard_Brand_MTD_L2W",
-    mtd_brand_l2w.round(2)
-)
-
-# =========================================================
-# FTD SOURCE SUMMARY
-# =========================================================
-
-ftd_source_summary = build_summary(
-    ftd_coco_df,
-    "Source"
-)
-
-push(
-    "Dashboard_Source_FTD",
-    ftd_source_summary.round(2)
-)
-
-# =========================================================
-# MTD SOURCE SUMMARY
-# =========================================================
-
-mtd_source_summary = build_summary(
-    mtd_coco_df,
-    "Source"
-)
-
-push(
-    "Dashboard_Source_MTD",
-    mtd_source_summary.round(2)
-)
-
-# =========================================================
-# FTD SOURCE LW
-# =========================================================
-
-ftd_source_lw = add_growth(
-    ftd_source_summary.copy(),
-    lw_df,
-    "Source",
-    "LW"
-)
-
-push(
-    "Dashboard_Source_FTD_LW",
-    ftd_source_lw.round(2)
-)
-
-# =========================================================
-# MTD SOURCE LW
-# =========================================================
-
-mtd_source_lw = add_growth(
-    mtd_source_summary.copy(),
-    lw_df,
-    "Source",
-    "LW"
-)
-
-push(
-    "Dashboard_Source_MTD_LW",
-    mtd_source_lw.round(2)
-)
-
-# =========================================================
-# FTD SOURCE L2W
-# =========================================================
-
-ftd_source_l2w = add_growth(
-    ftd_source_summary.copy(),
-    l2w_df,
-    "Source",
-    "L2W"
-)
-
-push(
-    "Dashboard_Source_FTD_L2W",
-    ftd_source_l2w.round(2)
-)
-
-# =========================================================
-# MTD SOURCE L2W
-# =========================================================
-
-mtd_source_l2w = add_growth(
-    mtd_source_summary.copy(),
-    l2w_df,
-    "Source",
-    "L2W"
-)
-
-push(
-    "Dashboard_Source_MTD_L2W",
-    mtd_source_l2w.round(2)
-)
-
-# =========================================================
-# FTD BRANCH SUMMARY
-# =========================================================
-
-ftd_branch_summary = build_summary(
-    ftd_coco_df,
-    "Branch"
-)
-
-push(
-    "Dashboard_Branch_FTD",
-    ftd_branch_summary.round(2)
-)
-
-# =========================================================
-# MTD BRANCH SUMMARY
-# =========================================================
-
-mtd_branch_summary = build_summary(
-    mtd_coco_df,
-    "Branch"
-)
-
-push(
-    "Dashboard_Branch_MTD",
-    mtd_branch_summary.round(2)
-)
-
-# =========================================================
-# TOP 10 BRANCHES (EMAIL)
-# =========================================================
-
-top_branch_df = (
-    ftd_branch_summary
-    .sort_values("Net", ascending=False)
-    .head(10)
-)
-
-# =========================================================
-# FTD BRANCH LW
-# =========================================================
-
-ftd_branch_lw = add_growth(
-    ftd_branch_summary.copy(),
-    lw_df,
-    "Branch",
-    "LW"
-)
-
-push(
-    "Dashboard_Branch_FTD_LW",
-    ftd_branch_lw.round(2)
-)
-
-# =========================================================
-# MTD BRANCH LW
-# =========================================================
-
-mtd_branch_lw = add_growth(
-    mtd_branch_summary.copy(),
-    lw_df,
-    "Branch",
-    "LW"
-)
-
-push(
-    "Dashboard_Branch_MTD_LW",
-    mtd_branch_lw.round(2)
-)
-
-# =========================================================
-# FTD BRANCH L2W
-# =========================================================
-
-ftd_branch_l2w = add_growth(
-    ftd_branch_summary.copy(),
-    l2w_df,
-    "Branch",
-    "L2W"
-)
-
-push(
-    "Dashboard_Branch_FTD_L2W",
-    ftd_branch_l2w.round(2)
-)
-
-# =========================================================
-# MTD BRANCH L2W
-# =========================================================
-
-mtd_branch_l2w = add_growth(
-    mtd_branch_summary.copy(),
-    l2w_df,
-    "Branch",
-    "L2W"
-)
-
-push(
-    "Dashboard_Branch_MTD_L2W",
-    mtd_branch_l2w.round(2)
-)
-
-# =========================================================
-# FTD SESSION SUMMARY
-# =========================================================
-
-ftd_session_summary = build_summary(
-    ftd_coco_df,
-    "Session"
-)
-
-ftd_session_summary["Session"] = (
-    ftd_session_summary["Session"]
-    .fillna("Others")
-    .replace("", "Others")
-)
-
-session_order = {
-    "Breakfast": 1,
-    "Lunch": 2,
-    "Snacks": 3,
-    "Dinner": 4,
-    "Late Night": 5,
-    "Closing": 6,
-    "Others": 99
-}
-
-ftd_session_summary["Sort"] = (
-    ftd_session_summary["Session"]
-    .map(session_order)
-    .fillna(99)
-)
-
-ftd_session_summary = (
-    ftd_session_summary
-    .sort_values("Sort")
-    .drop(columns="Sort")
-    .reset_index(drop=True)
-)
-
-push(
-    "Dashboard_Session_FTD",
-    ftd_session_summary.round(2)
-)
-
-# =========================================================
-# MTD SESSION SUMMARY
-# =========================================================
-
-mtd_session_summary = build_summary(
-    mtd_coco_df,
-    "Session"
-)
-
-mtd_session_summary["Session"] = (
-    mtd_session_summary["Session"]
-    .fillna("Others")
-    .replace("", "Others")
-)
-
-mtd_session_summary["Sort"] = (
-    mtd_session_summary["Session"]
-    .map(session_order)
-    .fillna(99)
-)
-
-mtd_session_summary = (
-    mtd_session_summary
-    .sort_values("Sort")
-    .drop(columns="Sort")
-    .reset_index(drop=True)
-)
-
-push(
-    "Dashboard_Session_MTD",
-    mtd_session_summary.round(2)
-)
-
-# =========================================================
-# FTD SESSION LW
-# =========================================================
-
-ftd_session_lw = add_growth(
-    ftd_session_summary.copy(),
-    lw_df,
-    "Session",
-    "LW"
-)
-
-push(
-    "Dashboard_Session_FTD_LW",
-    ftd_session_lw.round(2)
-)
-
-# =========================================================
-# MTD SESSION LW
-# =========================================================
-
-mtd_session_lw = add_growth(
-    mtd_session_summary.copy(),
-    lw_df,
-    "Session",
-    "LW"
-)
-
-push(
-    "Dashboard_Session_MTD_LW",
-    mtd_session_lw.round(2)
-)
-
-# =========================================================
-# FTD SESSION L2W
-# =========================================================
-
-ftd_session_l2w = add_growth(
-    ftd_session_summary.copy(),
-    l2w_df,
-    "Session",
-    "L2W"
-)
-
-push(
-    "Dashboard_Session_FTD_L2W",
-    ftd_session_l2w.round(2)
-)
-
-# =========================================================
-# MTD SESSION L2W
-# =========================================================
-
-mtd_session_l2w = add_growth(
-    mtd_session_summary.copy(),
-    l2w_df,
-    "Session",
-    "L2W"
-)
-
-push(
-    "Dashboard_Session_MTD_L2W",
-    mtd_session_l2w.round(2)
-)
-
-# =========================================================
-# FTD REGION SUMMARY
-# =========================================================
-
-ftd_region_summary = build_summary(
-    ftd_coco_df,
-    "Region"
-)
-
-push(
-    "Dashboard_Region_FTD",
-    ftd_region_summary.round(2)
-)
-
-# =========================================================
-# MTD REGION SUMMARY
-# =========================================================
-
-mtd_region_summary = build_summary(
-    mtd_coco_df,
-    "Region"
-)
-
-push(
-    "Dashboard_Region_MTD",
-    mtd_region_summary.round(2)
-)
-
-# =========================================================
-# FTD REGION LW
-# =========================================================
-
-ftd_region_lw = add_growth(
-    ftd_region_summary.copy(),
-    lw_df,
-    "Region",
-    "LW"
-)
-
-push(
-    "Dashboard_Region_FTD_LW",
-    ftd_region_lw.round(2)
-)
-
-# =========================================================
-# MTD REGION LW
-# =========================================================
-
-mtd_region_lw = add_growth(
-    mtd_region_summary.copy(),
-    lw_df,
-    "Region",
-    "LW"
-)
-
-push(
-    "Dashboard_Region_MTD_LW",
-    mtd_region_lw.round(2)
-)
-
-# =========================================================
-# FTD REGION L2W
-# =========================================================
-
-ftd_region_l2w = add_growth(
-    ftd_region_summary.copy(),
-    l2w_df,
-    "Region",
-    "L2W"
-)
-
-push(
-    "Dashboard_Region_FTD_L2W",
-    ftd_region_l2w.round(2)
-)
-
-# =========================================================
-# MTD REGION L2W
-# =========================================================
-
-mtd_region_l2w = add_growth(
-    mtd_region_summary.copy(),
-    l2w_df,
-    "Region",
-    "L2W"
-)
-
-push(
-    "Dashboard_Region_MTD_L2W",
-    mtd_region_l2w.round(2)
-)
-
-
-# =========================================================
-# EMAIL KPI (FTD vs MTD)
-# =========================================================
-
-# ensure a 'today' variable for email headers (use latest available date)
-today = ftd_date if 'ftd_date' in globals() else datetime.now()
-
-# EMAIL KPI (FTD vs MTD) — fixed to use mtd_pan_kpi
-kpi_df = pd.DataFrame({
-
-    "KPI":[
-        "Gross Revenue",
-        "Net Revenue",
-        "Discount",
-        "Orders",
-        "Qty",
-        "AOV",
-        "Discount %"
-    ],
-
-    "FTD":[
-        ftd_pan_kpi["Gross"],
-        ftd_pan_kpi["Net"],
-        ftd_pan_kpi["Discount"],
-        ftd_pan_kpi["Orders"],
-        ftd_pan_kpi["Qty"],
-        ftd_pan_kpi["AOV"],
-        f'{ftd_pan_kpi["Dis %"]:.2f}%'
-    ],
-
-    "MTD":[
-        mtd_pan_kpi["Gross"],
-        mtd_pan_kpi["Net"],
-        mtd_pan_kpi["Discount"],
-        mtd_pan_kpi["Orders"],
-        mtd_pan_kpi["Qty"],
-        mtd_pan_kpi["AOV"],
-        f'{mtd_pan_kpi["Dis %"]:.2f}%'
-    ]
-
-}).round(2)
-
-# Create combined summaries used by the email body (simple FTD vs MTD concat)
-# This prevents NameError for brand_summary, source_summary, region_summary, session_summary
-brand_summary = pd.concat([
-    ftd_brand_summary.assign(Period="FTD"),
-    mtd_brand_summary.assign(Period="MTD")
-], ignore_index=True)
-
-source_summary = pd.concat([
-    ftd_source_summary.assign(Period="FTD"),
-    mtd_source_summary.assign(Period="MTD")
-], ignore_index=True)
-
-region_summary = pd.concat([
-    ftd_region_summary.assign(Period="FTD"),
-    mtd_region_summary.assign(Period="MTD")
-], ignore_index=True)
-
-session_summary = pd.concat([
-    ftd_session_summary.assign(Period="FTD"),
-    mtd_session_summary.assign(Period="MTD")
-], ignore_index=True)
-
-# Send Mail
+import math
 import smtplib
-
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-# =========================================================
-# EMAIL CONFIGURATION
-# =========================================================
-
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-
-import os
-import smtplib
-
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-
+# ------------------------------
+# Config
+# ------------------------------
 EMAIL = os.environ.get("EMAIL_USER")
 PASSWORD = os.environ.get("EMAIL_PASS")
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
 
-# Fixed recipient for testing
-TO = ["mis2@frozenbottle.in"]
+# Where monthly CSVs live
+BASE_FOLDER = Path("monthly_data")
 
-# No CC
-CC = []
+# ------------------------------
+# Helpers
+# ------------------------------
+def find_latest_csv(base_folder: Path):
+    csv_files = list(base_folder.rglob("*.csv"))
+    if not csv_files:
+        raise FileNotFoundError(f"No CSV files found under {base_folder}")
+    month_map = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12}
+    def extract_month_year(path: Path):
+        m = re.search(r"MTD_(\w{3})_(\d{2})\.csv", path.name)
+        if not m:
+            return datetime(1900,1,1)
+        month = month_map.get(m.group(1), 1)
+        year = 2000 + int(m.group(2))
+        return datetime(year, month, 1)
+    latest = max(csv_files, key=extract_month_year)
+    return latest
 
-TO = [x.strip() for x in TO if x.strip()]
-CC = [x.strip() for x in CC if x.strip()]
+def to_date_safe(x):
+    if x is None:
+        return None
+    return pd.to_datetime(x).date()
 
-def html_table(df):
-
+def pivot_to_html(df):
+    # Small helper to produce compact HTML for DataFrame
     return (
         df.round(2)
-        .to_html(
-            index=False,
-            classes="table",
-            border=0
-        )
+          .to_html(index=True, border=0, classes="table")
     )
 
-body = f"""
+def pct(v):
+    return f"{v:.1f}%" if not pd.isna(v) else ""
 
+# Normalizers
+def normalize_region(x):
+    if pd.isna(x): return "Others"
+    s = str(x).strip().upper()
+    if s.startswith("KA"): return "KA"
+    if s.startswith("MH"): return "MH"
+    if s in ("TN", "TAMIL NADU"): return "TN"
+    if s.startswith("KER") or s == "KERALA": return "KL"
+    return s
+
+def normalize_source(x):
+    if pd.isna(x): return "Others"
+    s = str(x).strip().lower()
+    if "swiggy" in s: return "Swiggy"
+    if "zomato" in s: return "Zomato"
+    if "own" in s or "ownly" in s: return "Ownly"
+    if "store" in s or "in store" in s or "instore" in s: return "In Store"
+    return "Others"
+
+# ------------------------------
+# Load CSV
+# ------------------------------
+print("📂 Finding latest CSV...")
+latest_csv = find_latest_csv(BASE_FOLDER)
+print("📄 Using:", latest_csv)
+final_df = pd.read_csv(latest_csv, low_memory=False)
+
+# Defensive: ensure Date column exists
+if "Date" not in final_df.columns:
+    raise KeyError("Date column not found in CSV")
+
+final_df["Date"] = pd.to_datetime(final_df["Date"], errors="coerce")
+# Standardize Store Type for comparisons
+if "Store Type" in final_df.columns:
+    final_df["Store Type"] = final_df["Store Type"].fillna("").astype(str).str.strip().str.upper()
+else:
+    final_df["Store Type"] = ""
+
+# Provide safe numeric columns
+for col in ["Net Sales","Gross Sales","Discount","Orders"]:
+    if col not in final_df.columns:
+        final_df[col] = 0
+
+# Available dates
+available_dates = sorted(final_df["Date"].dropna().unique())
+if not available_dates:
+    raise ValueError("No valid dates in data")
+
+ftd_date = available_dates[-1]  # latest available date/time
+mtd_start = pd.Timestamp(year=ftd_date.year, month=ftd_date.month, day=1)
+
+# compute same-day last week / last 2 week / last month / last year by date
+last_week = to_date_safe(ftd_date - timedelta(days=7))
+last_2_week = to_date_safe(ftd_date - timedelta(days=14))
+last_month = to_date_safe(ftd_date - pd.DateOffset(months=1))
+last_year = to_date_safe(ftd_date - pd.DateOffset(years=1))
+ftd_date_only = to_date_safe(ftd_date)
+
+# Filter datasets by date (date-only comparison)
+def df_on_date(df, date_obj):
+    if date_obj is None:
+        return df.iloc[0:0].copy()
+    return df.loc[df["Date"].dt.date == date_obj].copy()
+
+ftd_df = df_on_date(final_df, ftd_date_only)
+lw_df = df_on_date(final_df, last_week)
+l2w_df = df_on_date(final_df, last_2_week)
+mom_df = df_on_date(final_df, last_month)
+ly_df = df_on_date(final_df, last_year)
+mtd_df = final_df.loc[(final_df["Date"] >= mtd_start) & (final_df["Date"] <= ftd_date)].copy()
+
+print("FTD date:", ftd_date_only, "rows:", len(ftd_df))
+print("LW date:", last_week, "rows:", len(lw_df))
+print("L2W date:", last_2_week, "rows:", len(l2w_df))
+print("MTD rows:", len(mtd_df))
+
+# Focus only on COCO for KPIs and dashboards
+ftd_coco_df = ftd_df[ftd_df["Store Type"] == "COCO"].copy()
+lw_coco_df = lw_df[lw_df["Store Type"] == "COCO"].copy()
+l2w_coco_df = l2w_df[l2w_df["Store Type"] == "COCO"].copy()
+mtd_coco_df = mtd_df[mtd_df["Store Type"] == "COCO"].copy()
+
+# ------------------------------
+# KPI (COCO only) - remove Quantity
+# ------------------------------
+def get_kpi(df):
+    gross = df["Gross Sales"].sum() if "Gross Sales" in df.columns else 0
+    net = df["Net Sales"].sum() if "Net Sales" in df.columns else 0
+    discount = df["Discount"].sum() if "Discount" in df.columns else 0
+    orders = df["Orders"].sum() if "Orders" in df.columns else 0
+    aov = net / orders if orders else 0
+    dis_pct = (discount / gross * 100) if gross else 0
+    return {
+        "Gross": round(gross,2),
+        "Net": round(net,2),
+        "Discount": round(discount,2),
+        "Orders": int(orders),
+        "AOV": round(aov,2),
+        "Dis %": round(dis_pct,2)
+    }
+
+ftd_kpi = get_kpi(ftd_coco_df)
+mtd_kpi = get_kpi(mtd_coco_df)
+
+# ------------------------------
+# COCO comparison functions
+# ------------------------------
+def build_group_compare(ftd_df_grouped, lw_df_grouped, l2w_df_grouped, group_label):
+    # ftd_df_grouped etc are results of groupby sums with index as group values
+    df = pd.DataFrame(index=sorted(set(ftd_df_grouped.index).union(lw_df_grouped.index).union(l2w_df_grouped.index)))
+    df.index.name = group_label
+    df["FTD"] = ftd_df_grouped.reindex(df.index).fillna(0)
+    df["LW"]  = lw_df_grouped.reindex(df.index).fillna(0)
+    df["L2W"] = l2w_df_grouped.reindex(df.index).fillna(0)
+    df["Growth %"] = ((df["FTD"] - df["LW"]) / df["LW"].replace(0,1)) * 100
+    # Format columns for readability later
+    return df.reset_index()
+
+def build_group_dis_pct(ftd_df, lw_df, l2w_df, group_col):
+    # returns df indexed by group_col with Dis% metrics
+    f = ftd_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
+    l = lw_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
+    l2 = l2w_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
+    f["Dis%"] = (f["Discount"] / f["Gross"].replace(0,1)) * 100
+    l["Dis%"] = (l["Discount"] / l["Gross"].replace(0,1)) * 100
+    l2["Dis%"] = (l2["Discount"] / l2["Gross"].replace(0,1)) * 100
+    # merge all three
+    df = pd.merge(f[[group_col,"Dis%"]], l[[group_col,"Dis%"]], on=group_col, how="outer", suffixes=("_FTD","_LW")).fillna(0)
+    df = pd.merge(df, l2[[group_col,"Dis%"]], on=group_col, how="left").fillna(0)
+    df = df.rename(columns={"Dis%":"Dis%_L2W"})
+    # ensure columns
+    df["Change"] = df["Dis%_FTD"] - df["Dis%_LW"]
+    # reorder
+    df = df[[group_col, "Dis%_FTD", "Dis%_LW", "Change", "Dis%_L2W"]]
+    df = df.rename(columns={group_col: "Group"})
+    return df
+
+# Build brand-level net sales comparisons for COCO
+ftd_brand_net = ftd_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
+lw_brand_net = lw_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
+l2w_brand_net = l2w_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
+brand_net = build_group_compare(ftd_brand_net, lw_brand_net, l2w_brand_net, "Brand Name")
+
+# Build brand-level discount% comparators
+brand_dis = build_group_dis_pct(ftd_coco_df, lw_coco_df, l2w_coco_df, "Brand Name")
+# Merge net and dis into one table
+brand_comp = pd.merge(brand_net, brand_dis, left_on="Brand Name", right_on="Group", how="left").drop(columns=["Group"])
+# rename columns to desired names
+brand_comp = brand_comp.rename(columns={
+    "FTD":"Net_FTD",
+    "LW":"Net_LW",
+    "L2W":"Net_L2W",
+    "Dis%_FTD":"Dis_FTD",
+    "Dis%_LW":"Dis_LW",
+    "Dis%_L2W":"Dis_L2W",
+    "Change":"Dis_Change"
+})
+# Reorder columns for final table
+brand_comp = brand_comp[[
+    "Brand Name",
+    "Net_FTD","Net_LW","Growth %","Net_L2W",
+    "Dis_FTD","Dis_LW","Dis_Change","Dis_L2W"
+]]
+brand_comp = brand_comp.fillna(0)
+
+# Region-level
+ftd_region_net = ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
+lw_region_net = lw_coco_df.assign(RegionNorm=lw_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
+l2w_region_net = l2w_coco_df.assign(RegionNorm=l2w_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
+region_net = build_group_compare(ftd_region_net, lw_region_net, l2w_region_net, "Region")
+
+region_dis = build_group_dis_pct(
+    ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region)),
+    lw_coco_df.assign(RegionNorm=lw_coco_df["Region"].apply(normalize_region)),
+    l2w_coco_df.assign(RegionNorm=l2w_coco_df["Region"].apply(normalize_region)),
+    "RegionNorm"
+)
+region_comp = pd.merge(region_net, region_dis, left_on="Region", right_on="Group", how="left").drop(columns=["Group"])
+region_comp = region_comp.rename(columns={"Region":"Region Name", "Dis%_FTD":"Dis_FTD","Dis%_LW":"Dis_LW","Dis%_L2W":"Dis_L2W","Change":"Dis_Change", "FTD":"Net_FTD","LW":"Net_LW","L2W":"Net_L2W"})
+region_comp = region_comp[["Region Name","Net_FTD","Net_LW","Growth %","Net_L2W","Dis_FTD","Dis_LW","Dis_Change","Dis_L2W"]].fillna(0)
+
+# Source-level
+ftd_source_net = ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
+lw_source_net = lw_coco_df.assign(SourceNorm=lw_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
+l2w_source_net = l2w_coco_df.assign(SourceNorm=l2w_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
+source_net = build_group_compare(ftd_source_net, lw_source_net, l2w_source_net, "Source")
+
+source_dis = build_group_dis_pct(
+    ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source)),
+    lw_coco_df.assign(SourceNorm=lw_coco_df["Source"].apply(normalize_source)),
+    l2w_coco_df.assign(SourceNorm=l2w_coco_df["Source"].apply(normalize_source)),
+    "SourceNorm"
+)
+source_comp = pd.merge(source_net, source_dis, left_on="Source", right_on="Group", how="left").drop(columns=["Group"])
+source_comp = source_comp.rename(columns={"Source":"Source Name", "Dis%_FTD":"Dis_FTD","Dis%_LW":"Dis_LW","Dis%_L2W":"Dis_L2W","Change":"Dis_Change", "FTD":"Net_FTD","LW":"Net_LW","L2W":"Net_L2W"})
+source_comp = source_comp[["Source Name","Net_FTD","Net_LW","Growth %","Net_L2W","Dis_FTD","Dis_LW","Dis_Change","Dis_L2W"]].fillna(0)
+
+# Combined: Source + Brand (matrix)
+# Pivot Net Sales for COCO MTD by Source and Brand (dates aggregated for MTD)
+pivot_source_brand = pd.pivot_table(
+    mtd_coco_df.assign(SourceNorm=mtd_coco_df["Source"].apply(normalize_source)),
+    values="Net Sales",
+    index="SourceNorm",
+    columns="Brand Name",
+    aggfunc="sum",
+    fill_value=0
+)
+
+# Combined: Region + Source (MTD)
+pivot_region_source = pd.pivot_table(
+    mtd_coco_df.assign(RegionNorm=mtd_coco_df["Region"].apply(normalize_region),
+                       SourceNorm=mtd_coco_df["Source"].apply(normalize_source)),
+    values="Net Sales",
+    index="RegionNorm",
+    columns="SourceNorm",
+    aggfunc="sum",
+    fill_value=0
+)
+
+# ------------------------------
+# Build Email HTML (KPIs on top)
+# ------------------------------
+def df_to_html_for_email(df, title=None):
+    html = ""
+    if title:
+        html += f"<h3 style='background:#f2f2f2;padding:6px'>{title}</h3>\n"
+    html += df.round(2).to_html(border=0, classes="table", index=False)
+    return html
+
+# Format numeric columns nicely in the displayed DataFrames
+def format_money_cols(df, cols):
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].apply(lambda x: f"₹{x:,.0f}")
+    return df
+
+# Prepare brand_comp display formatting
+brand_display = brand_comp.copy()
+brand_display["Growth %"] = brand_display["Growth %"].apply(lambda x: f"{x:.1f}%")
+brand_display = brand_display.rename(columns={
+    "Brand Name":"Brand",
+    "Net_FTD":"FTD",
+    "Net_LW":"LW",
+    "Net_L2W":"L2W",
+    "Dis_FTD":"Dis FTD",
+    "Dis_LW":"Dis LW",
+    "Dis_Change":"Dis Change",
+    "Dis_L2W":"Dis L2W"
+})
+brand_display = brand_display[["Brand","FTD","LW","Growth %","L2W","Dis FTD","Dis LW","Dis Change","Dis L2W"]]
+brand_display = format_money_cols(brand_display, ["FTD","LW","L2W"])
+
+region_display = region_comp.copy()
+region_display["Growth %"] = region_display["Growth %"].apply(lambda x: f"{x:.1f}%")
+region_display = region_display.rename(columns={"Region Name":"Region","Net_FTD":"FTD","Net_LW":"LW","Net_L2W":"L2W","Dis_FTD":"Dis FTD","Dis_LW":"Dis LW","Dis_Change":"Dis Change","Dis_L2W":"Dis L2W"})
+region_display = region_display[["Region","FTD","LW","Growth %","L2W","Dis FTD","Dis LW","Dis Change","Dis L2W"]]
+region_display = format_money_cols(region_display, ["FTD","LW","L2W"])
+
+source_display = source_comp.copy()
+source_display["Growth %"] = source_display["Growth %"].apply(lambda x: f"{x:.1f}%")
+source_display = source_display.rename(columns={"Source Name":"Source","Net_FTD":"FTD","Net_LW":"LW","Net_L2W":"L2W","Dis_FTD":"Dis FTD","Dis_LW":"Dis LW","Dis_Change":"Dis Change","Dis_L2W":"Dis L2W"})
+source_display = source_display[["Source","FTD","LW","Growth %","L2W","Dis FTD","Dis LW","Dis Change","Dis L2W"]]
+source_display = format_money_cols(source_display, ["FTD","LW","L2W"])
+
+# KPI table (top)
+kpi_table = pd.DataFrame([{
+    "Metric":"Gross",
+    "FTD": f"₹{ftd_kpi['Gross']:,.0f}",
+    "MTD": f"₹{mtd_kpi['Gross']:,.0f}"
+},{
+    "Metric":"Net",
+    "FTD": f"₹{ftd_kpi['Net']:,.0f}",
+    "MTD": f"₹{mtd_kpi['Net']:,.0f}"
+},{
+    "Metric":"Discount",
+    "FTD": f"₹{ftd_kpi['Discount']:,.0f}",
+    "MTD": f"₹{mtd_kpi['Discount']:,.0f}"
+},{
+    "Metric":"Orders",
+    "FTD": f"{ftd_kpi['Orders']:,}",
+    "MTD": f"{mtd_kpi['Orders']:,}"
+},{
+    "Metric":"AOV",
+    "FTD": f"₹{ftd_kpi['AOV']:,.0f}",
+    "MTD": f"₹{mtd_kpi['AOV']:,.0f}"
+},{
+    "Metric":"Discount %",
+    "FTD": f"{ftd_kpi['Dis %']:.1f}%",
+    "MTD": f"{mtd_kpi['Dis %']:.1f}%"
+}])
+
+# Combine HTML
+html_body = f"""
 <html>
-
 <head>
-
-<style>
-
-body{{
-font-family:Calibri;
-font-size:14px;
-background:#F5F7FA;
-}}
-
-h2{{
-background:#243447;
-color:white;
-padding:10px;
-}}
-
-h3{{
-background:#2E8B57;
-color:white;
-padding:6px;
-}}
-
-.table{{
-border-collapse:collapse;
-width:80%;
-margin-bottom:25px;
-}}
-
-.table th{{
-background:#243447;
-color:white;
-padding:8px;
-text-align:center;
-}}
-
-.table td{{
-padding:6px;
-text-align:center;
-border:1px solid #dddddd;
-}}
-
-.table tr:nth-child(even){{
-background:#f5f5f5;
-}}
-
-.kpi{{
-display:flex;
-gap:20px;
-margin-bottom:20px;
-}}
-
-.card{{
-background:white;
-padding:12px;
-border-radius:8px;
-box-shadow:0 2px 5px #ccc;
-width:180px;
-text-align:center;
-}}
-
-.value{{
-font-size:22px;
-font-weight:bold;
-color:#0A7D32;
-}}
-
-</style>
-
+  <style>
+    body{{font-family:Calibri, Arial, sans-serif; font-size:13px; background:#fff; color:#222}}
+    h2{{background:#243447;color:#fff;padding:8px}}
+    h3{{background:#f2f2f2;padding:6px}}
+    table.table{{border-collapse:collapse; width:95%; margin-bottom:18px}}
+    table.table th{{background:#243447;color:#fff;padding:6px; text-align:center}}
+    table.table td{{padding:6px; border:1px solid #ddd; text-align:center}}
+    .kpi-card{{display:inline-block; background:#fff; border:1px solid #e6e6e6; padding:8px; margin:6px; border-radius:4px; width:150px; text-align:center}}
+    .kpi-val{{font-weight:bold; font-size:16px; color:#0A7D32}}
+  </style>
 </head>
-
 <body>
+<h2>📊 COCO Dashboard — {ftd_date_only}</h2>
 
-<h2>
-📊 MTD Dashboard
-<br>
-{today.strftime("%d-%b-%Y")}
-</h2>
-
-<div class="kpi">
-
-    <!-- Gross -->
-    <div class="card">
-        <b>Gross Revenue</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            ₹{ftd_pan_kpi["Gross"]:,.0f}
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            ₹{mtd_pan_kpi["Gross"]:,.0f}
-        </div>
-    </div>
-
-    <!-- Net -->
-    <div class="card">
-        <b>Net Revenue</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            ₹{ftd_pan_kpi["Net"]:,.0f}
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            ₹{mtd_pan_kpi["Net"]:,.0f}
-        </div>
-    </div>
-
-    <!-- Orders -->
-    <div class="card">
-        <b>Orders</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            {int(ftd_pan_kpi["Orders"]):,}
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            {int(mtd_pan_kpi["Orders"]):,}
-        </div>
-    </div>
-
-    <!-- Qty -->
-    <div class="card">
-        <b>Qty</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            {int(ftd_pan_kpi["Qty"]):,}
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            {int(mtd_pan_kpi["Qty"]):,}
-        </div>
-    </div>
-
-    <!-- AOV -->
-    <div class="card">
-        <b>AOV</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            ₹{ftd_pan_kpi["AOV"]:,.0f}
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            ₹{mtd_pan_kpi["AOV"]:,.0f}
-        </div>
-    </div>
-
-    <!-- Discount % -->
-    <div class="card">
-        <b>Discount %</b><br><br>
-
-        <span style="color:#777;">FTD</span>
-        <div class="value">
-            {ftd_pan_kpi["Dis %"]:.1f}%
-        </div>
-
-        <hr>
-
-        <span style="color:#777;">MTD</span>
-        <div class="value">
-            {mtd_pan_kpi["Dis %"]:.1f}%
-        </div>
-    </div>
-
+<!-- KPI Top -->
+<div>
+  <h3>KPIs (COCO only)</h3>
+  {kpi_table.to_html(index=False, border=0, classes="table")}
 </div>
 
-<h3>📊 FTD vs MTD KPI Summary</h3>
+<!-- Brand Dashboard -->
+<div>
+  <h3>Brand Dashboard (COCO) — FTD vs LW</h3>
+  {brand_display.to_html(index=False, border=0, classes="table")}
+</div>
 
-{html_table(kpi_df)}
+<!-- Region Dashboard -->
+<div>
+  <h3>Region Dashboard (COCO) — FTD vs LW</h3>
+  {region_display.to_html(index=False, border=0, classes="table")}
+</div>
 
-<br>
+<!-- Source Dashboard -->
+<div>
+  <h3>Source Dashboard (COCO) — FTD vs LW</h3>
+  {source_display.to_html(index=False, border=0, classes="table")}
+</div>
 
-<h3>🏢 COCO vs FOFO (FTD | MTD)</h3>
+<!-- Source + Brand (MTD pivot) -->
+<div>
+  <h3>Source × Brand (MTD, COCO)</h3>
+  {pivot_source_brand.round(2).to_html(border=0, classes="table")}
+</div>
 
-{html_table(compare_df)}
-
-<br>
-
-<h3>🏷 Brand Performance (FTD | MTD)</h3>
-
-{html_table(brand_summary)}
-
-<!-- COCO: Brand comparison (FTD vs LW same day) -->
-<h4>COCO — Brand : FTD vs LW</h4>
-{html_table(brand_comp)}
-
-<br>
-
-<h3>🛒 Source Performance (FTD | MTD)</h3>
-
-{html_table(source_summary)}
-
-<!-- COCO: Source comparison (FTD vs LW same day) -->
-<h4>COCO — Source : FTD vs LW</h4>
-{html_table(source_comp)}
-
-<br>
-
-<h3>🌎 Region Performance (FTD | MTD)</h3>
-
-{html_table(region_summary)}
-
-<h4>COCO — Region : FTD vs LW</h4>
-{html_table(region_comp)}
-
-<br>
-
-<h3>🕒 Session Performance (FTD | MTD)</h3>
-
-{html_table(session_summary)}
-
-<br>
-
-<h3>🏪 Top 10 Branches (FTD | MTD)</h3>
-
-{html_table(top_branch_df)}
+<!-- Region + Source (MTD pivot) -->
+<div>
+  <h3>Region × Source (MTD, COCO)</h3>
+  {pivot_region_source.round(2).to_html(border=0, classes="table")}
+</div>
 
 </body>
-
 </html>
 """
-def send_mail(subject, body):
 
+# ------------------------------
+# Send email
+# ------------------------------
+def send_mail(subject, body, to_addrs):
     msg = MIMEMultipart()
-
     msg["From"] = EMAIL
-    msg["To"] = ",".join(TO)
+    msg["To"] = ",".join(to_addrs)
     msg["Subject"] = subject
+    msg.attach(MIMEText(body, "html"))
+    s = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+    s.starttls()
+    s.login(EMAIL, PASSWORD)
+    s.sendmail(EMAIL, to_addrs, msg.as_string())
+    s.quit()
+    print("✅ Mail sent to:", to_addrs)
 
-    msg.attach(
-        MIMEText(
-            body,
-            "html"
-        )
-    )
+# Recipient(s) - adjust if needed
+TO = [os.environ.get("RECIPIENTS_TO", "mis2@frozenbottle.in")]
 
-    server = smtplib.SMTP(
-        SMTP_SERVER,
-        SMTP_PORT
-    )
-
-    server.starttls()
-
-    server.login(
-        EMAIL,
-        PASSWORD
-    )
-
-    server.sendmail(
-        EMAIL,
-        TO,
-        msg.as_string()
-    )
-
-    server.quit()
-
-    print("✅ Dashboard Mail Sent")
-
-send_mail(
-
-    subject=f"MTD Dashboard | {today.strftime('%d-%b-%Y')}",
-
-    body=body
-
-)
+# Send
+send_mail(subject=f"COCO Dashboard | {ftd_date_only}", body=html_body, to_addrs=TO)
