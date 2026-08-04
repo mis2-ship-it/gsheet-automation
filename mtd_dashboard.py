@@ -736,6 +736,106 @@ push(
 
 )
 
+# -----------------------
+# COCO: FTD vs LW (same day) comparisons
+# Inserted: builds Brand / Region / Source comparisons for COCO only
+# -----------------------
+
+# Helper normalizers (self-contained)
+def normalize_region_local(x):
+    if pd.isna(x):
+        return "Others"
+    s = str(x).strip().upper()
+    if s.startswith("KA"):
+        return "KA"
+    if s.startswith("MH"):
+        return "MH"
+    if s in ("TN", "TAMIL NADU"):
+        return "TN"
+    if s.startswith("KER") or s == "KERALA":
+        return "KL"
+    return s
+
+def normalize_source_local(x):
+    if pd.isna(x):
+        return "Others"
+    s = str(x).strip().lower()
+    if "swiggy" in s:
+        return "Swiggy"
+    if "zomato" in s:
+        return "Zomato"
+    if "own" in s or "ownly" in s:
+        return "Ownly"
+    if "store" in s or "in store" in s or "instore" in s:
+        return "In Store"
+    return "Others"
+
+# Ensure we have lw_df available (last_week same-day snapshot)
+lw_coco = lw_df[lw_df.get("Store Type", "") == "COCO"] if "Store Type" in lw_df.columns else lw_df.copy()
+
+# 1) Brand level comparison (Brand Name | FTD | LW | Growth%)
+ftd_brand = (
+    ftd_coco_df
+    .groupby("Brand Name", dropna=False)
+    .agg(FTD=("Net Sales", "sum"))
+    .reset_index()
+)
+
+lw_brand = (
+    lw_coco
+    .groupby("Brand Name", dropna=False)
+    .agg(LW=("Net Sales", "sum"))
+    .reset_index()
+)
+
+brand_comp = pd.merge(ftd_brand, lw_brand, on="Brand Name", how="outer").fillna(0)
+brand_comp["Growth %"] = ((brand_comp["FTD"] - brand_comp["LW"]) / brand_comp["LW"].replace(0, 1)) * 100
+brand_comp = brand_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
+push("Dashboard_COCO_Brand_Compare", brand_comp.round(2))
+print("✅ COCO Brand comparison built and pushed")
+
+# 2) Region level comparison
+ftd_region = (
+    ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region_local))
+    .groupby("RegionNorm", dropna=False)
+    .agg(FTD=("Net Sales", "sum"))
+    .reset_index()
+)
+
+lw_region = (
+    lw_coco.assign(RegionNorm=lw_coco["Region"].apply(normalize_region_local))
+    .groupby("RegionNorm", dropna=False)
+    .agg(LW=("Net Sales", "sum"))
+    .reset_index()
+)
+
+region_comp = pd.merge(ftd_region, lw_region, on="RegionNorm", how="outer").fillna(0)
+region_comp["Growth %"] = ((region_comp["FTD"] - region_comp["LW"]) / region_comp["LW"].replace(0, 1)) * 100
+region_comp = region_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
+push("Dashboard_COCO_Region_Compare", region_comp.round(2))
+print("✅ COCO Region comparison built and pushed")
+
+# 3) Source level comparison
+ftd_source = (
+    ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source_local))
+    .groupby("SourceNorm", dropna=False)
+    .agg(FTD=("Net Sales", "sum"))
+    .reset_index()
+)
+
+lw_source = (
+    lw_coco.assign(SourceNorm=lw_coco["Source"].apply(normalize_source_local))
+    .groupby("SourceNorm", dropna=False)
+    .agg(LW=("Net Sales", "sum"))
+    .reset_index()
+)
+
+source_comp = pd.merge(ftd_source, lw_source, on="SourceNorm", how="outer").fillna(0)
+source_comp["Growth %"] = ((source_comp["FTD"] - source_comp["LW"]) / source_comp["LW"].replace(0, 1)) * 100
+source_comp = source_comp.sort_values("FTD", ascending=False).reset_index(drop=True)
+push("Dashboard_COCO_Source_Compare", source_comp.round(2))
+print("✅ COCO Source comparison built and pushed")
+
 # =========================================================
 # FTD BRAND LW
 # =========================================================
@@ -1543,17 +1643,28 @@ color:#0A7D32;
 
 {html_table(brand_summary)}
 
+<!-- COCO: Brand comparison (FTD vs LW same day) -->
+<h4>COCO — Brand : FTD vs LW</h4>
+{html_table(brand_comp)}
+
 <br>
 
 <h3>🛒 Source Performance (FTD | MTD)</h3>
 
 {html_table(source_summary)}
 
+<!-- COCO: Source comparison (FTD vs LW same day) -->
+<h4>COCO — Source : FTD vs LW</h4>
+{html_table(source_comp)}
+
 <br>
 
 <h3>🌎 Region Performance (FTD | MTD)</h3>
 
 {html_table(region_summary)}
+
+<h4>COCO — Region : FTD vs LW</h4>
+{html_table(region_comp)}
 
 <br>
 
