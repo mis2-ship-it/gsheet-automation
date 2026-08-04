@@ -92,48 +92,48 @@ for col in ["Net Sales","Gross Sales","Discount","Orders"]:
     if col not in final_df.columns:
         final_df[col] = 0
 
-available_dates = sorted(final_df["Date"].dropna().unique())
-if not available_dates:
-    raise ValueError("No valid dates in data")
+# Use date-normalized (midnight) available dates so nearest-available works on days
+available_dates = sorted(final_df["Date"].dt.normalize().dropna().unique())
 
-ftd_date = available_dates[-1]
-mtd_start = pd.Timestamp(year=ftd_date.year, month=ftd_date.month, day=1)
+# compute target days (normalize to midnight) and pick nearest available day <= target
+target_lw_day = (ftd_date - timedelta(days=7)).normalize()
+target_l2w_day = (ftd_date - timedelta(days=14)).normalize()
+target_mom_day = (ftd_date - pd.DateOffset(months=1)).normalize()
+target_ly_day = (ftd_date - pd.DateOffset(years=1)).normalize()
 
-# nearest-available date helper
-def nearest_available_timestamp(target_ts, available_list):
-    if target_ts is None:
+def nearest_available_day(target_day, available_day_list):
+    if target_day is None:
         return None
-    valid = [d for d in available_list if d <= target_ts]
+    valid = [d for d in available_day_list if d <= target_day]
     return valid[-1] if valid else None
 
-# compute target timestamps and nearest available
-target_lw_ts = ftd_date - timedelta(days=7)
-target_l2w_ts = ftd_date - timedelta(days=14)
-target_mom_ts = ftd_date - pd.DateOffset(months=1)
-target_ly_ts = ftd_date - pd.DateOffset(years=1)
+last_week_day = nearest_available_day(target_lw_day, available_dates)
+last_2_week_day = nearest_available_day(target_l2w_day, available_dates)
+last_month_day = nearest_available_day(target_mom_day, available_dates)
+last_year_day = nearest_available_day(target_ly_day, available_dates)
 
-last_week_ts = nearest_available_timestamp(target_lw_ts, available_dates)
-last_2_week_ts = nearest_available_timestamp(target_l2w_ts, available_dates)
-last_month_ts = nearest_available_timestamp(target_mom_ts, available_dates)
-last_year_ts = nearest_available_timestamp(target_ly_ts, available_dates)
+# convert to date objects for display/filtering
+last_week = pd.to_datetime(last_week_day).date() if last_week_day is not None else None
+last_2_week = pd.to_datetime(last_2_week_day).date() if last_2_week_day is not None else None
+last_month = pd.to_datetime(last_month_day).date() if last_month_day is not None else None
+last_year = pd.to_datetime(last_year_day).date() if last_year_day is not None else None
+ftd_date_only = pd.to_datetime(ftd_date).date()
 
-last_week = to_date_safe(last_week_ts)
-last_2_week = to_date_safe(last_2_week_ts)
-last_month = to_date_safe(last_month_ts)
-last_year = to_date_safe(last_year_ts)
-ftd_date_only = to_date_safe(ftd_date)
-
+# Filter datasets by normalized day (use .dt.normalize() to align)
 def df_on_date(df, date_obj):
     if date_obj is None:
         return df.iloc[0:0].copy()
-    return df.loc[df["Date"].dt.date == date_obj].copy()
+    return df.loc[df["Date"].dt.normalize() == pd.to_datetime(date_obj).normalize()].copy()
 
 ftd_df = df_on_date(final_df, ftd_date_only)
-lw_df = df_on_date(final_df, last_week)
+lw_df  = df_on_date(final_df, last_week)
 l2w_df = df_on_date(final_df, last_2_week)
 mom_df = df_on_date(final_df, last_month)
-ly_df = df_on_date(final_df, last_year)
-mtd_df = final_df.loc[(final_df["Date"] >= mtd_start) & (final_df["Date"] <= ftd_date)].copy()
+ly_df  = df_on_date(final_df, last_year)
+
+# debug prints to verify
+print("DEBUG DAYS -> FTD:", ftd_date_only, "LW:", last_week, "L2W:", last_2_week)
+print("DEBUG ROWS -> FTD rows:", len(ftd_df), "LW rows:", len(lw_df), "L2W rows:", len(l2w_df))
 
 ftd_coco_df = ftd_df[ftd_df["Store Type"] == "COCO"].copy()
 lw_coco_df = lw_df[lw_df["Store Type"] == "COCO"].copy()
