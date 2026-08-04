@@ -836,8 +836,8 @@ from email.mime.text import MIMEText
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-EMAIL = "mis2@frozenbottle.in"
-PASSWORD = os.environ["EMAIL_PASS"]
+EMAIL_USER = os.environ.get("EMAIL_USER")
+EMAIL_PASS = os.environ.get("EMAIL_PASS")
 
 TO = [
     "mis2@frozenbottle.in"
