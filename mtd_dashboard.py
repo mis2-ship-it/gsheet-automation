@@ -486,6 +486,18 @@ def add_growth(current_df, compare_df, column, suffix):
 
     return current_df
 
+print("="*60)
+print("LW Dates")
+print("="*60)
+print(lw_df["Date"].value_counts())
+
+print("="*60)
+print("L2W Dates")
+print("="*60)
+print(l2w_df["Date"].value_counts())
+
+print("LW Net :", lw_df["Net Sales"].sum())
+print("L2W Net:", l2w_df["Net Sales"].sum())
 
 # =========================================================
 # TODAY BRAND SUMMARY
@@ -761,3 +773,126 @@ push(
 )
 
 print(region_l2w.round(2))
+
+# Send Mail
+import smtplib
+
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
+# =========================================================
+# EMAIL CONFIGURATION
+# =========================================================
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+EMAIL = "mis2@frozenbottle.in"
+PASSWORD = "Your App Password"
+
+TO = [
+    "mis2@frozenbottle.in"
+]
+
+def html_table(df):
+
+    return (
+        df.round(2)
+        .to_html(
+            index=False,
+            border=1,
+            justify="center"
+        )
+    )
+
+body = f"""
+
+<h2>📊 MTD Dashboard</h2>
+
+<h3>KPI</h3>
+
+{html_table(kpi_df)}
+
+<br>
+
+<h3>COCO vs FOFO</h3>
+
+{html_table(compare_df)}
+
+<br>
+
+<h3>Brand</h3>
+
+{html_table(brand_summary)}
+
+<br>
+
+<h3>Source</h3>
+
+{html_table(source_summary)}
+
+<br>
+
+<h3>Region</h3>
+
+{html_table(region_summary)}
+
+<br>
+
+<h3>Session</h3>
+
+{html_table(session_summary)}
+
+<br>
+
+<h3>Top Branches</h3>
+
+{html_table(branch_summary.head(10))}
+
+"""
+def send_mail(subject, body):
+
+    msg = MIMEMultipart()
+
+    msg["From"] = EMAIL
+    msg["To"] = ",".join(TO)
+    msg["Subject"] = subject
+
+    msg.attach(
+        MIMEText(
+            body,
+            "html"
+        )
+    )
+
+    server = smtplib.SMTP(
+        SMTP_SERVER,
+        SMTP_PORT
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL,
+        PASSWORD
+    )
+
+    server.sendmail(
+        EMAIL,
+        TO,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    print("✅ Mail Sent")
+
+send_mail(
+
+    subject=f"MTD Dashboard | {today.strftime('%d-%b-%Y')}",
+
+    body=body
+
+)
+
+
