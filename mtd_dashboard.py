@@ -41,22 +41,42 @@ print("✅ Connected to Google Sheet")
 # PUSH DATAFRAME TO GOOGLE SHEET
 # =========================================================
 
+import time
+
 def push(sheet_name, df):
 
     try:
         ws = spreadsheet.worksheet(sheet_name)
-    except:
+
+    except Exception:
+
         ws = spreadsheet.add_worksheet(
             title=sheet_name,
             rows="5000",
             cols="30"
         )
 
-    ws.clear()
+    # Prepare Data
+    data = [
+        df.columns.tolist()
+    ] + (
+        df.fillna("")
+        .values
+        .tolist()
+    )
 
-    data = [df.columns.tolist()] + df.fillna("").values.tolist()
+    # Clear existing data
+    ws.batch_clear(["A:Z"])
 
-    ws.update(data)
+    # Update from A1
+    ws.update(
+        "A1",
+        data,
+        value_input_option="USER_ENTERED"
+    )
+
+    # Prevent Google API quota error
+    time.sleep(2)
 
     print(f"✅ Updated : {sheet_name}")
 
