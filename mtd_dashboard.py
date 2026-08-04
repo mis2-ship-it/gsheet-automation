@@ -1,385 +1,2467 @@
-# =========================================================
-# mtd_dashboard.py  (corrected: growth, totals, display formatting)
-# =========================================================
-
-from datetime import datetime, timedelta
-from pathlib import Path
-import pandas as pd
-import json
 import os
-import re
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import json
+import time
+import jwt
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
+import matplotlib.pyplot as plt
+from io import BytesIO
+from email.mime.image import MIMEImage
 
-# ------------------------------
-# Config
-# ------------------------------
-EMAIL = os.environ.get("EMAIL_USER")
-PASSWORD = os.environ.get("EMAIL_PASS")
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-BASE_FOLDER = Path("monthly_data")
+print("🚀 Live Script Started")
 
-# ------------------------------
-# Helpers
-# ------------------------------
-def find_latest_csv(base_folder: Path):
-    csv_files = list(base_folder.rglob("*.csv"))
-    if not csv_files:
-        raise FileNotFoundError(f"No CSV files found under {base_folder}")
-    month_map = {"Jan":1,"Feb":2,"Mar":3,"Apr":4,"May":5,"Jun":6,"Jul":7,"Aug":8,"Sep":9,"Oct":10,"Nov":11,"Dec":12}
-    def extract_month_year(path: Path):
-        m = re.search(r"MTD_(\w{3})_(\d{2})\.csv", path.name)
-        if not m:
-            return datetime(1900,1,1)
-        month = month_map.get(m.group(1), 1)
-        year = 2000 + int(m.group(2))
-        return datetime(year, month, 1)
-    latest = max(csv_files, key=extract_month_year)
-    return latest
+# ---------------- AUTH ---------------- #
 
-def to_date_safe(x):
-    if x is None:
-        return None
-    return pd.to_datetime(x).date()
+API_KEY = os.environ["API_KEY"]
+SECRET_KEY = os.environ["SECRET_KEY"]
 
-def normalize_region(x):
-    if pd.isna(x): return "Others"
-    s = str(x).strip().upper()
-    if s.startswith("KA"): return "KA"
-    if s.startswith("MH"): return "MH"
-    if s in ("TN", "TAMIL NADU"): return "TN"
-    if s.startswith("KER") or s == "KERALA": return "KL"
-    return s
+def get_token():
+    payload = {"iss": API_KEY, "iat": int(time.time())}
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-def normalize_source(x):
-    if pd.isna(x): return "Others"
-    s = str(x).strip().lower()
-    if "swiggy" in s: return "Swiggy"
-    if "zomato" in s: return "Zomato"
-    if "own" in s or "ownly" in s: return "Ownly"
-    if "store" in s or "in store" in s or "instore" in s: return "In Store"
-    return "Others"
+def headers():
+    return {
+        "x-api-key": API_KEY,
+        "x-api-token": get_token(),
+        "content-type": "application/json"
+    }
 
-def format_money(x):
+# ---------------- GOOGLE ---------------- #
+
+creds = Credentials.from_service_account_info(
+    json.loads(os.environ["GOOGLE_CREDENTIALS"]),
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
+
+client = gspread.authorize(creds)
+sheet_url = "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
+
+retry = 5
+
+for i in range(retry):
+
     try:
-        return f"₹{int(round(x)):,}"
-    except Exception:
-        return "₹0"
 
-def format_pct(x):
-    if pd.isna(x):
-        return "-"
-    try:
-        return f"{x:.1f}%"
-    except Exception:
-        return "-"
+        spreadsheet = client.open_by_url(sheet_url)
 
-# ------------------------------
-# Load CSV and basic filtering
-# ------------------------------
-latest_csv = find_latest_csv(BASE_FOLDER)
-final_df = pd.read_csv(latest_csv, low_memory=False)
+        print("✅ Connected to Google Sheet")
 
-if "Date" not in final_df.columns:
-    raise KeyError("Date column not found in CSV")
+        break
 
-final_df["Date"] = pd.to_datetime(final_df["Date"], errors="coerce")
-final_df["Store Type"] = final_df.get("Store Type", "").fillna("").astype(str).str.strip().str.upper()
+    except Exception as e:
 
-for col in ["Net Sales","Gross Sales","Discount","Orders"]:
+        print(f"⚠️ Google Sheet connection failed ({i+1}/{retry})")
+        print(str(e))
+
+        time.sleep(10)
+
+else:
+
+    raise Exception("❌ Failed to connect Google Sheet after retries")
+
+# ---------------- TIME ---------------- #
+
+now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+print("⏰ Auto Trigger Time:", now)
+print("🕒 IST Time:", now)
+
+# ---------------- BUSINESS DATE FIX ---------------- #
+
+def get_business_day(now):
+    if now.hour < 6:
+        return (now - timedelta(days=1)).date()
+    return now.date()
+
+business_day = get_business_day(now)
+
+today = business_day.strftime("%Y-%m-%d")
+last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
+last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
+month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
+
+print("📅 Business Day:", today)
+print("📅 Last Week:", last_week)
+print(f"🧠 Business Window: {business_day} 09:00 → Next Day 06:00")
+
+# ---------------- FETCH BRANCH ---------------- #
+
+b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
+data = b_resp.json()
+data = data.get("data", []) if isinstance(data, dict) else data
+
+branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
+
+print("🏪 Branch count:", len(branches))
+
+
+# ---------------- FETCH SALES ---------------- #
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def fetch_branch_data(branch, day):
+    all_data = []
+    last_key = None
+
+    while True:
+        params = {"branch": branch, "day": day}
+        if last_key:
+            params["lastKey"] = last_key
+
+        try:
+            r = requests.get(
+                "https://api.ristaapps.com/v1/sales/summary",
+                headers=headers(),
+                params=params,
+                timeout=20
+            )
+
+            if r.status_code != 200:
+                return pd.DataFrame()
+
+            js = r.json()
+            data = js.get("data", [])
+
+            if not data:
+                break
+
+            all_data.append(pd.json_normalize(data))
+
+            last_key = js.get("lastKey")
+            if not last_key:
+                break
+
+        except:
+            return pd.DataFrame()
+
+    return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+
+
+def fetch_sales(day):
+
+    results = []
+
+    # 🔥 THREAD CONTROL
+    max_threads = 10
+
+    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+
+        futures = [
+            executor.submit(fetch_branch_data, b, day)
+            for b in branches
+        ]
+
+        for future in as_completed(futures):
+
+            df = future.result()
+
+            if df is not None and not df.empty:
+                results.append(df)
+
+    # =====================================================
+    # FINAL CONCAT
+    # =====================================================
+
+    final_sales_df = (
+        pd.concat(results, ignore_index=True)
+        if results
+        else pd.DataFrame()
+    )
+
+    # =====================================================
+    # RAW DATA CHECK
+    # =====================================================
+
+    print("RAW DATA CHECK")
+    print(final_sales_df.shape)
+
+    if (
+        not final_sales_df.empty
+        and "businessDate" in final_sales_df.columns
+    ):
+
+        print(
+            sorted(
+                pd.to_datetime(
+                    final_sales_df["businessDate"]
+                ).dt.date.unique()
+            )[:15]
+        )
+
+    return final_sales_df
+
+# ---------------- RUN ---------------- #
+
+today_df = fetch_sales(today)
+lastweek_df = fetch_sales(last_week)
+
+if today_df.empty:
+    print("❌ No today data")
+    exit()
+
+last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
+month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
+last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
+
+last2week_df = fetch_sales(last2week)
+month_on_month_df = fetch_sales(month_on_month)
+lastyear_df = fetch_sales(last_year)
+
+# ---------------- DATE CLEAN ---------------- #
+
+def prepare_dates(df):
+    if df.empty:
+        return df
+
+    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"], errors="coerce").dt.tz_localize(None)
+
+    def get_business_date(dt):
+        if pd.isna(dt):
+            return pd.NaT
+        return (dt - pd.Timedelta(days=1)).date() if dt.hour < 5 else dt.date()
+
+    df["businessDate"] = df["invoiceDate"].apply(get_business_date)
+    df["Date"] = df["businessDate"]
+    df["Hour"] = df["invoiceDate"].dt.hour
+
+    return df
+
+today_df = prepare_dates(today_df)
+lastweek_df = prepare_dates(lastweek_df)
+last2week_df = prepare_dates(last2week_df)
+month_on_month_df = prepare_dates(month_on_month_df)
+lastyear_df = prepare_dates(lastyear_df)
+
+# ---------------- TAGGING ---------------- #
+
+today_df["Data_Type"] = "Today"
+lastweek_df["Data_Type"] = "Last Week"
+last2week_df["Data_Type"] = "Last 2 Week"
+month_on_month_df["Data_Type"] = "Last Month"
+lastyear_df["Data_Type"] = "Last Year"
+
+final_df = pd.concat([
+    today_df,
+    lastweek_df,
+    last2week_df,
+    month_on_month_df,
+    lastyear_df
+], ignore_index=True)
+
+# ================================
+# 📌 SAFE COLUMN FIX (IMPORTANT)
+# ================================
+
+if "channel" not in final_df.columns:
+    final_df["channel"] = "Unknown"
+
+if "branchName" not in final_df.columns:
+    final_df["branchName"] = "Unknown"
+
+
+# ---------------- SAFE COLUMN CHECK ---------------- #
+
+required_cols = ["netAmount", "chargeAmount", "status", "branchName", "channel"]
+for col in required_cols:
     if col not in final_df.columns:
         final_df[col] = 0
 
-# Use date-normalized (midnight) available dates so nearest-available works on days
-available_dates = sorted(final_df["Date"].dt.normalize().dropna().unique())
+# ---------------- NET SALES ---------------- #
 
-# compute target days (normalize to midnight) and pick nearest available day <= target
-target_lw_day = (ftd_date - timedelta(days=7)).normalize()
-target_l2w_day = (ftd_date - timedelta(days=14)).normalize()
-target_mom_day = (ftd_date - pd.DateOffset(months=1)).normalize()
-target_ly_day = (ftd_date - pd.DateOffset(years=1)).normalize()
+final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
+final_df["chargeAmount"] = pd.to_numeric(final_df["chargeAmount"], errors="coerce").fillna(0)
 
-def nearest_available_day(target_day, available_day_list):
-    if target_day is None:
-        return None
-    valid = [d for d in available_day_list if d <= target_day]
-    return valid[-1] if valid else None
+final_df["Net Sales"] = (
+    (final_df["netAmount"] + final_df["chargeAmount"])
+    .where(final_df["status"] == "Closed", 0)
+)
 
-last_week_day = nearest_available_day(target_lw_day, available_dates)
-last_2_week_day = nearest_available_day(target_l2w_day, available_dates)
-last_month_day = nearest_available_day(target_mom_day, available_dates)
-last_year_day = nearest_available_day(target_ly_day, available_dates)
+# =========================================================
+# HELP SHEET MAPPING (FINAL STABLE VERSION)
+# =========================================================
 
-# convert to date objects for display/filtering
-last_week = pd.to_datetime(last_week_day).date() if last_week_day is not None else None
-last_2_week = pd.to_datetime(last_2_week_day).date() if last_2_week_day is not None else None
-last_month = pd.to_datetime(last_month_day).date() if last_month_day is not None else None
-last_year = pd.to_datetime(last_year_day).date() if last_year_day is not None else None
-ftd_date_only = pd.to_datetime(ftd_date).date()
+sheet = client.open(
+    "Sales Dashboard"
+).worksheet("Help Sheet")
 
-# Filter datasets by normalized day (use .dt.normalize() to align)
-def df_on_date(df, date_obj):
-    if date_obj is None:
-        return df.iloc[0:0].copy()
-    return df.loc[df["Date"].dt.normalize() == pd.to_datetime(date_obj).normalize()].copy()
+# =========================================================
+# STORE / REGION / AM / TM MASTER
+# =========================================================
 
-ftd_df = df_on_date(final_df, ftd_date_only)
-lw_df  = df_on_date(final_df, last_week)
-l2w_df = df_on_date(final_df, last_2_week)
-mom_df = df_on_date(final_df, last_month)
-ly_df  = df_on_date(final_df, last_year)
+branch_master = pd.DataFrame(
+    sheet.get("G:M")[1:],
+    columns=sheet.get("G:M")[0]
+)
 
-# debug prints to verify
-print("DEBUG DAYS -> FTD:", ftd_date_only, "LW:", last_week, "L2W:", last_2_week)
-print("DEBUG ROWS -> FTD rows:", len(ftd_df), "LW rows:", len(lw_df), "L2W rows:", len(l2w_df))
+# Clean text
+for col in branch_master.columns:
+    branch_master[col] = (
+        branch_master[col]
+        .astype(str)
+        .str.strip()
+    )
 
-ftd_coco_df = ftd_df[ftd_df["Store Type"] == "COCO"].copy()
-lw_coco_df = lw_df[lw_df["Store Type"] == "COCO"].copy()
-l2w_coco_df = l2w_df[l2w_df["Store Type"] == "COCO"].copy()
-mtd_coco_df = mtd_df[mtd_df["Store Type"] == "COCO"].copy()
+# =========================================================
+# STORE TYPE MAP
+# =========================================================
 
-# ------------------------------
-# KPI (COCO only) — Qty removed
-# ------------------------------
-def get_kpi(df):
-    gross = df["Gross Sales"].sum()
-    net = df["Net Sales"].sum()
-    discount = df["Discount"].sum()
-    orders = df["Orders"].sum()
-    aov = net / orders if orders else 0
-    dis_pct = (discount / gross * 100) if gross else 0
-    return {"Gross": round(gross,2), "Net": round(net,2), "Discount": round(discount,2), "Orders": int(orders), "AOV": round(aov,2), "Dis %": round(dis_pct,2)}
+storetype_map = dict(
+    zip(
+        branch_master["Store Name"],
+        branch_master["Ownership"]
+    )
+)
 
-ftd_kpi = get_kpi(ftd_coco_df)
-mtd_kpi = get_kpi(mtd_coco_df)
+# =========================================================
+# REGION MAP
+# =========================================================
 
-# ------------------------------
-# Build comparisons (Brand / Region / Source)
-# ------------------------------
-import numpy as np
+region_map = dict(
+    zip(
+        branch_master["Store Name"],
+        branch_master["Region"]
+    )
+)
 
-def build_group_compare_numeric(ftd_series, lw_series, l2w_series, label):
-    idx = sorted(set(ftd_series.index).union(lw_series.index).union(l2w_series.index))
-    df = pd.DataFrame(index=idx)
-    df.index.name = label
-    df["FTD"] = ftd_series.reindex(idx).fillna(0).astype(float)
-    df["LW"]  = lw_series.reindex(idx).fillna(0).astype(float)
-    df["L2W"] = l2w_series.reindex(idx).fillna(0).astype(float)
-    # compute Growth % as NaN when LW == 0
-    df["Growth %"] = np.where(df["LW"] > 0, ((df["FTD"] - df["LW"]) / df["LW"]) * 100, pd.NA)
-    return df.reset_index()
+# =========================================================
+# AM / TM MAP
+# =========================================================
 
-def build_dis_pct_numeric(ftd_df, lw_df, l2w_df, group_col):
-    f = ftd_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
-    l = lw_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
-    l2 = l2w_df.groupby(group_col).agg(Discount=("Discount","sum"), Gross=("Gross Sales","sum")).reset_index()
-    f["Dis%"] = np.where(f["Gross"]>0, f["Discount"]/f["Gross"]*100, 0)
-    l["Dis%"] = np.where(l["Gross"]>0, l["Discount"]/l["Gross"]*100, 0)
-    l2["Dis%"] = np.where(l2["Gross"]>0, l2["Discount"]/l2["Gross"]*100, 0)
-    df = pd.merge(f[[group_col,"Dis%"]], l[[group_col,"Dis%"]], on=group_col, how="outer", suffixes=("_FTD","_LW")).fillna(0)
-    df = pd.merge(df, l2[[group_col,"Dis%"]], on=group_col, how="left").fillna(0)
-    df = df.rename(columns={group_col:"Group", "Dis%":"Dis%_L2W"})
-    df["Change"] = df["Dis%_FTD"] - df["Dis%_LW"]
+branch_master["AM Mail"] = (
+    branch_master["AM Mail"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+)
+
+branch_master["TM Mail"] = (
+    branch_master["TM Mail"]
+    .astype(str)
+    .str.strip()
+    .str.lower()
+)
+
+am_store_map = (
+    branch_master
+    .groupby("AM Mail")["Store Name"]
+    .apply(list)
+    .to_dict()
+)
+
+tm_region_map = (
+    branch_master
+    .groupby("TM Mail")["Region"]
+    .apply(list)
+    .to_dict()
+)
+
+# remove blank emails
+am_store_map = {
+    k: v
+    for k, v in am_store_map.items()
+    if k and k != "nan"
+}
+
+tm_region_map = {
+    k: v
+    for k, v in tm_region_map.items()
+    if k and k != "nan"
+}
+
+# =========================================================
+# SOURCE + BRAND MASTER
+# D:F = Channel, Source Group, Brand
+# =========================================================
+
+source_master = pd.DataFrame(
+    sheet.get("D:F")[1:],
+    columns=sheet.get("D:F")[0]
+)
+
+# =========================================================
+# CLEAN TEXT
+# =========================================================
+
+for col in source_master.columns:
+    source_master[col] = (
+        source_master[col]
+        .astype(str)
+        .str.strip()
+    )
+
+source_master["Channel"] = (
+    source_master["Channel"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
+
+# =========================================================
+# FINAL DF CHANNEL CLEAN
+# =========================================================
+
+final_df["channel"] = (
+    final_df["channel"]
+    .astype(str)
+    .str.upper()
+    .str.strip()
+)
+
+# =========================================================
+# SOURCE MAP
+# =========================================================
+
+source_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Source Group"]
+    )
+)
+
+# =========================================================
+# BRAND MAP
+# =========================================================
+
+brand_map = dict(
+    zip(
+        source_master["Channel"],
+        source_master["Brand"]
+    )
+)
+
+# =========================================================
+# APPLY MAPPING
+# =========================================================
+
+final_df["Source Group"] = (
+    final_df["channel"]
+    .map(source_map)
+    .fillna("Others")
+)
+
+final_df["Brand"] = (
+    final_df["channel"]
+    .map(brand_map)
+    .fillna("Unknown")
+)
+
+final_df["Store Type"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(storetype_map)
+    .fillna("UNKNOWN")
+)
+
+final_df["Region"] = (
+    final_df["branchName"]
+    .astype(str)
+    .str.strip()
+    .map(region_map)
+    .fillna("UNKNOWN")
+)
+
+# =========================================================
+# DEBUG
+# =========================================================
+
+print("SOURCE GROUP CHECK")
+print(
+    final_df["Source Group"]
+    .value_counts(dropna=False)
+)
+
+print("BRAND CHECK")
+print(
+    final_df["Brand"]
+    .value_counts(dropna=False)
+)
+
+print("UNMAPPED CHANNELS")
+print(
+    set(final_df["channel"].unique())
+    - set(source_master["Channel"].unique())
+)
+
+print("STORE TYPE CHECK")
+print(
+    final_df["Store Type"]
+    .value_counts(dropna=False)
+)
+
+print("AM EMAIL SAMPLE")
+print(list(am_store_map.keys())[:5])
+
+print("TM EMAIL SAMPLE")
+print(list(tm_region_map.keys())[:5])
+
+print("✅ AM Count:", len(am_store_map))
+print("✅ TM Count:", len(tm_region_map))
+print("✅ Final Mapping Completed")
+
+
+# ---------------- FILTER ---------------- #
+
+today_cut = final_df[
+    (final_df["Data_Type"] == "Today") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastweek_cut = final_df[
+    (final_df["Data_Type"] == "Last Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+last2week_cut = final_df[
+    (final_df["Data_Type"] == "Last 2 Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+month_on_month_cut = final_df[
+    (final_df["Data_Type"] == "Last Month") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+lastyear_cut = final_df[
+    (final_df["Data_Type"] == "Last Year") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]
+
+
+# ---------------- BUSINESS HOUR ---------------- #
+
+def map_business_hour(h):
+    return h if h >= 8 else h + 24
+
+for df in [today_cut, lastweek_cut]:
+    df["BusinessHour"] = df["Hour"].apply(map_business_hour)
+
+# ---------------- TIME FILTER ---------------- #
+
+current_hour = now.hour
+cutoff_hour = current_hour + 24 if current_hour < 8 else current_hour - 1
+
+today_cut = today_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
+lastweek_cut = lastweek_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
+
+print("✅ Data Prepared Successfully")
+
+# ---------------- APPLY SAME TIME FILTER TO L2W & LY ---------------- #
+
+last2week_cut["BusinessHour"] = last2week_cut["Hour"].apply(map_business_hour)
+month_on_month_cut["BusinessHour"] = month_on_month_cut["Hour"].apply(map_business_hour)
+lastyear_cut["BusinessHour"] = lastyear_cut["Hour"].apply(map_business_hour)
+
+last2week_cut = last2week_cut[
+    (last2week_cut["BusinessHour"] >= 8) &
+    (last2week_cut["BusinessHour"] <= cutoff_hour)
+]
+
+month_on_month_cut = month_on_month_cut[
+    (month_on_month_cut["BusinessHour"] >= 8) &
+    (month_on_month_cut["BusinessHour"] <= cutoff_hour)
+]
+
+lastyear_cut = lastyear_cut[
+    (lastyear_cut["BusinessHour"] >= 8) &
+    (lastyear_cut["BusinessHour"] <= cutoff_hour)
+]
+
+# ---------------- SESSION ---------------- #
+
+def get_session(h):
+    if 8 <= h <= 11: return "Breakfast"
+    elif 12 <= h <= 15: return "Lunch"
+    elif 16 <= h <= 19: return "Snacks"
+    elif 20 <= h <= 23: return "Dinner"
+    else: return "Post Dinner"
+
+today_cut["Session"] = today_cut["Hour"].apply(get_session)
+lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
+
+def add_session(df):
+    if "Session" not in df.columns:
+        df["Session"] = df["Hour"].apply(get_session)
     return df
 
-# Brand
-ftd_brand_net = ftd_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
-lw_brand_net = lw_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
-l2w_brand_net = l2w_coco_df.groupby("Brand Name", dropna=False)["Net Sales"].sum()
-brand_net_num = build_group_compare_numeric(ftd_brand_net, lw_brand_net, l2w_brand_net, "Brand")
-brand_dis_num = build_dis_pct_numeric(ftd_coco_df, lw_coco_df, l2w_coco_df, "Brand Name")
 
-brand_num = pd.merge(brand_net_num, brand_dis_num, left_on="Brand", right_on="Group", how="left").drop(columns=["Group"]).fillna(0)
-# rename cols
-brand_num = brand_num.rename(columns={"Brand":"Brand Name", "Dis%_FTD":"Dis%_FTD", "Dis%_LW":"Dis%_LW", "Dis%_L2W":"Dis%_L2W", "Change":"Dis_Change"})
-# total row
-total_net_ftd = brand_num["FTD"].sum()
-total_net_lw  = brand_num["LW"].sum()
-total_net_l2w = brand_num["L2W"].sum()
-total_discount_ftd = ftd_coco_df["Discount"].sum(); total_gross_ftd = ftd_coco_df["Gross Sales"].sum()
-total_discount_lw = lw_coco_df["Discount"].sum(); total_gross_lw = lw_coco_df["Gross Sales"].sum()
-total_discount_l2w = l2w_coco_df["Discount"].sum(); total_gross_l2w = l2w_coco_df["Gross Sales"].sum()
-total_dis_ftd_pct = (total_discount_ftd / total_gross_ftd * 100) if total_gross_ftd else 0
-total_dis_lw_pct = (total_discount_lw / total_gross_lw * 100) if total_gross_lw else 0
-total_dis_l2w_pct = (total_discount_l2w / total_gross_l2w * 100) if total_gross_l2w else 0
-total_growth_pct = ((total_net_ftd - total_net_lw) / total_net_lw * 100) if total_net_lw>0 else pd.NA
+final_df = add_session(final_df)
 
-# prepare brand_display_with_total (numeric -> then format)
-brand_display_numeric = brand_num[["Brand Name","FTD","LW","Growth %","L2W","Dis%_FTD","Dis%_LW","Dis_Change","Dis%_L2W"]].copy()
-brand_display_numeric = brand_display_numeric.rename(columns={"Dis%_FTD":"Dis FTD","Dis%_LW":"Dis LW","Dis_Change":"Dis Change","Dis%_L2W":"Dis L2W"})
-total_row_brand = {
-    "Brand Name":"Total",
-    "FTD": total_net_ftd,
-    "LW": total_net_lw,
-    "Growth %": total_growth_pct,
-    "L2W": total_net_l2w,
-    "Dis FTD": total_dis_ftd_pct,
-    "Dis LW": total_dis_lw_pct,
-    "Dis Change": total_dis_ftd_pct - total_dis_lw_pct,
-    "Dis L2W": total_dis_l2w_pct
-}
-brand_display_with_total = pd.concat([brand_display_numeric, pd.DataFrame([total_row_brand])], ignore_index=True).fillna(0)
+# =========================================================
+# 🔥 KPI FUNCTION
+# =========================================================
 
-# Format brand_display_with_total
-brand_display_with_total["FTD"] = brand_display_with_total["FTD"].apply(format_money)
-brand_display_with_total["LW"]  = brand_display_with_total["LW"].apply(format_money)
-brand_display_with_total["L2W"] = brand_display_with_total["L2W"].apply(format_money)
-brand_display_with_total["Growth %"] = brand_display_with_total["Growth %"].apply(format_pct)
-brand_display_with_total["Dis FTD"] = brand_display_with_total["Dis FTD"].apply(format_pct)
-brand_display_with_total["Dis LW"] = brand_display_with_total["Dis LW"].apply(format_pct)
-brand_display_with_total["Dis Change"] = brand_display_with_total["Dis Change"].apply(format_pct)
-brand_display_with_total["Dis L2W"] = brand_display_with_total["Dis L2W"].apply(format_pct)
+def build_kpi(df_today, df_lw, label=None):
 
-# Region
-ftd_region_net = ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
-lw_region_net = lw_coco_df.assign(RegionNorm=lw_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
-l2w_region_net = l2w_coco_df.assign(RegionNorm=l2w_coco_df["Region"].apply(normalize_region)).groupby("RegionNorm", dropna=False)["Net Sales"].sum()
-region_net_num = build_group_compare_numeric(ftd_region_net, lw_region_net, l2w_region_net, "Region")
-region_dis_num = build_dis_pct_numeric(
-    ftd_coco_df.assign(RegionNorm=ftd_coco_df["Region"].apply(normalize_region)),
-    lw_coco_df.assign(RegionNorm=lw_coco_df["Region"].apply(normalize_region)),
-    l2w_coco_df.assign(RegionNorm=l2w_coco_df["Region"].apply(normalize_region)),
-    "RegionNorm"
+    def calc(df):
+        if df is None or df.empty:
+            return 0,0,0,0
+        return (
+            df["grossAmount"].sum(),
+            df["discountAmount"].sum(),
+            df["Net Sales"].sum(),
+            len(df)
+        )
+
+    gt, dt, nt, tt = calc(df_today)
+    gl, dl, nl, tl = calc(df_lw)
+
+    data = pd.DataFrame({
+        "Parameters": ["Gross","Discount","Net","Txn","AOV","Discount %"],
+        "Today": [gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
+        "Last Week": [gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100]
+    })
+
+    data["Growth %"] = ((data["Today"]-data["Last Week"])/data["Last Week"].replace(0,1))*100
+
+    if label:
+        data.insert(0,label[0],label[1])
+
+    return data.round(2)
+
+#Store Metrics
+
+def calc_store_metrics(df, lw_df):
+
+    def agg(d):
+        return (
+            d["Net Sales"].sum(),
+            d["grossAmount"].sum(),
+            d["discountAmount"].sum()
+        )
+
+    t_net, t_gross, t_disc = agg(df)
+    l_net, l_gross, l_disc = agg(lw_df)
+
+    return {
+        "Today Rev": t_net,
+        "LW Rev": l_net,
+        "Growth %": (t_net - l_net) / max(l_net, 1) * 100,
+        "Today Dis %": (t_disc / max(t_gross,1)) * 100,
+        "LW Dis %": (l_disc / max(l_gross,1)) * 100,
+        "Changes %": ((t_disc / max(t_gross,1)) - (l_disc / max(l_gross,1))) * 100
+    }
+
+# =========================================================
+# 📅 DATE LOGIC (CRITICAL FIX)
+# =========================================================
+
+def get_same_weekday_last_year(date):
+    last_year_date = date - pd.DateOffset(years=1)
+    
+    # Align weekday
+    while last_year_date.weekday() != date.weekday():
+        last_year_date += timedelta(days=1)
+    
+    return last_year_date
+
+
+# =========================================================
+# 📈 OVERALL EXTENDED FUNCTION
+# =========================================================
+
+def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
+
+    def calc(df):
+        if df is None or df.empty:
+            return 0,0,0,0
+        return (
+            df["grossAmount"].sum(),
+            df["discountAmount"].sum(),
+            df["Net Sales"].sum(),
+            len(df)
+        )
+
+    gt,dt,nt,tt = calc(today_df)
+    gl,dl,nl,tl = calc(lw_df)
+    g2,d2,n2,t2 = calc(l2w_df)
+    gm,dm,nm,tm = calc(mom_df)
+    gy,dy,ny,ty = calc(ly_df)
+
+    df = pd.DataFrame({
+        "Parameters":["Gross","Discount","Net","Txn","AOV","Discount %"],
+        "Today":[gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
+        "Last Week":[gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100],
+        "Last 2 Week":[g2,d2,n2,t2,n2/max(t2,1),d2/max(g2,1)*100],
+        "Last Month":[gm,dm,nm,tm,nm/max(tm,1),dm/max(gm,1)*100],
+        "Last Year":[gy,dy,ny,ty,ny/max(ty,1),dy/max(gy,1)*100]
+    })
+
+    # Growth calculations
+    df["LW Growth %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
+    df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
+    df["MoM Growth %"] = ((df["Today"]-df["Last Month"]) / df["Last Month"].replace(0,1)) * 100
+    df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
+
+    # =========================================================
+    # 🔮 EOD PROJECTION
+    # =========================================================
+
+    growth = ((nt - nl) / max(nl,1)) * 100
+
+    lw_full = final_df[
+        (final_df["Date"] == lw_df["Date"].max()) &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ]["Net Sales"].sum()
+
+    eod = lw_full * (1 + growth/100)
+
+    df["EOD Projection"] = 0.0
+    df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
+
+    return df.round(2), eod
+
+    
+
+# =========================================================
+# 🔥 FINAL EXECUTION
+# =========================================================
+
+def prepare_data_cuts(final_df):
+
+    today_df = final_df[
+        (final_df["Data_Type"] == "Today") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    lw_df = final_df[
+        (final_df["Data_Type"] == "Last Week") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    l2w_df = final_df[
+        (final_df["Data_Type"] == "Last 2 Week") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    mom_df = final_df[
+        (final_df["Data_Type"] == "Last Month") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    ly_df = final_df[
+        (final_df["Data_Type"] == "Last Year") &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+    # Business date (safe)
+    today = final_df["Date"].dropna().max()
+
+    return today_df, lw_df, l2w_df, mom_df, ly_df, today
+
+print("Today rows:", len(today_cut))
+print("LW rows:", len(lastweek_cut))
+print("L2W rows:", len(last2week_cut))
+print("MoM rows:", len(month_on_month_cut))
+print("LY rows:", len(lastyear_cut))
+
+# =====================================================
+# 📌 STORE FILTER
+# =====================================================
+
+def filter_store_data(store_list):
+    return final_df[
+        (final_df["branchName"].isin(store_list)) &
+        (final_df["Store Type"] == "COCO") &
+        (final_df["status"] == "Closed")
+    ].copy()
+
+
+# =====================================================
+# 📌 STORE KPI TABLE
+# =====================================================
+
+def store_kpi(df):
+    grouped = df.groupby("branchName")
+
+    rows = []
+
+    for store, g in grouped:
+
+        lw = lastweek_cut[lastweek_cut["branchName"] == store]
+
+        t_rev = g["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+        t_disc = (g["discountAmount"].sum() / max(g["grossAmount"].sum(), 1)) * 100
+        lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
+
+        rows.append({
+            "Store Name": store,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Changes %": round(t_disc - lw_disc, 2)
+        })
+
+    return pd.DataFrame(rows)
+
+# =====================================================
+# 📌 SESSION REPORT
+# =====================================================
+
+def session_report(df, lw_df):
+    out = []
+
+    for store in df["branchName"].unique():
+
+        s_df = df[df["branchName"] == store]
+        s_lw = lw_df[lw_df["branchName"] == store]
+
+        for session in ["Breakfast","Lunch","Snacks","Dinner","Post Dinner"]:
+
+            t = s_df[s_df["Session"] == session]["Net Sales"].sum()
+            lw = s_lw[s_lw["Session"] == session]["Net Sales"].sum()
+
+            growth = ((t - lw) / max(lw, 1)) * 100
+
+            out.append({
+                "Store Name": store,
+                "Session": session,
+                "Today Rev": round(t, 2),
+                "LW Rev": round(lw, 2),
+                "Growth %": round(growth, 2)
+            })
+
+    return pd.DataFrame(out)
+
+
+# =====================================================
+# 📌 BRAND REPORT
+# =====================================================
+
+def brand_report(df, lw_df):
+    rows = []
+
+    for store in df["branchName"].unique():
+
+        s_df = df[df["branchName"] == store]
+        s_lw = lw_df[lw_df["branchName"] == store]
+
+        for brand in s_df["Brand"].unique():
+
+            t = s_df[s_df["Brand"] == brand]
+            lw = s_lw[s_lw["Brand"] == brand]
+
+            t_rev = t["Net Sales"].sum()
+            lw_rev = lw["Net Sales"].sum()
+
+            growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+            t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
+            lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
+
+            rows.append({
+                "Store Name": store,
+                "Brand": brand,
+                "Today Rev": round(t_rev, 2),
+                "LW Rev": round(lw_rev, 2),
+                "Growth %": round(growth, 2),
+                "Today Dis %": round(t_disc, 2),
+                "LW Dis %": round(lw_disc, 2),
+                "Changes %": round(t_disc - lw_disc, 2)
+            })
+
+    return pd.DataFrame(rows)
+
+
+# =========================================================
+# 🔥 INSIGHT ENGINE
+# =========================================================
+
+def generate_insight(overall):
+
+    try:
+        row = overall[overall["Parameters"]=="Net"].iloc[0]
+
+        lw = row["LW Growth %"]
+        l2w = row["L2W Growth %"]
+        mom = row["MoM Growth %"]
+        ly = row["LY Growth %"]
+
+        text = f"{lw:+.1f}% vs LW, {l2w:+.1f}% vs L2W, {mom:+.1f}% vs MoM, {ly:+.1f}% vs LY"
+
+        if lw>0 and ly<0:
+            text += " → ⚠️ slowdown"
+        elif lw>0 and ly>0:
+            text += " → 🚀 strong growth"
+        elif lw<0:
+            text += " → 🔻 decline"
+
+        return text
+    except:
+        return "Insight not available"
+
+# =========================================================
+# 🔥 SAFE ANALYSIS BUILDER
+# =========================================================
+
+def safe_kpi_builder(df_today, df_lw, col, label):
+
+    if df_today.empty or col not in df_today.columns:
+        return pd.DataFrame()
+
+    grouped_today = df_today.groupby(col)
+    grouped_lw = df_lw.groupby(col)
+
+    frames = []
+
+    for key in grouped_today.groups.keys():
+
+        t_df = grouped_today.get_group(key)
+        lw_df = grouped_lw.get_group(key) if key in grouped_lw.groups else pd.DataFrame()
+
+        frames.append(build_kpi(t_df, lw_df, (label, key)))
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+
+# ---------------- SUMMARY ---------------- #
+
+today_total = today_cut["Net Sales"].sum()
+lw_total = lastweek_cut["Net Sales"].sum()
+
+growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
+
+lw_full_day = final_df[
+    (final_df["Data_Type"] == "Last Week") &
+    (final_df["Store Type"] == "COCO") &
+    (final_df["status"] == "Closed")
+]["Net Sales"].sum()
+
+eod_projection = lw_full_day * (1 + (growth / 100))
+
+summary = pd.DataFrame({
+    "Metric": ["Total Sales"],
+    "Today": [today_total],
+    "Last Week (Till Now)": [lw_total],
+    "Growth %": [growth],
+    "EOD Projection": [eod_projection]
+}).round(2)
+
+print("✅ Summary Created")
+
+
+
+# ---------------- HOURLY ANALYSIS ---------------- #
+
+hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
+hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
+
+hourly_analysis = pd.DataFrame({
+    "Today": hourly_today,
+    "Last Week": hourly_lw
+}).fillna(0)
+
+hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
+                               hourly_analysis["Last Week"].replace(0,1))*100
+
+hourly_analysis = hourly_analysis.reset_index()
+hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
+hourly_analysis = hourly_analysis.sort_values("BusinessHour")
+
+# ---------------- HOURLY TREND ---------------- #
+
+hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
+    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
 )
-region_num = pd.merge(region_net_num, region_dis_num, left_on="Region", right_on="Group", how="left").drop(columns=["Group"]).fillna(0)
-region_num = region_num.rename(columns={"Region":"Region Name","Dis%_FTD":"Dis%_FTD","Dis%_LW":"Dis%_LW","Dis%_L2W":"Dis%_L2W","Change":"Dis_Change"})
 
-# totals for region
-total_net_ftd_r = region_num["FTD"].sum(); total_net_lw_r = region_num["LW"].sum(); total_net_l2w_r = region_num["L2W"].sum()
-total_dis_ftd_r = ftd_coco_df["Discount"].sum(); total_gross_ftd_r = ftd_coco_df["Gross Sales"].sum()
-total_dis_lw_r = lw_coco_df["Discount"].sum(); total_gross_lw_r = lw_coco_df["Gross Sales"].sum()
-total_dis_l2w_r = l2w_coco_df["Discount"].sum(); total_gross_l2w_r = l2w_coco_df["Gross Sales"].sum()
-total_dis_ftd_pct_r = (total_dis_ftd_r/total_gross_ftd_r*100) if total_gross_ftd_r else 0
-total_dis_lw_pct_r = (total_dis_lw_r/total_gross_lw_r*100) if total_gross_lw_r else 0
-total_dis_l2w_pct_r = (total_dis_l2w_r/total_gross_l2w_r*100) if total_gross_l2w_r else 0
-total_growth_pct_r = ((total_net_ftd_r - total_net_lw_r)/total_net_lw_r*100) if total_net_lw_r>0 else pd.NA
+# =========================================================
+# 🔥 OVERALL ANALYSIS Summary
+# =========================================================
 
-region_display_numeric = region_num.rename(columns={"Region Name":"Region"})[["Region","FTD","LW","Growth %","L2W","Dis%_FTD","Dis%_LW","Dis_Change","Dis%_L2W"]].copy()
-region_display_numeric = region_display_numeric.rename(columns={"Dis%_FTD":"Dis FTD","Dis%_LW":"Dis LW","Dis_Change":"Dis Change","Dis%_L2W":"Dis L2W"})
-total_row_region = {"Region":"Total","FTD":total_net_ftd_r,"LW":total_net_lw_r,"Growth %":total_growth_pct_r,"L2W":total_net_l2w_r,"Dis FTD":total_dis_ftd_pct_r,"Dis LW":total_dis_lw_pct_r,"Dis Change":total_dis_ftd_pct_r-total_dis_lw_pct_r,"Dis L2W":total_dis_l2w_pct_r}
-region_display_with_total = pd.concat([region_display_numeric, pd.DataFrame([total_row_region])], ignore_index=True).fillna(0)
-region_display_with_total["FTD"] = region_display_with_total["FTD"].apply(format_money)
-region_display_with_total["LW"] = region_display_with_total["LW"].apply(format_money)
-region_display_with_total["L2W"] = region_display_with_total["L2W"].apply(format_money)
-region_display_with_total["Growth %"] = region_display_with_total["Growth %"].apply(format_pct)
-region_display_with_total["Dis FTD"] = region_display_with_total["Dis FTD"].apply(format_pct)
-region_display_with_total["Dis LW"] = region_display_with_total["Dis LW"].apply(format_pct)
-region_display_with_total["Dis Change"] = region_display_with_total["Dis Change"].apply(format_pct)
-region_display_with_total["Dis L2W"] = region_display_with_total["Dis L2W"].apply(format_pct)
-
-# Source
-ftd_source_net = ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
-lw_source_net = lw_coco_df.assign(SourceNorm=lw_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
-l2w_source_net = l2w_coco_df.assign(SourceNorm=l2w_coco_df["Source"].apply(normalize_source)).groupby("SourceNorm", dropna=False)["Net Sales"].sum()
-source_net_num = build_group_compare_numeric(ftd_source_net, lw_source_net, l2w_source_net, "Source")
-source_dis_num = build_dis_pct_numeric(
-    ftd_coco_df.assign(SourceNorm=ftd_coco_df["Source"].apply(normalize_source)),
-    lw_coco_df.assign(SourceNorm=lw_coco_df["Source"].apply(normalize_source)),
-    l2w_coco_df.assign(SourceNorm=l2w_coco_df["Source"].apply(normalize_source)),
-    "SourceNorm"
+overall, eod = build_overall_extended(
+    today_cut,
+    lastweek_cut,
+    last2week_cut,
+    month_on_month_cut,
+    lastyear_cut
 )
-source_num = pd.merge(source_net_num, source_dis_num, left_on="Source", right_on="Group", how="left").drop(columns=["Group"]).fillna(0)
-source_num = source_num.rename(columns={"Source":"Source Name","Dis%_FTD":"Dis%_FTD","Dis%_LW":"Dis%_LW","Dis%_L2W":"Dis%_L2W","Change":"Dis_Change"})
 
-# totals for source
-total_net_ftd_s = source_num["FTD"].sum(); total_net_lw_s = source_num["LW"].sum(); total_net_l2w_s = source_num["L2W"].sum()
-total_dis_ftd_s = ftd_coco_df["Discount"].sum(); total_gross_ftd_s = ftd_coco_df["Gross Sales"].sum()
-total_dis_lw_s = lw_coco_df["Discount"].sum(); total_gross_lw_s = lw_coco_df["Gross Sales"].sum()
-total_dis_l2w_s = l2w_coco_df["Discount"].sum(); total_gross_l2w_s = l2w_coco_df["Gross Sales"].sum()
-total_dis_ftd_pct_s = (total_dis_ftd_s/total_gross_ftd_s*100) if total_gross_ftd_s else 0
-total_dis_lw_pct_s = (total_dis_lw_s/total_gross_lw_s*100) if total_gross_lw_s else 0
-total_dis_l2w_pct_s = (total_dis_l2w_s/total_gross_l2w_s*100) if total_gross_l2w_s else 0
-total_growth_pct_s = ((total_net_ftd_s - total_net_lw_s)/total_net_lw_s*100) if total_net_lw_s>0 else pd.NA
+insight_text = generate_insight(overall)
 
-source_display_numeric = source_num.rename(columns={"Source Name":"Source"})[["Source","FTD","LW","Growth %","L2W","Dis%_FTD","Dis%_LW","Dis_Change","Dis%_L2W"]].copy()
-source_display_numeric = source_display_numeric.rename(columns={"Dis%_FTD":"Dis FTD","Dis%_LW":"Dis LW","Dis_Change":"Dis Change","Dis%_L2W":"Dis L2W"})
-total_row_source = {"Source":"Total","FTD":total_net_ftd_s,"LW":total_net_lw_s,"Growth %":total_growth_pct_s,"L2W":total_net_l2w_s,"Dis FTD":total_dis_ftd_pct_s,"Dis LW":total_dis_lw_pct_s,"Dis Change":total_dis_ftd_pct_s-total_dis_lw_pct_s,"Dis L2W":total_dis_l2w_pct_s}
-source_display_with_total = pd.concat([source_display_numeric, pd.DataFrame([total_row_source])], ignore_index=True).fillna(0)
-source_display_with_total["FTD"] = source_display_with_total["FTD"].apply(format_money)
-source_display_with_total["LW"] = source_display_with_total["LW"].apply(format_money)
-source_display_with_total["L2W"] = source_display_with_total["L2W"].apply(format_money)
-source_display_with_total["Growth %"] = source_display_with_total["Growth %"].apply(format_pct)
-source_display_with_total["Dis FTD"] = source_display_with_total["Dis FTD"].apply(format_pct)
-source_display_with_total["Dis LW"] = source_display_with_total["Dis LW"].apply(format_pct)
-source_display_with_total["Dis Change"] = source_display_with_total["Dis Change"].apply(format_pct)
-source_display_with_total["Dis L2W"] = source_display_with_total["Dis L2W"].apply(format_pct)
+print("🧠 Insight:", insight_text)
 
-# ------------------------------
-# KPI table top (COCO only)
-# ------------------------------
-kpi_table = pd.DataFrame([{
-    "Metric":"Gross","FTD":format_money(ftd_kpi["Gross"]), "MTD":format_money(mtd_kpi["Gross"])
-},{
-    "Metric":"Net","FTD":format_money(ftd_kpi["Net"]), "MTD":format_money(mtd_kpi["Net"])
-},{
-    "Metric":"Discount","FTD":format_money(ftd_kpi["Discount"]), "MTD":format_money(mtd_kpi["Discount"])
-},{
-    "Metric":"Orders","FTD":f"{ftd_kpi['Orders']:,}", "MTD":f"{mtd_kpi['Orders']:,}"
-},{
-    "Metric":"AOV","FTD":format_money(ftd_kpi["AOV"]), "MTD":format_money(mtd_kpi["AOV"])
-},{
-    "Metric":"Discount %","FTD":format_pct(ftd_kpi["Dis %"]), "MTD":format_pct(mtd_kpi["Dis %"])
-}])
+print("✅ Summary Created")
 
-# ------------------------------
-# Build Email HTML (using *_with_total frames)
-# ------------------------------
-html_body = f"""
-<html>
-<head>
-  <style>
-    body{{font-family:Calibri, Arial, sans-serif; font-size:13px; background:#fff; color:#222}}
-    h2{{background:#243447;color:#fff;padding:8px}}
-    h3{{background:#f2f2f2;padding:6px}}
-    table.table{{border-collapse:collapse; width:95%; margin-bottom:18px}}
-    table.table th{{background:#243447;color:#fff;padding:6px; text-align:center}}
-    table.table td{{padding:6px; border:1px solid #ddd; text-align:center}}
-  </style>
-</head>
-<body>
-<h2>📊 Brand Dashboard (COCO) — FTD vs LW (FTD: {ftd_date_only})</h2>
+# =========================================================
+# 🎯 TARGET SUMMARY
+# =========================================================
 
-<div>
-  <h3>KPIs (COCO only)</h3>
-  {kpi_table.to_html(index=False, border=0, classes="table")}
-</div>
+target_ws = spreadsheet.worksheet("Target Sheet")
 
-<div>
-  <h3>Brand Dashboard (COCO) — FTD vs LW</h3>
-  {brand_display_with_total.to_html(index=False, border=0, classes="table")}
-</div>
+target_df = pd.DataFrame(
+    target_ws.get_all_records()
+)
 
-<div>
-  <h3>Region Dashboard (COCO) — FTD vs LW</h3>
-  {region_display_with_total.to_html(index=False, border=0, classes="table")}
-</div>
+target_df["Date"] = pd.to_datetime(
+    target_df["Date"]
+).dt.date
 
-<div>
-  <h3>Source Dashboard (COCO) — FTD vs LW</h3>
-  {source_display_with_total.to_html(index=False, border=0, classes="table")}
-</div>
+today_target_row = target_df[
+    target_df["Date"] == business_day
+]
 
-</body>
-</html>
-"""
+if not today_target_row.empty:
 
-# ------------------------------
-# Send email
-# ------------------------------
-def send_mail(subject, body, to_addrs):
-    msg = MIMEMultipart()
-    msg["From"] = EMAIL
-    msg["To"] = ",".join(to_addrs)
-    msg["Subject"] = subject
+    # =====================================================
+    # SAFE TARGET FETCH
+    # =====================================================
+
+    try:
+        total_target = float(
+            str(
+                today_target_row["Total Target"]
+                .iloc[0]
+            )
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        total_target = 0
+
+    try:
+        offline_target = float(
+            str(
+                today_target_row["Offline Target"]
+                .iloc[0]
+            )
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        offline_target = 0
+
+    try:
+        online_target = float(
+            str(
+                today_target_row["Online Target"]
+                .iloc[0]
+            )
+            .replace(",", "")
+            .strip()
+        )
+    except:
+        online_target = 0
+
+
+today_sales_total = today_cut["Net Sales"].sum()
+
+instore_sales = today_cut[
+    today_cut["Source Group"] == "In Store"
+]["Net Sales"].sum()
+
+online_sales = (
+    today_sales_total - instore_sales
+)
+
+offline_mix = (
+    instore_sales /
+    max(today_sales_total, 1)
+)
+
+online_mix = (
+    online_sales /
+    max(today_sales_total, 1)
+)
+
+offline_eod = eod * offline_mix
+online_eod = eod * online_mix
+
+
+target_summary = pd.DataFrame([
+    {
+        "Metric": "Total",
+        "Target": round(total_target,2),
+        "EOD Projection": round(eod,2),
+        "Ach %": round(
+            (eod /
+             max(total_target,1))*100,
+            2
+        )
+    },
+    {
+        "Metric": "Offline",
+        "Target": round(offline_target,2),
+        "EOD Projection": round(offline_eod,2),
+        "Ach %": round(
+            (offline_eod /
+             max(offline_target,1))*100,
+            2
+        )
+    },
+    {
+        "Metric": "Online",
+        "Target": round(online_target,2),
+        "EOD Projection": round(online_eod,2),
+        "Ach %": round(
+            (online_eod /
+             max(online_target,1))*100,
+            2
+        )
+    }
+])
+
+print("✅ Target Summary Created")
+
+
+# =========================================================
+# 🔥 BRAND ANALYSIS
+# =========================================================
+
+brand_rows = []
+
+brands = sorted(today_cut["Brand"].dropna().unique())
+
+for brand in brands:
+
+    t = today_cut[today_cut["Brand"] == brand]
+    lw = lastweek_cut[lastweek_cut["Brand"] == brand]
+
+    t_rev = t["Net Sales"].sum()
+    lw_rev = lw["Net Sales"].sum()
+
+    growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+    t_gross = t["grossAmount"].sum()
+    lw_gross = lw["grossAmount"].sum()
+
+    t_disc = (t["discountAmount"].sum() / max(t_gross, 1)) * 100
+    lw_disc = (lw["discountAmount"].sum() / max(lw_gross, 1)) * 100
+
+    disc_change = t_disc - lw_disc
+
+    brand_rows.append({
+        "Brand": brand,
+        "Today Rev": round(t_rev, 2),
+        "LW Rev": round(lw_rev, 2),
+        "Growth %": round(growth, 2),
+        "Today Dis %": round(t_disc, 2),
+        "LW Dis %": round(lw_disc, 2),
+        "Dis Change %": round(disc_change, 2)
+    })
+
+brand_summary = pd.DataFrame(brand_rows)
+
+print("✅ Brand Summary Created")
+
+# =========================================================
+# 🔥 SOURCE ANALYSIS
+# =========================================================
+
+source_rows = []
+
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
+
+for source in sources:
+
+    t = today_cut[
+        today_cut["Source Group"] == source
+    ]
+
+    lw = lastweek_cut[
+        lastweek_cut["Source Group"] == source
+    ]
+
+    t_rev = t["Net Sales"].sum()
+    lw_rev = lw["Net Sales"].sum()
+
+    growth = (
+        (t_rev - lw_rev)
+        / max(lw_rev, 1)
+    ) * 100
+
+    t_gross = t["grossAmount"].sum()
+    lw_gross = lw["grossAmount"].sum()
+
+    t_disc = (
+        t["discountAmount"].sum()
+        / max(t_gross, 1)
+    ) * 100
+
+    lw_disc = (
+        lw["discountAmount"].sum()
+        / max(lw_gross, 1)
+    ) * 100
+
+    disc_change = (
+        t_disc - lw_disc
+    )
+
+    source_rows.append({
+        "Source Group": source,
+        "Today Rev": round(t_rev, 2),
+        "LW Rev": round(lw_rev, 2),
+        "Growth %": round(growth, 2),
+        "Today Dis %": round(t_disc, 2),
+        "LW Dis %": round(lw_disc, 2),
+        "Dis Change %": round(disc_change, 2)
+    })
+
+source_summary = pd.DataFrame(source_rows)
+
+print("SOURCE SUMMARY CHECK")
+print(source_summary)
+
+# =========================================================
+# 🔥 BRAND x SOURCE
+# =========================================================
+
+brand_source_rows = []
+
+source = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
+
+brands_required = [
+    "Frozen Bottle",
+    "Madno",
+    "Boba Bar",
+    "Lubov"
+]
+
+for brand in brands_required:
+
+    # BRAND HEADER
+    brand_source_rows.append({
+        "Brand": f"🔹 {brand}",
+        "Source Group": "Total",
+        "Today Rev": "",
+        "LW Rev": "",
+        "Growth %": "",
+        "Today Dis %": "",
+        "LW Dis %": "",
+        "Dis Change %": ""
+    })
+
+    for source in sources:
+
+        t = today_cut[
+            (today_cut["Brand"] == brand)
+            & (today_cut["Source Group"] == source)
+        ]
+
+        lw = lastweek_cut[
+            (lastweek_cut["Brand"] == brand)
+            & (lastweek_cut["Source Group"] == source)
+        ]
+
+        t_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = (
+            (t_rev - lw_rev)
+            / max(lw_rev, 1)
+        ) * 100
+
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        lw_disc = (
+            lw["discountAmount"].sum()
+            / max(lw["grossAmount"].sum(), 1)
+        ) * 100
+
+        disc_change = (
+            t_disc - lw_disc
+        )
+
+        brand_source_rows.append({
+            "Brand": "",
+            "Source Group": source,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Dis Change %": round(disc_change, 2)
+        })
+
+brand_source_analysis = pd.DataFrame(
+    brand_source_rows
+)
+
+print("✅ Brand Source Analysis Created")
+
+# =========================================================
+# 🔥 REGION x SOURCE
+# =========================================================
+
+region_source_rows = []
+
+source = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
+
+regions_required = ["KA", "MH", "TN", "Kerela"]
+
+for region in regions_required:
+
+    region_source_rows.append({
+        "Region": f"🔹 {region}",
+        "Source Group": "Total",
+        "Today Rev": "",
+        "LW Rev": "",
+        "Growth %": "",
+        "Today Dis %": "",
+        "LW Dis %": "",
+        "Dis Change %": ""
+    })
+
+    for source in sources:
+
+        t = today_cut[
+            (today_cut["Region"] == region) &
+            (today_cut["Source Group"] == source)
+        ]
+
+        lw = lastweek_cut[
+            (lastweek_cut["Region"] == region) &
+            (lastweek_cut["Source Group"] == source)
+        ]
+
+        t_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+
+        t_disc = (
+            t["discountAmount"].sum()
+            / max(t["grossAmount"].sum(), 1)
+        ) * 100
+
+        lw_disc = (
+            lw["discountAmount"].sum()
+            / max(lw["grossAmount"].sum(), 1)
+        ) * 100
+
+        disc_change = t_disc - lw_disc
+
+        region_source_rows.append({
+            "Region": "",
+            "Source Group": source,
+            "Today Rev": round(t_rev, 2),
+            "LW Rev": round(lw_rev, 2),
+            "Growth %": round(growth, 2),
+            "Today Dis %": round(t_disc, 2),
+            "LW Dis %": round(lw_disc, 2),
+            "Dis Change %": round(disc_change, 2)
+        })
+
+region_source_analysis = pd.DataFrame(region_source_rows)
+
+print("✅ Region Source Analysis Created")
+
+# =========================================================
+# 🔥 SESSION ANALYSIS
+# =========================================================
+
+sessions = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner"]
+
+# ---------------- BRAND SESSION ---------------- #
+
+brand_session = pd.pivot_table(
+    today_cut,
+    index="Brand",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_brand_session = pd.pivot_table(
+    lastweek_cut,
+    index="Brand",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in brand_session.columns:
+        brand_session[s] = 0
+
+    if s not in lw_brand_session.columns:
+        lw_brand_session[s] = 0
+
+    brand_session[f"{s} Growth %"] = (
+        (brand_session[s] - lw_brand_session[s])
+        / lw_brand_session[s].replace(0, 1)
+    ) * 100
+
+brand_session = brand_session.reset_index()
+
+print("✅ Brand Session Analysis Created")
+
+# ---------------- Source SESSION ---------------- #
+
+source_session = pd.pivot_table(
+    today_cut,
+    index="Source Group",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_source_session = pd.pivot_table(
+    lastweek_cut,
+    index="Source Group",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in source_session.columns:
+        source_session[s] = 0
+
+    if s not in lw_source_session.columns:
+        lw_source_session[s] = 0
+
+    source_session[f"{s} Growth %"] = (
+        (source_session[s] - lw_source_session[s])
+        / lw_source_session[s].replace(0, 1)
+    ) * 100
+
+source_session = source_session.reset_index()
+
+print("✅ Source Session Analysis Created")
+
+# ---------------- REGION SESSION ---------------- #
+
+region_session = pd.pivot_table(
+    today_cut,
+    index="Region",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+lw_region_session = pd.pivot_table(
+    lastweek_cut,
+    index="Region",
+    columns="Session",
+    values="Net Sales",
+    aggfunc="sum",
+    fill_value=0
+)
+
+for s in sessions:
+
+    if s not in region_session.columns:
+        region_session[s] = 0
+
+    if s not in lw_region_session.columns:
+        lw_region_session[s] = 0
+
+    region_session[f"{s} Growth %"] = (
+        (region_session[s] - lw_region_session[s])
+        / lw_region_session[s].replace(0, 1)
+    ) * 100
+
+region_session = region_session.reset_index()
+
+print("✅ Region Session Analysis Created")
+
+
+# =========================================================
+# 🔥 ALL ANALYSIS (SAFE & CLEAN)
+# =========================================================
+
+source_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Source Group",
+    "Source Group"
+)
+
+region_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Region",
+    "Region"
+)
+
+brand_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Brand",
+    "Brand"
+)
+
+session_analysis = safe_kpi_builder(
+    today_cut,
+    lastweek_cut,
+    "Session",
+    "Session"
+)
+
+print("✅ All Analysis Completed")
+
+# =========================================================
+# 📊 CHART DATA BLOCK
+# =========================================================
+chart_df = today_cut.copy()
+# =========================================================
+# BRAND SALES CHART
+# =========================================================
+
+brand_chart_df = (
+    chart_df.groupby("Brand")["Net Sales"]
+    .sum()
+    .reset_index()
+    .sort_values(
+        "Net Sales",
+        ascending=False
+    )
+)
+
+# =========================================================
+# SOURCE MIX CHART
+# =========================================================
+
+source_chart_df = (
+    chart_df.groupby("Source Group")["Net Sales"]
+    .sum()
+    .reset_index()
+)
+
+# =========================================================
+# BRAND x SOURCE DISCOUNT %
+# =========================================================
+
+discount_brand_source = (
+    chart_df.groupby(
+        ["Brand", "Source Group"]
+    )
+    .agg({
+        "discountAmount": "sum",
+        "grossAmount": "sum"
+    })
+    .reset_index()
+)
+
+discount_brand_source["Discount %"] = (
+    discount_brand_source["discountAmount"]
+    / discount_brand_source[
+        "grossAmount"
+    ].replace(0, 1)
+) * 100
+
+print("✅ Today Chart Data Prepared")
+
+# =========================================================
+# 📈 HOURLY SALES TREND CHART DATA
+# =========================================================
+
+hourly_chart_df = hourly_analysis.copy()
+
+print("✅ Chart Data Prepared")
+
+# =========================================================
+# 📈 HOURLY SALES TREND CHART
+# =========================================================
+
+def create_hourly_chart():
+
+    chart_df = hourly_analysis.copy()
+
+    if chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+
+    # TODAY LINE
+    ax.plot(
+        chart_df["Hour"],
+        chart_df["Today"],
+        marker="o",
+        linewidth=2,
+        label="Today"
+    )
+
+    # LAST WEEK LINE
+    ax.plot(
+        chart_df["Hour"],
+        chart_df["Last Week"],
+        marker="o",
+        linewidth=2,
+        label="Last Week"
+    )
+
+    ax.set_title(
+        "Hourly Sales Trend (Today vs Last Week)"
+    )
+
+    ax.set_xlabel("Hour")
+    ax.set_ylabel("Net Sales")
+
+    ax.legend()
+
+    ax.grid(True)
+
+    # =====================================================
+    # TODAY DATA LABELS (Lakhs)
+    # =====================================================
+
+    for x, y in zip(
+        chart_df["Hour"],
+        chart_df["Today"]
+    ):
+
+        ax.text(
+            x,
+            y,
+            f"{y/100000:.1f}L",
+            fontsize=8,
+            ha="center",
+            va="bottom",
+            fontweight="bold"
+        )
+
+    # =====================================================
+    # LAST WEEK DATA LABELS (Lakhs)
+    # =====================================================
+
+    for x, y in zip(
+        chart_df["Hour"],
+        chart_df["Last Week"]
+    ):
+
+        ax.text(
+            x,
+            y,
+            f"{y/100000:.1f}L",
+            fontsize=8,
+            ha="center",
+            va="top"
+        )
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+print("✅ Hourly Chart Ready")
+
+# =========================================================
+# 📊 BRAND SALES CHART
+# =========================================================
+
+def create_brand_chart():
+
+    if brand_chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    bars = ax.bar(
+        brand_chart_df["Brand"],
+        brand_chart_df["Net Sales"]
+    )
+
+    ax.set_title("Brand Sales")
+
+    ax.set_xlabel("Brand")
+    ax.set_ylabel("Net Sales")
+
+    plt.xticks(rotation=45)
+
+    ax.grid(True)
+
+    # =====================================================
+    # DATA LABELS
+    # =====================================================
+
+    for bar in bars:
+
+        height = bar.get_height()
+
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            height,
+            f'{height/100000:.1f}L',
+            ha='center',
+            va='bottom',
+            fontsize=9,
+            fontweight='bold'
+        )
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+# =========================================================
+# 📦 SOURCE MIX CHART
+# =========================================================
+
+def create_source_chart():
+
+    if source_chart_df.empty:
+        return None
+
+    fig, ax = plt.subplots(figsize=(7, 7))
+
+    ax.pie(
+        source_chart_df["Net Sales"],
+        labels=source_chart_df["Source Group"],
+        autopct="%1.1f%%"
+    )
+
+    ax.set_title("Source Mix")
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+
+# =========================================================
+# 💸 BRAND X SOURCE DISCOUNT % CHART
+# =========================================================
+
+def create_discount_chart():
+
+    if discount_brand_source.empty:
+        return None
+
+    pivot_df = discount_brand_source.pivot_table(
+        index="Brand",
+        columns="Source Group",
+        values="Discount %",
+        aggfunc="sum",
+        fill_value=0
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    pivot_df.plot(
+        kind="bar",
+        ax=ax
+    )
+
+    ax.set_title(
+        "Brand x Source Discount %"
+    )
+
+    ax.set_xlabel("Brand")
+    ax.set_ylabel("Discount %")
+
+    plt.xticks(rotation=45)
+
+    ax.grid(True)
+
+    # =====================================================
+    # DATA LABELS
+    # =====================================================
+
+    for container in ax.containers:
+
+        for bar in container:
+
+            height = bar.get_height()
+
+            if height > 0:
+
+                ax.text(
+                    bar.get_x() + bar.get_width()/2,
+                    height,
+                    f"{height:.1f}%",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold"
+                )
+
+    img_buffer = BytesIO()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        img_buffer,
+        format="png",
+        bbox_inches="tight"
+    )
+
+    img_buffer.seek(0)
+
+    plt.close()
+
+    return img_buffer
+
+# =========================================================
+# 🔥 TOP 10 STORES
+# =========================================================
+
+top_stores = (
+    today_cut.groupby("branchName")
+    .agg(Today_Sales=("Net Sales", "sum"))
+    .sort_values("Today_Sales", ascending=False)
+    .head(10)
+)
+
+lw_store = (
+    lastweek_cut.groupby("branchName")
+    .agg(LW_Sales=("Net Sales", "sum"))
+)
+
+top_stores = top_stores.join(lw_store, how="left").fillna(0)
+
+top_stores["Growth %"] = (
+    (top_stores["Today_Sales"] - top_stores["LW_Sales"])
+    / top_stores["LW_Sales"].replace(0, 1)
+) * 100
+
+top_stores = top_stores.reset_index()
+top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
+
+top_stores = top_stores.round(2)
+
+# =========================================================
+# 🔥 BOTTOM 10 STORES
+# =========================================================
+
+bottom_stores = (
+    today_cut.groupby("branchName")
+    .agg(Today_Sales=("Net Sales", "sum"))
+    .sort_values("Today_Sales", ascending=True)  # 👈 change here
+    .head(10)
+)
+
+lw_store = (
+    lastweek_cut.groupby("branchName")
+    .agg(LW_Sales=("Net Sales", "sum"))
+)
+
+bottom_stores = bottom_stores.join(lw_store, how="left").fillna(0)
+
+bottom_stores["Growth %"] = (
+    (bottom_stores["Today_Sales"] - bottom_stores["LW_Sales"])
+    / bottom_stores["LW_Sales"].replace(0, 1)
+) * 100
+
+bottom_stores = bottom_stores.reset_index()
+bottom_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
+
+bottom_stores = bottom_stores.round(2)
+
+
+# =========================================================
+# 🔍 DEBUG (CORRECT VARIABLES)
+# =========================================================
+
+
+print("🔍 Top Stores Check")
+print(top_stores.head())
+
+print("🔍 Bottom Stores Check")
+print(bottom_stores.head())
+
+
+# =========================================================
+# FINAL DATAFRAME READY
+# =========================================================
+
+print("\n==============================")
+print("FINAL_DF COLUMNS")
+print("==============================")
+print(final_df.columns.tolist())
+
+print("\nTotal Rows :", len(final_df))
+
+# ---------------- PUSH ---------------- #
+
+def push(name, df):
+    try:
+        ws = spreadsheet.worksheet(name)
+    except:
+        ws = spreadsheet.add_worksheet(title=name, rows="1000", cols="50")
+
+    ws.clear()
+    ws.batch_clear(["A:Z"])
+    
+    time.sleep(2)
+    
+    ws.update(
+        [df.columns.tolist()] +
+        df.astype(str).values.tolist()
+    )
+
+
+        
+# =====================================================
+# FINAL HTML TABLE
+# =====================================================
+
+def styled_html(df):
+
+    df = df.copy()
+
+    growth_cols = [c for c in df.columns if "Growth" in c]
+
+    text_cols = [
+        "Parameters",
+        "Parameter",
+        "Metric",
+        "Source Group",
+        "Region",
+        "Brand",
+        "Session",
+        "Hour",
+        "Store Name",
+        "Insight"
+    ]
+
+    # =====================================================
+    # FORMAT
+    # =====================================================
+
+    for col in df.columns:
+
+        # ---------------- TEXT COLUMNS ---------------- #
+
+        if col in text_cols:
+
+            df[col] = df[col].fillna("").astype(str)
+
+        # ---------------- GROWTH COLUMNS ---------------- #
+
+        elif col in growth_cols:
+
+            def growth_format(x):
+
+                try:
+
+                    if str(x).strip() == "":
+                        return ""
+
+                    val = float(str(x).replace("%", "").replace(",", "").strip())
+
+                    bg = "#d4edda" if val >= 0 else "#f8d7da"
+                    color = "#155724" if val >= 0 else "#721c24"
+
+                    return (
+                        f'<div style="'
+                        f'background:{bg};'
+                        f'color:{color};'
+                        f'padding:4px 8px;'
+                        f'border-radius:4px;'
+                        f'font-weight:bold;'
+                        f'text-align:center;'
+                        f'white-space:nowrap;'
+                        f'">'
+                        f'{val:.2f}%'
+                        f'</div>'
+                    )
+
+                except:
+                    return ""
+
+            df[col] = df[col].apply(growth_format)
+
+        # ---------------- NORMAL NUMBER COLUMNS ---------------- #
+
+        else:
+
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+            df[col] = df[col].apply(
+                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+            )
+
+    # =====================================================
+    # HTML CONVERT
+    # =====================================================
+
+    html = df.to_html(
+        index=False,
+        escape=False,
+        border=0
+    )
+
+    # =====================================================
+    # TABLE STYLE
+    # =====================================================
+
+    html = html.replace(
+        '<table class="dataframe">',
+        '''
+        <table style="
+            border-collapse:collapse;
+            width:auto;
+            min-width:60%;
+            font-family:Arial;
+            font-size:12px;
+            background:white;
+        ">
+        '''
+    )
+
+    # =====================================================
+    # HEADER STYLE
+    # =====================================================
+
+    html = html.replace(
+        '<th>',
+        '''
+        <th style="
+            background:#1f4e78;
+            color:white;
+            padding:8px;
+            border:1px solid #d9d9d9;
+            text-align:center;
+            white-space:nowrap;
+        ">
+        '''
+    )
+
+    # =====================================================
+    # CELL STYLE
+    # =====================================================
+
+    html = html.replace(
+        '<td>',
+        '''
+        <td style="
+            padding:6px;
+            border:1px solid #e5e5e5;
+            text-align:left;
+            white-space:nowrap;
+        ">
+        '''
+    )
+
+    return html
+
+# ---------------- SAFE TABLE ---------------- #
+
+def safe_table(df, title):
+
+    if df is None or df.empty:
+        return f"<p>⚠️ No data available for {title}</p>"
+
+    return styled_html(df)
+
+
+# ---------------- SEND EMAIL ---------------- #
+
+def send_email():
+
+    import smtplib
+    import os
+
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.image import MIMEImage
+
+    EMAIL_USER = os.environ.get("EMAIL_USER")
+    EMAIL_PASS = os.environ.get("EMAIL_PASS")
+    TO_EMAIL = "vivek@frozenbottle.in"
+    CC_EMAIL = "Faraz@frozenbottle.in"
+
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    # =====================================================
+    # CREATE MESSAGE
+    # =====================================================
+
+    source_df = pd.DataFrame(source_rows)
+
+    print("SOURCE DF CHECK")
+    print(source_df.head(10))
+    
+    msg = MIMEMultipart("related")
+
+    msg["From"] = EMAIL_USER
+    msg["To"] = "vivek@frozenbottle.in"
+    msg["Cc"] = "faraz@frozenbottle.in"
+
+    msg["Subject"] = (
+        f"📊 Sales Dashboard - "
+        f"{report_time.strftime('%d %b %Y')}"
+    )
+
+    # =====================================================
+    # EMAIL BODY
+    # =====================================================
+
+    body = f"""
+
+    <div style="
+        font-family:Arial;
+        background:#f4f6f9;
+        padding:20px;
+    ">
+
+        <h1 style="color:#1f4e78;">
+            📊 SALES DASHBOARD
+        </h1>
+
+        <p>
+            🕒 Data Till:
+            <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
+        </p>
+
+        <div style="
+            background:white;
+            padding:15px;
+            border-radius:8px;
+            margin-bottom:20px;
+        ">
+
+            <h2>🧠 Executive Insight</h2>
+
+            <p style="
+                font-size:15px;
+                font-weight:bold;
+                color:#333;
+            ">
+                {insight_text}
+            </p>
+
+        </div>
+
+        <h2>📈 Overall KPI</h2>
+        {styled_html(overall)}
+
+        <br><br>
+
+        <h2>🎯 Target vs EOD Projection</h2>
+        {styled_html(target_summary)}
+
+        <br><br>
+
+        <h2>🏷️ Brand Sales</h2>
+
+        <img src="cid:brand_chart"
+        style="
+        width:60%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+
+        <br><br>
+
+        <h2>📦 Source Mix</h2>
+
+        <img src="cid:source_chart"
+        style="
+        width:60%;
+        max-width:700px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+
+        <br><br>
+
+        <h2>💸 Brand x Source Discount %</h2>
+
+        <img src="cid:discount_chart"
+        style="
+        width:60%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+
+        <br><br>
+
+
+        <h2>🏷️ Brand Summary</h2>
+        {styled_html(brand_summary)}
+
+        <br><br>
+
+        <h2>🏷️ Source Summary</h2>
+        {styled_html(source_summary)}
+
+        <br><br>
+
+        <h2>🏷️ Brand Source Analysis</h2>
+        {styled_html(brand_source_analysis)}
+
+        <br><br>
+
+        <h2>🌍 Region Source Analysis</h2>
+        {styled_html(region_source_analysis)}
+
+        <br><br>
+
+        <h2>🍽️ Brand Session Analysis</h2>
+        {styled_html(brand_session)}
+
+        <br><br>
+
+        <h2>🌍 Region Session Analysis</h2>
+        {styled_html(region_session)}
+
+        <br><br>
+
+        <h2>🌍 Source Session Analysis</h2>
+        {styled_html(source_session)}
+
+        <br><br>
+
+        <h2>⏰ Hourly Sales Trend</h2>
+
+        <img src="cid:hourly_chart"
+        style="
+        width:60%;
+        max-width:900px;
+        border-radius:8px;
+        margin-bottom:15px;
+        ">
+
+        {styled_html(hourly_analysis)}
+
+        <br><br>
+
+        <h2>🏆 Top Stores</h2>
+        {styled_html(top_stores)}
+
+        <br><br>
+
+        <h2>⚠️ Bottom Stores</h2>
+        {styled_html(bottom_stores)}
+
+    </div>
+
+    """
+
+    # =====================================================
+    # ATTACH HTML BODY
+    # =====================================================
+
     msg.attach(MIMEText(body, "html"))
-    s = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-    s.starttls()
-    s.login(EMAIL, PASSWORD)
-    s.sendmail(EMAIL, to_addrs, msg.as_string())
-    s.quit()
-    print("✅ Mail sent to:", to_addrs)
 
-TO = [os.environ.get("RECIPIENTS_TO", "mis2@frozenbottle.in")]
-send_mail(subject=f"COCO Dashboard | {ftd_date_only}", body=html_body, to_addrs=TO)
+    # =====================================================
+    # ATTACH CHARTS
+    # =====================================================
+
+    chart_mapping = {
+
+        "brand_chart":
+            create_brand_chart(),
+
+        "source_chart":
+            create_source_chart(),
+
+        "discount_chart":
+            create_discount_chart(),
+
+        "hourly_chart":
+            create_hourly_chart()
+    }
+
+    for cid, chart_buffer in chart_mapping.items():
+
+        if chart_buffer:
+
+            image = MIMEImage(
+                chart_buffer.read()
+            )
+
+            image.add_header(
+                "Content-ID",
+                f"<{cid}>"
+            )
+
+            image.add_header(
+                "Content-Disposition",
+                "inline",
+                filename=f"{cid}.png"
+            )
+
+            msg.attach(image)
+
+    # =====================================================
+    # RECEIVERS
+    # =====================================================
+
+    receivers = []
+
+    if TO_EMAIL:
+        receivers += TO_EMAIL.split(",")
+
+    if CC_EMAIL:
+        receivers += CC_EMAIL.split(",")
+
+    # =====================================================
+    # SEND EMAIL
+    # =====================================================
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL_USER,
+        EMAIL_PASS
+    )
+
+    server.sendmail(
+        EMAIL_USER,
+        receivers,
+        msg.as_string()
+    )
+
+    server.quit()
+
+    print("📩 Email Sent Successfully")
+
+
+# ================================
+# 📌 ROLE DASHBOARD ENGINE
+# ================================
+
+def build_role_scope(role, identifier):
+
+    if role == "AM":
+
+        stores = am_store_map.get(identifier, [])
+
+        df_today = today_cut[
+            today_cut["branchName"].isin(stores)
+        ].copy()
+
+        df_lw = lastweek_cut[
+            lastweek_cut["branchName"].isin(stores)
+        ].copy()
+
+        return df_today, df_lw, stores, None
+
+
+    elif role == "TM":
+
+        regions = tm_region_map.get(identifier, [])
+
+        df_today = today_cut[
+            today_cut["Region"].isin(regions)
+        ].copy()
+
+        df_lw = lastweek_cut[
+            lastweek_cut["Region"].isin(regions)
+        ].copy()
+
+        return df_today, df_lw, None, regions
+
+
+    else:
+        return pd.DataFrame(), pd.DataFrame(), None, None
+
+# ================================
+# CLEAN PERIOD FILTERING
+# ================================
+
+today_df_clean = final_df[final_df["Data_Type"] == "Today"].copy()
+lw_df_clean = final_df[final_df["Data_Type"] == "Last Week"].copy()
+
+# =====================================================
+# 📩 AM MAIL
+# =====================================================
+
+# (AM mail removed as requested)
+
+# =====================================================
+# 📩 TM MAIL
+# =====================================================
+
+# (TM mail removed as requested)
+
+
+# ---------------- EXECUTE ---------------- #
+
+push("Overall", overall)
+push("Source Group", source_analysis)
+push("Region", region_analysis)
+push("Brand", brand_analysis)
+push("Session", session_analysis)
+push("Top_Stores", top_stores)
+push("Bottom_Stores", bottom_stores)
+push("Hourly", hourly_analysis)
+
+
+send_email()        # Full dashboard
+
+print("🎉 ALL EMAILS SENT SUCCESSFULLY")
