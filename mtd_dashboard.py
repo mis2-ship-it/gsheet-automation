@@ -348,11 +348,8 @@ print("="*95)
 # EMAIL DATA
 # =========================================================
 
-compare_df = compare.round(2)
+compare_df = pd.DataFrame({
 
-# KPI Table
-
-kpi_table = pd.DataFrame({
     "Metric":[
         "Gross",
         "Net",
@@ -362,6 +359,7 @@ kpi_table = pd.DataFrame({
         "AOV",
         "Dis %"
     ],
+
     "PAN INDIA":[
         pan_kpi["Gross"],
         pan_kpi["Net"],
@@ -371,6 +369,7 @@ kpi_table = pd.DataFrame({
         pan_kpi["AOV"],
         pan_kpi["Dis %"]
     ],
+
     "COCO":[
         coco_kpi["Gross"],
         coco_kpi["Net"],
@@ -380,6 +379,7 @@ kpi_table = pd.DataFrame({
         coco_kpi["AOV"],
         coco_kpi["Dis %"]
     ],
+
     "FOFO":[
         fofo_kpi["Gross"],
         fofo_kpi["Net"],
@@ -389,9 +389,10 @@ kpi_table = pd.DataFrame({
         fofo_kpi["AOV"],
         fofo_kpi["Dis %"]
     ]
-})
 
-print(kpi_table)
+}).round(2)
+
+print(compare_df)
 
 # =========================================================
 # GENERIC GROWTH SUMMARY
