@@ -1236,6 +1236,10 @@ push(
 # EMAIL KPI (FTD vs MTD)
 # =========================================================
 
+# ensure a 'today' variable for email headers (use latest available date)
+today = ftd_date if 'ftd_date' in globals() else datetime.now()
+
+# EMAIL KPI (FTD vs MTD) — fixed to use mtd_pan_kpi
 kpi_df = pd.DataFrame({
 
     "KPI":[
@@ -1259,16 +1263,38 @@ kpi_df = pd.DataFrame({
     ],
 
     "MTD":[
-        pan_kpi["Gross"],
-        pan_kpi["Net"],
-        pan_kpi["Discount"],
-        pan_kpi["Orders"],
-        pan_kpi["Qty"],
-        pan_kpi["AOV"],
-        f'{pan_kpi["Dis %"]:.2f}%'
+        mtd_pan_kpi["Gross"],
+        mtd_pan_kpi["Net"],
+        mtd_pan_kpi["Discount"],
+        mtd_pan_kpi["Orders"],
+        mtd_pan_kpi["Qty"],
+        mtd_pan_kpi["AOV"],
+        f'{mtd_pan_kpi["Dis %"]:.2f}%'
     ]
 
-})
+}).round(2)
+
+# Create combined summaries used by the email body (simple FTD vs MTD concat)
+# This prevents NameError for brand_summary, source_summary, region_summary, session_summary
+brand_summary = pd.concat([
+    ftd_brand_summary.assign(Period="FTD"),
+    mtd_brand_summary.assign(Period="MTD")
+], ignore_index=True)
+
+source_summary = pd.concat([
+    ftd_source_summary.assign(Period="FTD"),
+    mtd_source_summary.assign(Period="MTD")
+], ignore_index=True)
+
+region_summary = pd.concat([
+    ftd_region_summary.assign(Period="FTD"),
+    mtd_region_summary.assign(Period="MTD")
+], ignore_index=True)
+
+session_summary = pd.concat([
+    ftd_session_summary.assign(Period="FTD"),
+    mtd_session_summary.assign(Period="MTD")
+], ignore_index=True)
 
 # Send Mail
 import smtplib
