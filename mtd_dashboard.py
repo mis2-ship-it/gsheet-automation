@@ -449,7 +449,8 @@ def get_kpi(df):
     net = df["Net Sales"].sum()
     discount = df["Discount"].sum()
     orders = df["Orders"].sum()
-    qty = df["Quantity"].sum()
+    # Qty removed — keep a stable placeholder so existing code referencing Qty keeps working
+    qty = 0
 
     aov = net / orders if orders else 0
     dis_pct = (discount / gross * 100) if gross else 0
