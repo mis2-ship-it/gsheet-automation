@@ -344,6 +344,14 @@ print("="*95)
 print("PAN INDIA vs COCO vs FOFO")
 print("="*95)
 
+# =========================================================
+# EMAIL DATA
+# =========================================================
+
+compare_df = compare.round(2)
+
+# KPI Table
+
 kpi_table = pd.DataFrame({
     "Metric":[
         "Gross",
@@ -598,6 +606,10 @@ push(
 
 print(source_l2w.round(2))
 
+# =========================================================
+# TODAY BRANCH SUMMARY
+# =========================================================
+
 branch_summary = build_summary(
     coco_df,
     "Branch"
@@ -606,6 +618,16 @@ branch_summary = build_summary(
 push(
     "Dashboard_Branch",
     branch_summary.round(2)
+)
+
+# =========================================================
+# TOP 10 BRANCHES FOR EMAIL
+# =========================================================
+
+top_branch_df = (
+    branch_summary
+    .sort_values("Net", ascending=False)
+    .head(10)
 )
 
 branch_lw = add_growth(
@@ -621,6 +643,8 @@ push(
 )
 
 print(branch_lw.round(2))
+
+
 
 branch_l2w = add_growth(
     branch_summary.copy(),
@@ -774,6 +798,30 @@ push(
 
 print(region_l2w.round(2))
 
+kpi_df = pd.DataFrame({
+
+    "KPI":[
+        "Gross Revenue",
+        "Net Revenue",
+        "Discount",
+        "Orders",
+        "AOV",
+        "Discount %"
+    ],
+
+    "Value":[
+
+        pan_summary["Gross"],
+        pan_summary["Net"],
+        pan_summary["Discount"],
+        pan_summary["Orders"],
+        pan_summary["AOV"],
+        pan_summary["Dis %"]
+
+    ]
+
+})
+
 # Send Mail
 import smtplib
 
@@ -800,54 +848,163 @@ def html_table(df):
         df.round(2)
         .to_html(
             index=False,
-            border=1,
-            justify="center"
+            classes="table",
+            border=0
         )
     )
 
 body = f"""
 
-<h2>📊 MTD Dashboard</h2>
+<html>
 
-<h3>KPI</h3>
+<head>
+
+<style>
+
+body{{
+font-family:Calibri;
+font-size:14px;
+background:#F5F7FA;
+}}
+
+h2{{
+background:#243447;
+color:white;
+padding:10px;
+}}
+
+h3{{
+background:#2E8B57;
+color:white;
+padding:6px;
+}}
+
+.table{{
+border-collapse:collapse;
+width:100%;
+margin-bottom:25px;
+}}
+
+.table th{{
+background:#243447;
+color:white;
+padding:8px;
+text-align:center;
+}}
+
+.table td{{
+padding:6px;
+text-align:center;
+border:1px solid #dddddd;
+}}
+
+.table tr:nth-child(even){{
+background:#f5f5f5;
+}}
+
+.kpi{{
+display:flex;
+gap:20px;
+margin-bottom:20px;
+}}
+
+.card{{
+background:white;
+padding:12px;
+border-radius:8px;
+box-shadow:0 2px 5px #ccc;
+width:180px;
+text-align:center;
+}}
+
+.value{{
+font-size:22px;
+font-weight:bold;
+color:#0A7D32;
+}}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>
+📊 MTD Dashboard
+<br>
+{today.strftime("%d-%b-%Y")}
+</h2>
+
+<div class="kpi">
+
+<div class="card">
+Gross
+<div class="value">
+₹{pan_summary["Gross"]:,.0f}
+</div>
+</div>
+
+<div class="card">
+Net
+<div class="value">
+₹{pan_summary["Net"]:,.0f}
+</div>
+</div>
+
+<div class="card">
+Orders
+<div class="value">
+{int(pan_summary["Orders"]):,}
+</div>
+</div>
+
+<div class="card">
+AOV
+<div class="value">
+₹{pan_summary["AOV"]:,.0f}
+</div>
+</div>
+
+<div class="card">
+Discount
+<div class="value">
+{pan_summary["Dis %"]:.1f}%
+</div>
+</div>
+
+</div>
+
+<h3>KPI Summary</h3>
 
 {html_table(kpi_df)}
-
-<br>
 
 <h3>COCO vs FOFO</h3>
 
 {html_table(compare_df)}
 
-<br>
-
-<h3>Brand</h3>
+<h3>Brand Summary</h3>
 
 {html_table(brand_summary)}
 
-<br>
-
-<h3>Source</h3>
+<h3>Source Summary</h3>
 
 {html_table(source_summary)}
 
-<br>
-
-<h3>Region</h3>
+<h3>Region Summary</h3>
 
 {html_table(region_summary)}
 
-<br>
-
-<h3>Session</h3>
+<h3>Session Summary</h3>
 
 {html_table(session_summary)}
 
-<br>
+<h3>Top 10 Branches</h3>
 
-<h3>Top Branches</h3>
+{html_table(top_branch_df)}
 
-{html_table(branch_summary.head(10))}
+</body>
+
+</html>
 
 """
 def send_mail(subject, body):
