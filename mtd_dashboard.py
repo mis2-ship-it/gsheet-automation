@@ -241,22 +241,42 @@ mtd_df = final_df.loc[
 ].copy()
 
 # ---------- Comparison ----------
+# Compare by date (normalize timestamps) to avoid time-of-day mismatches
+def _to_date_safe(x):
+    return pd.to_datetime(x).date() if x is not None else None
 
-lw_df = final_df.loc[
-    final_df["Date"].eq(last_week)
-].copy()
+lw_date = _to_date_safe(last_week)
+l2w_date = _to_date_safe(last_2_week)
+mom_date = _to_date_safe(last_month)
+ly_date = _to_date_safe(last_year)
 
-l2w_df = final_df.loc[
-    final_df["Date"].eq(last_2_week)
-].copy()
+if lw_date is not None:
+    lw_df = final_df.loc[
+        final_df["Date"].dt.date == lw_date
+    ].copy()
+else:
+    lw_df = final_df.iloc[0:0].copy()
 
-mom_df = final_df.loc[
-    final_df["Date"].eq(last_month)
-].copy()
+if l2w_date is not None:
+    l2w_df = final_df.loc[
+        final_df["Date"].dt.date == l2w_date
+    ].copy()
+else:
+    l2w_df = final_df.iloc[0:0].copy()
 
-ly_df = final_df.loc[
-    final_df["Date"].eq(last_year)
-].copy()
+if mom_date is not None:
+    mom_df = final_df.loc[
+        final_df["Date"].dt.date == mom_date
+    ].copy()
+else:
+    mom_df = final_df.iloc[0:0].copy()
+
+if ly_date is not None:
+    ly_df = final_df.loc[
+        final_df["Date"].dt.date == ly_date
+    ].copy()
+else:
+    ly_df = final_df.iloc[0:0].copy()
 
 print("=" * 60)
 print("FILTER CHECK")
@@ -264,12 +284,10 @@ print("=" * 60)
 
 print("FTD Rows   :", len(ftd_df))
 print("MTD Rows   :", len(mtd_df))
-print("LW Rows    :", len(lw_df))
-print("L2W Rows   :", len(l2w_df))
-print("MoM Rows   :", len(mom_df))
-print("LY Rows    :", len(ly_df))
-
-
+print("LW Date    :", lw_date, "→ rows:", len(lw_df))
+print("L2W Date   :", l2w_date, "→ rows:", len(l2w_df))
+print("MoM Date   :", mom_date, "→ rows:", len(mom_df))
+print("LY Date    :", ly_date, "→ rows:", len(ly_df))
 # =========================================================
 # STORE TYPE SPLIT
 # =========================================================
