@@ -893,7 +893,7 @@ padding:6px;
 
 .table{{
 border-collapse:collapse;
-width:100%;
+width:80%;
 margin-bottom:25px;
 }}
 
