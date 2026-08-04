@@ -836,12 +836,21 @@ from email.mime.text import MIMEText
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASS = os.environ.get("EMAIL_PASS")
+EMAIL = os.environ.get("EMAIL_USER")
+PASSWORD = os.environ.get("EMAIL_PASS")
 
-TO = [
-    "mis2@frozenbottle.in"
-]
+TO = (
+    os.environ.get("EMAIL_TO", "mis2@frozenbottle.in")
+    .split(",")
+)
+
+CC = (
+    os.environ.get("EMAIL_CC", "mis2@frozenbottle.in")
+    .split(",")
+)
+
+TO = [x.strip() for x in TO if x.strip()]
+CC = [x.strip() for x in CC if x.strip()]
 
 def html_table(df):
 
@@ -1014,13 +1023,11 @@ def send_mail(subject, body):
 
     msg["From"] = EMAIL
     msg["To"] = ",".join(TO)
+    msg["CC"] = ",".join(CC)
     msg["Subject"] = subject
 
     msg.attach(
-        MIMEText(
-            body,
-            "html"
-        )
+        MIMEText(body, "html")
     )
 
     server = smtplib.SMTP(
@@ -1037,13 +1044,13 @@ def send_mail(subject, body):
 
     server.sendmail(
         EMAIL,
-        TO,
+        TO + CC,
         msg.as_string()
     )
 
     server.quit()
 
-    print("✅ Mail Sent")
+    print("✅ Dashboard Mail Sent")
 
 send_mail(
 
