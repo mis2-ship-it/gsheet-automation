@@ -3238,6 +3238,259 @@ def send_tm_mail():
             tm_email
         )
 
+# =========================================================
+# 📱 WHATSAPP LIVE SALES
+# =========================================================
+
+def send_whatsapp_live():
+
+    print("=" * 60)
+    print("Sending WhatsApp Live Sales")
+    print("=" * 60)
+
+    PHONE_NUMBER_ID = "1138561289350791"
+
+    ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
+
+    RECIPIENTS = [
+        "919750820509"
+    ]
+
+    if not ACCESS_TOKEN:
+        print("❌ WHATSAPP_ACCESS_TOKEN not found")
+        return
+
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    # =====================================================
+    # OVERALL KPI
+    # =====================================================
+
+    net_row = overall[
+        overall["Parameters"] == "Net"
+    ].iloc[0]
+
+    gross_row = overall[
+        overall["Parameters"] == "Gross"
+    ].iloc[0]
+
+    txn_row = overall[
+        overall["Parameters"] == "Txn"
+    ].iloc[0]
+
+    aov_row = overall[
+        overall["Parameters"] == "AOV"
+    ].iloc[0]
+
+    discount_row = overall[
+        overall["Parameters"] == "Discount %"
+    ].iloc[0]
+
+    net_sales = float(net_row["Today"])
+    gross_sales = float(gross_row["Today"])
+    transactions = int(txn_row["Today"])
+    aov = float(aov_row["Today"])
+    discount_pct = float(discount_row["Today"])
+
+    # =====================================================
+    # BRAND SALES
+    # =====================================================
+
+    brand_lines = []
+
+    if not brand_summary.empty:
+
+        total_brand_sales = brand_summary["Today Rev"].sum()
+
+        for _, r in brand_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
+
+            rev = float(r["Today Rev"])
+
+            contribution = (
+                rev / max(total_brand_sales, 1)
+            ) * 100
+
+            brand_lines.append(
+                f"🍶 {r['Brand']}: "
+                f"₹{rev/100000:.2f}L "
+                f"({contribution:.0f}%)"
+            )
+
+    brand_text = "\n".join(brand_lines)
+
+    # =====================================================
+    # SOURCE SALES
+    # =====================================================
+
+    source_lines = []
+
+    if not source_summary.empty:
+
+        for _, r in source_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
+
+            rev = float(r["Today Rev"])
+
+            source_lines.append(
+                f"📍 {r['Source Group']}: "
+                f"₹{rev/100000:.2f}L"
+            )
+
+    source_text = "\n".join(source_lines)
+
+    # =====================================================
+    # HOURLY SALES
+    # =====================================================
+
+    hourly_lines = []
+
+    if not hourly_analysis.empty:
+
+        latest_hour = hourly_analysis.iloc[-1]
+
+        hourly_today = float(latest_hour["Today"])
+        hourly_lw = float(latest_hour["Last Week"])
+        hourly_growth = float(latest_hour["Growth %"])
+
+        hourly_lines.append(
+            f"⏰ Current Hour: "
+            f"₹{hourly_today/100000:.2f}L"
+        )
+
+        hourly_lines.append(
+            f"📊 Same Hour LW: "
+            f"₹{hourly_lw/100000:.2f}L"
+        )
+
+        hourly_lines.append(
+            f"📈 Growth: "
+            f"{hourly_growth:+.1f}%"
+        )
+
+    hourly_text = "\n".join(hourly_lines)
+
+    # =====================================================
+    # TARGET
+    # =====================================================
+
+    try:
+
+        target_row = target_summary[
+            target_summary["Metric"] == "Total"
+        ].iloc[0]
+
+        target = float(target_row["Target"])
+        eod_projection = float(
+            target_row["EOD Projection"]
+        )
+
+        achievement = float(
+            target_row["Ach %"]
+        )
+
+        target_text = (
+            f"🎯 Target: ₹{target/100000:.2f}L\n"
+            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
+            f"📊 Achievement: {achievement:.1f}%"
+        )
+
+    except Exception:
+
+        target_text = "🎯 Target information unavailable"
+
+    # =====================================================
+    # MESSAGE
+    # =====================================================
+
+    message = f"""
+📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
+
+💰 BUSINESS OVERVIEW
+
+💵 Gross Sales: ₹{gross_sales/100000:.2f}L
+💵 Net Revenue: ₹{net_sales/100000:.2f}L
+🧾 Transactions: {transactions:,}
+🧺 AOV: ₹{aov:,.0f}
+📉 Discount: {discount_pct:.1f}%
+
+🏪 BRAND CONTRIBUTION
+
+{brand_text}
+
+📍 SOURCE CONTRIBUTION
+
+{source_text}
+
+⏰ HOURLY PERFORMANCE
+
+{hourly_text}
+
+🎯 TARGET vs PROJECTION
+
+{target_text}
+
+🧠 INSIGHT
+
+{insight_text}
+
+🤖 AI MIS Automation
+"""
+
+    # =====================================================
+    # SEND
+    # =====================================================
+
+    url = (
+        f"https://graph.facebook.com/v23.0/"
+        f"{PHONE_NUMBER_ID}/messages"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    for recipient in RECIPIENTS:
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "text",
+            "text": {
+                "preview_url": False,
+                "body": message
+            }
+        }
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        print(
+            f"WhatsApp → {recipient} | "
+            f"Status : {response.status_code}"
+        )
+
+        if response.ok:
+            print("✅ WhatsApp Live Sales Sent")
+        else:
+            print("❌ WhatsApp Send Failed")
+            print(response.text)
+
+    print("=" * 60)
 
 # ---------------- EXECUTE ---------------- #
 
@@ -3256,3 +3509,7 @@ send_am_mail()      # AM targeted
 send_tm_mail()      # TM targeted
 
 print("🎉 ALL EMAILS SENT SUCCESSFULLY")
+
+send_whatsapp_live()
+
+print("🎉 WHATSAPP LIVE SALES SENT SUCCESSFULLY")
