@@ -633,7 +633,6 @@ mtd_summary.columns = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Quantity",
     "Orders"
 ]
 
