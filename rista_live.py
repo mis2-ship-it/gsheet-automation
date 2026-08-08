@@ -3259,11 +3259,7 @@ def send_whatsapp_live():
     )
 
     RECIPIENTS = [
-        "919750820509",
-        "919535075140",
-        "919620952646",
-        "918892390985",
-        "918553666666"
+        "919750820509"
     ]
 
     if not ACCESS_TOKEN:
@@ -3421,39 +3417,7 @@ def send_whatsapp_live():
     # MESSAGE
     # =====================================================
 
-    message = f"""
-📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
-
-💰 BUSINESS OVERVIEW
-
-💵 Gross Sales: ₹{gross_sales/100000:.2f}L
-💵 Net Revenue: ₹{net_sales/100000:.2f}L
-🧾 Transactions: {transactions:,}
-🧺 AOV: ₹{aov:,.0f}
-📉 Discount: {discount_pct:.1f}%
-
-🏪 BRAND CONTRIBUTION
-
-{brand_text}
-
-📍 SOURCE CONTRIBUTION
-
-{source_text}
-
-⏰ HOURLY PERFORMANCE
-
-{hourly_text}
-
-🎯 TARGET vs PROJECTION
-
-{target_text}
-
-🧠 INSIGHT
-
-{insight_text}
-
-🤖 AI MIS Automation
-"""
+   message = "Test message from AI MIS WhatsApp API"
 
     # =====================================================
     # SEND
