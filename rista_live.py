@@ -3250,7 +3250,9 @@ def send_whatsapp_live():
 
     PHONE_NUMBER_ID = "1138561289350791"
 
-    ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
+    ACCESS_TOKEN = os.environ.get(
+        "WHATSAPP_ACCESS_TOKEN"
+    )
 
     RECIPIENTS = [
         "919750820509",
@@ -3261,8 +3263,16 @@ def send_whatsapp_live():
     ]
 
     if not ACCESS_TOKEN:
-        print("❌ WHATSAPP_ACCESS_TOKEN not found")
+
+        print(
+            "❌ WHATSAPP_ACCESS_TOKEN not found"
+        )
+
         return
+
+    # =====================================================
+    # REPORT TIME
+    # =====================================================
 
     report_time = now.replace(
         minute=0,
@@ -3271,139 +3281,448 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # OVERALL KPI
+    # FORMATTING FUNCTIONS
     # =====================================================
+
+    def fmt_lacs(value):
+
+        try:
+
+            return (
+                f"₹{float(value) / 100000:.2f}L"
+            )
+
+        except:
+
+            return "₹0.00L"
+
+    def fmt_number(value):
+
+        try:
+
+            return f"{int(round(float(value))):,}"
+
+        except:
+
+            return "-"
+
+    def fmt_rupees(value):
+
+        try:
+
+            return (
+                f"₹{int(round(float(value))):,}"
+            )
+
+        except:
+
+            return "₹0"
+
+    def fmt_pct(value):
+
+        try:
+
+            return f"{float(value):+.1f}%"
+
+        except:
+
+            return "-"
+
+    def fmt_plain_pct(value):
+
+        try:
+
+            return f"{float(value):.1f}%"
+
+        except:
+
+            return "-"
+
+    def fmt_change(value):
+
+        try:
+
+            return f"{float(value):+.1f}pp"
+
+        except:
+
+            return "-"
+
+    # =====================================================
+    # TABLE HEADER
+    # =====================================================
+
+    HEADER = (
+        f"{'Parameter':<15}"
+        f"{'Today Rev':>11}"
+        f"{'LW Rev':>11}"
+        f"{'Growth':>9}"
+        f"{'Dis%':>8}"
+        f"{'LW Dis%':>9}"
+        f"{'Change':>9}"
+    )
+
+    # =====================================================
+    # BUSINESS OVERVIEW
+    # =====================================================
+
+    business_lines = []
+
+    business_lines.append(
+        "💰 BUSINESS OVERVIEW"
+    )
+
+    business_lines.append("")
+
+    business_lines.append(
+        HEADER
+    )
+
+    # -----------------------------------------------------
+    # NET REVENUE
+    # -----------------------------------------------------
 
     net_row = overall[
         overall["Parameters"] == "Net"
     ].iloc[0]
 
-    gross_row = overall[
-        overall["Parameters"] == "Gross"
-    ].iloc[0]
+    today_net = float(
+        net_row["Today"]
+    )
+
+    lw_net = float(
+        net_row["Last Week"]
+    )
+
+    net_growth = float(
+        net_row["LW Growth %"]
+    )
+
+    today_dis = float(
+        overall[
+            overall["Parameters"] == "Discount %"
+        ].iloc[0]["Today"]
+    )
+
+    lw_dis = float(
+        overall[
+            overall["Parameters"] == "Discount %"
+        ].iloc[0]["Last Week"]
+    )
+
+    dis_change = (
+        today_dis - lw_dis
+    )
+
+    business_lines.append(
+        f"{'Net Rev':<15}"
+        f"{fmt_lacs(today_net):>11}"
+        f"{fmt_lacs(lw_net):>11}"
+        f"{fmt_pct(net_growth):>9}"
+        f"{fmt_plain_pct(today_dis):>8}"
+        f"{fmt_plain_pct(lw_dis):>9}"
+        f"{fmt_change(dis_change):>9}"
+    )
+
+    # -----------------------------------------------------
+    # TRANSACTIONS
+    # -----------------------------------------------------
 
     txn_row = overall[
         overall["Parameters"] == "Txn"
     ].iloc[0]
 
+    today_txn = float(
+        txn_row["Today"]
+    )
+
+    lw_txn = float(
+        txn_row["Last Week"]
+    )
+
+    txn_growth = float(
+        txn_row["LW Growth %"]
+    )
+
+    business_lines.append(
+        f"{'Trans':<15}"
+        f"{fmt_number(today_txn):>11}"
+        f"{fmt_number(lw_txn):>11}"
+        f"{fmt_pct(txn_growth):>9}"
+        f"{'-':>8}"
+        f"{'-':>9}"
+        f"{'-':>9}"
+    )
+
+    # -----------------------------------------------------
+    # AOV
+    # -----------------------------------------------------
+
     aov_row = overall[
         overall["Parameters"] == "AOV"
     ].iloc[0]
 
-    discount_row = overall[
-        overall["Parameters"] == "Discount %"
-    ].iloc[0]
+    today_aov = float(
+        aov_row["Today"]
+    )
 
-    net_sales = float(net_row["Today"])
-    gross_sales = float(gross_row["Today"])
-    transactions = int(txn_row["Today"])
-    aov = float(aov_row["Today"])
-    discount_pct = float(discount_row["Today"])
+    lw_aov = float(
+        aov_row["Last Week"]
+    )
+
+    aov_growth = float(
+        aov_row["LW Growth %"]
+    )
+
+    business_lines.append(
+        f"{'AOV':<15}"
+        f"{fmt_rupees(today_aov):>11}"
+        f"{fmt_rupees(lw_aov):>11}"
+        f"{fmt_pct(aov_growth):>9}"
+        f"{'-':>8}"
+        f"{'-':>9}"
+        f"{'-':>9}"
+    )
+
+    # -----------------------------------------------------
+    # DISCOUNT
+    # -----------------------------------------------------
+
+    business_lines.append(
+        f"{'Dis%':<15}"
+        f"{fmt_plain_pct(today_dis):>11}"
+        f"{fmt_plain_pct(lw_dis):>11}"
+        f"{'-':>9}"
+        f"{fmt_plain_pct(today_dis):>8}"
+        f"{fmt_plain_pct(lw_dis):>9}"
+        f"{fmt_change(dis_change):>9}"
+    )
+
+    business_text = "\n".join(
+        business_lines
+    )
 
     # =====================================================
-    # BRAND SALES
+    # GENERIC SUMMARY BUILDER
     # =====================================================
 
-    brand_lines = []
+    def build_summary_section(
+        title,
+        df,
+        name_column
+    ):
 
-    if not brand_summary.empty:
+        lines = []
 
-        total_brand_sales = brand_summary["Today Rev"].sum()
+        lines.append(title)
+        lines.append("")
+        lines.append(HEADER)
 
-        for _, r in brand_summary.sort_values(
-            "Today Rev",
-            ascending=False
-        ).iterrows():
+        if (
+            df is None
+            or df.empty
+        ):
 
-            rev = float(r["Today Rev"])
-
-            contribution = (
-                rev / max(total_brand_sales, 1)
-            ) * 100
-
-            brand_lines.append(
-                f"🍶 {r['Brand']}: "
-                f"₹{rev/100000:.2f}L "
-                f"({contribution:.0f}%)"
+            lines.append(
+                "No data available"
             )
 
-    brand_text = "\n".join(brand_lines)
+            return "\n".join(lines)
+
+        # -------------------------------------------------
+        # SORT BY TODAY REVENUE
+        # -------------------------------------------------
+
+        df = df.copy()
+
+        if "Today Rev" in df.columns:
+
+            df = df.sort_values(
+                "Today Rev",
+                ascending=False
+            )
+
+        # -------------------------------------------------
+        # ROWS
+        # -------------------------------------------------
+
+        for _, row in df.iterrows():
+
+            name = str(
+                row.get(
+                    name_column,
+                    ""
+                )
+            ).strip()
+
+            if not name:
+                continue
+
+            today_rev = float(
+                row.get(
+                    "Today Rev",
+                    0
+                )
+            )
+
+            lw_rev = float(
+                row.get(
+                    "LW Rev",
+                    0
+                )
+            )
+
+            growth = float(
+                row.get(
+                    "Growth %",
+                    0
+                )
+            )
+
+            today_disc = float(
+                row.get(
+                    "Today Dis %",
+                    0
+                )
+            )
+
+            lw_disc = float(
+                row.get(
+                    "LW Dis %",
+                    0
+                )
+            )
+
+            change = float(
+                row.get(
+                    "Dis Change %",
+                    row.get(
+                        "Changes %",
+                        row.get(
+                            "Change %",
+                            0
+                        )
+                    )
+                )
+            )
+
+            # -------------------------------------------------
+            # NAME WIDTH
+            # -------------------------------------------------
+
+            name = name[:15]
+
+            lines.append(
+                f"{name:<15}"
+                f"{fmt_lacs(today_rev):>11}"
+                f"{fmt_lacs(lw_rev):>11}"
+                f"{fmt_pct(growth):>9}"
+                f"{fmt_plain_pct(today_disc):>8}"
+                f"{fmt_plain_pct(lw_disc):>9}"
+                f"{fmt_change(change):>9}"
+            )
+
+        return "\n".join(lines)
 
     # =====================================================
-    # SOURCE SALES
+    # BRAND
     # =====================================================
-    
-    source_lines = []
-    
-    if not source_summary.empty:
-    
-        for _, r in source_summary.sort_values(
-            "Today Rev",
-            ascending=False
-        ).iterrows():
-    
-            rev = float(r["Today Rev"])
-    
-            source_lines.append(
-                f"📍 {r['Source Group']}: "
-                f"₹{rev/100000:.2f}L"
-            )
-    
-    source_text = "\n".join(source_lines)
-    
-    
-    # =====================================================
-    # REGION SALES
-    # =====================================================
-    
-    region_lines = []
-    
-    if not region_summary.empty:
-    
-        for _, r in region_summary.sort_values(
-            "Today Rev",
-            ascending=False
-        ).iterrows():
-    
-            rev = float(r["Today Rev"])
-    
-            region_lines.append(
-                f"🌎 {r['Region']}: "
-                f"₹{rev/100000:.2f}L"
-            )
-    
-    region_text = "\n".join(region_lines)
+
+    brand_text = build_summary_section(
+        "🏪 BRAND CONTRIBUTION",
+        brand_summary,
+        "Brand"
+    )
 
     # =====================================================
-    # HOURLY SALES
+    # SOURCE
+    # =====================================================
+
+    source_text = build_summary_section(
+        "📍 SOURCE CONTRIBUTION",
+        source_summary,
+        "Source Group"
+    )
+
+    # =====================================================
+    # REGION
+    # =====================================================
+
+    region_text = build_summary_section(
+        "🌎 REGION SALES",
+        region_summary,
+        "Region"
+    )
+
+    # =====================================================
+    # SESSION
+    # =====================================================
+
+    session_text = build_summary_section(
+        "🍽 SESSION SALES",
+        session_analysis,
+        "Session"
+    )
+
+    # =====================================================
+    # HOURLY
     # =====================================================
 
     hourly_lines = []
 
-    if not hourly_analysis.empty:
+    hourly_lines.append(
+        "⏰ HOURLY PERFORMANCE"
+    )
 
-        latest_hour = hourly_analysis.iloc[-1]
+    hourly_lines.append("")
 
-        hourly_today = float(latest_hour["Today"])
-        hourly_lw = float(latest_hour["Last Week"])
-        hourly_growth = float(latest_hour["Growth %"])
+    if (
+        hourly_analysis is not None
+        and not hourly_analysis.empty
+    ):
 
-        hourly_lines.append(
-            f"⏰ Current Hour: "
-            f"₹{hourly_today/100000:.2f}L"
+        latest_hour = (
+            hourly_analysis
+            .sort_values("BusinessHour")
+            .iloc[-1]
+        )
+
+        hourly_today = float(
+            latest_hour["Today"]
+        )
+
+        hourly_lw = float(
+            latest_hour["Last Week"]
+        )
+
+        hourly_growth = float(
+            latest_hour["Growth %"]
         )
 
         hourly_lines.append(
-            f"📊 Same Hour LW: "
-            f"₹{hourly_lw/100000:.2f}L"
+            f"Current Hour : "
+            f"{fmt_lacs(hourly_today)}"
         )
 
         hourly_lines.append(
-            f"📈 Growth: "
-            f"{hourly_growth:+.1f}%"
+            f"Same Hour LW : "
+            f"{fmt_lacs(hourly_lw)}"
         )
 
-    hourly_text = "\n".join(hourly_lines)
+        hourly_lines.append(
+            f"Growth       : "
+            f"{fmt_pct(hourly_growth)}"
+        )
+
+    else:
+
+        hourly_lines.append(
+            "No hourly data available"
+        )
+
+    hourly_text = "\n".join(
+        hourly_lines
+    )
 
     # =====================================================
     # TARGET
@@ -3415,7 +3734,10 @@ def send_whatsapp_live():
             target_summary["Metric"] == "Total"
         ].iloc[0]
 
-        target = float(target_row["Target"])
+        target = float(
+            target_row["Target"]
+        )
+
         eod_projection = float(
             target_row["EOD Projection"]
         )
@@ -3425,101 +3747,174 @@ def send_whatsapp_live():
         )
 
         target_text = (
-            f"🎯 Target: ₹{target/100000:.2f}L\n"
-            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
-            f"📊 Achievement: {achievement:.1f}%"
+            "🎯 TARGET vs PROJECTION\n\n"
+            f"Target        : "
+            f"{fmt_lacs(target)}\n"
+            f"EOD Projection: "
+            f"{fmt_lacs(eod_projection)}\n"
+            f"Achievement   : "
+            f"{achievement:.1f}%"
         )
 
     except Exception:
 
-        target_text = "🎯 Target information unavailable"
+        target_text = (
+            "🎯 TARGET vs PROJECTION\n\n"
+            "Target information unavailable"
+        )
 
     # =====================================================
-    # MESSAGE
+    # COMPLETE MESSAGE
     # =====================================================
 
-    message = f"""
-    📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
-    
-    💰 BUSINESS OVERVIEW
-    
-    💵 Gross Sales: ₹{gross_sales/100000:.2f}L
-    💵 Net Revenue: ₹{net_sales/100000:.2f}L
-    🧾 Transactions: {transactions:,}
-    🧺 AOV: ₹{aov:,.0f}
-    📉 Discount: {discount_pct:.1f}%
-    
-    🏪 BRAND CONTRIBUTION
-    
-    {brand_text}
-    
-    📍 SOURCE CONTRIBUTION
-    
-    {source_text}
-    
-    🌎 REGION SALES
-    
-    {region_text}
-    
-    ⏰ HOURLY PERFORMANCE
-    
-    {hourly_text}
-    
-    🎯 TARGET vs PROJECTION
-    
-    {target_text}
-    
-    🧠 INSIGHT
-    
-    {insight_text}
-    
-    🤖 AI MIS Automation
-    """
+    message = (
+        f"📊 LIVE SALES | "
+        f"{report_time.strftime('%d-%b-%y | %I:%M %p')}\n"
+        f"\n"
+        f"{business_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{brand_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{source_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{region_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{session_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{hourly_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"{target_text}\n"
+        f"\n"
+        f"{'─' * 85}\n"
+        f"\n"
+        f"🧠 INSIGHT\n\n"
+        f"{insight_text}\n"
+        f"\n"
+        f"🤖 AI MIS Automation"
+    )
 
     # =====================================================
-    # SEND
+    # WHATSAPP API
     # =====================================================
 
     url = (
-        f"https://graph.facebook.com/v23.0/"
+        "https://graph.facebook.com/v23.0/"
         f"{PHONE_NUMBER_ID}/messages"
     )
 
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Authorization":
+            f"Bearer {ACCESS_TOKEN}",
+
+        "Content-Type":
+            "application/json"
     }
+
+    # =====================================================
+    # SEND TO ALL RECIPIENTS
+    # =====================================================
+
+    success_count = 0
+    failed_count = 0
 
     for recipient in RECIPIENTS:
 
         payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "text",
+
+            "messaging_product":
+                "whatsapp",
+
+            "recipient_type":
+                "individual",
+
+            "to":
+                recipient,
+
+            "type":
+                "text",
+
             "text": {
-                "preview_url": False,
-                "body": message
+
+                "preview_url":
+                    False,
+
+                "body":
+                    message
             }
         }
 
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
+        try:
 
-        print(
-            f"WhatsApp → {recipient} | "
-            f"Status : {response.status_code}"
-        )
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
 
-        if response.ok:
-            print("✅ WhatsApp Live Sales Sent")
-        else:
-            print("❌ WhatsApp Send Failed")
-            print(response.text)
+            print(
+                f"WhatsApp → {recipient} | "
+                f"Status : {response.status_code}"
+            )
+
+            if response.ok:
+
+                success_count += 1
+
+                print(
+                    "✅ WhatsApp Live Sales Sent"
+                )
+
+            else:
+
+                failed_count += 1
+
+                print(
+                    "❌ WhatsApp Send Failed"
+                )
+
+                print(
+                    response.text
+                )
+
+        except Exception as e:
+
+            failed_count += 1
+
+            print(
+                f"❌ WhatsApp Error → "
+                f"{recipient}"
+            )
+
+            print(str(e))
+
+    # =====================================================
+    # FINAL STATUS
+    # =====================================================
+
+    print("=" * 60)
+
+    print(
+        f"WhatsApp Success : "
+        f"{success_count}"
+    )
+
+    print(
+        f"WhatsApp Failed  : "
+        f"{failed_count}"
+    )
 
     print("=" * 60)
 
