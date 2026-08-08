@@ -4462,10 +4462,15 @@ def send_whatsapp_live():
                 if response.ok:
 
                     print(
-
-                        f"✅ Part "
-                        f"{part_number} sent"
-
+                        f"✅ Part {part_number} API accepted"
+                    )
+                
+                    print(
+                        "Meta Response:"
+                    )
+                
+                    print(
+                        response.json()
                     )
 
                 else:
