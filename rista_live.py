@@ -3239,13 +3239,13 @@ def send_tm_mail():
         )
 
 # =========================================================
-# 📱 WHATSAPP LIVE SALES - TEST
+# 📱 WHATSAPP LIVE SALES
 # =========================================================
 
 def send_whatsapp_live():
 
     print("=" * 60)
-    print("Testing WhatsApp Cloud API")
+    print("Sending WhatsApp Live Sales")
     print("=" * 60)
 
     # =====================================================
@@ -3258,33 +3258,385 @@ def send_whatsapp_live():
         "WHATSAPP_ACCESS_TOKEN"
     )
 
-    # TEST ONLY - ONE NUMBER
     RECIPIENTS = [
-        "919750820509"
+        "919750820509",
+        "919535075140",
+        "919620952646",
+        "918892390985",
+        "918553666666"
     ]
 
     if not ACCESS_TOKEN:
+        print("❌ WHATSAPP_ACCESS_TOKEN not found")
+        return
 
-        print(
-            "❌ WHATSAPP_ACCESS_TOKEN not found"
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    # =====================================================
+    # FORMATTING HELPERS
+    # =====================================================
+
+    def fmt_lacs(value):
+        try:
+            return f"₹{float(value) / 100000:.2f}L"
+        except Exception:
+            return "₹0.00L"
+
+    def fmt_number(value):
+        try:
+            return f"{int(round(float(value))):,}"
+        except Exception:
+            return "-"
+
+    def fmt_rupees(value):
+        try:
+            return f"₹{int(round(float(value))):,}"
+        except Exception:
+            return "₹0"
+
+    def fmt_growth(value):
+        try:
+            return f"{float(value):+.1f}%"
+        except Exception:
+            return "-"
+
+    def fmt_pct(value):
+        try:
+            return f"{float(value):.1f}%"
+        except Exception:
+            return "-"
+
+    def fmt_pp(value):
+        try:
+            return f"{float(value):+.1f}pp"
+        except Exception:
+            return "-"
+
+    def calc_growth(today_value, lw_value):
+        if abs(float(lw_value)) < 0.000001:
+            return 0.0
+        return (
+            (float(today_value) - float(lw_value))
+            / float(lw_value)
+        ) * 100
+
+    def calc_discount(df):
+        if df is None or df.empty:
+            return 0.0
+
+        gross = pd.to_numeric(
+            df.get("grossAmount", 0),
+            errors="coerce"
+        ).fillna(0).sum()
+
+        discount = pd.to_numeric(
+            df.get("discountAmount", 0),
+            errors="coerce"
+        ).fillna(0).sum()
+
+        if gross == 0:
+            return 0.0
+
+        return (discount / gross) * 100
+
+    # =====================================================
+    # OVERALL KPI
+    # =====================================================
+
+    def get_overall_value(parameter, column="Today"):
+        try:
+            row = overall[
+                overall["Parameters"] == parameter
+            ]
+
+            if row.empty:
+                return 0.0
+
+            return float(row.iloc[0][column])
+
+        except Exception:
+            return 0.0
+
+    today_net = get_overall_value("Net")
+    lw_net = get_overall_value("Net", "Last Week")
+    net_growth = get_overall_value("Net", "LW Growth %")
+
+    today_txn = get_overall_value("Txn")
+    lw_txn = get_overall_value("Txn", "Last Week")
+    txn_growth = get_overall_value("Txn", "LW Growth %")
+
+    today_aov = get_overall_value("AOV")
+    lw_aov = get_overall_value("AOV", "Last Week")
+    aov_growth = get_overall_value("AOV", "LW Growth %")
+
+    today_dis = get_overall_value("Discount %")
+    lw_dis = get_overall_value("Discount %", "Last Week")
+    dis_change = today_dis - lw_dis
+
+    business_lines = [
+        "💰 BUSINESS OVERVIEW",
+        "Parameter | Today | LW | Growth | Dis% | LW Dis% | Change",
+        f"Net Rev | {fmt_lacs(today_net)} | {fmt_lacs(lw_net)} | {fmt_growth(net_growth)} | {fmt_pct(today_dis)} | {fmt_pct(lw_dis)} | {fmt_pp(dis_change)}",
+        f"Trans | {fmt_number(today_txn)} | {fmt_number(lw_txn)} | {fmt_growth(txn_growth)} | - | - | -",
+        f"AOV | {fmt_rupees(today_aov)} | {fmt_rupees(lw_aov)} | {fmt_growth(aov_growth)} | - | - | -",
+        f"Dis% | {fmt_pct(today_dis)} | {fmt_pct(lw_dis)} | - | {fmt_pct(today_dis)} | {fmt_pct(lw_dis)} | {fmt_pp(dis_change)}"
+    ]
+
+    # =====================================================
+    # COMPACT SUMMARY BUILDER
+    # =====================================================
+
+    def build_compact_summary(
+        title,
+        today_df,
+        lw_df,
+        group_column,
+        required_names=None
+    ):
+
+        lines = [
+            title,
+            "Name | Today Rev | Growth | Dis% | Change"
+        ]
+
+        if required_names is None:
+            names = sorted(
+                today_df[group_column]
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .unique()
+            )
+        else:
+            names = required_names
+
+        for name in names:
+
+            if name == "Others":
+                t = today_df[
+                    ~today_df[group_column].isin(
+                        required_names or []
+                    )
+                ]
+                l = lw_df[
+                    ~lw_df[group_column].isin(
+                        required_names or []
+                    )
+                ]
+            else:
+                t = today_df[
+                    today_df[group_column].astype(str).str.strip() == name
+                ]
+                l = lw_df[
+                    lw_df[group_column].astype(str).str.strip() == name
+                ]
+
+            today_rev = t["Net Sales"].sum()
+            lw_rev = l["Net Sales"].sum()
+
+            growth = calc_growth(today_rev, lw_rev)
+
+            today_disc = calc_discount(t)
+            lw_disc = calc_discount(l)
+            change = today_disc - lw_disc
+
+            # Keep requested rows even when the value is zero.
+            lines.append(
+                f"{name} | "
+                f"{fmt_lacs(today_rev)} | "
+                f"{fmt_growth(growth)} | "
+                f"{fmt_pct(today_disc)} | "
+                f"{fmt_pp(change)}"
+            )
+
+        return lines
+
+    # =====================================================
+    # BRAND SUMMARY
+    # =====================================================
+
+    brand_lines = build_compact_summary(
+        "🏪 BRAND SUMMARY",
+        today_cut,
+        lastweek_cut,
+        "Brand",
+        [
+            "Frozen Bottle",
+            "Madno",
+            "Boba Bar",
+            "Lubov"
+        ]
+    )
+
+    # =====================================================
+    # SOURCE SUMMARY
+    # =====================================================
+
+    source_lines = build_compact_summary(
+        "📍 SOURCE SUMMARY",
+        today_cut,
+        lastweek_cut,
+        "Source Group",
+        [
+            "In Store",
+            "Swiggy",
+            "Zomato",
+            "Ownly",
+            "Others"
+        ]
+    )
+
+    # =====================================================
+    # SESSION SUMMARY
+    # =====================================================
+
+    session_lines = build_compact_summary(
+        "🍽 SESSION SUMMARY",
+        today_cut,
+        lastweek_cut,
+        "Session",
+        [
+            "Breakfast",
+            "Lunch",
+            "Snacks",
+            "Dinner",
+            "Post Dinner"
+        ]
+    )
+
+    # =====================================================
+    # HOURLY PERFORMANCE
+    # =====================================================
+
+    hourly_lines = [
+        "⏰ HOURLY PERFORMANCE"
+    ]
+
+    if hourly_analysis is not None and not hourly_analysis.empty:
+
+        latest_hour = (
+            hourly_analysis
+            .sort_values("BusinessHour")
+            .iloc[-1]
         )
 
+        hourly_today = float(
+            latest_hour.get("Today", 0)
+        )
+
+        hourly_lw = float(
+            latest_hour.get("Last Week", 0)
+        )
+
+        hourly_growth = float(
+            latest_hour.get("Growth %", 0)
+        )
+
+        hour_value = int(
+            latest_hour.get("Hour", 0)
+        )
+
+        hourly_lines.extend([
+            f"Hour {hour_value:02d}:00 | Today {fmt_lacs(hourly_today)} | LW {fmt_lacs(hourly_lw)} | Growth {fmt_growth(hourly_growth)}"
+        ])
+
+    else:
+
+        hourly_lines.append(
+            "No hourly data available"
+        )
+
+    # =====================================================
+    # TARGET
+    # =====================================================
+
+    target_lines = [
+        "🎯 TARGET vs PROJECTION"
+    ]
+
+    try:
+
+        target_row = target_summary[
+            target_summary["Metric"] == "Total"
+        ].iloc[0]
+
+        target = float(
+            target_row["Target"]
+        )
+
+        eod_projection = float(
+            target_row["EOD Projection"]
+        )
+
+        achievement = float(
+            target_row["Ach %"]
+        )
+
+        target_lines.extend([
+            f"Target | {fmt_lacs(target)}",
+            f"EOD Projection | {fmt_lacs(eod_projection)}",
+            f"Achievement | {achievement:.1f}%"
+        ])
+
+    except Exception:
+
+        target_lines.append(
+            "Target information unavailable"
+        )
+
+    # =====================================================
+    # INSIGHT
+    # =====================================================
+
+    insight_lines = [
+        "🧠 INSIGHT",
+        insight_text
+    ]
+
+    # =====================================================
+    # COMPLETE MESSAGE
+    # =====================================================
+
+    message_lines = [
+        f"📊 LIVE SALES | {report_time.strftime('%d-%b-%y | %I:%M %p')}",
+        "",
+        *business_lines,
+        "",
+        *brand_lines,
+        "",
+        *source_lines,
+        "",
+        *session_lines,
+        "",
+        *hourly_lines,
+        "",
+        *target_lines,
+        "",
+        *insight_lines,
+        "",
+        "🤖 AI MIS Automation"
+    ]
+
+    message = "\n".join(message_lines)
+
+    print(
+        "Total WhatsApp message length :",
+        len(message),
+        "characters"
+    )
+
+    if len(message) > 4096:
+        print(
+            "❌ WhatsApp message exceeds 4096 characters"
+        )
         return
 
     # =====================================================
-    # TEST MESSAGE
-    # =====================================================
-
-    message = (
-        "Test message from AI MIS WhatsApp API"
-    )
-
-    print(
-        f"Message : {message}"
-    )
-
-    # =====================================================
-    # WHATSAPP API URL
+    # WHATSAPP API
     # =====================================================
 
     url = (
@@ -3292,77 +3644,48 @@ def send_whatsapp_live():
         f"{PHONE_NUMBER_ID}/messages"
     )
 
-    # =====================================================
-    # HEADERS
-    # =====================================================
-
     headers = {
-
-        "Authorization":
-            f"Bearer {ACCESS_TOKEN}",
-
-        "Content-Type":
-            "application/json"
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
     }
 
+    success_count = 0
+    failed_count = 0
+
     # =====================================================
-    # SEND MESSAGE
+    # SEND TO ALL RECIPIENTS
     # =====================================================
 
     for recipient in RECIPIENTS:
 
         payload = {
-
-            "messaging_product":
-                "whatsapp",
-
-            "recipient_type":
-                "individual",
-
-            "to":
-                recipient,
-
-            "type":
-                "text",
-
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "text",
             "text": {
-
-                "preview_url":
-                    False,
-
-                "body":
-                    message
+                "preview_url": False,
+                "body": message
             }
         }
-
-        print()
-        print(
-            f"Sending WhatsApp → {recipient}"
-        )
 
         try:
 
             response = requests.post(
-
                 url,
-
                 headers=headers,
-
                 json=payload,
-
                 timeout=30
             )
 
             print(
-                f"Status : "
-                f"{response.status_code}"
+                f"WhatsApp → {recipient} | "
+                f"Status : {response.status_code}"
             )
 
-            # =================================================
-            # SUCCESS
-            # =================================================
-
             if response.ok:
+
+                success_count += 1
 
                 print(
                     "✅ Meta API accepted message"
@@ -3370,54 +3693,33 @@ def send_whatsapp_live():
 
                 try:
 
-                    meta_response = (
-                        response.json()
-                    )
+                    meta_response = response.json()
 
                     print(
-                        "Meta Response:"
-                    )
-
-                    print(
+                        "Meta Response:",
                         meta_response
                     )
-
-                    # -----------------------------------------
-                    # MESSAGE ID
-                    # -----------------------------------------
 
                     if "messages" in meta_response:
 
                         message_id = (
-                            meta_response[
-                                "messages"
-                            ][0]["id"]
+                            meta_response["messages"][0]["id"]
                         )
 
                         print(
-                            "📨 WhatsApp Message ID:"
-                        )
-
-                        print(
-                            message_id
+                            f"📨 WhatsApp Message ID: {message_id}"
                         )
 
                 except Exception as e:
 
                     print(
-                        "⚠️ Could not read "
-                        "Meta response"
-                    )
-
-                    print(
+                        "⚠️ Could not read Meta response:",
                         str(e)
                     )
 
-            # =================================================
-            # ERROR
-            # =================================================
-
             else:
+
+                failed_count += 1
 
                 print(
                     "❌ WhatsApp API Error"
@@ -3429,8 +3731,10 @@ def send_whatsapp_live():
 
         except Exception as e:
 
+            failed_count += 1
+
             print(
-                "❌ WhatsApp Request Error"
+                f"❌ WhatsApp Request Error → {recipient}"
             )
 
             print(
@@ -3438,20 +3742,22 @@ def send_whatsapp_live():
             )
 
     # =====================================================
-    # END
+    # FINAL STATUS
     # =====================================================
 
-    print()
-    print("=" * 60)
-    print("WhatsApp API Test Completed")
     print("=" * 60)
 
+    print(
+        f"WhatsApp Success : {success_count}"
+    )
 
-# =========================================================
-# CALL FUNCTION
-# =========================================================
+    print(
+        f"WhatsApp Failed  : {failed_count}"
+    )
 
-send_whatsapp_live()
+    print("=" * 60)
+
+
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
