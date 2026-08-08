@@ -3977,119 +3977,252 @@ def send_whatsapp_live():
     )
 
     # =====================================================
+    # CHECK / SPLIT WHATSAPP MESSAGE
+    # =====================================================
+    
+    MAX_WHATSAPP_LENGTH = 4096
+    
+    
+    def split_whatsapp_message(message, max_length=MAX_WHATSAPP_LENGTH):
+    
+        if len(message) <= max_length:
+            return [message]
+    
+        parts = []
+        current = ""
+    
+        for line in message.split("\n"):
+    
+            # If adding the next line exceeds the limit,
+            # start a new message.
+    
+            if len(current) + len(line) + 1 > max_length:
+    
+                if current.strip():
+                    parts.append(current.rstrip())
+    
+                current = line
+    
+            else:
+    
+                if current:
+                    current += "\n"
+    
+                current += line
+    
+        if current.strip():
+            parts.append(current.rstrip())
+    
+        return parts
+    
+    
+    # Create message parts
+    message_parts = split_whatsapp_message(message)
+    
+    print(
+        f"Total WhatsApp message length : "
+        f"{len(message)} characters"
+    )
+    
+    print(
+        f"WhatsApp message parts        : "
+        f"{len(message_parts)}"
+    )
+    
+    for i, part in enumerate(message_parts, 1):
+    
+        print(
+            f"Part {i} length               : "
+            f"{len(part)} characters"
+        )
+
+
+    
+    # =====================================================
     # WHATSAPP API
     # =====================================================
-
+    
     url = (
         "https://graph.facebook.com/v23.0/"
         f"{PHONE_NUMBER_ID}/messages"
     )
-
+    
     headers = {
         "Authorization":
             f"Bearer {ACCESS_TOKEN}",
-
+    
         "Content-Type":
             "application/json"
     }
-
+    
+    
     # =====================================================
     # SEND TO ALL RECIPIENTS
     # =====================================================
-
+    
     success_count = 0
     failed_count = 0
-
+    
     for recipient in RECIPIENTS:
-
-        payload = {
-
-            "messaging_product":
-                "whatsapp",
-
-            "recipient_type":
-                "individual",
-
-            "to":
-                recipient,
-
-            "type":
-                "text",
-
-            "text": {
-
-                "preview_url":
-                    False,
-
-                "body":
-                    message
+    
+        recipient_success = True
+    
+        # -------------------------------------------------
+        # SEND EACH PART
+        # -------------------------------------------------
+    
+        for message_number, message_part in enumerate(
+            messages,
+            start=1
+        ):
+    
+            payload = {
+    
+                "messaging_product":
+                    "whatsapp",
+    
+                "recipient_type":
+                    "individual",
+    
+                "to":
+                    recipient,
+    
+                "type":
+                    "text",
+    
+                "text": {
+    
+                    "preview_url":
+                        False,
+    
+                    "body":
+                        message_part
+                }
             }
-        }
-
-        try:
-
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-
+    
+            try:
+    
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=30
+                )
+    
+                print(
+                    f"WhatsApp → {recipient} | "
+                    f"Part {message_number}/"
+                    f"{len(messages)} | "
+                    f"Status : "
+                    f"{response.status_code}"
+                )
+    
+                if response.ok:
+    
+                    print(
+                        f"✅ Part "
+                        f"{message_number} sent"
+                    )
+    
+                else:
+    
+                    recipient_success = False
+    
+                    print(
+                        f"❌ Part "
+                        f"{message_number} failed"
+                    )
+    
+                    print(
+                        response.text
+                    )
+    
+                    # Don't send remaining parts
+                    # if one part fails.
+    
+                    break
+    
+            except Exception as e:
+    
+                recipient_success = False
+    
+                print(
+                    f"❌ WhatsApp Error → "
+                    f"{recipient}"
+                )
+    
+                print(
+                    str(e)
+                )
+    
+                break
+    
+        # -------------------------------------------------
+        # RECIPIENT STATUS
+        # -------------------------------------------------
+    
+        if recipient_success:
+    
+            success_count += 1
+    
             print(
-                f"WhatsApp → {recipient} | "
-                f"Status : {response.status_code}"
+                f"✅ Complete WhatsApp report "
+                f"sent → {recipient}"
             )
-
-            if response.ok:
-
-                success_count += 1
-
-                print(
-                    "✅ WhatsApp Live Sales Sent"
-                )
-
-            else:
-
-                failed_count += 1
-
-                print(
-                    "❌ WhatsApp Send Failed"
-                )
-
-                print(
-                    response.text
-                )
-
-        except Exception as e:
-
+    
+        else:
+    
             failed_count += 1
-
+    
             print(
-                f"❌ WhatsApp Error → "
-                f"{recipient}"
+                f"❌ Complete WhatsApp report "
+                f"failed → {recipient}"
             )
-
-            print(
-                str(e)
-            )
-
+    
+    
     # =====================================================
     # FINAL STATUS
     # =====================================================
-
+    
     print("=" * 60)
-
+    
     print(
         f"WhatsApp Success : "
         f"{success_count}"
     )
-
+    
     print(
         f"WhatsApp Failed  : "
         f"{failed_count}"
     )
-
+    
     print("=" * 60)
+    
+    
+    # =====================================================
+    # FINAL MESSAGE
+    # =====================================================
+    
+    if failed_count == 0:
+    
+        print(
+            "🎉 WHATSAPP LIVE SALES "
+            "SENT SUCCESSFULLY"
+        )
+    
+    elif success_count > 0:
+    
+        print(
+            "⚠️ WHATSAPP LIVE SALES "
+            "PARTIALLY SENT"
+        )
+    
+    else:
+    
+        print(
+            "❌ WHATSAPP LIVE SALES "
+            "FAILED"
+        )
 
 # ---------------- EXECUTE ---------------- #
 
