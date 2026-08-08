@@ -3267,16 +3267,8 @@ def send_whatsapp_live():
     ]
 
     if not ACCESS_TOKEN:
-
-        print(
-            "❌ WHATSAPP_ACCESS_TOKEN not found"
-        )
-
+        print("❌ WHATSAPP_ACCESS_TOKEN not found")
         return
-
-    # =====================================================
-    # REPORT TIME
-    # =====================================================
 
     report_time = now.replace(
         minute=0,
@@ -3285,832 +3277,119 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # FORMATTING
+    # OVERALL KPI
     # =====================================================
 
-    def fmt_lacs(value):
+    net_row = overall[
+        overall["Parameters"] == "Net"
+    ].iloc[0]
 
-        try:
-            return f"₹{float(value) / 100000:.2f}L"
-        except:
-            return "₹0.00L"
+    gross_row = overall[
+        overall["Parameters"] == "Gross"
+    ].iloc[0]
 
+    txn_row = overall[
+        overall["Parameters"] == "Txn"
+    ].iloc[0]
 
-    def fmt_number(value):
+    aov_row = overall[
+        overall["Parameters"] == "AOV"
+    ].iloc[0]
 
-        try:
-            return f"{int(round(float(value))):,}"
-        except:
-            return "-"
+    discount_row = overall[
+        overall["Parameters"] == "Discount %"
+    ].iloc[0]
 
-
-    def fmt_rupees(value):
-
-        try:
-            return f"₹{int(round(float(value))):,}"
-        except:
-            return "₹0"
-
-
-    def fmt_growth(value):
-
-        try:
-            return f"{float(value):+.1f}%"
-        except:
-            return "-"
-
-
-    def fmt_pct(value):
-
-        try:
-            return f"{float(value):.1f}%"
-        except:
-            return "-"
-
-
-    def fmt_pp(value):
-
-        try:
-            return f"{float(value):+.1f}pp"
-        except:
-            return "-"
-
-
-    def border():
-
-        return (
-            "────────────────────────────────────────"
-        )
-
+    net_sales = float(net_row["Today"])
+    gross_sales = float(gross_row["Today"])
+    transactions = int(txn_row["Today"])
+    aov = float(aov_row["Today"])
+    discount_pct = float(discount_row["Today"])
 
     # =====================================================
-    # 💰 BUSINESS OVERVIEW
-    #
-    # Parameter | Today | LW | Growth | Dis% | LW Dis% | Δ
+    # BRAND SALES
     # =====================================================
 
-    business_lines = []
+    brand_lines = []
 
-    business_lines.append(
-        "💰 BUSINESS OVERVIEW"
-    )
+    if not brand_summary.empty:
 
-    business_lines.append(
-        border()
-    )
+        total_brand_sales = brand_summary["Today Rev"].sum()
 
-    business_lines.append(
-        f"{'Parameter':<12}"
-        f"{'Today':>10}"
-        f"{'LW':>10}"
-        f"{'Growth':>9}"
-        f"{'Dis%':>8}"
-        f"{'LW Dis%':>9}"
-        f"{'Δ':>9}"
-    )
-
-    # -----------------------------------------------------
-    # NET REVENUE
-    # -----------------------------------------------------
-
-    try:
-
-        net_row = overall[
-            overall["Parameters"] == "Net"
-        ].iloc[0]
-
-        today_net = float(
-            net_row["Today"]
-        )
-
-        lw_net = float(
-            net_row["Last Week"]
-        )
-
-        net_growth = float(
-            net_row["LW Growth %"]
-        )
-
-    except Exception:
-
-        today_net = 0
-        lw_net = 0
-        net_growth = 0
-
-
-    # -----------------------------------------------------
-    # DISCOUNT %
-    # -----------------------------------------------------
-
-    try:
-
-        discount_row = overall[
-            overall["Parameters"] == "Discount %"
-        ].iloc[0]
-
-        today_dis = float(
-            discount_row["Today"]
-        )
-
-        lw_dis = float(
-            discount_row["Last Week"]
-        )
-
-    except Exception:
-
-        today_dis = 0
-        lw_dis = 0
-
-
-    dis_change = (
-        today_dis - lw_dis
-    )
-
-
-    business_lines.append(
-
-        f"{'Net Rev':<12}"
-        f"{fmt_lacs(today_net):>10}"
-        f"{fmt_lacs(lw_net):>10}"
-        f"{fmt_growth(net_growth):>9}"
-        f"{fmt_pct(today_dis):>8}"
-        f"{fmt_pct(lw_dis):>9}"
-        f"{fmt_pp(dis_change):>9}"
-
-    )
-
-
-    # -----------------------------------------------------
-    # TRANSACTIONS
-    # -----------------------------------------------------
-
-    try:
-
-        txn_row = overall[
-            overall["Parameters"] == "Txn"
-        ].iloc[0]
-
-        today_txn = float(
-            txn_row["Today"]
-        )
-
-        lw_txn = float(
-            txn_row["Last Week"]
-        )
-
-        txn_growth = float(
-            txn_row["LW Growth %"]
-        )
-
-    except Exception:
-
-        today_txn = 0
-        lw_txn = 0
-        txn_growth = 0
-
-
-    business_lines.append(
-
-        f"{'Trans':<12}"
-        f"{fmt_number(today_txn):>10}"
-        f"{fmt_number(lw_txn):>10}"
-        f"{fmt_growth(txn_growth):>9}"
-        f"{'-':>8}"
-        f"{'-':>9}"
-        f"{'-':>9}"
-
-    )
-
-
-    # -----------------------------------------------------
-    # AOV
-    # -----------------------------------------------------
-
-    try:
-
-        aov_row = overall[
-            overall["Parameters"] == "AOV"
-        ].iloc[0]
-
-        today_aov = float(
-            aov_row["Today"]
-        )
-
-        lw_aov = float(
-            aov_row["Last Week"]
-        )
-
-        aov_growth = float(
-            aov_row["LW Growth %"]
-        )
-
-    except Exception:
-
-        today_aov = 0
-        lw_aov = 0
-        aov_growth = 0
-
-
-    business_lines.append(
-
-        f"{'AOV':<12}"
-        f"{fmt_rupees(today_aov):>10}"
-        f"{fmt_rupees(lw_aov):>10}"
-        f"{fmt_growth(aov_growth):>9}"
-        f"{'-':>8}"
-        f"{'-':>9}"
-        f"{'-':>9}"
-
-    )
-
-
-    # -----------------------------------------------------
-    # DISCOUNT
-    # -----------------------------------------------------
-
-    business_lines.append(
-
-        f"{'Dis%':<12}"
-        f"{fmt_pct(today_dis):>10}"
-        f"{fmt_pct(lw_dis):>10}"
-        f"{'-':>9}"
-        f"{'-':>8}"
-        f"{'-':>9}"
-        f"{fmt_pp(dis_change):>9}"
-
-    )
-
-
-    business_text = "\n".join(
-        business_lines
-    )
-
-
-    # =====================================================
-    # GENERIC COMPACT BUILDER
-    #
-    # This works directly with your existing
-    # brand_summary / source_summary structure.
-    #
-    # Output:
-    #
-    # Name | Today Rev | Growth | Dis% | Δ
-    # =====================================================
-
-    def build_compact_section(
-        title,
-        df,
-        name_column,
-        required_order=None
-    ):
-
-        lines = []
-
-        lines.append(title)
-
-        lines.append(
-            border()
-        )
-
-        lines.append(
-            f"{'Parameter':<15}"
-            f"{'Today Rev':>11}"
-            f"{'Growth':>9}"
-            f"{'Dis%':>8}"
-            f"{'Δ':>9}"
-        )
-
-
-        if df is None or df.empty:
-
-            lines.append(
-                "No data available"
-            )
-
-            return "\n".join(lines)
-
-
-        data = df.copy()
-
-
-        # -------------------------------------------------
-        # Make sure required columns exist
-        # -------------------------------------------------
-
-        required_columns = [
-
-            name_column,
+        for _, r in brand_summary.sort_values(
             "Today Rev",
-            "Growth %",
-            "Today Dis %",
-            "Dis Change %"
+            ascending=False
+        ).iterrows():
 
-        ]
+            rev = float(r["Today Rev"])
 
+            contribution = (
+                rev / max(total_brand_sales, 1)
+            ) * 100
 
-        for col in required_columns:
-
-            if col not in data.columns:
-
-                print(
-                    f"⚠️ Missing column "
-                    f"{col} in {title}"
-                )
-
-                lines.append(
-                    "Data columns unavailable"
-                )
-
-                return "\n".join(lines)
-
-
-        # -------------------------------------------------
-        # ORDER
-        # -------------------------------------------------
-
-        if required_order:
-
-            order_map = {
-                name: i
-                for i, name in enumerate(
-                    required_order
-                )
-            }
-
-
-            data["_order"] = (
-
-                data[name_column]
-                .astype(str)
-                .str.strip()
-                .map(order_map)
-                .fillna(999)
-
+            brand_lines.append(
+                f"🍶 {r['Brand']}: "
+                f"₹{rev/100000:.2f}L "
+                f"({contribution:.0f}%)"
             )
 
-
-            data = (
-
-                data
-                .sort_values("_order")
-                .drop(columns="_order")
-
-            )
-
-        else:
-
-            data = data.sort_values(
-                "Today Rev",
-                ascending=False
-            )
-
-
-        # -------------------------------------------------
-        # BUILD ROWS
-        # -------------------------------------------------
-
-        for _, row in data.iterrows():
-
-            name = str(
-                row[name_column]
-            ).strip()
-
-
-            if not name:
-                continue
-
-
-            today_rev = float(
-                row.get(
-                    "Today Rev",
-                    0
-                )
-            )
-
-
-            growth = float(
-                row.get(
-                    "Growth %",
-                    0
-                )
-            )
-
-
-            today_discount = float(
-                row.get(
-                    "Today Dis %",
-                    0
-                )
-            )
-
-
-            change = float(
-                row.get(
-                    "Dis Change %",
-                    0
-                )
-            )
-
-
-            lines.append(
-
-                f"{name:<15}"
-                f"{fmt_lacs(today_rev):>11}"
-                f"{fmt_growth(growth):>9}"
-                f"{fmt_pct(today_discount):>8}"
-                f"{fmt_pp(change):>9}"
-
-            )
-
-
-        return "\n".join(lines)
-
+    brand_text = "\n".join(brand_lines)
 
     # =====================================================
-    # 🏪 BRAND SUMMARY
+    # SOURCE SALES
     # =====================================================
 
-    brand_text = build_compact_section(
+    source_lines = []
 
-        "🏪 BRAND SUMMARY",
+    if not source_summary.empty:
 
-        brand_summary,
+        for _, r in source_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
 
-        "Brand",
+            rev = float(r["Today Rev"])
 
-        [
-            "Frozen Bottle",
-            "Madno",
-            "Boba Bar",
-            "Lubov"
-        ]
-
-    )
-
-
-    # =====================================================
-    # 📍 SOURCE SUMMARY
-    # =====================================================
-
-    source_text = build_compact_section(
-
-        "📍 SOURCE SUMMARY",
-
-        source_summary,
-
-        "Source Group",
-
-        [
-            "In Store",
-            "Swiggy",
-            "Zomato",
-            "Ownly",
-            "Others"
-        ]
-
-    )
-
-
-    # =====================================================
-    # 🌎 REGION SUMMARY
-    #
-    # Build directly from today_cut / lastweek_cut
-    # because your current file does not have a
-    # region_summary DataFrame.
-    # =====================================================
-
-    def create_dimension_summary(
-        today_df,
-        lw_df,
-        dimension_column,
-        required_order
-    ):
-
-        rows = []
-
-        for dimension in required_order:
-
-            today_data = today_df[
-                today_df[dimension_column]
-                .astype(str)
-                .str.strip()
-                .str.upper()
-                ==
-                dimension.upper()
-            ]
-
-
-            lw_data = lw_df[
-                lw_df[dimension_column]
-                .astype(str)
-                .str.strip()
-                .str.upper()
-                ==
-                dimension.upper()
-            ]
-
-
-            today_rev = today_data[
-                "Net Sales"
-            ].sum()
-
-
-            lw_rev = lw_data[
-                "Net Sales"
-            ].sum()
-
-
-            growth = (
-
-                (
-                    today_rev
-                    -
-                    lw_rev
-                )
-
-                /
-
-                max(
-                    lw_rev,
-                    1
-                )
-
-                * 100
-
+            source_lines.append(
+                f"📍 {r['Source Group']}: "
+                f"₹{rev/100000:.2f}L"
             )
 
-
-            today_gross = today_data[
-                "grossAmount"
-            ].sum()
-
-
-            lw_gross = lw_data[
-                "grossAmount"
-            ].sum()
-
-
-            today_discount = today_data[
-                "discountAmount"
-            ].sum()
-
-
-            lw_discount = lw_data[
-                "discountAmount"
-            ].sum()
-
-
-            today_dis = (
-
-                today_discount
-                /
-                max(
-                    today_gross,
-                    1
-                )
-                * 100
-
-            )
-
-
-            lw_dis = (
-
-                lw_discount
-                /
-                max(
-                    lw_gross,
-                    1
-                )
-                * 100
-
-            )
-
-
-            change = (
-                today_dis
-                -
-                lw_dis
-            )
-
-
-            rows.append({
-
-                dimension_column:
-                    dimension,
-
-                "Today Rev":
-                    round(
-                        today_rev,
-                        2
-                    ),
-
-                "LW Rev":
-                    round(
-                        lw_rev,
-                        2
-                    ),
-
-                "Growth %":
-                    round(
-                        growth,
-                        2
-                    ),
-
-                "Today Dis %":
-                    round(
-                        today_dis,
-                        2
-                    ),
-
-                "LW Dis %":
-                    round(
-                        lw_dis,
-                        2
-                    ),
-
-                "Dis Change %":
-                    round(
-                        change,
-                        2
-                    )
-
-            })
-
-
-        return pd.DataFrame(
-            rows
-        )
-
-
-    region_summary = create_dimension_summary(
-
-        today_cut,
-
-        lastweek_cut,
-
-        "Region",
-
-        [
-            "KA",
-            "MH",
-            "TN",
-            "KL"
-        ]
-
-    )
-
-
-    region_text = build_compact_section(
-
-        "🌎 REGION SUMMARY",
-
-        region_summary,
-
-        "Region",
-
-        [
-            "KA",
-            "MH",
-            "TN",
-            "KL"
-        ]
-
-    )
-
+    source_text = "\n".join(source_lines)
 
     # =====================================================
-    # 🍽 SESSION SUMMARY
-    # =====================================================
-
-    session_summary = create_dimension_summary(
-
-        today_cut,
-
-        lastweek_cut,
-
-        "Session",
-
-        [
-            "Breakfast",
-            "Lunch",
-            "Snacks",
-            "Dinner",
-            "Post Dinner"
-        ]
-
-    )
-
-
-    session_text = build_compact_section(
-
-        "🍽 SESSION SUMMARY",
-
-        session_summary,
-
-        "Session",
-
-        [
-            "Breakfast",
-            "Lunch",
-            "Snacks",
-            "Dinner",
-            "Post Dinner"
-        ]
-
-    )
-
-
-    # =====================================================
-    # ⏰ HOURLY PERFORMANCE
+    # HOURLY SALES
     # =====================================================
 
     hourly_lines = []
 
-    hourly_lines.append(
-        "⏰ HOURLY PERFORMANCE"
-    )
+    if not hourly_analysis.empty:
 
-    hourly_lines.append(
-        border()
-    )
+        latest_hour = hourly_analysis.iloc[-1]
 
-
-    if (
-
-        hourly_analysis is not None
-
-        and
-
-        not hourly_analysis.empty
-
-    ):
-
-        latest_hour = (
-
-            hourly_analysis
-
-            .sort_values(
-                "BusinessHour"
-            )
-
-            .iloc[-1]
-
-        )
-
-
-        hourly_today = float(
-            latest_hour["Today"]
-        )
-
-
-        hourly_lw = float(
-            latest_hour["Last Week"]
-        )
-
-
-        hourly_growth = float(
-            latest_hour["Growth %"]
-        )
-
+        hourly_today = float(latest_hour["Today"])
+        hourly_lw = float(latest_hour["Last Week"])
+        hourly_growth = float(latest_hour["Growth %"])
 
         hourly_lines.append(
-
-            f"Current Hour : "
-            f"{fmt_lacs(hourly_today)}"
-
+            f"⏰ Current Hour: "
+            f"₹{hourly_today/100000:.2f}L"
         )
-
 
         hourly_lines.append(
-
-            f"Same Hour LW : "
-            f"{fmt_lacs(hourly_lw)}"
-
+            f"📊 Same Hour LW: "
+            f"₹{hourly_lw/100000:.2f}L"
         )
-
 
         hourly_lines.append(
-
-            f"Growth       : "
-            f"{fmt_growth(hourly_growth)}"
-
+            f"📈 Growth: "
+            f"{hourly_growth:+.1f}%"
         )
 
-
-    else:
-
-        hourly_lines.append(
-            "No hourly data available"
-        )
-
-
-    hourly_text = "\n".join(
-        hourly_lines
-    )
-
+    hourly_text = "\n".join(hourly_lines)
 
     # =====================================================
-    # 🎯 TARGET
+    # TARGET
     # =====================================================
 
     try:
@@ -4119,468 +3398,109 @@ def send_whatsapp_live():
             target_summary["Metric"] == "Total"
         ].iloc[0]
 
-
-        target = float(
-            target_row["Target"]
-        )
-
-
+        target = float(target_row["Target"])
         eod_projection = float(
             target_row["EOD Projection"]
         )
-
 
         achievement = float(
             target_row["Ach %"]
         )
 
-
         target_text = (
-
-            "🎯 TARGET vs PROJECTION\n"
-
-            f"{border()}\n"
-
-            f"Target        : "
-            f"{fmt_lacs(target)}\n"
-
-            f"EOD Projection: "
-            f"{fmt_lacs(eod_projection)}\n"
-
-            f"Achievement   : "
-            f"{achievement:.1f}%"
-
+            f"🎯 Target: ₹{target/100000:.2f}L\n"
+            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
+            f"📊 Achievement: {achievement:.1f}%"
         )
-
 
     except Exception:
 
-        target_text = (
-
-            "🎯 TARGET vs PROJECTION\n"
-
-            f"{border()}\n"
-
-            "Target information unavailable"
-
-        )
-
+        target_text = "🎯 Target information unavailable"
 
     # =====================================================
-    # 🧠 INSIGHT
+    # MESSAGE
     # =====================================================
 
-    insight_section = (
+    message = f"""
+📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
 
-        "🧠 INSIGHT\n"
+💰 BUSINESS OVERVIEW
 
-        f"{border()}\n"
+💵 Gross Sales: ₹{gross_sales/100000:.2f}L
+💵 Net Revenue: ₹{net_sales/100000:.2f}L
+🧾 Transactions: {transactions:,}
+🧺 AOV: ₹{aov:,.0f}
+📉 Discount: {discount_pct:.1f}%
 
-        f"{insight_text}"
+🏪 BRAND CONTRIBUTION
 
-    )
+{brand_text}
 
+📍 SOURCE CONTRIBUTION
 
-    # =====================================================
-    # COMPLETE MESSAGE
-    # =====================================================
+{source_text}
 
-    message = (
+⏰ HOURLY PERFORMANCE
 
-        f"📊 LIVE SALES | "
-        f"{report_time.strftime('%d-%b-%y | %I:%M %p')}\n"
+{hourly_text}
 
-        f"\n"
+🎯 TARGET vs PROJECTION
 
-        f"{business_text}\n"
+{target_text}
 
-        f"\n"
+🧠 INSIGHT
 
-        f"{brand_text}\n"
+{insight_text}
 
-        f"\n"
-
-        f"{source_text}\n"
-
-        f"\n"
-
-        f"{region_text}\n"
-
-        f"\n"
-
-        f"{session_text}\n"
-
-        f"\n"
-
-        f"{hourly_text}\n"
-
-        f"\n"
-
-        f"{target_text}\n"
-
-        f"\n"
-
-        f"{insight_section}\n"
-
-        f"\n"
-
-        f"🤖 AI MIS Automation"
-
-    )
-
+🤖 AI MIS Automation
+"""
 
     # =====================================================
-    # WHATSAPP 4096 CHARACTER LIMIT
-    # =====================================================
-
-    MAX_WHATSAPP_LENGTH = 4096
-
-
-    def split_whatsapp_message(
-        text,
-        max_length=MAX_WHATSAPP_LENGTH
-    ):
-
-        if len(text) <= max_length:
-
-            return [text]
-
-
-        parts = []
-
-        current = ""
-
-
-        for line in text.split("\n"):
-
-            # -------------------------------------------------
-            # Handle unusually long single line
-            # -------------------------------------------------
-
-            while len(line) > max_length:
-
-                if current.strip():
-
-                    parts.append(
-                        current.rstrip()
-                    )
-
-                    current = ""
-
-
-                parts.append(
-                    line[:max_length]
-                )
-
-
-                line = line[
-                    max_length:
-                ]
-
-
-            # -------------------------------------------------
-            # Normal line
-            # -------------------------------------------------
-
-            if (
-
-                len(current)
-                +
-                len(line)
-                +
-                1
-
-                >
-
-                max_length
-
-            ):
-
-                if current.strip():
-
-                    parts.append(
-                        current.rstrip()
-                    )
-
-
-                current = line
-
-
-            else:
-
-                if current:
-
-                    current += "\n"
-
-
-                current += line
-
-
-        if current.strip():
-
-            parts.append(
-                current.rstrip()
-            )
-
-
-        return parts
-
-
-    # =====================================================
-    # CREATE MESSAGE PARTS
-    # =====================================================
-
-    messages = split_whatsapp_message(
-        message
-    )
-
-
-    print(
-        f"Total WhatsApp message length : "
-        f"{len(message)} characters"
-    )
-
-
-    print(
-        f"WhatsApp message parts        : "
-        f"{len(messages)}"
-    )
-
-
-    for i, part in enumerate(
-        messages,
-        1
-    ):
-
-        print(
-            f"Part {i} length               : "
-            f"{len(part)} characters"
-        )
-
-
-    # =====================================================
-    # WHATSAPP API
+    # SEND
     # =====================================================
 
     url = (
-
-        "https://graph.facebook.com/v23.0/"
-
+        f"https://graph.facebook.com/v23.0/"
         f"{PHONE_NUMBER_ID}/messages"
-
     )
 
-
     headers = {
-
-        "Authorization":
-            f"Bearer {ACCESS_TOKEN}",
-
-        "Content-Type":
-            "application/json"
-
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
     }
-
-
-    # =====================================================
-    # SEND TO ALL RECIPIENTS
-    # =====================================================
-
-    success_count = 0
-
-    failed_count = 0
-
 
     for recipient in RECIPIENTS:
 
-        recipient_success = True
-
-
-        for part_number, message_part in enumerate(
-
-            messages,
-
-            start=1
-
-        ):
-
-            payload = {
-
-                "messaging_product":
-                    "whatsapp",
-
-                "recipient_type":
-                    "individual",
-
-                "to":
-                    recipient,
-
-                "type":
-                    "text",
-
-                "text": {
-
-                    "preview_url":
-                        False,
-
-                    "body":
-                        message_part
-
-                }
-
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "text",
+            "text": {
+                "preview_url": False,
+                "body": message
             }
+        }
 
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
 
-            try:
+        print(
+            f"WhatsApp → {recipient} | "
+            f"Status : {response.status_code}"
+        )
 
-                response = requests.post(
-
-                    url,
-
-                    headers=headers,
-
-                    json=payload,
-
-                    timeout=30
-
-                )
-
-
-                print(
-
-                    f"WhatsApp → {recipient} | "
-
-                    f"Part {part_number}/"
-                    f"{len(messages)} | "
-
-                    f"Status : "
-                    f"{response.status_code}"
-
-                )
-
-
-                if response.ok:
-
-                    print(
-                        f"✅ Part {part_number} API accepted"
-                    )
-                
-                    print(
-                        "Meta Response:"
-                    )
-                
-                    print(
-                        response.json()
-                    )
-
-                else:
-
-                    recipient_success = False
-
-
-                    print(
-
-                        f"❌ Part "
-                        f"{part_number} failed"
-
-                    )
-
-
-                    print(
-                        response.text
-                    )
-
-
-                    break
-
-
-            except Exception as e:
-
-                recipient_success = False
-
-
-                print(
-
-                    f"❌ WhatsApp Error → "
-                    f"{recipient}"
-
-                )
-
-
-                print(
-                    str(e)
-                )
-
-
-                break
-
-
-        # -------------------------------------------------
-        # RECIPIENT RESULT
-        # -------------------------------------------------
-
-        if recipient_success:
-
-            success_count += 1
-
-            print(
-
-                f"✅ Complete WhatsApp Report "
-                f"Sent → {recipient}"
-
-            )
-
+        if response.ok:
+            print("✅ WhatsApp Live Sales Sent")
         else:
-
-            failed_count += 1
-
-            print(
-
-                f"❌ Complete WhatsApp Report "
-                f"Failed → {recipient}"
-
-            )
-
-
-    # =====================================================
-    # FINAL STATUS
-    # =====================================================
+            print("❌ WhatsApp Send Failed")
+            print(response.text)
 
     print("=" * 60)
-
-    print(
-        f"WhatsApp Success : "
-        f"{success_count}"
-    )
-
-    print(
-        f"WhatsApp Failed  : "
-        f"{failed_count}"
-    )
-
-    print("=" * 60)
-
-
-    if failed_count == 0:
-
-        print(
-            "🎉 WHATSAPP LIVE SALES "
-            "SENT SUCCESSFULLY"
-        )
-
-    elif success_count > 0:
-
-        print(
-            "⚠️ WHATSAPP LIVE SALES "
-            "PARTIALLY SENT"
-        )
-
-    else:
-
-        print(
-            "❌ WHATSAPP LIVE SALES "
-            "FAILED"
-        )
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
