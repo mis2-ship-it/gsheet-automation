@@ -3249,6 +3249,20 @@ def send_whatsapp_live():
     print("=" * 60)
 
     # =====================================================
+    # SAFE DEFAULT FOR INSIGHT
+    # =====================================================
+
+    insight_text = globals().get(
+        "insight_text",
+        "Live sales report generated successfully."
+    )
+
+    if insight_text is None:
+        insight_text = "Live sales report generated successfully."
+
+    insight_text = str(insight_text)
+
+    # =====================================================
     # WHATSAPP CONFIGURATION
     # =====================================================
 
