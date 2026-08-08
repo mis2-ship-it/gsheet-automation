@@ -3945,37 +3945,7 @@ def send_whatsapp_live():
             f"{border()}"
         )
 
-    # =====================================================
-    # COMPLETE MESSAGE
-    # =====================================================
-
-    message = (
-        f"📊 LIVE SALES | "
-        f"{report_time.strftime('%d-%b-%y | %I:%M %p')}\n"
-        f"\n"
-        f"```text\n"
-        f"{business_text}\n"
-        f"\n"
-        f"{brand_text}\n"
-        f"\n"
-        f"{source_text}\n"
-        f"\n"
-        f"{region_text}\n"
-        f"\n"
-        f"{session_text}\n"
-        f"\n"
-        f"{hourly_text}\n"
-        f"\n"
-        f"{target_text}\n"
-        f"\n"
-        f"🧠 INSIGHT\n"
-        f"{border()}\n"
-        f"{insight_text}\n"
-        f"{border()}\n"
-        f"🤖 AI MIS Automation\n"
-        f"```"
-    )
-
+   
     # =====================================================
     # CHECK / SPLIT WHATSAPP MESSAGE
     # =====================================================
@@ -3983,41 +3953,59 @@ def send_whatsapp_live():
     MAX_WHATSAPP_LENGTH = 4096
     
     
-    def split_whatsapp_message(message, max_length=MAX_WHATSAPP_LENGTH):
+    def split_whatsapp_message(
+        message,
+        max_length=MAX_WHATSAPP_LENGTH
+    ):
     
         if len(message) <= max_length:
             return [message]
     
         parts = []
+    
         current = ""
     
         for line in message.split("\n"):
     
-            # If adding the next line exceeds the limit,
-            # start a new message.
-    
-            if len(current) + len(line) + 1 > max_length:
+            if (
+                len(current)
+                + len(line)
+                + 1
+                > max_length
+            ):
     
                 if current.strip():
-                    parts.append(current.rstrip())
+    
+                    parts.append(
+                        current.rstrip()
+                    )
     
                 current = line
     
             else:
     
                 if current:
+    
                     current += "\n"
     
                 current += line
     
         if current.strip():
-            parts.append(current.rstrip())
+    
+            parts.append(
+                current.rstrip()
+            )
     
         return parts
     
     
-    # Create message parts
-    message_parts = split_whatsapp_message(message)
+    # =====================================================
+    # CREATE MESSAGE PARTS
+    # =====================================================
+    
+    messages = split_whatsapp_message(
+        message
+    )
     
     print(
         f"Total WhatsApp message length : "
@@ -4026,17 +4014,19 @@ def send_whatsapp_live():
     
     print(
         f"WhatsApp message parts        : "
-        f"{len(message_parts)}"
+        f"{len(messages)}"
     )
     
-    for i, part in enumerate(message_parts, 1):
+    for i, part in enumerate(
+        messages,
+        1
+    ):
     
         print(
             f"Part {i} length               : "
             f"{len(part)} characters"
         )
-
-
+    
     
     # =====================================================
     # WHATSAPP API
@@ -4048,6 +4038,7 @@ def send_whatsapp_live():
     )
     
     headers = {
+    
         "Authorization":
             f"Bearer {ACCESS_TOKEN}",
     
@@ -4071,7 +4062,7 @@ def send_whatsapp_live():
         # SEND EACH PART
         # -------------------------------------------------
     
-        for message_number, message_part in enumerate(
+        for part_number, message_part in enumerate(
             messages,
             start=1
         ):
@@ -4111,7 +4102,7 @@ def send_whatsapp_live():
     
                 print(
                     f"WhatsApp → {recipient} | "
-                    f"Part {message_number}/"
+                    f"Part {part_number}/"
                     f"{len(messages)} | "
                     f"Status : "
                     f"{response.status_code}"
@@ -4120,8 +4111,8 @@ def send_whatsapp_live():
                 if response.ok:
     
                     print(
-                        f"✅ Part "
-                        f"{message_number} sent"
+                        f"✅ WhatsApp Part "
+                        f"{part_number} Sent"
                     )
     
                 else:
@@ -4129,16 +4120,13 @@ def send_whatsapp_live():
                     recipient_success = False
     
                     print(
-                        f"❌ Part "
-                        f"{message_number} failed"
+                        f"❌ WhatsApp Part "
+                        f"{part_number} Failed"
                     )
     
                     print(
                         response.text
                     )
-    
-                    # Don't send remaining parts
-                    # if one part fails.
     
                     break
     
@@ -4158,7 +4146,7 @@ def send_whatsapp_live():
                 break
     
         # -------------------------------------------------
-        # RECIPIENT STATUS
+        # RECIPIENT RESULT
         # -------------------------------------------------
     
         if recipient_success:
@@ -4166,8 +4154,8 @@ def send_whatsapp_live():
             success_count += 1
     
             print(
-                f"✅ Complete WhatsApp report "
-                f"sent → {recipient}"
+                f"✅ Complete WhatsApp Report "
+                f"Sent → {recipient}"
             )
     
         else:
@@ -4175,8 +4163,8 @@ def send_whatsapp_live():
             failed_count += 1
     
             print(
-                f"❌ Complete WhatsApp report "
-                f"failed → {recipient}"
+                f"❌ Complete WhatsApp Report "
+                f"Failed → {recipient}"
             )
     
     
@@ -4199,10 +4187,6 @@ def send_whatsapp_live():
     print("=" * 60)
     
     
-    # =====================================================
-    # FINAL MESSAGE
-    # =====================================================
-    
     if failed_count == 0:
     
         print(
@@ -4223,7 +4207,6 @@ def send_whatsapp_live():
             "❌ WHATSAPP LIVE SALES "
             "FAILED"
         )
-
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
