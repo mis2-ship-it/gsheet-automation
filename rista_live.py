@@ -3239,13 +3239,13 @@ def send_tm_mail():
         )
 
 # =========================================================
-# 📱 WHATSAPP LIVE SALES
+# 📱 WHATSAPP LIVE SALES - TEST
 # =========================================================
 
 def send_whatsapp_live():
 
     print("=" * 60)
-    print("Sending WhatsApp Live Sales")
+    print("Testing WhatsApp Cloud API")
     print("=" * 60)
 
     # =====================================================
@@ -3258,169 +3258,33 @@ def send_whatsapp_live():
         "WHATSAPP_ACCESS_TOKEN"
     )
 
+    # TEST ONLY - ONE NUMBER
     RECIPIENTS = [
         "919750820509"
     ]
 
     if not ACCESS_TOKEN:
-        print("❌ WHATSAPP_ACCESS_TOKEN not found")
+
+        print(
+            "❌ WHATSAPP_ACCESS_TOKEN not found"
+        )
+
         return
 
-    report_time = now.replace(
-        minute=0,
-        second=0,
-        microsecond=0
+    # =====================================================
+    # TEST MESSAGE
+    # =====================================================
+
+    message = (
+        "Test message from AI MIS WhatsApp API"
+    )
+
+    print(
+        f"Message : {message}"
     )
 
     # =====================================================
-    # OVERALL KPI
-    # =====================================================
-
-    net_row = overall[
-        overall["Parameters"] == "Net"
-    ].iloc[0]
-
-    gross_row = overall[
-        overall["Parameters"] == "Gross"
-    ].iloc[0]
-
-    txn_row = overall[
-        overall["Parameters"] == "Txn"
-    ].iloc[0]
-
-    aov_row = overall[
-        overall["Parameters"] == "AOV"
-    ].iloc[0]
-
-    discount_row = overall[
-        overall["Parameters"] == "Discount %"
-    ].iloc[0]
-
-    net_sales = float(net_row["Today"])
-    gross_sales = float(gross_row["Today"])
-    transactions = int(txn_row["Today"])
-    aov = float(aov_row["Today"])
-    discount_pct = float(discount_row["Today"])
-
-    # =====================================================
-    # BRAND SALES
-    # =====================================================
-
-    brand_lines = []
-
-    if not brand_summary.empty:
-
-        total_brand_sales = brand_summary["Today Rev"].sum()
-
-        for _, r in brand_summary.sort_values(
-            "Today Rev",
-            ascending=False
-        ).iterrows():
-
-            rev = float(r["Today Rev"])
-
-            contribution = (
-                rev / max(total_brand_sales, 1)
-            ) * 100
-
-            brand_lines.append(
-                f"🍶 {r['Brand']}: "
-                f"₹{rev/100000:.2f}L "
-                f"({contribution:.0f}%)"
-            )
-
-    brand_text = "\n".join(brand_lines)
-
-    # =====================================================
-    # SOURCE SALES
-    # =====================================================
-
-    source_lines = []
-
-    if not source_summary.empty:
-
-        for _, r in source_summary.sort_values(
-            "Today Rev",
-            ascending=False
-        ).iterrows():
-
-            rev = float(r["Today Rev"])
-
-            source_lines.append(
-                f"📍 {r['Source Group']}: "
-                f"₹{rev/100000:.2f}L"
-            )
-
-    source_text = "\n".join(source_lines)
-
-    # =====================================================
-    # HOURLY SALES
-    # =====================================================
-
-    hourly_lines = []
-
-    if not hourly_analysis.empty:
-
-        latest_hour = hourly_analysis.iloc[-1]
-
-        hourly_today = float(latest_hour["Today"])
-        hourly_lw = float(latest_hour["Last Week"])
-        hourly_growth = float(latest_hour["Growth %"])
-
-        hourly_lines.append(
-            f"⏰ Current Hour: "
-            f"₹{hourly_today/100000:.2f}L"
-        )
-
-        hourly_lines.append(
-            f"📊 Same Hour LW: "
-            f"₹{hourly_lw/100000:.2f}L"
-        )
-
-        hourly_lines.append(
-            f"📈 Growth: "
-            f"{hourly_growth:+.1f}%"
-        )
-
-    hourly_text = "\n".join(hourly_lines)
-
-    # =====================================================
-    # TARGET
-    # =====================================================
-
-    try:
-
-        target_row = target_summary[
-            target_summary["Metric"] == "Total"
-        ].iloc[0]
-
-        target = float(target_row["Target"])
-        eod_projection = float(
-            target_row["EOD Projection"]
-        )
-
-        achievement = float(
-            target_row["Ach %"]
-        )
-
-        target_text = (
-            f"🎯 Target: ₹{target/100000:.2f}L\n"
-            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
-            f"📊 Achievement: {achievement:.1f}%"
-        )
-
-    except Exception:
-
-        target_text = "🎯 Target information unavailable"
-
-    # =====================================================
-    # MESSAGE
-    # =====================================================
-
-   message = "Test message from AI MIS WhatsApp API"
-
-    # =====================================================
-    # SEND
+    # WHATSAPP API URL
     # =====================================================
 
     url = (
@@ -3428,58 +3292,166 @@ def send_whatsapp_live():
         f"{PHONE_NUMBER_ID}/messages"
     )
 
+    # =====================================================
+    # HEADERS
+    # =====================================================
+
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+
+        "Authorization":
+            f"Bearer {ACCESS_TOKEN}",
+
+        "Content-Type":
+            "application/json"
     }
+
+    # =====================================================
+    # SEND MESSAGE
+    # =====================================================
 
     for recipient in RECIPIENTS:
 
         payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "text",
+
+            "messaging_product":
+                "whatsapp",
+
+            "recipient_type":
+                "individual",
+
+            "to":
+                recipient,
+
+            "type":
+                "text",
+
             "text": {
-                "preview_url": False,
-                "body": message
+
+                "preview_url":
+                    False,
+
+                "body":
+                    message
             }
         }
 
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-
+        print()
         print(
-            f"WhatsApp → {recipient} | "
-            f"Status : {response.status_code}"
+            f"Sending WhatsApp → {recipient}"
         )
 
-        if response.ok:
+        try:
 
-            print("✅ Meta API accepted message")
-        
-            try:
-                meta_response = response.json()
-        
-                print("Meta Response:")
-                print(meta_response)
-        
-                if "messages" in meta_response:
-                    message_id = meta_response["messages"][0]["id"]
-                    print(f"📨 WhatsApp Message ID: {message_id}")
-        
-            except Exception:
-                print("⚠️ Could not read Meta response")
-        
-        else:
-        
-            print("❌ WhatsApp API Error")
-            print(response.status_code)
-            print(response.text)
+            response = requests.post(
+
+                url,
+
+                headers=headers,
+
+                json=payload,
+
+                timeout=30
+            )
+
+            print(
+                f"Status : "
+                f"{response.status_code}"
+            )
+
+            # =================================================
+            # SUCCESS
+            # =================================================
+
+            if response.ok:
+
+                print(
+                    "✅ Meta API accepted message"
+                )
+
+                try:
+
+                    meta_response = (
+                        response.json()
+                    )
+
+                    print(
+                        "Meta Response:"
+                    )
+
+                    print(
+                        meta_response
+                    )
+
+                    # -----------------------------------------
+                    # MESSAGE ID
+                    # -----------------------------------------
+
+                    if "messages" in meta_response:
+
+                        message_id = (
+                            meta_response[
+                                "messages"
+                            ][0]["id"]
+                        )
+
+                        print(
+                            "📨 WhatsApp Message ID:"
+                        )
+
+                        print(
+                            message_id
+                        )
+
+                except Exception as e:
+
+                    print(
+                        "⚠️ Could not read "
+                        "Meta response"
+                    )
+
+                    print(
+                        str(e)
+                    )
+
+            # =================================================
+            # ERROR
+            # =================================================
+
+            else:
+
+                print(
+                    "❌ WhatsApp API Error"
+                )
+
+                print(
+                    response.text
+                )
+
+        except Exception as e:
+
+            print(
+                "❌ WhatsApp Request Error"
+            )
+
+            print(
+                str(e)
+            )
+
+    # =====================================================
+    # END
+    # =====================================================
+
+    print()
+    print("=" * 60)
+    print("WhatsApp API Test Completed")
+    print("=" * 60)
+
+
+# =========================================================
+# CALL FUNCTION
+# =========================================================
+
+send_whatsapp_live()
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
