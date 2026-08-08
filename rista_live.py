@@ -3945,9 +3945,38 @@ def send_whatsapp_live():
             f"{border()}"
         )
 
+    # =====================================================
+    # COMPLETE MESSAGE
+    # =====================================================
+    
+    message = (
+        f"📊 LIVE SALES | "
+        f"{report_time.strftime('%d-%b-%y | %I:%M %p')}\n"
+        f"\n"
+        f"{business_text}\n"
+        f"\n"
+        f"{brand_text}\n"
+        f"\n"
+        f"{source_text}\n"
+        f"\n"
+        f"{region_text}\n"
+        f"\n"
+        f"{session_text}\n"
+        f"\n"
+        f"{hourly_text}\n"
+        f"\n"
+        f"{target_text}\n"
+        f"\n"
+        f"🧠 INSIGHT\n"
+        f"{border()}\n"
+        f"{insight_text}\n"
+        f"{border()}\n"
+        f"🤖 AI MIS Automation\n"
+    )
+
    
     # =====================================================
-    # CHECK / SPLIT WHATSAPP MESSAGE
+    # SPLIT WHATSAPP MESSAGE
     # =====================================================
     
     MAX_WHATSAPP_LENGTH = 4096
@@ -3962,50 +3991,31 @@ def send_whatsapp_live():
             return [message]
     
         parts = []
-    
         current = ""
     
         for line in message.split("\n"):
     
-            if (
-                len(current)
-                + len(line)
-                + 1
-                > max_length
-            ):
+            if len(current) + len(line) + 1 > max_length:
     
                 if current.strip():
-    
-                    parts.append(
-                        current.rstrip()
-                    )
+                    parts.append(current.rstrip())
     
                 current = line
     
             else:
     
                 if current:
-    
                     current += "\n"
     
                 current += line
     
         if current.strip():
-    
-            parts.append(
-                current.rstrip()
-            )
+            parts.append(current.rstrip())
     
         return parts
     
     
-    # =====================================================
-    # CREATE MESSAGE PARTS
-    # =====================================================
-    
-    messages = split_whatsapp_message(
-        message
-    )
+    messages = split_whatsapp_message(message)
     
     print(
         f"Total WhatsApp message length : "
@@ -4013,20 +4023,16 @@ def send_whatsapp_live():
     )
     
     print(
-        f"WhatsApp message parts        : "
+        f"WhatsApp message parts : "
         f"{len(messages)}"
     )
     
-    for i, part in enumerate(
-        messages,
-        1
-    ):
+    for i, part in enumerate(messages, 1):
     
         print(
-            f"Part {i} length               : "
+            f"Part {i} length : "
             f"{len(part)} characters"
         )
-    
     
     # =====================================================
     # WHATSAPP API
