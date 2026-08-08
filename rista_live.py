@@ -3252,9 +3252,13 @@ def send_whatsapp_live():
 
     ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
 
-    RECIPIENTS = [
-        "919750820509"
-    ]
+    RECIPIENTS = 
+        [ "919750820509",
+          "919535075140",
+          "919620952646",
+          "918892390985",
+          "918553666666"
+        ] 
 
     if not ACCESS_TOKEN:
         print("❌ WHATSAPP_ACCESS_TOKEN not found")
