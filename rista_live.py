@@ -3495,12 +3495,27 @@ def send_whatsapp_live():
         )
 
         if response.ok:
-            print("✅ WhatsApp Live Sales Sent")
-        else:
-            print("❌ WhatsApp Send Failed")
-            print(response.text)
 
-    print("=" * 60)
+            print("✅ Meta API accepted message")
+        
+            try:
+                meta_response = response.json()
+        
+                print("Meta Response:")
+                print(meta_response)
+        
+                if "messages" in meta_response:
+                    message_id = meta_response["messages"][0]["id"]
+                    print(f"📨 WhatsApp Message ID: {message_id}")
+        
+            except Exception:
+                print("⚠️ Could not read Meta response")
+        
+        else:
+        
+            print("❌ WhatsApp API Error")
+            print(response.status_code)
+            print(response.text)
 # ---------------- EXECUTE ---------------- #
 
 push("Overall", overall)
