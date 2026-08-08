@@ -3630,7 +3630,7 @@ def send_whatsapp_live():
 
     brand_text = build_summary_section(
         "🏪 BRAND CONTRIBUTION",
-        brand_summary,
+        brand_analysis,
         "Brand"
     )
 
@@ -3640,7 +3640,7 @@ def send_whatsapp_live():
 
     source_text = build_summary_section(
         "📍 SOURCE CONTRIBUTION",
-        source_summary,
+        source_analysis,
         "Source Group"
     )
 
@@ -3650,7 +3650,7 @@ def send_whatsapp_live():
 
     region_text = build_summary_section(
         "🌎 REGION SALES",
-        region_summary,
+        region_analysis,
         "Region"
     )
 
