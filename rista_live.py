@@ -3285,90 +3285,56 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # FORMATTING FUNCTIONS
+    # FORMATTING
     # =====================================================
 
     def fmt_lacs(value):
 
         try:
-
-            return (
-                f"₹{float(value) / 100000:.2f}L"
-            )
-
+            return f"₹{float(value) / 100000:.2f}L"
         except:
-
             return "₹0.00L"
 
 
     def fmt_number(value):
 
         try:
-
-            return (
-                f"{int(round(float(value))):,}"
-            )
-
+            return f"{int(round(float(value))):,}"
         except:
-
             return "-"
 
 
     def fmt_rupees(value):
 
         try:
-
-            return (
-                f"₹{int(round(float(value))):,}"
-            )
-
+            return f"₹{int(round(float(value))):,}"
         except:
-
             return "₹0"
+
+
+    def fmt_growth(value):
+
+        try:
+            return f"{float(value):+.1f}%"
+        except:
+            return "-"
 
 
     def fmt_pct(value):
 
         try:
-
-            return (
-                f"{float(value):+.1f}%"
-            )
-
+            return f"{float(value):.1f}%"
         except:
-
             return "-"
 
 
-    def fmt_plain_pct(value):
+    def fmt_pp(value):
 
         try:
-
-            return (
-                f"{float(value):.1f}%"
-            )
-
+            return f"{float(value):+.1f}pp"
         except:
-
             return "-"
 
-
-    def fmt_change(value):
-
-        try:
-
-            return (
-                f"{float(value):+.1f}pp"
-            )
-
-        except:
-
-            return "-"
-
-
-    # =====================================================
-    # BORDER
-    # =====================================================
 
     def border():
 
@@ -3378,12 +3344,9 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # BUSINESS OVERVIEW
+    # 💰 BUSINESS OVERVIEW
     #
-    # Full comparison:
-    #
-    # Parameter | Today | LW | Growth |
-    # Dis% | LW Dis% | Change
+    # Parameter | Today | LW | Growth | Dis% | LW Dis% | Δ
     # =====================================================
 
     business_lines = []
@@ -3406,9 +3369,9 @@ def send_whatsapp_live():
         f"{'Δ':>9}"
     )
 
-    # =====================================================
+    # -----------------------------------------------------
     # NET REVENUE
-    # =====================================================
+    # -----------------------------------------------------
 
     try:
 
@@ -3435,9 +3398,9 @@ def send_whatsapp_live():
         net_growth = 0
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # DISCOUNT %
-    # =====================================================
+    # -----------------------------------------------------
 
     try:
 
@@ -3469,16 +3432,17 @@ def send_whatsapp_live():
         f"{'Net Rev':<12}"
         f"{fmt_lacs(today_net):>10}"
         f"{fmt_lacs(lw_net):>10}"
-        f"{fmt_pct(net_growth):>9}"
-        f"{fmt_plain_pct(today_dis):>8}"
-        f"{fmt_plain_pct(lw_dis):>9}"
-        f"{fmt_change(dis_change):>9}"
+        f"{fmt_growth(net_growth):>9}"
+        f"{fmt_pct(today_dis):>8}"
+        f"{fmt_pct(lw_dis):>9}"
+        f"{fmt_pp(dis_change):>9}"
+
     )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # TRANSACTIONS
-    # =====================================================
+    # -----------------------------------------------------
 
     try:
 
@@ -3510,16 +3474,17 @@ def send_whatsapp_live():
         f"{'Trans':<12}"
         f"{fmt_number(today_txn):>10}"
         f"{fmt_number(lw_txn):>10}"
-        f"{fmt_pct(txn_growth):>9}"
+        f"{fmt_growth(txn_growth):>9}"
         f"{'-':>8}"
         f"{'-':>9}"
         f"{'-':>9}"
+
     )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # AOV
-    # =====================================================
+    # -----------------------------------------------------
 
     try:
 
@@ -3551,26 +3516,28 @@ def send_whatsapp_live():
         f"{'AOV':<12}"
         f"{fmt_rupees(today_aov):>10}"
         f"{fmt_rupees(lw_aov):>10}"
-        f"{fmt_pct(aov_growth):>9}"
+        f"{fmt_growth(aov_growth):>9}"
         f"{'-':>8}"
         f"{'-':>9}"
         f"{'-':>9}"
+
     )
 
 
-    # =====================================================
+    # -----------------------------------------------------
     # DISCOUNT
-    # =====================================================
+    # -----------------------------------------------------
 
     business_lines.append(
 
         f"{'Dis%':<12}"
-        f"{fmt_plain_pct(today_dis):>10}"
-        f"{fmt_plain_pct(lw_dis):>10}"
+        f"{fmt_pct(today_dis):>10}"
+        f"{fmt_pct(lw_dis):>10}"
         f"{'-':>9}"
         f"{'-':>8}"
         f"{'-':>9}"
-        f"{fmt_change(dis_change):>9}"
+        f"{fmt_pp(dis_change):>9}"
+
     )
 
 
@@ -3580,388 +3547,194 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # COMPACT SUMMARY BUILDER
+    # GENERIC COMPACT BUILDER
     #
-    # Used for:
-    # Brand
-    # Region
-    # Source
-    # Session
+    # This works directly with your existing
+    # brand_summary / source_summary structure.
     #
     # Output:
     #
     # Name | Today Rev | Growth | Dis% | Δ
     # =====================================================
 
-    def prepare_compact_summary(
+    def build_compact_section(
+        title,
         df,
         name_column,
-        names=None
+        required_order=None
     ):
+
+        lines = []
+
+        lines.append(title)
+
+        lines.append(
+            border()
+        )
+
+        lines.append(
+            f"{'Parameter':<15}"
+            f"{'Today Rev':>11}"
+            f"{'Growth':>9}"
+            f"{'Dis%':>8}"
+            f"{'Δ':>9}"
+        )
+
 
         if df is None or df.empty:
 
-            return pd.DataFrame()
+            lines.append(
+                "No data available"
+            )
+
+            return "\n".join(lines)
 
 
-        df = df.copy()
+        data = df.copy()
 
 
         # -------------------------------------------------
-        # CLEAN NAME
+        # Make sure required columns exist
         # -------------------------------------------------
 
-        df[name_column] = (
-            df[name_column]
-            .fillna("")
-            .astype(str)
-            .str.strip()
-        )
+        required_columns = [
 
+            name_column,
+            "Today Rev",
+            "Growth %",
+            "Today Dis %",
+            "Dis Change %"
 
-        df = df[
-            df[name_column] != ""
         ]
 
 
-        if df.empty:
+        for col in required_columns:
 
-            return pd.DataFrame()
+            if col not in data.columns:
 
-
-        # -------------------------------------------------
-        # TODAY / LW REVENUE
-        # -------------------------------------------------
-
-        result = (
-
-            df.groupby(
-                name_column,
-                as_index=False
-            )
-
-            .agg(
-
-                Today_Rev=(
-                    "Today Rev",
-                    "sum"
-                ),
-
-                LW_Rev=(
-                    "LW Rev",
-                    "sum"
+                print(
+                    f"⚠️ Missing column "
+                    f"{col} in {title}"
                 )
 
-            )
-        )
-
-
-        # -------------------------------------------------
-        # GROWTH
-        #
-        # Calculate from aggregated revenue.
-        # This prevents duplicate rows and incorrect
-        # averaging of growth percentages.
-        # -------------------------------------------------
-
-        result["Growth"] = (
-
-            (
-                result["Today_Rev"]
-                -
-                result["LW_Rev"]
-            )
-
-            /
-
-            result["LW_Rev"].replace(
-                0,
-                1
-            )
-
-            * 100
-
-        )
-
-
-        # -------------------------------------------------
-        # DISCOUNT %
-        #
-        # Prefer weighted calculation:
-        #
-        # Discount % = Discount / Gross Sales * 100
-        #
-        # If those columns are unavailable,
-        # fall back to average dashboard values.
-        # -------------------------------------------------
-
-        if (
-            "Discount" in df.columns
-            and
-            "Gross Sales" in df.columns
-        ):
-
-            discount_data = (
-
-                df.assign(
-
-                    _discount=(
-                        pd.to_numeric(
-                            df["Discount"],
-                            errors="coerce"
-                        )
-                        .fillna(0)
-                    ),
-
-                    _gross=(
-                        pd.to_numeric(
-                            df["Gross Sales"],
-                            errors="coerce"
-                        )
-                        .fillna(0)
-                    )
-
+                lines.append(
+                    "Data columns unavailable"
                 )
 
-                .groupby(
-                    name_column,
-                    as_index=False
-                )
-
-                .agg(
-
-                    _discount=(
-                        "_discount",
-                        "sum"
-                    ),
-
-                    _gross=(
-                        "_gross",
-                        "sum"
-                    )
-
-                )
-            )
-
-
-            discount_data["Dis_Pct"] = (
-
-                discount_data["_discount"]
-
-                /
-
-                discount_data["_gross"].replace(
-                    0,
-                    1
-                )
-
-                * 100
-
-            )
-
-
-            # -------------------------------------------------
-            # LAST WEEK DISCOUNT
-            # -------------------------------------------------
-
-            if (
-                "LW Discount" in df.columns
-                and
-                "LW Gross Sales" in df.columns
-            ):
-
-                discount_data["LW_Dis_Pct"] = (
-                    pd.to_numeric(
-                        df["LW Discount"],
-                        errors="coerce"
-                    )
-                    .fillna(0)
-                    .groupby(
-                        df[name_column]
-                    )
-                    .sum()
-                    .reindex(
-                        discount_data[name_column]
-                    )
-                    .fillna(0)
-                    .values
-                    /
-                    pd.to_numeric(
-                        df["LW Gross Sales"],
-                        errors="coerce"
-                    )
-                    .fillna(0)
-                    .groupby(
-                        df[name_column]
-                    )
-                    .sum()
-                    .reindex(
-                        discount_data[name_column]
-                    )
-                    .fillna(0)
-                    .replace(0, 1)
-                    .values
-                    * 100
-                )
-
-            else:
-
-                discount_data["LW_Dis_Pct"] = 0
-
-
-            result = result.merge(
-
-                discount_data[
-                    [
-                        name_column,
-                        "Dis_Pct",
-                        "LW_Dis_Pct"
-                    ]
-                ],
-
-                on=name_column,
-
-                how="left"
-            )
-
-
-        # -------------------------------------------------
-        # FALLBACK TO EXISTING DISCOUNT COLUMNS
-        # -------------------------------------------------
-
-        elif (
-            "Today Dis %" in df.columns
-        ):
-
-            discount_data = (
-
-                df.groupby(
-                    name_column,
-                    as_index=False
-                )
-
-                .agg(
-
-                    Dis_Pct=(
-                        "Today Dis %",
-                        "mean"
-                    ),
-
-                    LW_Dis_Pct=(
-                        "LW Dis %",
-                        "mean"
-                    )
-
-                )
-            )
-
-
-            result = result.merge(
-                discount_data,
-                on=name_column,
-                how="left"
-            )
-
-
-        else:
-
-            result["Dis_Pct"] = 0
-            result["LW_Dis_Pct"] = 0
-
-
-        # -------------------------------------------------
-        # CLEAN DISCOUNT VALUES
-        # -------------------------------------------------
-
-        result["Dis_Pct"] = (
-            pd.to_numeric(
-                result["Dis_Pct"],
-                errors="coerce"
-            )
-            .fillna(0)
-        )
-
-        result["LW_Dis_Pct"] = (
-            pd.to_numeric(
-                result["LW_Dis_Pct"],
-                errors="coerce"
-            )
-            .fillna(0)
-        )
-
-
-        # -------------------------------------------------
-        # DISCOUNT CHANGE
-        # -------------------------------------------------
-
-        result["Change"] = (
-
-            result["Dis_Pct"]
-            -
-            result["LW_Dis_Pct"]
-
-        )
+                return "\n".join(lines)
 
 
         # -------------------------------------------------
         # ORDER
         # -------------------------------------------------
 
-        if names:
+        if required_order:
 
             order_map = {
                 name: i
-                for i, name in enumerate(names)
+                for i, name in enumerate(
+                    required_order
+                )
             }
 
 
-            result["_order"] = (
+            data["_order"] = (
 
-                result[name_column]
+                data[name_column]
+                .astype(str)
+                .str.strip()
                 .map(order_map)
                 .fillna(999)
 
             )
 
 
-            result = (
+            data = (
 
-                result
-
-                .sort_values(
-                    "_order"
-                )
-
-                .drop(
-                    columns="_order"
-                )
+                data
+                .sort_values("_order")
+                .drop(columns="_order")
 
             )
 
         else:
 
-            result = (
+            data = data.sort_values(
+                "Today Rev",
+                ascending=False
+            )
 
-                result
 
-                .sort_values(
-                    "Today_Rev",
-                    ascending=False
+        # -------------------------------------------------
+        # BUILD ROWS
+        # -------------------------------------------------
+
+        for _, row in data.iterrows():
+
+            name = str(
+                row[name_column]
+            ).strip()
+
+
+            if not name:
+                continue
+
+
+            today_rev = float(
+                row.get(
+                    "Today Rev",
+                    0
                 )
+            )
+
+
+            growth = float(
+                row.get(
+                    "Growth %",
+                    0
+                )
+            )
+
+
+            today_discount = float(
+                row.get(
+                    "Today Dis %",
+                    0
+                )
+            )
+
+
+            change = float(
+                row.get(
+                    "Dis Change %",
+                    0
+                )
+            )
+
+
+            lines.append(
+
+                f"{name:<15}"
+                f"{fmt_lacs(today_rev):>11}"
+                f"{fmt_growth(growth):>9}"
+                f"{fmt_pct(today_discount):>8}"
+                f"{fmt_pp(change):>9}"
 
             )
 
 
-        return result
+        return "\n".join(lines)
 
 
     # =====================================================
-    # BUILD BRAND SUMMARY
+    # 🏪 BRAND SUMMARY
     # =====================================================
 
-    brand_summary = prepare_compact_summary(
+    brand_text = build_compact_section(
 
-        brand_analysis,
+        "🏪 BRAND SUMMARY",
+
+        brand_summary,
 
         "Brand",
 
@@ -3976,32 +3749,14 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # BUILD REGION SUMMARY
+    # 📍 SOURCE SUMMARY
     # =====================================================
 
-    region_summary = prepare_compact_summary(
+    source_text = build_compact_section(
 
-        region_analysis,
+        "📍 SOURCE SUMMARY",
 
-        "Region",
-
-        [
-            "KA",
-            "MH",
-            "TN",
-            "KL"
-        ]
-
-    )
-
-
-    # =====================================================
-    # BUILD SOURCE SUMMARY
-    # =====================================================
-
-    source_summary = prepare_compact_summary(
-
-        source_analysis,
+        source_summary,
 
         "Source Group",
 
@@ -4017,12 +3772,240 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # BUILD SESSION SUMMARY
+    # 🌎 REGION SUMMARY
+    #
+    # Build directly from today_cut / lastweek_cut
+    # because your current file does not have a
+    # region_summary DataFrame.
     # =====================================================
 
-    session_summary = prepare_compact_summary(
+    def create_dimension_summary(
+        today_df,
+        lw_df,
+        dimension_column,
+        required_order
+    ):
 
-        session_analysis,
+        rows = []
+
+        for dimension in required_order:
+
+            today_data = today_df[
+                today_df[dimension_column]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                ==
+                dimension.upper()
+            ]
+
+
+            lw_data = lw_df[
+                lw_df[dimension_column]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                ==
+                dimension.upper()
+            ]
+
+
+            today_rev = today_data[
+                "Net Sales"
+            ].sum()
+
+
+            lw_rev = lw_data[
+                "Net Sales"
+            ].sum()
+
+
+            growth = (
+
+                (
+                    today_rev
+                    -
+                    lw_rev
+                )
+
+                /
+
+                max(
+                    lw_rev,
+                    1
+                )
+
+                * 100
+
+            )
+
+
+            today_gross = today_data[
+                "grossAmount"
+            ].sum()
+
+
+            lw_gross = lw_data[
+                "grossAmount"
+            ].sum()
+
+
+            today_discount = today_data[
+                "discountAmount"
+            ].sum()
+
+
+            lw_discount = lw_data[
+                "discountAmount"
+            ].sum()
+
+
+            today_dis = (
+
+                today_discount
+                /
+                max(
+                    today_gross,
+                    1
+                )
+                * 100
+
+            )
+
+
+            lw_dis = (
+
+                lw_discount
+                /
+                max(
+                    lw_gross,
+                    1
+                )
+                * 100
+
+            )
+
+
+            change = (
+                today_dis
+                -
+                lw_dis
+            )
+
+
+            rows.append({
+
+                dimension_column:
+                    dimension,
+
+                "Today Rev":
+                    round(
+                        today_rev,
+                        2
+                    ),
+
+                "LW Rev":
+                    round(
+                        lw_rev,
+                        2
+                    ),
+
+                "Growth %":
+                    round(
+                        growth,
+                        2
+                    ),
+
+                "Today Dis %":
+                    round(
+                        today_dis,
+                        2
+                    ),
+
+                "LW Dis %":
+                    round(
+                        lw_dis,
+                        2
+                    ),
+
+                "Dis Change %":
+                    round(
+                        change,
+                        2
+                    )
+
+            })
+
+
+        return pd.DataFrame(
+            rows
+        )
+
+
+    region_summary = create_dimension_summary(
+
+        today_cut,
+
+        lastweek_cut,
+
+        "Region",
+
+        [
+            "KA",
+            "MH",
+            "TN",
+            "KL"
+        ]
+
+    )
+
+
+    region_text = build_compact_section(
+
+        "🌎 REGION SUMMARY",
+
+        region_summary,
+
+        "Region",
+
+        [
+            "KA",
+            "MH",
+            "TN",
+            "KL"
+        ]
+
+    )
+
+
+    # =====================================================
+    # 🍽 SESSION SUMMARY
+    # =====================================================
+
+    session_summary = create_dimension_summary(
+
+        today_cut,
+
+        lastweek_cut,
+
+        "Session",
+
+        [
+            "Breakfast",
+            "Lunch",
+            "Snacks",
+            "Dinner",
+            "Post Dinner"
+        ]
+
+    )
+
+
+    session_text = build_compact_section(
+
+        "🍽 SESSION SUMMARY",
+
+        session_summary,
 
         "Session",
 
@@ -4038,164 +4021,7 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # COMPACT WHATSAPP SECTION FORMATTER
-    # =====================================================
-
-    def build_compact_section(
-        title,
-        df,
-        name_column
-    ):
-
-        lines = []
-
-        lines.append(title)
-
-        lines.append(
-            border()
-        )
-
-        lines.append(
-
-            f"{'Parameter':<14}"
-            f"{'Today':>10}"
-            f"{'Growth':>9}"
-            f"{'Dis%':>8}"
-            f"{'Δ':>9}"
-
-        )
-
-
-        if (
-            df is None
-            or df.empty
-        ):
-
-            lines.append(
-                "No data available"
-            )
-
-            return "\n".join(lines)
-
-
-        for _, row in df.iterrows():
-
-            name = str(
-                row[name_column]
-            ).strip()
-
-
-            name = name[:14]
-
-
-            today_rev = float(
-                row.get(
-                    "Today_Rev",
-                    0
-                )
-            )
-
-
-            growth = float(
-                row.get(
-                    "Growth",
-                    0
-                )
-            )
-
-
-            discount = float(
-                row.get(
-                    "Dis_Pct",
-                    0
-                )
-            )
-
-
-            change = float(
-                row.get(
-                    "Change",
-                    0
-                )
-            )
-
-
-            lines.append(
-
-                f"{name:<14}"
-                f"{fmt_lacs(today_rev):>10}"
-                f"{growth:>+8.1f}%"
-                f"{discount:>7.1f}%"
-                f"{change:>+8.1f}pp"
-
-            )
-
-
-        return "\n".join(lines)
-
-
-    # =====================================================
-    # BRAND TEXT
-    # =====================================================
-
-    brand_text = build_compact_section(
-
-        "🏪 BRAND SUMMARY",
-
-        brand_summary,
-
-        "Brand"
-
-    )
-
-
-    # =====================================================
-    # REGION TEXT
-    # =====================================================
-
-    region_text = build_compact_section(
-
-        "🌎 REGION SUMMARY",
-
-        region_summary,
-
-        "Region"
-
-    )
-
-
-    # =====================================================
-    # SOURCE TEXT
-    # =====================================================
-
-    source_text = build_compact_section(
-
-        "📍 SOURCE SUMMARY",
-
-        source_summary,
-
-        "Source Group"
-
-    )
-
-
-    # =====================================================
-    # SESSION TEXT
-    # =====================================================
-
-    session_text = build_compact_section(
-
-        "🍽 SESSION SUMMARY",
-
-        session_summary,
-
-        "Session"
-
-    )
-
-
-    # =====================================================
-    # HOURLY PERFORMANCE
+    # ⏰ HOURLY PERFORMANCE
     # =====================================================
 
     hourly_lines = []
@@ -4210,9 +4036,13 @@ def send_whatsapp_live():
 
 
     if (
+
         hourly_analysis is not None
+
         and
+
         not hourly_analysis.empty
+
     ):
 
         latest_hour = (
@@ -4262,7 +4092,7 @@ def send_whatsapp_live():
         hourly_lines.append(
 
             f"Growth       : "
-            f"{fmt_pct(hourly_growth)}"
+            f"{fmt_growth(hourly_growth)}"
 
         )
 
@@ -4280,7 +4110,7 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # TARGET
+    # 🎯 TARGET
     # =====================================================
 
     try:
@@ -4309,18 +4139,16 @@ def send_whatsapp_live():
 
             "🎯 TARGET vs PROJECTION\n"
 
-            + border()
+            f"{border()}\n"
 
-            + "\n"
+            f"Target        : "
+            f"{fmt_lacs(target)}\n"
 
-            + f"Target        : "
-              f"{fmt_lacs(target)}\n"
+            f"EOD Projection: "
+            f"{fmt_lacs(eod_projection)}\n"
 
-            + f"EOD Projection: "
-              f"{fmt_lacs(eod_projection)}\n"
-
-            + f"Achievement   : "
-              f"{achievement:.1f}%"
+            f"Achievement   : "
+            f"{achievement:.1f}%"
 
         )
 
@@ -4331,13 +4159,26 @@ def send_whatsapp_live():
 
             "🎯 TARGET vs PROJECTION\n"
 
-            + border()
+            f"{border()}\n"
 
-            + "\n"
-
-            + "Target information unavailable"
+            "Target information unavailable"
 
         )
+
+
+    # =====================================================
+    # 🧠 INSIGHT
+    # =====================================================
+
+    insight_section = (
+
+        "🧠 INSIGHT\n"
+
+        f"{border()}\n"
+
+        f"{insight_text}"
+
+    )
 
 
     # =====================================================
@@ -4379,11 +4220,7 @@ def send_whatsapp_live():
 
         f"\n"
 
-        f"🧠 INSIGHT\n"
-
-        f"{border()}\n"
-
-        f"{insight_text}\n"
+        f"{insight_section}\n"
 
         f"\n"
 
@@ -4393,22 +4230,20 @@ def send_whatsapp_live():
 
 
     # =====================================================
-    # SPLIT WHATSAPP MESSAGE
-    #
-    # WhatsApp text limit = 4096 characters
+    # WHATSAPP 4096 CHARACTER LIMIT
     # =====================================================
 
     MAX_WHATSAPP_LENGTH = 4096
 
 
     def split_whatsapp_message(
-        message,
+        text,
         max_length=MAX_WHATSAPP_LENGTH
     ):
 
-        if len(message) <= max_length:
+        if len(text) <= max_length:
 
-            return [message]
+            return [text]
 
 
         parts = []
@@ -4416,14 +4251,13 @@ def send_whatsapp_live():
         current = ""
 
 
-        for line in message.split("\n"):
+        for line in text.split("\n"):
 
             # -------------------------------------------------
-            # If a single line itself is longer than the limit,
-            # split it safely.
+            # Handle unusually long single line
             # -------------------------------------------------
 
-            if len(line) > max_length:
+            while len(line) > max_length:
 
                 if current.strip():
 
@@ -4434,27 +4268,18 @@ def send_whatsapp_live():
                     current = ""
 
 
-                while len(line) > max_length:
-
-                    parts.append(
-                        line[:max_length]
-                    )
-
-                    line = line[
-                        max_length:
-                    ]
+                parts.append(
+                    line[:max_length]
+                )
 
 
-                if line:
-
-                    current = line
-
-
-                continue
+                line = line[
+                    max_length:
+                ]
 
 
             # -------------------------------------------------
-            # Normal line handling
+            # Normal line
             # -------------------------------------------------
 
             if (
@@ -4477,6 +4302,7 @@ def send_whatsapp_live():
                         current.rstrip()
                     )
 
+
                 current = line
 
 
@@ -4485,6 +4311,7 @@ def send_whatsapp_live():
                 if current:
 
                     current += "\n"
+
 
                 current += line
 
@@ -4569,10 +4396,6 @@ def send_whatsapp_live():
         recipient_success = True
 
 
-        # -------------------------------------------------
-        # SEND EACH PART
-        # -------------------------------------------------
-
         for part_number, message_part in enumerate(
 
             messages,
@@ -4580,7 +4403,6 @@ def send_whatsapp_live():
             start=1
 
         ):
-
 
             payload = {
 
@@ -4641,11 +4463,10 @@ def send_whatsapp_live():
 
                     print(
 
-                        f"✅ WhatsApp Part "
-                        f"{part_number} Sent"
+                        f"✅ Part "
+                        f"{part_number} sent"
 
                     )
-
 
                 else:
 
@@ -4654,8 +4475,8 @@ def send_whatsapp_live():
 
                     print(
 
-                        f"❌ WhatsApp Part "
-                        f"{part_number} Failed"
+                        f"❌ Part "
+                        f"{part_number} failed"
 
                     )
 
@@ -4697,7 +4518,6 @@ def send_whatsapp_live():
 
             success_count += 1
 
-
             print(
 
                 f"✅ Complete WhatsApp Report "
@@ -4705,11 +4525,9 @@ def send_whatsapp_live():
 
             )
 
-
         else:
 
             failed_count += 1
-
 
             print(
 
@@ -4725,22 +4543,15 @@ def send_whatsapp_live():
 
     print("=" * 60)
 
-
     print(
-
         f"WhatsApp Success : "
         f"{success_count}"
-
     )
-
 
     print(
-
         f"WhatsApp Failed  : "
         f"{failed_count}"
-
     )
-
 
     print("=" * 60)
 
@@ -4752,14 +4563,12 @@ def send_whatsapp_live():
             "SENT SUCCESSFULLY"
         )
 
-
     elif success_count > 0:
 
         print(
             "⚠️ WHATSAPP LIVE SALES "
             "PARTIALLY SENT"
         )
-
 
     else:
 
