@@ -3248,6 +3248,10 @@ def send_whatsapp_live():
     print("Sending WhatsApp Live Sales")
     print("=" * 60)
 
+    # =====================================================
+    # WHATSAPP CONFIGURATION
+    # =====================================================
+
     PHONE_NUMBER_ID = "1138561289350791"
 
     ACCESS_TOKEN = os.environ.get(
@@ -3281,26 +3285,37 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # FORMATTING FUNCTIONS
+    # SAFE NUMBER
+    # =====================================================
+
+    def safe_float(value, default=0.0):
+
+        try:
+
+            if pd.isna(value):
+                return default
+
+            return float(value)
+
+        except:
+
+            return default
+
+    # =====================================================
+    # FORMATTING
     # =====================================================
 
     def fmt_lacs(value):
 
-        try:
+        value = safe_float(value)
 
-            return (
-                f"₹{float(value) / 100000:.2f}L"
-            )
-
-        except:
-
-            return "₹0.00L"
+        return f"₹{value / 100000:.2f}L"
 
     def fmt_number(value):
 
         try:
 
-            return f"{int(round(float(value))):,}"
+            return f"{int(round(safe_float(value))):,}"
 
         except:
 
@@ -3310,60 +3325,107 @@ def send_whatsapp_live():
 
         try:
 
-            return (
-                f"₹{int(round(float(value))):,}"
-            )
+            return f"₹{int(round(safe_float(value))):,}"
 
         except:
 
             return "₹0"
 
+    def fmt_growth(value):
+
+        return f"{safe_float(value):+.1f}%"
+
     def fmt_pct(value):
 
-        try:
-
-            return f"{float(value):+.1f}%"
-
-        except:
-
-            return "-"
-
-    def fmt_plain_pct(value):
-
-        try:
-
-            return f"{float(value):.1f}%"
-
-        except:
-
-            return "-"
+        return f"{safe_float(value):.1f}%"
 
     def fmt_change(value):
 
-        try:
+        return f"{safe_float(value):+.1f}pp"
 
-            return f"{float(value):+.1f}pp"
+    # =====================================================
+    # TABLE WIDTHS
+    # =====================================================
 
-        except:
+    # Keep these fixed so WhatsApp monospace preserves
+    # the alignment.
 
-            return "-"
+    W_PARAM = 15
+    W_TODAY = 12
+    W_LW = 12
+    W_GROWTH = 10
+    W_DIS = 9
+    W_LW_DIS = 10
+    W_CHANGE = 10
+
+    # =====================================================
+    # TABLE BORDER
+    # =====================================================
+
+    TABLE_WIDTH = (
+        W_PARAM
+        + W_TODAY
+        + W_LW
+        + W_GROWTH
+        + W_DIS
+        + W_LW_DIS
+        + W_CHANGE
+        + 8
+    )
+
+    def border():
+
+        return "─" * TABLE_WIDTH
 
     # =====================================================
     # TABLE HEADER
     # =====================================================
 
-    HEADER = (
-        f"{'Parameter':<15}"
-        f"{'Today Rev':>11}"
-        f"{'LW Rev':>11}"
-        f"{'Growth':>9}"
-        f"{'Dis%':>8}"
-        f"{'LW Dis%':>9}"
-        f"{'Change':>9}"
-    )
+    def table_header():
+
+        return (
+            "│ "
+            f"{'Parameter':<{W_PARAM}}│ "
+            f"{'Today Rev':>{W_TODAY}} │ "
+            f"{'LW Rev':>{W_LW}} │ "
+            f"{'Growth':>{W_GROWTH}} │ "
+            f"{'Dis%':>{W_DIS}} │ "
+            f"{'LW Dis%':>{W_LW_DIS}} │ "
+            f"{'Δ':>{W_CHANGE}} │"
+        )
 
     # =====================================================
-    # BUSINESS OVERVIEW
+    # GENERIC TABLE ROW
+    # =====================================================
+
+    def table_row(
+        name,
+        today_rev,
+        lw_rev,
+        growth,
+        today_dis,
+        lw_dis,
+        change
+    ):
+
+        name = str(name).strip()
+
+        # Prevent long names from breaking table
+        name = name[:W_PARAM]
+
+        return (
+            "│ "
+            f"{name:<{W_PARAM}}│ "
+            f"{fmt_lacs(today_rev):>{W_TODAY}} │ "
+            f"{fmt_lacs(lw_rev):>{W_LW}} │ "
+            f"{fmt_growth(growth):>{W_GROWTH}} │ "
+            f"{fmt_pct(today_dis):>{W_DIS}} │ "
+            f"{fmt_pct(lw_dis):>{W_LW_DIS}} │ "
+            f"{fmt_change(change):>{W_CHANGE}} │"
+        )
+
+    # =====================================================
+    # BUSINESS TABLE
     # =====================================================
 
     business_lines = []
@@ -3372,130 +3434,180 @@ def send_whatsapp_live():
         "💰 BUSINESS OVERVIEW"
     )
 
-    business_lines.append("")
+    business_lines.append(
+        border()
+    )
 
     business_lines.append(
-        HEADER
+        table_header()
+    )
+
+    business_lines.append(
+        border()
     )
 
     # -----------------------------------------------------
     # NET REVENUE
     # -----------------------------------------------------
 
-    net_row = overall[
-        overall["Parameters"] == "Net"
-    ].iloc[0]
+    try:
 
-    today_net = float(
-        net_row["Today"]
-    )
+        net_row = overall[
+            overall["Parameters"] == "Net"
+        ].iloc[0]
 
-    lw_net = float(
-        net_row["Last Week"]
-    )
+        today_net = safe_float(
+            net_row["Today"]
+        )
 
-    net_growth = float(
-        net_row["LW Growth %"]
-    )
+        lw_net = safe_float(
+            net_row["Last Week"]
+        )
 
-    today_dis = float(
-        overall[
+        net_growth = safe_float(
+            net_row["LW Growth %"]
+        )
+
+    except Exception:
+
+        today_net = 0
+        lw_net = 0
+        net_growth = 0
+
+    # -----------------------------------------------------
+    # DISCOUNT
+    # -----------------------------------------------------
+
+    try:
+
+        discount_row = overall[
             overall["Parameters"] == "Discount %"
-        ].iloc[0]["Today"]
-    )
+        ].iloc[0]
 
-    lw_dis = float(
-        overall[
-            overall["Parameters"] == "Discount %"
-        ].iloc[0]["Last Week"]
-    )
+        today_dis = safe_float(
+            discount_row["Today"]
+        )
+
+        lw_dis = safe_float(
+            discount_row["Last Week"]
+        )
+
+    except Exception:
+
+        today_dis = 0
+        lw_dis = 0
 
     dis_change = (
         today_dis - lw_dis
     )
 
     business_lines.append(
-        f"{'Net Rev':<15}"
-        f"{fmt_lacs(today_net):>11}"
-        f"{fmt_lacs(lw_net):>11}"
-        f"{fmt_pct(net_growth):>9}"
-        f"{fmt_plain_pct(today_dis):>8}"
-        f"{fmt_plain_pct(lw_dis):>9}"
-        f"{fmt_change(dis_change):>9}"
+        table_row(
+            "Net Rev",
+            today_net,
+            lw_net,
+            net_growth,
+            today_dis,
+            lw_dis,
+            dis_change
+        )
     )
 
     # -----------------------------------------------------
     # TRANSACTIONS
     # -----------------------------------------------------
 
-    txn_row = overall[
-        overall["Parameters"] == "Txn"
-    ].iloc[0]
+    try:
 
-    today_txn = float(
-        txn_row["Today"]
-    )
+        txn_row = overall[
+            overall["Parameters"] == "Txn"
+        ].iloc[0]
 
-    lw_txn = float(
-        txn_row["Last Week"]
-    )
+        today_txn = safe_float(
+            txn_row["Today"]
+        )
 
-    txn_growth = float(
-        txn_row["LW Growth %"]
-    )
+        lw_txn = safe_float(
+            txn_row["Last Week"]
+        )
+
+        txn_growth = safe_float(
+            txn_row["LW Growth %"]
+        )
+
+    except Exception:
+
+        today_txn = 0
+        lw_txn = 0
+        txn_growth = 0
 
     business_lines.append(
-        f"{'Trans':<15}"
-        f"{fmt_number(today_txn):>11}"
-        f"{fmt_number(lw_txn):>11}"
-        f"{fmt_pct(txn_growth):>9}"
-        f"{'-':>8}"
-        f"{'-':>9}"
-        f"{'-':>9}"
+        "│ "
+        f"{'Trans':<{W_PARAM}}│ "
+        f"{fmt_number(today_txn):>{W_TODAY}} │ "
+        f"{fmt_number(lw_txn):>{W_LW}} │ "
+        f"{fmt_growth(txn_growth):>{W_GROWTH}} │ "
+        f"{'-':>{W_DIS}} │ "
+        f"{'-':>{W_LW_DIS}} │ "
+        f"{'-':>{W_CHANGE}} │"
     )
 
     # -----------------------------------------------------
     # AOV
     # -----------------------------------------------------
 
-    aov_row = overall[
-        overall["Parameters"] == "AOV"
-    ].iloc[0]
+    try:
 
-    today_aov = float(
-        aov_row["Today"]
-    )
+        aov_row = overall[
+            overall["Parameters"] == "AOV"
+        ].iloc[0]
 
-    lw_aov = float(
-        aov_row["Last Week"]
-    )
+        today_aov = safe_float(
+            aov_row["Today"]
+        )
 
-    aov_growth = float(
-        aov_row["LW Growth %"]
-    )
+        lw_aov = safe_float(
+            aov_row["Last Week"]
+        )
+
+        aov_growth = safe_float(
+            aov_row["LW Growth %"]
+        )
+
+    except Exception:
+
+        today_aov = 0
+        lw_aov = 0
+        aov_growth = 0
 
     business_lines.append(
-        f"{'AOV':<15}"
-        f"{fmt_rupees(today_aov):>11}"
-        f"{fmt_rupees(lw_aov):>11}"
-        f"{fmt_pct(aov_growth):>9}"
-        f"{'-':>8}"
-        f"{'-':>9}"
-        f"{'-':>9}"
+        "│ "
+        f"{'AOV':<{W_PARAM}}│ "
+        f"{fmt_rupees(today_aov):>{W_TODAY}} │ "
+        f"{fmt_rupees(lw_aov):>{W_LW}} │ "
+        f"{fmt_growth(aov_growth):>{W_GROWTH}} │ "
+        f"{'-':>{W_DIS}} │ "
+        f"{'-':>{W_LW_DIS}} │ "
+        f"{'-':>{W_CHANGE}} │"
     )
 
     # -----------------------------------------------------
-    # DISCOUNT
+    # DISCOUNT %
     # -----------------------------------------------------
 
     business_lines.append(
-        f"{'Dis%':<15}"
-        f"{fmt_plain_pct(today_dis):>11}"
-        f"{fmt_plain_pct(lw_dis):>11}"
-        f"{'-':>9}"
-        f"{fmt_plain_pct(today_dis):>8}"
-        f"{fmt_plain_pct(lw_dis):>9}"
-        f"{fmt_change(dis_change):>9}"
+        "│ "
+        f"{'Dis%':<{W_PARAM}}│ "
+        f"{fmt_pct(today_dis):>{W_TODAY}} │ "
+        f"{fmt_pct(lw_dis):>{W_LW}} │ "
+        f"{'-':>{W_GROWTH}} │ "
+        f"{'-':>{W_DIS}} │ "
+        f"{'-':>{W_LW_DIS}} │ "
+        f"{fmt_change(dis_change):>{W_CHANGE}} │"
+    )
+
+    business_lines.append(
+        border()
     )
 
     business_text = "\n".join(
@@ -3503,7 +3615,7 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # GENERIC SUMMARY BUILDER
+    # GENERIC SUMMARY TABLE
     # =====================================================
 
     def build_summary_section(
@@ -3515,25 +3627,37 @@ def send_whatsapp_live():
         lines = []
 
         lines.append(title)
-        lines.append("")
-        lines.append(HEADER)
 
-        if (
-            df is None
-            or df.empty
-        ):
+        lines.append(
+            border()
+        )
+
+        lines.append(
+            table_header()
+        )
+
+        lines.append(
+            border()
+        )
+
+        if df is None or df.empty:
 
             lines.append(
-                "No data available"
+                "│ "
+                f"{'No data available':<{TABLE_WIDTH - 2}}│"
+            )
+
+            lines.append(
+                border()
             )
 
             return "\n".join(lines)
 
+        df = df.copy()
+
         # -------------------------------------------------
         # SORT BY TODAY REVENUE
         # -------------------------------------------------
-
-        df = df.copy()
 
         if "Today Rev" in df.columns:
 
@@ -3543,7 +3667,7 @@ def send_whatsapp_live():
             )
 
         # -------------------------------------------------
-        # ROWS
+        # BUILD ROWS
         # -------------------------------------------------
 
         for _, row in df.iterrows():
@@ -3558,69 +3682,98 @@ def send_whatsapp_live():
             if not name:
                 continue
 
-            today_rev = float(
+            today_rev = safe_float(
                 row.get(
                     "Today Rev",
                     0
                 )
             )
 
-            lw_rev = float(
+            lw_rev = safe_float(
                 row.get(
                     "LW Rev",
                     0
                 )
             )
 
-            growth = float(
+            growth = safe_float(
                 row.get(
                     "Growth %",
                     0
                 )
             )
 
-            today_disc = float(
+            today_disc = safe_float(
                 row.get(
                     "Today Dis %",
                     0
                 )
             )
 
-            lw_disc = float(
+            lw_disc = safe_float(
                 row.get(
                     "LW Dis %",
                     0
                 )
             )
 
-            change = float(
-                row.get(
-                    "Dis Change %",
+            # -------------------------------------------------
+            # DISCOUNT CHANGE
+            # -------------------------------------------------
+
+            if "Dis Change %" in row.index:
+
+                change = safe_float(
+                    row.get(
+                        "Dis Change %",
+                        0
+                    )
+                )
+
+            elif "Changes %" in row.index:
+
+                change = safe_float(
                     row.get(
                         "Changes %",
-                        row.get(
-                            "Change %",
-                            0
-                        )
+                        0
                     )
+                )
+
+            elif "Change %" in row.index:
+
+                change = safe_float(
+                    row.get(
+                        "Change %",
+                        0
+                    )
+                )
+
+            else:
+
+                change = (
+                    today_disc
+                    - lw_disc
+                )
+
+            # -------------------------------------------------
+            # ROW
+            # -------------------------------------------------
+
+            lines.append(
+                table_row(
+                    name,
+                    today_rev,
+                    lw_rev,
+                    growth,
+                    today_disc,
+                    lw_disc,
+                    change
                 )
             )
 
-            # -------------------------------------------------
-            # NAME WIDTH
-            # -------------------------------------------------
-
-            name = name[:15]
-
-            lines.append(
-                f"{name:<15}"
-                f"{fmt_lacs(today_rev):>11}"
-                f"{fmt_lacs(lw_rev):>11}"
-                f"{fmt_pct(growth):>9}"
-                f"{fmt_plain_pct(today_disc):>8}"
-                f"{fmt_plain_pct(lw_disc):>9}"
-                f"{fmt_change(change):>9}"
-            )
+        lines.append(
+            border()
+        )
 
         return "\n".join(lines)
 
@@ -3665,7 +3818,7 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # HOURLY
+    # HOURLY PERFORMANCE
     # =====================================================
 
     hourly_lines = []
@@ -3674,7 +3827,9 @@ def send_whatsapp_live():
         "⏰ HOURLY PERFORMANCE"
     )
 
-    hourly_lines.append("")
+    hourly_lines.append(
+        border()
+    )
 
     if (
         hourly_analysis is not None
@@ -3683,42 +3838,61 @@ def send_whatsapp_live():
 
         latest_hour = (
             hourly_analysis
-            .sort_values("BusinessHour")
+            .sort_values(
+                "BusinessHour"
+            )
             .iloc[-1]
         )
 
-        hourly_today = float(
-            latest_hour["Today"]
+        hourly_today = safe_float(
+            latest_hour.get(
+                "Today",
+                0
+            )
         )
 
-        hourly_lw = float(
-            latest_hour["Last Week"]
+        hourly_lw = safe_float(
+            latest_hour.get(
+                "Last Week",
+                0
+            )
         )
 
-        hourly_growth = float(
-            latest_hour["Growth %"]
+        hourly_growth = safe_float(
+            latest_hour.get(
+                "Growth %",
+                0
+            )
         )
 
         hourly_lines.append(
-            f"Current Hour : "
+            f"│ Current Hour : "
             f"{fmt_lacs(hourly_today)}"
+            f"{'':>{max(0, TABLE_WIDTH - 25)}}│"
         )
 
         hourly_lines.append(
-            f"Same Hour LW : "
+            f"│ Same Hour LW : "
             f"{fmt_lacs(hourly_lw)}"
+            f"{'':>{max(0, TABLE_WIDTH - 25)}}│"
         )
 
         hourly_lines.append(
-            f"Growth       : "
-            f"{fmt_pct(hourly_growth)}"
+            f"│ Growth       : "
+            f"{fmt_growth(hourly_growth)}"
+            f"{'':>{max(0, TABLE_WIDTH - 25)}}│"
         )
 
     else:
 
         hourly_lines.append(
-            "No hourly data available"
+            "│ No hourly data available"
+            f"{'':>{TABLE_WIDTH - 26}}│"
         )
+
+    hourly_lines.append(
+        border()
+    )
 
     hourly_text = "\n".join(
         hourly_lines
@@ -3734,33 +3908,41 @@ def send_whatsapp_live():
             target_summary["Metric"] == "Total"
         ].iloc[0]
 
-        target = float(
+        target = safe_float(
             target_row["Target"]
         )
 
-        eod_projection = float(
+        eod_projection = safe_float(
             target_row["EOD Projection"]
         )
 
-        achievement = float(
+        achievement = safe_float(
             target_row["Ach %"]
         )
 
         target_text = (
-            "🎯 TARGET vs PROJECTION\n\n"
-            f"Target        : "
-            f"{fmt_lacs(target)}\n"
-            f"EOD Projection: "
-            f"{fmt_lacs(eod_projection)}\n"
-            f"Achievement   : "
+            "🎯 TARGET vs PROJECTION\n"
+            f"{border()}\n"
+            f"│ Target         : "
+            f"{fmt_lacs(target)}"
+            f"{'':>{TABLE_WIDTH - 31}}│\n"
+            f"│ EOD Projection : "
+            f"{fmt_lacs(eod_projection)}"
+            f"{'':>{TABLE_WIDTH - 37}}│\n"
+            f"│ Achievement    : "
             f"{achievement:.1f}%"
+            f"{'':>{TABLE_WIDTH - 32}}│\n"
+            f"{border()}"
         )
 
     except Exception:
 
         target_text = (
-            "🎯 TARGET vs PROJECTION\n\n"
-            "Target information unavailable"
+            "🎯 TARGET vs PROJECTION\n"
+            f"{border()}\n"
+            "│ Target information unavailable"
+            f"{'':>{TABLE_WIDTH - 33}}│\n"
+            f"{border()}"
         )
 
     # =====================================================
@@ -3771,38 +3953,27 @@ def send_whatsapp_live():
         f"📊 LIVE SALES | "
         f"{report_time.strftime('%d-%b-%y | %I:%M %p')}\n"
         f"\n"
+        f"```text\n"
         f"{business_text}\n"
-        f"\n"
-        f"{'─' * 85}\n"
         f"\n"
         f"{brand_text}\n"
         f"\n"
-        f"{'─' * 85}\n"
-        f"\n"
         f"{source_text}\n"
-        f"\n"
-        f"{'─' * 85}\n"
         f"\n"
         f"{region_text}\n"
         f"\n"
-        f"{'─' * 85}\n"
-        f"\n"
         f"{session_text}\n"
-        f"\n"
-        f"{'─' * 85}\n"
         f"\n"
         f"{hourly_text}\n"
         f"\n"
-        f"{'─' * 85}\n"
-        f"\n"
         f"{target_text}\n"
         f"\n"
-        f"{'─' * 85}\n"
-        f"\n"
-        f"🧠 INSIGHT\n\n"
+        f"🧠 INSIGHT\n"
+        f"{border()}\n"
         f"{insight_text}\n"
-        f"\n"
-        f"🤖 AI MIS Automation"
+        f"{border()}\n"
+        f"🤖 AI MIS Automation\n"
+        f"```"
     )
 
     # =====================================================
@@ -3898,7 +4069,9 @@ def send_whatsapp_live():
                 f"{recipient}"
             )
 
-            print(str(e))
+            print(
+                str(e)
+            )
 
     # =====================================================
     # FINAL STATUS
