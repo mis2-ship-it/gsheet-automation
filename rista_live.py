@@ -3332,24 +3332,47 @@ def send_whatsapp_live():
     # =====================================================
     # SOURCE SALES
     # =====================================================
-
+    
     source_lines = []
-
+    
     if not source_summary.empty:
-
+    
         for _, r in source_summary.sort_values(
             "Today Rev",
             ascending=False
         ).iterrows():
-
+    
             rev = float(r["Today Rev"])
-
+    
             source_lines.append(
                 f"📍 {r['Source Group']}: "
                 f"₹{rev/100000:.2f}L"
             )
-
+    
     source_text = "\n".join(source_lines)
+    
+    
+    # =====================================================
+    # REGION SALES
+    # =====================================================
+    
+    region_lines = []
+    
+    if not region_summary.empty:
+    
+        for _, r in region_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
+    
+            rev = float(r["Today Rev"])
+    
+            region_lines.append(
+                f"🌎 {r['Region']}: "
+                f"₹{rev/100000:.2f}L"
+            )
+    
+    region_text = "\n".join(region_lines)
 
     # =====================================================
     # HOURLY SALES
@@ -3416,38 +3439,42 @@ def send_whatsapp_live():
     # =====================================================
 
     message = f"""
-📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
-
-💰 BUSINESS OVERVIEW
-
-💵 Gross Sales: ₹{gross_sales/100000:.2f}L
-💵 Net Revenue: ₹{net_sales/100000:.2f}L
-🧾 Transactions: {transactions:,}
-🧺 AOV: ₹{aov:,.0f}
-📉 Discount: {discount_pct:.1f}%
-
-🏪 BRAND CONTRIBUTION
-
-{brand_text}
-
-📍 SOURCE CONTRIBUTION
-
-{source_text}
-
-⏰ HOURLY PERFORMANCE
-
-{hourly_text}
-
-🎯 TARGET vs PROJECTION
-
-{target_text}
-
-🧠 INSIGHT
-
-{insight_text}
-
-🤖 AI MIS Automation
-"""
+    📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
+    
+    💰 BUSINESS OVERVIEW
+    
+    💵 Gross Sales: ₹{gross_sales/100000:.2f}L
+    💵 Net Revenue: ₹{net_sales/100000:.2f}L
+    🧾 Transactions: {transactions:,}
+    🧺 AOV: ₹{aov:,.0f}
+    📉 Discount: {discount_pct:.1f}%
+    
+    🏪 BRAND CONTRIBUTION
+    
+    {brand_text}
+    
+    📍 SOURCE CONTRIBUTION
+    
+    {source_text}
+    
+    🌎 REGION SALES
+    
+    {region_text}
+    
+    ⏰ HOURLY PERFORMANCE
+    
+    {hourly_text}
+    
+    🎯 TARGET vs PROJECTION
+    
+    {target_text}
+    
+    🧠 INSIGHT
+    
+    {insight_text}
+    
+    🤖 AI MIS Automation
+    """
 
     # =====================================================
     # SEND
