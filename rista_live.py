@@ -3383,6 +3383,44 @@ def send_whatsapp_live():
         f"{today_discount:.1f}%"
     )
 
+    template_components = [
+        {
+            "type": "body",
+            "parameters": [
+                {
+                    "type": "text",
+                    "parameter_name": "date",
+                    "text": template_date
+                },
+                {
+                    "type": "text",
+                    "parameter_name": "report_time",
+                    "text": template_time
+                },
+                {
+                    "type": "text",
+                    "parameter_name": "net_revenue",
+                    "text": template_net
+                },
+                {
+                    "type": "text",
+                    "parameter_name": "transactions",
+                    "text": template_txn
+                },
+                {
+                    "type": "text",
+                    "parameter_name": "aov",
+                    "text": template_aov
+                },
+                {
+                    "type": "text",
+                    "parameter_name": "discount",
+                    "text": template_discount
+                }
+            ]
+        }
+    ]
+
     # =====================================================
     # DEBUG
     # =====================================================
