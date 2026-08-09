@@ -3249,20 +3249,6 @@ def send_whatsapp_live():
     print("=" * 60)
 
     # =====================================================
-    # SAFE DEFAULT FOR INSIGHT
-    # =====================================================
-
-    insight_text = globals().get(
-        "insight_text",
-        "Live sales report generated successfully."
-    )
-
-    if insight_text is None:
-        insight_text = "Live sales report generated successfully."
-
-    insight_text = str(insight_text)
-
-    # =====================================================
     # WHATSAPP CONFIGURATION
     # =====================================================
 
@@ -3272,12 +3258,12 @@ def send_whatsapp_live():
         "WHATSAPP_ACCESS_TOKEN"
     )
 
+    # =====================================================
+    # TEST WITH ONE NUMBER FIRST
+    # =====================================================
+
     RECIPIENTS = [
-        "919750820509",
-        "919535075140",
-        "919620952646",
-        "918892390985",
-        "918553666666"
+        "919750820509"
     ]
 
     if not ACCESS_TOKEN:
@@ -3299,425 +3285,129 @@ def send_whatsapp_live():
     )
 
     # =====================================================
-    # FORMATTING FUNCTIONS
+    # APPROVED META TEMPLATE
     # =====================================================
 
-    def fmt_lacs(value):
+    template_name = "ai_mis_live_sales_report"
 
-        try:
-            return (
-                f"₹{float(value) / 100000:.2f}L"
-            )
-
-        except Exception:
-            return "₹0.00L"
-
-    def fmt_number(value):
-
-        try:
-            return (
-                f"{int(round(float(value))):,}"
-            )
-
-        except Exception:
-            return "0"
+    template_language = "en"
 
     # =====================================================
-    # OVERALL KPI
+    # TEMPLATE VARIABLES
+    #
+    # {{1}} Date
+    # {{2}} Report Time
+    # {{3}} Net Revenue
+    # {{4}} Transactions
+    # {{5}} AOV
+    # {{6}} Discount
     # =====================================================
+
+    template_date = (
+        report_time.strftime("%d-%b-%Y")
+    )
+
+    template_time = (
+        report_time.strftime("%I:%M %p")
+    )
 
     try:
 
-        net_row = overall[
-            overall["Parameters"] == "Net"
-        ].iloc[0]
-
-        gross_row = overall[
-            overall["Parameters"] == "Gross"
-        ].iloc[0]
-
-        txn_row = overall[
-            overall["Parameters"] == "Txn"
-        ].iloc[0]
-
-        aov_row = overall[
-            overall["Parameters"] == "AOV"
-        ].iloc[0]
-
-        discount_row = overall[
-            overall["Parameters"] == "Discount %"
-        ].iloc[0]
-
-        net_sales = float(
-            net_row["Today"]
+        today_net = float(
+            overall.loc[
+                overall["Parameters"] == "Net",
+                "Today"
+            ].iloc[0]
         )
 
-        gross_sales = float(
-            gross_row["Today"]
-        )
+    except Exception:
 
-        transactions = int(
-            round(
-                float(txn_row["Today"])
-            )
-        )
-
-        aov = float(
-            aov_row["Today"]
-        )
-
-        discount_pct = float(
-            discount_row["Today"]
-        )
-
-    except Exception as e:
-
-        print(
-            "❌ Overall KPI Error:",
-            str(e)
-        )
-
-        return
-
-    # =====================================================
-    # 🏪 BRAND CONTRIBUTION
-    # =====================================================
-
-    brand_lines = []
-
-    if (
-        brand_summary is not None
-        and not brand_summary.empty
-    ):
-
-        brand_df = brand_summary.copy()
-
-        # Required order
-        brand_order = [
-            "Frozen Bottle",
-            "Madno",
-            "Boba Bar",
-            "Lubov"
-        ]
-
-        # Keep only available brands
-        available_brands = [
-            b for b in brand_order
-            if b in brand_df["Brand"].astype(str).values
-        ]
-
-        # Add any other brands after standard brands
-        other_brands = [
-            b for b in brand_df["Brand"].astype(str).unique()
-            if b not in available_brands
-        ]
-
-        final_brands = (
-            available_brands
-            + sorted(other_brands)
-        )
-
-        total_brand_sales = (
-            brand_df["Today Rev"].sum()
-        )
-
-        for brand in final_brands:
-
-            r = brand_df[
-                brand_df["Brand"].astype(str) == brand
-            ]
-
-            if r.empty:
-                continue
-
-            r = r.iloc[0]
-
-            rev = float(
-                r["Today Rev"]
-            )
-
-            contribution = (
-                rev /
-                max(total_brand_sales, 1)
-            ) * 100
-
-            brand_lines.append(
-                f"🍶 {brand}: "
-                f"{fmt_lacs(rev)} "
-                f"({contribution:.0f}%)"
-            )
-
-    if not brand_lines:
-
-        brand_lines.append(
-            "No brand data available"
-        )
-
-    brand_text = "\n".join(
-        brand_lines
-    )
-
-    # =====================================================
-    # 📍 SOURCE CONTRIBUTION
-    # =====================================================
-
-    source_lines = []
-
-    if (
-        source_summary is not None
-        and not source_summary.empty
-    ):
-
-        source_df = source_summary.copy()
-
-        source_order = [
-            "Swiggy",
-            "Zomato",
-            "In Store",
-            "Ownly",
-            "Magicpin",
-            "Others"
-        ]
-
-        available_sources = [
-            s for s in source_order
-            if s in source_df[
-                "Source Group"
-            ].astype(str).values
-        ]
-
-        other_sources = [
-            s for s in source_df[
-                "Source Group"
-            ].astype(str).unique()
-            if s not in available_sources
-        ]
-
-        final_sources = (
-            available_sources
-            + sorted(other_sources)
-        )
-
-        for source in final_sources:
-
-            r = source_df[
-                source_df["Source Group"].astype(str)
-                == source
-            ]
-
-            if r.empty:
-                continue
-
-            r = r.iloc[0]
-
-            rev = float(
-                r["Today Rev"]
-            )
-
-            source_lines.append(
-                f"📍 {source}: "
-                f"{fmt_lacs(rev)}"
-            )
-
-    if not source_lines:
-
-        source_lines.append(
-            "No source data available"
-        )
-
-    source_text = "\n".join(
-        source_lines
-    )
-
-    # =====================================================
-    # ⏰ HOURLY PERFORMANCE
-    # =====================================================
-
-    hourly_today = 0
-    hourly_lw = 0
-    hourly_growth = 0
-
-    if (
-        hourly_analysis is not None
-        and not hourly_analysis.empty
-    ):
-
-        hourly_df = (
-            hourly_analysis
-            .sort_values("BusinessHour")
-            .copy()
-        )
-
-        latest_hour = (
-            hourly_df.iloc[-1]
-        )
-
-        hourly_today = float(
-            latest_hour.get(
-                "Today",
-                0
-            )
-        )
-
-        hourly_lw = float(
-            latest_hour.get(
-                "Last Week",
-                0
-            )
-        )
-
-        hourly_growth = float(
-            latest_hour.get(
-                "Growth %",
-                0
-            )
-        )
-
-    hourly_text = (
-        f"⏰ Current Hour: "
-        f"{fmt_lacs(hourly_today)}\n"
-        f"📊 Same Hour LW: "
-        f"{fmt_lacs(hourly_lw)}\n"
-        f"📈 Growth: "
-        f"{hourly_growth:+.1f}%"
-    )
-
-    # =====================================================
-    # 🎯 TARGET VS PROJECTION
-    # =====================================================
+        today_net = 0.0
 
     try:
 
-        target_row = target_summary[
-            target_summary["Metric"] == "Total"
-        ].iloc[0]
-
-        target = float(
-            target_row["Target"]
+        today_txn = float(
+            overall.loc[
+                overall["Parameters"] == "Txn",
+                "Today"
+            ].iloc[0]
         )
 
-        eod_projection = float(
-            target_row["EOD Projection"]
+    except Exception:
+
+        today_txn = 0
+
+    try:
+
+        today_aov = float(
+            overall.loc[
+                overall["Parameters"] == "AOV",
+                "Today"
+            ].iloc[0]
         )
 
-        achievement = float(
-            target_row["Ach %"]
+    except Exception:
+
+        today_aov = 0.0
+
+    try:
+
+        today_discount = float(
+            overall.loc[
+                overall["Parameters"] == "Discount %",
+                "Today"
+            ].iloc[0]
         )
 
-        target_text = (
-            f"🎯 Target: "
-            f"{fmt_lacs(target)}\n"
-            f"🔮 EOD Projection: "
-            f"{fmt_lacs(eod_projection)}\n"
-            f"📊 Achievement: "
-            f"{achievement:.1f}%"
-        )
+    except Exception:
 
-    except Exception as e:
-
-        print(
-            "⚠️ Target data unavailable:",
-            str(e)
-        )
-
-        target_text = (
-            "🎯 Target information unavailable"
-        )
+        today_discount = 0.0
 
     # =====================================================
-    # 🧠 INSIGHT
+    # FORMAT VALUES
     # =====================================================
 
-    if (
-        insight_text is None
-        or str(insight_text).strip() == ""
-    ):
+    template_net = (
+        f"₹{today_net / 100000:.2f}L"
+    )
 
-        insight_text = (
-            "Insight not available"
-        )
+    template_txn = (
+        f"{int(round(today_txn)):,}"
+    )
 
-    # =====================================================
-    # 📱 FINAL MESSAGE
-    # =====================================================
+    template_aov = (
+        f"₹{int(round(today_aov)):,}"
+    )
 
-    message = (
-        f"📊 LIVE SALES | "
-        f"{report_time.strftime('%d-%b-%Y %I:%M %p')}\n\n"
-
-        f"💰 BUSINESS OVERVIEW\n\n"
-
-        f"💵 Gross Sales: "
-        f"{fmt_lacs(gross_sales)}\n"
-
-        f"💵 Net Revenue: "
-        f"{fmt_lacs(net_sales)}\n"
-
-        f"🧾 Transactions: "
-        f"{fmt_number(transactions)}\n"
-
-        f"🧺 AOV: "
-        f"₹{aov:,.0f}\n"
-
-        f"📉 Discount: "
-        f"{discount_pct:.1f}%\n\n"
-
-        f"🏪 BRAND CONTRIBUTION\n\n"
-
-        f"{brand_text}\n\n"
-
-        f"📍 SOURCE CONTRIBUTION\n\n"
-
-        f"{source_text}\n\n"
-
-        f"⏰ HOURLY PERFORMANCE\n\n"
-
-        f"{hourly_text}\n\n"
-
-        f"🎯 TARGET vs PROJECTION\n\n"
-
-        f"{target_text}\n\n"
-
-        f"🧠 INSIGHT\n\n"
-
-        f"{insight_text}\n\n"
-
-        f"🤖 AI MIS Automation"
+    template_discount = (
+        f"{today_discount:.1f}%"
     )
 
     # =====================================================
-    # MESSAGE LENGTH CHECK
+    # DEBUG
     # =====================================================
 
-    print(
-        "Total WhatsApp message length :",
-        len(message),
-        "characters"
-    )
+    print("Template :", template_name)
+    print("Language :", template_language)
 
-    if len(message) > 4096:
-
-        print(
-            "❌ WhatsApp message exceeds "
-            "4096 characters"
-        )
-
-        print(
-            "Please reduce the report before sending."
-        )
-
-        return
+    print("{{1}} Date       :", template_date)
+    print("{{2}} Report Time:", template_time)
+    print("{{3}} Net Revenue :", template_net)
+    print("{{4}} Transactions:", template_txn)
+    print("{{5}} AOV         :", template_aov)
+    print("{{6}} Discount    :", template_discount)
 
     # =====================================================
     # WHATSAPP API
     # =====================================================
 
     url = (
-        "https://graph.facebook.com/v23.0/"
+        f"https://graph.facebook.com/v23.0/"
         f"{PHONE_NUMBER_ID}/messages"
     )
 
     headers = {
+
         "Authorization":
             f"Bearer {ACCESS_TOKEN}",
 
@@ -3726,7 +3416,7 @@ def send_whatsapp_live():
     }
 
     # =====================================================
-    # SEND TO RECIPIENTS
+    # SEND TEMPLATE
     # =====================================================
 
     success_count = 0
@@ -3739,31 +3429,95 @@ def send_whatsapp_live():
             "messaging_product":
                 "whatsapp",
 
-            "recipient_type":
-                "individual",
-
             "to":
                 recipient,
 
             "type":
-                "text",
+                "template",
 
-            "text": {
+            "template": {
 
-                "preview_url":
-                    False,
+                "name":
+                    template_name,
 
-                "body":
-                    message
+                "language": {
+
+                    "code":
+                        template_language
+                },
+
+                "components": [
+
+                    {
+
+                        "type":
+                            "body",
+
+                        "parameters": [
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_date
+                            },
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_time
+                            },
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_net
+                            },
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_txn
+                            },
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_aov
+                            },
+
+                            {
+                                "type":
+                                    "text",
+
+                                "text":
+                                    template_discount
+                            }
+                        ]
+                    }
+                ]
             }
         }
 
         try:
 
             response = requests.post(
+
                 url,
+
                 headers=headers,
+
                 json=payload,
+
                 timeout=30
             )
 
@@ -3781,7 +3535,7 @@ def send_whatsapp_live():
                 success_count += 1
 
                 print(
-                    "✅ Meta API accepted message"
+                    "✅ Meta API accepted template"
                 )
 
                 try:
@@ -3820,7 +3574,7 @@ def send_whatsapp_live():
                     )
 
             # =================================================
-            # ERROR
+            # FAILURE
             # =================================================
 
             else:
@@ -3832,6 +3586,10 @@ def send_whatsapp_live():
                 )
 
                 print(
+                    response.status_code
+                )
+
+                print(
                     response.text
                 )
 
@@ -3840,8 +3598,8 @@ def send_whatsapp_live():
             failed_count += 1
 
             print(
-                f"❌ WhatsApp Request Error "
-                f"→ {recipient}"
+                f"❌ WhatsApp Request Error → "
+                f"{recipient}"
             )
 
             print(
@@ -3865,20 +3623,6 @@ def send_whatsapp_live():
     )
 
     print("=" * 60)
-
-    if failed_count == 0:
-
-        print(
-            "🎉 WHATSAPP LIVE SALES "
-            "SENT SUCCESSFULLY"
-        )
-
-    else:
-
-        print(
-            "⚠️ WHATSAPP LIVE SALES "
-            "COMPLETED WITH ERRORS"
-        )
 
 
 # ---------------- EXECUTE ---------------- #
