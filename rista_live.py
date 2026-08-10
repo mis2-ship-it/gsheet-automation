@@ -3239,18 +3239,14 @@ def send_tm_mail():
         )
 
 # =========================================================
-# 📱 WHATSAPP LIVE SALES
+# 📱 WHATSAPP LIVE SALES REPORT
 # =========================================================
 
 def send_whatsapp_live():
 
     print("=" * 60)
-    print("Sending WhatsApp Live Sales")
+    print("📱 SENDING WHATSAPP LIVE SALES REPORT")
     print("=" * 60)
-
-    # =====================================================
-    # WHATSAPP CONFIGURATION
-    # =====================================================
 
     PHONE_NUMBER_ID = "1138561289350791"
 
@@ -3258,12 +3254,11 @@ def send_whatsapp_live():
         "WHATSAPP_ACCESS_TOKEN"
     )
 
-    # =====================================================
-    # TEST WITH ONE NUMBER FIRST
-    # =====================================================
-
     RECIPIENTS = [
         "919750820509"
+        # Add other numbers here later
+        # "919XXXXXXXXX",
+        # "919XXXXXXXXX",
     ]
 
     if not ACCESS_TOKEN:
@@ -3275,168 +3270,319 @@ def send_whatsapp_live():
         return
 
     # =====================================================
-    # REPORT TIME
+    # DATE / TIME
     # =====================================================
 
-    report_time = now.replace(
-        minute=0,
-        second=0,
-        microsecond=0
+    report_date = business_day.strftime(
+        "%d-%b-%Y"
+    )
+
+    report_time = now.strftime(
+        "%I:%M %p"
     )
 
     # =====================================================
-    # APPROVED META TEMPLATE
+    # BUSINESS OVERVIEW
     # =====================================================
 
-    template_name = "ai_mis_live_sales_report"
+    try:
+        gross_sales = today_cut[
+            "grossAmount"
+        ].sum()
 
-    template_language = "en"
+    except:
+        gross_sales = 0
 
-    # =====================================================
-    # TEMPLATE VARIABLES
-    #
-    # {{1}} Date
-    # {{2}} Report Time
-    # {{3}} Net Revenue
-    # {{4}} Transactions
-    # {{5}} AOV
-    # {{6}} Discount
-    # =====================================================
+    try:
+        net_revenue = today_cut[
+            "Net Sales"
+        ].sum()
 
-    template_date = (
-        report_time.strftime("%d-%b-%Y")
+    except:
+        net_revenue = 0
+
+    try:
+        transactions = len(today_cut)
+
+    except:
+        transactions = 0
+
+    try:
+        qty_sold = today_cut[
+            "quantity"
+        ].sum()
+
+    except:
+        qty_sold = 0
+
+    # -----------------------------------------------------
+    # AOV
+    # -----------------------------------------------------
+
+    aov = (
+        net_revenue /
+        max(transactions, 1)
     )
 
-    template_time = (
-        report_time.strftime("%I:%M %p")
+    # -----------------------------------------------------
+    # DISCOUNT %
+    # -----------------------------------------------------
+
+    discount_amount = today_cut[
+        "discountAmount"
+    ].sum()
+
+    discount_pct = (
+        discount_amount /
+        max(gross_sales, 1)
+    ) * 100
+
+    # =====================================================
+    # BRAND CONTRIBUTION
+    # =====================================================
+
+    brand_lines = []
+
+    brand_emojis = {
+        "Frozen Bottle": "🍶",
+        "Madno": "🥤",
+        "Boba Bar": "🧋",
+        "Lubov": "🍨"
+    }
+
+    for brand in [
+        "Frozen Bottle",
+        "Madno",
+        "Boba Bar",
+        "Lubov"
+    ]:
+
+        brand_sales = today_cut[
+            today_cut["Brand"] == brand
+        ]["Net Sales"].sum()
+
+        if brand_sales <= 0:
+            continue
+
+        contribution = (
+            brand_sales /
+            max(net_revenue, 1)
+        ) * 100
+
+        emoji = brand_emojis.get(
+            brand,
+            "🏪"
+        )
+
+        brand_lines.append(
+            f"{emoji} {brand}: "
+            f"₹{brand_sales / 100000:.2f}L "
+            f"({contribution:.0f}%)"
+        )
+
+    brand_text = "\n".join(
+        brand_lines
     )
+
+    # =====================================================
+    # SOURCE CONTRIBUTION
+    # =====================================================
+
+    source_lines = []
+
+    source_emojis = {
+        "Swiggy": "📍",
+        "Zomato": "📍",
+        "In Store": "📍",
+        "Ownly": "📍",
+        "Magicpin": "📍"
+    }
+
+    for source in [
+        "Swiggy",
+        "Zomato",
+        "In Store",
+        "Ownly",
+        "Magicpin"
+    ]:
+
+        source_sales = today_cut[
+            today_cut["Source Group"] == source
+        ]["Net Sales"].sum()
+
+        if source_sales <= 0:
+            continue
+
+        emoji = source_emojis.get(
+            source,
+            "📍"
+        )
+
+        source_lines.append(
+            f"{emoji} {source}: "
+            f"₹{source_sales / 100000:.2f}L"
+        )
+
+    source_text = "\n".join(
+        source_lines
+    )
+
+    # =====================================================
+    # HOURLY PERFORMANCE
+    # =====================================================
+
+    current_hour = now.hour
 
     try:
 
-        today_net = float(
-            overall.loc[
-                overall["Parameters"] == "Net",
-                "Today"
-            ].iloc[0]
-        )
+        current_hour_sales = hourly_analysis[
+            hourly_analysis["Hour"] == current_hour
+        ]["Today"].sum()
 
-    except Exception:
+    except:
 
-        today_net = 0.0
+        current_hour_sales = 0
 
     try:
 
-        today_txn = float(
-            overall.loc[
-                overall["Parameters"] == "Txn",
-                "Today"
-            ].iloc[0]
+        same_hour_lw = hourly_analysis[
+            hourly_analysis["Hour"] == current_hour
+        ]["Last Week"].sum()
+
+    except:
+
+        same_hour_lw = 0
+
+    hourly_growth = (
+        (
+            current_hour_sales -
+            same_hour_lw
         )
-
-    except Exception:
-
-        today_txn = 0
-
-    try:
-
-        today_aov = float(
-            overall.loc[
-                overall["Parameters"] == "AOV",
-                "Today"
-            ].iloc[0]
-        )
-
-    except Exception:
-
-        today_aov = 0.0
-
-    try:
-
-        today_discount = float(
-            overall.loc[
-                overall["Parameters"] == "Discount %",
-                "Today"
-            ].iloc[0]
-        )
-
-    except Exception:
-
-        today_discount = 0.0
+        /
+        max(same_hour_lw, 1)
+    ) * 100
 
     # =====================================================
-    # FORMAT VALUES
+    # TARGET / PROJECTION
     # =====================================================
 
-    template_net = (
-        f"₹{today_net / 100000:.2f}L"
-    )
+    try:
 
-    template_txn = (
-        f"{int(round(today_txn)):,}"
-    )
+        total_target = float(
+            target_summary[
+                target_summary["Metric"] == "Total"
+            ]["Target"].iloc[0]
+        )
 
-    template_aov = (
-        f"₹{int(round(today_aov)):,}"
-    )
+    except:
 
-    template_discount = (
-        f"{today_discount:.1f}%"
-    )
+        total_target = 0
 
-    template_components = [
-        {
-            "type": "body",
-            "parameters": [
-                {
-                    "type": "text",
-                    "parameter_name": "date",
-                    "text": template_date
-                },
-                {
-                    "type": "text",
-                    "parameter_name": "report_time",
-                    "text": template_time
-                },
-                {
-                    "type": "text",
-                    "parameter_name": "net_revenue",
-                    "text": template_net
-                },
-                {
-                    "type": "text",
-                    "parameter_name": "transactions",
-                    "text": template_txn
-                },
-                {
-                    "type": "text",
-                    "parameter_name": "aov",
-                    "text": template_aov
-                },
-                {
-                    "type": "text",
-                    "parameter_name": "discount",
-                    "text": template_discount
-                }
-            ]
-        }
-    ]
+    try:
+
+        eod_projection = float(eod)
+
+    except:
+
+        eod_projection = 0
+
+    achievement = (
+        eod_projection /
+        max(total_target, 1)
+    ) * 100
+
+    # =====================================================
+    # INSIGHT
+    # =====================================================
+
+    if insight_text:
+
+        insight = str(
+            insight_text
+        )
+
+    else:
+
+        insight = "No insight available."
+
+    # =====================================================
+    # FINAL WHATSAPP MESSAGE
+    # =====================================================
+
+    message = (
+
+        f"📊 *LIVE SALES | "
+        f"{report_date} {report_time}*\n\n"
+
+        f"💰 *BUSINESS OVERVIEW*\n\n"
+
+        f"💵 Gross Sales: "
+        f"₹{gross_sales / 100000:.2f}L\n"
+
+        f"💵 Net Revenue: "
+        f"₹{net_revenue / 100000:.2f}L\n"
+
+        f"🧾 Transactions: "
+        f"{transactions:,}\n"
+
+        f"🛒 Qty Sold: "
+        f"{qty_sold / 1000:.1f}K\n"
+
+        f"🧺 AOV: "
+        f"₹{aov:.0f}\n"
+
+        f"📉 Discount: "
+        f"-{discount_pct:.1f}%\n\n"
+
+        f"🏪 *BRAND CONTRIBUTION*\n\n"
+
+        f"{brand_text}\n\n"
+
+        f"📍 *SOURCE CONTRIBUTION*\n\n"
+
+        f"{source_text}\n\n"
+
+        f"⏰ *HOURLY PERFORMANCE*\n\n"
+
+        f"⏰ Current Hour: "
+        f"₹{current_hour_sales / 100000:.2f}L\n"
+
+        f"📊 Same Hour LW: "
+        f"₹{same_hour_lw / 100000:.2f}L\n"
+
+        f"📈 Growth: "
+        f"{hourly_growth:+.1f}%\n\n"
+
+        f"🎯 *TARGET vs PROJECTION*\n\n"
+
+        f"🎯 Target: "
+        f"₹{total_target / 100000:.2f}L\n"
+
+        f"🔮 EOD Projection: "
+        f"₹{eod_projection / 100000:.2f}L\n"
+
+        f"📊 Achievement: "
+        f"{achievement:.1f}%\n\n"
+
+        f"🧠 *INSIGHT*\n\n"
+
+        f"{insight}\n\n"
+
+        f"🤖 AI MIS Automation"
+    )
 
     # =====================================================
     # DEBUG
     # =====================================================
 
-    print("Template :", template_name)
-    print("Language :", template_language)
-
-    print("{{1}} Date       :", template_date)
-    print("{{2}} Report Time:", template_time)
-    print("{{3}} Net Revenue :", template_net)
-    print("{{4}} Transactions:", template_txn)
-    print("{{5}} AOV         :", template_aov)
-    print("{{6}} Discount    :", template_discount)
+    print("=" * 60)
+    print("📱 WHATSAPP MESSAGE")
+    print("=" * 60)
+    print(message)
+    print("=" * 60)
 
     # =====================================================
-    # WHATSAPP API
+    # META API
     # =====================================================
 
     url = (
@@ -3454,7 +3600,7 @@ def send_whatsapp_live():
     }
 
     # =====================================================
-    # SEND TEMPLATE
+    # SEND TO ALL RECIPIENTS
     # =====================================================
 
     success_count = 0
@@ -3471,78 +3617,15 @@ def send_whatsapp_live():
                 recipient,
 
             "type":
-                "template",
+                "text",
 
-            "template": {
+            "text": {
 
-                "name":
-                    template_name,
+                "preview_url":
+                    False,
 
-                "language": {
-
-                    "code":
-                        template_language
-                },
-
-                "components": [
-
-                    {
-
-                        "type":
-                            "body",
-
-                        "parameters": [
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_date
-                            },
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_time
-                            },
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_net
-                            },
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_txn
-                            },
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_aov
-                            },
-
-                            {
-                                "type":
-                                    "text",
-
-                                "text":
-                                    template_discount
-                            }
-                        ]
-                    }
-                ]
+                "body":
+                    message
             }
         }
 
@@ -3560,75 +3643,35 @@ def send_whatsapp_live():
             )
 
             print(
-                f"WhatsApp → {recipient} | "
-                f"Status : {response.status_code}"
+                f"WhatsApp → {recipient}"
             )
 
-            # =================================================
-            # SUCCESS
-            # =================================================
+            print(
+                "Status:",
+                response.status_code
+            )
+
+            print(
+                "Response:",
+                response.text
+            )
 
             if response.ok:
 
                 success_count += 1
 
                 print(
-                    "✅ Meta API accepted template"
+                    f"✅ WhatsApp sent → "
+                    f"{recipient}"
                 )
-
-                try:
-
-                    meta_response = (
-                        response.json()
-                    )
-
-                    print(
-                        "Meta Response:"
-                    )
-
-                    print(
-                        meta_response
-                    )
-
-                    if "messages" in meta_response:
-
-                        message_id = (
-                            meta_response[
-                                "messages"
-                            ][0]["id"]
-                        )
-
-                        print(
-                            "📨 WhatsApp Message ID:",
-                            message_id
-                        )
-
-                except Exception as e:
-
-                    print(
-                        "⚠️ Could not read "
-                        "Meta response:",
-                        str(e)
-                    )
-
-            # =================================================
-            # FAILURE
-            # =================================================
 
             else:
 
                 failed_count += 1
 
                 print(
-                    "❌ WhatsApp API Error"
-                )
-
-                print(
-                    response.status_code
-                )
-
-                print(
-                    response.text
+                    f"❌ WhatsApp failed → "
+                    f"{recipient}"
                 )
 
         except Exception as e:
@@ -3636,7 +3679,7 @@ def send_whatsapp_live():
             failed_count += 1
 
             print(
-                f"❌ WhatsApp Request Error → "
+                f"❌ WhatsApp error → "
                 f"{recipient}"
             )
 
@@ -3651,19 +3694,19 @@ def send_whatsapp_live():
     print("=" * 60)
 
     print(
-        f"WhatsApp Success : "
-        f"{success_count}"
+        "WhatsApp Success:",
+        success_count
     )
 
     print(
-        f"WhatsApp Failed  : "
-        f"{failed_count}"
+        "WhatsApp Failed:",
+        failed_count
     )
 
     print("=" * 60)
 
 
-# ---------------- EXECUTE ---------------- #
+# ---------------- EXECUTE ----------------
 
 push("Overall", overall)
 push("Source Group", source_analysis)
@@ -3674,10 +3717,9 @@ push("Top_Stores", top_stores)
 push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
 
-
-send_email()        # Full dashboard
-send_am_mail()      # AM targeted
-send_tm_mail()      # TM targeted
+send_email()
+send_am_mail()
+send_tm_mail()
 
 print("🎉 ALL EMAILS SENT SUCCESSFULLY")
 
