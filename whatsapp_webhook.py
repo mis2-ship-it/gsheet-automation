@@ -200,26 +200,44 @@ def process_message(sender, message_text):
 
         return
 
-    # -----------------------------------------------------
-    # SALES - TEMPORARY TEST RESPONSE
-    # -----------------------------------------------------
-
-    if message in [
+    # =====================================================
+    # FTD SALES - FORMAT TEST
+    # =====================================================
+    
+    sales_keywords = [
         "sales",
         "sales today",
         "today sales",
+        "how was the sales today",
+        "how are sales today",
+        "how was sales today",
+        "what is today's sales",
+        "what is todays sales",
+        "today's sales",
+        "todays sales",
         "ftd"
-    ]:
-
+    ]
+    
+    if message in sales_keywords:
+    
         reply = (
-            "📊 AI MIS Sales\n\n"
-            "This WhatsApp connection is working successfully. ✅\n\n"
-            "The next step is to connect this command "
-            "to the live Rista sales data."
+            "📊 *AI MIS | FTD SALES*\n"
+            "10-Aug-26\n\n"
+    
+            "💰 Net Revenue: ₹XX.XXL\n"
+            "🧾 Transactions: X,XXX\n"
+            "🛒 Qty Sold: XX.XK\n"
+            "🧺 AOV: ₹XXX\n"
+            "📉 Discount: XX%\n\n"
+    
+            "🏪 *Brand Contribution*\n"
+            "🍶 Frozen Bottle: XX%\n"
+            "🥤 Madno: XX%\n"
+            "🧋 Boba Bar: XX%"
         )
-
+    
         send_whatsapp_message(sender, reply)
-
+    
         return
 
     # -----------------------------------------------------
