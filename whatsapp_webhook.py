@@ -68,17 +68,54 @@ def webhook():
 @app.route("/test-send", methods=["GET"])
 def test_send():
 
+    print("=" * 60)
+    print("📤 AI MIS WHATSAPP TEST SEND")
+    print("=" * 60)
+
+    # Check environment variables
+    print("PHONE_NUMBER_ID exists :", bool(PHONE_NUMBER_ID))
+    print("ACCESS_TOKEN exists    :", bool(ACCESS_TOKEN))
+    print("VERIFY_TOKEN exists    :", bool(VERIFY_TOKEN))
+
+    if not PHONE_NUMBER_ID:
+        return {
+            "success": False,
+            "error": "WHATSAPP_PHONE_NUMBER_ID is missing in Render"
+        }, 500
+
+    if not ACCESS_TOKEN:
+        return {
+            "success": False,
+            "error": "WHATSAPP_ACCESS_TOKEN is missing in Render"
+        }, 500
+
+    # -------------------------------------------------
+    # RECIPIENT
+    # -------------------------------------------------
+
     RECIPIENT = "919750820509"
+
+    # -------------------------------------------------
+    # META URL
+    # -------------------------------------------------
 
     url = (
         f"https://graph.facebook.com/v23.0/"
         f"{PHONE_NUMBER_ID}/messages"
     )
 
+    # -------------------------------------------------
+    # HEADERS
+    # -------------------------------------------------
+
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
+
+    # -------------------------------------------------
+    # MESSAGE
+    # -------------------------------------------------
 
     payload = {
         "messaging_product": "whatsapp",
@@ -90,23 +127,44 @@ def test_send():
         }
     }
 
-    print("=" * 60)
-    print("📤 SENDING WHATSAPP TEST")
-    print("To:", RECIPIENT)
-    print("=" * 60)
+    print("Sending to:", RECIPIENT)
+    print("Phone Number ID:", PHONE_NUMBER_ID)
+    print("Meta URL:", url)
 
-    response = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=30
-    )
+    # -------------------------------------------------
+    # SEND
+    # -------------------------------------------------
 
-    print("Status:", response.status_code)
-    print("Response:", response.text)
-    print("=" * 60)
+    try:
 
-    return response.text, response.status_code
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        print("Meta Status:", response.status_code)
+        print("Meta Response:", response.text)
+
+        print("=" * 60)
+
+        return {
+            "success": response.ok,
+            "meta_status": response.status_code,
+            "meta_response": response.json()
+                if response.headers.get("content-type", "").startswith("application/json")
+                else response.text
+        }, response.status_code
+
+    except Exception as e:
+
+        print("❌ TEST SEND ERROR:", str(e))
+
+        return {
+            "success": False,
+            "error": str(e)
+        }, 500
 
 
 # =====================================================
