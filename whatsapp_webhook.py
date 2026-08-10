@@ -1,33 +1,52 @@
+
 from flask import Flask, request
 import os
 import requests
+import json
 
-# =====================================================
+# =========================================================
 # FLASK APP
-# =====================================================
+# =========================================================
 
 app = Flask(__name__)
 
-# =====================================================
+# =========================================================
 # ENVIRONMENT VARIABLES
-# =====================================================
+# =========================================================
 
 VERIFY_TOKEN = os.environ.get("WHATSAPP_VERIFY_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
 ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
 
-# =====================================================
+GRAPH_API_VERSION = "v23.0"
+
+# =========================================================
+# BASIC CHECK
+# =========================================================
+
+print("=" * 60)
+print("🚀 AI MIS WHATSAPP WEBHOOK")
+print("=" * 60)
+
+print("PHONE_NUMBER_ID exists :", bool(PHONE_NUMBER_ID))
+print("ACCESS_TOKEN exists    :", bool(ACCESS_TOKEN))
+print("VERIFY_TOKEN exists    :", bool(VERIFY_TOKEN))
+
+print("=" * 60)
+
+
+# =========================================================
 # HOME
-# =====================================================
+# =========================================================
 
 @app.route("/", methods=["GET"])
 def home():
     return "AI MIS WhatsApp Webhook is running", 200
 
 
-# =====================================================
+# =========================================================
 # META WEBHOOK VERIFICATION
-# =====================================================
+# =========================================================
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
@@ -36,17 +55,189 @@ def verify_webhook():
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
+    print("=" * 60)
+    print("🔐 META WEBHOOK VERIFICATION")
+    print("Mode     :", mode)
+    print("Token OK :", token == VERIFY_TOKEN)
+    print("=" * 60)
+
     if mode == "subscribe" and token == VERIFY_TOKEN:
+
         print("✅ META WEBHOOK VERIFIED")
+
         return challenge, 200
 
     print("❌ WEBHOOK VERIFICATION FAILED")
+
     return "Forbidden", 403
 
 
-# =====================================================
+# =========================================================
+# SEND WHATSAPP TEXT MESSAGE
+# =========================================================
+
+def send_whatsapp_message(recipient, message):
+
+    if not PHONE_NUMBER_ID:
+        print("❌ WHATSAPP_PHONE_NUMBER_ID is missing")
+        return False
+
+    if not ACCESS_TOKEN:
+        print("❌ WHATSAPP_ACCESS_TOKEN is missing")
+        return False
+
+    url = (
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/"
+        f"{PHONE_NUMBER_ID}/messages"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "text",
+        "text": {
+            "preview_url": False,
+            "body": message
+        }
+    }
+
+    print("=" * 60)
+    print("📤 SENDING WHATSAPP MESSAGE")
+    print("To:", recipient)
+    print("Message:", message)
+    print("=" * 60)
+
+    try:
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+
+        print("Meta Status   :", response.status_code)
+        print("Meta Response :", response.text)
+        print("=" * 60)
+
+        if response.ok:
+            print("✅ WhatsApp message sent")
+            return True
+
+        print("❌ WhatsApp message failed")
+        return False
+
+    except Exception as e:
+
+        print("❌ WhatsApp API error:", str(e))
+
+        return False
+
+
+# =========================================================
+# PROCESS INCOMING MESSAGE
+# =========================================================
+
+def process_message(sender, message_text):
+
+    message = message_text.strip().lower()
+
+    print("=" * 60)
+    print("🧠 PROCESSING MESSAGE")
+    print("Sender :", sender)
+    print("Text   :", message_text)
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # GREETING
+    # -----------------------------------------------------
+
+    if message in [
+        "hi",
+        "hello",
+        "hey",
+        "hii",
+        "hiii",
+        "good morning",
+        "good afternoon",
+        "good evening"
+    ]:
+
+        reply = (
+            "👋 Hi! Welcome to AI MIS WhatsApp.\n\n"
+            "✅ WhatsApp connection is working successfully.\n\n"
+            "You can try:\n"
+            "• sales today\n"
+            "• sales\n"
+            "• help"
+        )
+
+        send_whatsapp_message(sender, reply)
+
+        return
+
+    # -----------------------------------------------------
+    # HELP
+    # -----------------------------------------------------
+
+    if message == "help":
+
+        reply = (
+            "🤖 AI MIS WhatsApp\n\n"
+            "Available commands:\n\n"
+            "📊 sales today\n"
+            "📊 sales\n"
+            "❓ help"
+        )
+
+        send_whatsapp_message(sender, reply)
+
+        return
+
+    # -----------------------------------------------------
+    # SALES - TEMPORARY TEST RESPONSE
+    # -----------------------------------------------------
+
+    if message in [
+        "sales",
+        "sales today",
+        "today sales",
+        "ftd"
+    ]:
+
+        reply = (
+            "📊 AI MIS Sales\n\n"
+            "This WhatsApp connection is working successfully. ✅\n\n"
+            "The next step is to connect this command "
+            "to the live Rista sales data."
+        )
+
+        send_whatsapp_message(sender, reply)
+
+        return
+
+    # -----------------------------------------------------
+    # UNKNOWN MESSAGE
+    # -----------------------------------------------------
+
+    reply = (
+        "🤖 AI MIS received your message:\n\n"
+        f"\"{message_text}\"\n\n"
+        "Type *help* to see available commands."
+    )
+
+    send_whatsapp_message(sender, reply)
+
+
+# =========================================================
 # META WEBHOOK RECEIVER
-# =====================================================
+# =========================================================
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -55,71 +246,172 @@ def webhook():
 
     print("=" * 60)
     print("📩 WHATSAPP WEBHOOK RECEIVED")
-    print(data)
     print("=" * 60)
+
+    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # SAFETY CHECK
+    # -----------------------------------------------------
+
+    if not data:
+
+        print("⚠️ Empty webhook payload")
+
+        return "EVENT_RECEIVED", 200
+
+    # -----------------------------------------------------
+    # META OBJECT CHECK
+    # -----------------------------------------------------
+
+    if data.get("object") != "whatsapp_business_account":
+
+        print("⚠️ Not a WhatsApp Business Account event")
+
+        return "EVENT_RECEIVED", 200
+
+    # -----------------------------------------------------
+    # ENTRY
+    # -----------------------------------------------------
+
+    for entry in data.get("entry", []):
+
+        for change in entry.get("changes", []):
+
+            field = change.get("field")
+
+            value = change.get("value", {})
+
+            print("Webhook field:", field)
+
+            # =================================================
+            # MESSAGE EVENT
+            # =================================================
+
+            if field == "messages":
+
+                messages = value.get("messages", [])
+
+                print("Number of messages:", len(messages))
+
+                for message in messages:
+
+                    message_type = message.get("type")
+
+                    sender = message.get("from")
+
+                    print("Message type:", message_type)
+                    print("Sender:", sender)
+
+                    # -------------------------------------------------
+                    # TEXT MESSAGE
+                    # -------------------------------------------------
+
+                    if message_type == "text":
+
+                        text_data = message.get("text", {})
+
+                        message_text = text_data.get("body", "")
+
+                        print("💬 Incoming text:", message_text)
+
+                        if sender and message_text:
+
+                            process_message(
+                                sender,
+                                message_text
+                            )
+
+                    # -------------------------------------------------
+                    # NON-TEXT MESSAGE
+                    # -------------------------------------------------
+
+                    else:
+
+                        print(
+                            "⚠️ Non-text message received:",
+                            message_type
+                        )
+
+                        if sender:
+
+                            send_whatsapp_message(
+                                sender,
+                                "🤖 AI MIS currently supports text messages only."
+                            )
+
+            # =================================================
+            # STATUS EVENT
+            # =================================================
+
+            elif field == "messages":
+
+                print("📌 WhatsApp messages event")
+
+            else:
+
+                print("ℹ️ Other webhook event:", field)
+
+    # -----------------------------------------------------
+    # IMPORTANT
+    # -----------------------------------------------------
+    # Always return HTTP 200 to Meta after receiving
+    # the webhook successfully.
+    # -----------------------------------------------------
 
     return "EVENT_RECEIVED", 200
 
 
-# =====================================================
+# =========================================================
 # TEST SEND
-# =====================================================
+# =========================================================
 
 @app.route("/test-send", methods=["GET"])
 def test_send():
+
+    recipient = "919750820509"
 
     print("=" * 60)
     print("📤 AI MIS WHATSAPP TEST SEND")
     print("=" * 60)
 
-    # Check environment variables
     print("PHONE_NUMBER_ID exists :", bool(PHONE_NUMBER_ID))
     print("ACCESS_TOKEN exists    :", bool(ACCESS_TOKEN))
     print("VERIFY_TOKEN exists    :", bool(VERIFY_TOKEN))
 
+    print("Sending to:", recipient)
+    print("Phone Number ID:", PHONE_NUMBER_ID)
+
     if not PHONE_NUMBER_ID:
+
         return {
             "success": False,
             "error": "WHATSAPP_PHONE_NUMBER_ID is missing in Render"
         }, 500
 
     if not ACCESS_TOKEN:
+
         return {
             "success": False,
             "error": "WHATSAPP_ACCESS_TOKEN is missing in Render"
         }, 500
 
-    # -------------------------------------------------
-    # RECIPIENT
-    # -------------------------------------------------
-
-    RECIPIENT = "919750820509"
-
-    # -------------------------------------------------
-    # META URL
-    # -------------------------------------------------
-
     url = (
-        f"https://graph.facebook.com/v23.0/"
+        f"https://graph.facebook.com/"
+        f"{GRAPH_API_VERSION}/"
         f"{PHONE_NUMBER_ID}/messages"
     )
-
-    # -------------------------------------------------
-    # HEADERS
-    # -------------------------------------------------
 
     headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
 
-    # -------------------------------------------------
-    # MESSAGE
-    # -------------------------------------------------
-
     payload = {
         "messaging_product": "whatsapp",
-        "to": RECIPIENT,
+        "to": recipient,
         "type": "text",
         "text": {
             "preview_url": False,
@@ -127,13 +419,7 @@ def test_send():
         }
     }
 
-    print("Sending to:", RECIPIENT)
-    print("Phone Number ID:", PHONE_NUMBER_ID)
     print("Meta URL:", url)
-
-    # -------------------------------------------------
-    # SEND
-    # -------------------------------------------------
 
     try:
 
@@ -153,13 +439,13 @@ def test_send():
             "success": response.ok,
             "meta_status": response.status_code,
             "meta_response": response.json()
-                if response.headers.get("content-type", "").startswith("application/json")
-                else response.text
+            if response.headers.get("content-type", "").startswith("application/json")
+            else response.text
         }, response.status_code
 
     except Exception as e:
 
-        print("❌ TEST SEND ERROR:", str(e))
+        print("❌ Test send error:", str(e))
 
         return {
             "success": False,
@@ -167,9 +453,9 @@ def test_send():
         }, 500
 
 
-# =====================================================
+# =========================================================
 # LOCAL RUN
-# =====================================================
+# =========================================================
 
 if __name__ == "__main__":
 
