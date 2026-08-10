@@ -983,6 +983,23 @@ hourly_analysis = hourly_analysis.reset_index()
 hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
 hourly_analysis = hourly_analysis.sort_values("BusinessHour")
 
+# =========================================================
+# ⏰ HOURLY DEBUG
+# =========================================================
+
+print("=" * 60)
+print("⏰ HOURLY DEBUG")
+print("Current clock hour:", now.hour)
+print("Hourly Analysis:")
+
+print(
+    hourly_analysis[
+        ["BusinessHour", "Hour", "Today", "Last Week", "Growth %"]
+    ].tail(10)
+)
+
+print("=" * 60)
+
 # ---------------- HOURLY TREND ---------------- #
 
 hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
@@ -3255,10 +3272,11 @@ def send_whatsapp_live():
     )
 
     RECIPIENTS = [
-        "919750820509"
-        # Add other numbers here later
-        # "919XXXXXXXXX",
-        # "919XXXXXXXXX",
+        "919750820509",
+        "919535075140",
+        "918892390985",
+        "919620952646",
+        "918553666666"
     ]
 
     if not ACCESS_TOKEN:
@@ -3307,13 +3325,6 @@ def send_whatsapp_live():
     except:
         transactions = 0
 
-    try:
-        qty_sold = today_cut[
-            "quantity"
-        ].sum()
-
-    except:
-        qty_sold = 0
 
     # -----------------------------------------------------
     # AOV
@@ -3525,14 +3536,11 @@ def send_whatsapp_live():
         f"🧾 Transactions: "
         f"{transactions:,}\n"
 
-        f"🛒 Qty Sold: "
-        f"{qty_sold / 1000:.1f}K\n"
-
         f"🧺 AOV: "
         f"₹{aov:.0f}\n"
 
         f"📉 Discount: "
-        f"-{discount_pct:.1f}%\n\n"
+        f"{abs(discount_pct):.1f}%\n\n"
 
         f"🏪 *BRAND CONTRIBUTION*\n\n"
 
