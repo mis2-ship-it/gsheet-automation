@@ -131,6 +131,7 @@ def send_whatsapp_message(recipient, message):
             return True
 
         print("❌ WhatsApp message failed")
+
         return False
 
     except Exception as e:
@@ -141,22 +142,51 @@ def send_whatsapp_message(recipient, message):
 
 
 # =========================================================
+# FTD SALES RESPONSE
+# =========================================================
+
+def send_ftd_sales(sender):
+
+    reply = (
+        "📊 *AI MIS | FTD SALES*\n"
+        "10-Aug-26\n\n"
+
+        "💰 Net Revenue: ₹XX.XXL\n"
+        "🧾 Transactions: X,XXX\n"
+        "🛒 Qty Sold: XX.XK\n"
+        "🧺 AOV: ₹XXX\n"
+        "📉 Discount: XX%\n\n"
+
+        "🏪 *Brand Contribution*\n"
+        "🍶 Frozen Bottle: XX%\n"
+        "🥤 Madno: XX%\n"
+        "🧋 Boba Bar: XX%"
+    )
+
+    send_whatsapp_message(sender, reply)
+
+
+# =========================================================
 # PROCESS INCOMING MESSAGE
 # =========================================================
 
 def process_message(sender, message_text):
 
-    message = message_text.strip().lower()
+    # Normalize message
+    message = " ".join(
+        message_text.strip().lower().split()
+    )
 
     print("=" * 60)
     print("🧠 PROCESSING MESSAGE")
     print("Sender :", sender)
-    print("Text   :", message_text)
+    print("Original:", message_text)
+    print("Normalized:", message)
     print("=" * 60)
 
-    # -----------------------------------------------------
+    # =====================================================
     # GREETING
-    # -----------------------------------------------------
+    # =====================================================
 
     if message in [
         "hi",
@@ -182,9 +212,9 @@ def process_message(sender, message_text):
 
         return
 
-    # -----------------------------------------------------
+    # =====================================================
     # HELP
-    # -----------------------------------------------------
+    # =====================================================
 
     if message == "help":
 
@@ -201,48 +231,57 @@ def process_message(sender, message_text):
         return
 
     # =====================================================
-    # FTD SALES - FORMAT TEST
+    # FTD SALES
     # =====================================================
-    
+
     sales_keywords = [
         "sales",
         "sales today",
         "today sales",
         "how was the sales today",
-        "how are sales today",
         "how was sales today",
+        "how are sales today",
+        "how was the sale today",
+        "how are the sales today",
+        "how is the sales today",
         "what is today's sales",
         "what is todays sales",
+        "what are today's sales",
+        "what are todays sales",
         "today's sales",
         "todays sales",
-        "ftd"
+        "ftd",
+        "ftd sales",
+        "sales for today",
+        "today's sale",
+        "todays sale"
     ]
-    
+
+    # Exact keyword match
     if message in sales_keywords:
-    
-        reply = (
-            "📊 *AI MIS | FTD SALES*\n"
-            "10-Aug-26\n\n"
-    
-            "💰 Net Revenue: ₹XX.XXL\n"
-            "🧾 Transactions: X,XXX\n"
-            "🛒 Qty Sold: XX.XK\n"
-            "🧺 AOV: ₹XXX\n"
-            "📉 Discount: XX%\n\n"
-    
-            "🏪 *Brand Contribution*\n"
-            "🍶 Frozen Bottle: XX%\n"
-            "🥤 Madno: XX%\n"
-            "🧋 Boba Bar: XX%"
-        )
-    
-        send_whatsapp_message(sender, reply)
-    
+
+        print("📊 FTD SALES COMMAND DETECTED")
+
+        send_ftd_sales(sender)
+
         return
 
-    # -----------------------------------------------------
+    # =====================================================
+    # NATURAL SALES QUESTIONS
+    # =====================================================
+
+    # If the message contains "sales" + "today"
+    if "sales" in message and "today" in message:
+
+        print("📊 NATURAL FTD SALES QUESTION DETECTED")
+
+        send_ftd_sales(sender)
+
+        return
+
+    # =====================================================
     # UNKNOWN MESSAGE
-    # -----------------------------------------------------
+    # =====================================================
 
     reply = (
         "🤖 AI MIS received your message:\n\n"
@@ -266,13 +305,19 @@ def webhook():
     print("📩 WHATSAPP WEBHOOK RECEIVED")
     print("=" * 60)
 
-    print(json.dumps(data, indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            data,
+            indent=2,
+            ensure_ascii=False
+        )
+    )
 
     print("=" * 60)
 
-    # -----------------------------------------------------
+    # =====================================================
     # SAFETY CHECK
-    # -----------------------------------------------------
+    # =====================================================
 
     if not data:
 
@@ -280,9 +325,9 @@ def webhook():
 
         return "EVENT_RECEIVED", 200
 
-    # -----------------------------------------------------
+    # =====================================================
     # META OBJECT CHECK
-    # -----------------------------------------------------
+    # =====================================================
 
     if data.get("object") != "whatsapp_business_account":
 
@@ -290,9 +335,9 @@ def webhook():
 
         return "EVENT_RECEIVED", 200
 
-    # -----------------------------------------------------
+    # =====================================================
     # ENTRY
-    # -----------------------------------------------------
+    # =====================================================
 
     for entry in data.get("entry", []):
 
@@ -312,7 +357,10 @@ def webhook():
 
                 messages = value.get("messages", [])
 
-                print("Number of messages:", len(messages))
+                print(
+                    "Number of messages:",
+                    len(messages)
+                )
 
                 for message in messages:
 
@@ -320,20 +368,36 @@ def webhook():
 
                     sender = message.get("from")
 
-                    print("Message type:", message_type)
-                    print("Sender:", sender)
+                    print(
+                        "Message type:",
+                        message_type
+                    )
 
-                    # -------------------------------------------------
+                    print(
+                        "Sender:",
+                        sender
+                    )
+
+                    # =========================================
                     # TEXT MESSAGE
-                    # -------------------------------------------------
+                    # =========================================
 
                     if message_type == "text":
 
-                        text_data = message.get("text", {})
+                        text_data = message.get(
+                            "text",
+                            {}
+                        )
 
-                        message_text = text_data.get("body", "")
+                        message_text = text_data.get(
+                            "body",
+                            ""
+                        )
 
-                        print("💬 Incoming text:", message_text)
+                        print(
+                            "💬 Incoming text:",
+                            message_text
+                        )
 
                         if sender and message_text:
 
@@ -342,9 +406,9 @@ def webhook():
                                 message_text
                             )
 
-                    # -------------------------------------------------
+                    # =========================================
                     # NON-TEXT MESSAGE
-                    # -------------------------------------------------
+                    # =========================================
 
                     else:
 
@@ -361,23 +425,19 @@ def webhook():
                             )
 
             # =================================================
-            # STATUS EVENT
+            # OTHER EVENTS
             # =================================================
-
-            elif field == "messages":
-
-                print("📌 WhatsApp messages event")
 
             else:
 
-                print("ℹ️ Other webhook event:", field)
+                print(
+                    "ℹ️ Other webhook event:",
+                    field
+                )
 
-    # -----------------------------------------------------
-    # IMPORTANT
-    # -----------------------------------------------------
-    # Always return HTTP 200 to Meta after receiving
-    # the webhook successfully.
-    # -----------------------------------------------------
+    # =====================================================
+    # ALWAYS RETURN 200 TO META
+    # =====================================================
 
     return "EVENT_RECEIVED", 200
 
@@ -395,25 +455,45 @@ def test_send():
     print("📤 AI MIS WHATSAPP TEST SEND")
     print("=" * 60)
 
-    print("PHONE_NUMBER_ID exists :", bool(PHONE_NUMBER_ID))
-    print("ACCESS_TOKEN exists    :", bool(ACCESS_TOKEN))
-    print("VERIFY_TOKEN exists    :", bool(VERIFY_TOKEN))
+    print(
+        "PHONE_NUMBER_ID exists :",
+        bool(PHONE_NUMBER_ID)
+    )
 
-    print("Sending to:", recipient)
-    print("Phone Number ID:", PHONE_NUMBER_ID)
+    print(
+        "ACCESS_TOKEN exists    :",
+        bool(ACCESS_TOKEN)
+    )
+
+    print(
+        "VERIFY_TOKEN exists    :",
+        bool(VERIFY_TOKEN)
+    )
+
+    print(
+        "Sending to:",
+        recipient
+    )
+
+    print(
+        "Phone Number ID:",
+        PHONE_NUMBER_ID
+    )
 
     if not PHONE_NUMBER_ID:
 
         return {
             "success": False,
-            "error": "WHATSAPP_PHONE_NUMBER_ID is missing in Render"
+            "error":
+                "WHATSAPP_PHONE_NUMBER_ID is missing in Render"
         }, 500
 
     if not ACCESS_TOKEN:
 
         return {
             "success": False,
-            "error": "WHATSAPP_ACCESS_TOKEN is missing in Render"
+            "error":
+                "WHATSAPP_ACCESS_TOKEN is missing in Render"
         }, 500
 
     url = (
@@ -423,21 +503,35 @@ def test_send():
     )
 
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Authorization":
+            f"Bearer {ACCESS_TOKEN}",
+        "Content-Type":
+            "application/json"
     }
 
     payload = {
-        "messaging_product": "whatsapp",
-        "to": recipient,
-        "type": "text",
+        "messaging_product":
+            "whatsapp",
+
+        "to":
+            recipient,
+
+        "type":
+            "text",
+
         "text": {
-            "preview_url": False,
-            "body": "AI MIS webhook test message"
+            "preview_url":
+                False,
+
+            "body":
+                "AI MIS webhook test message"
         }
     }
 
-    print("Meta URL:", url)
+    print(
+        "Meta URL:",
+        url
+    )
 
     try:
 
@@ -448,26 +542,50 @@ def test_send():
             timeout=30
         )
 
-        print("Meta Status:", response.status_code)
-        print("Meta Response:", response.text)
+        print(
+            "Meta Status:",
+            response.status_code
+        )
+
+        print(
+            "Meta Response:",
+            response.text
+        )
 
         print("=" * 60)
 
+        try:
+
+            meta_response = response.json()
+
+        except Exception:
+
+            meta_response = response.text
+
         return {
-            "success": response.ok,
-            "meta_status": response.status_code,
-            "meta_response": response.json()
-            if response.headers.get("content-type", "").startswith("application/json")
-            else response.text
+            "success":
+                response.ok,
+
+            "meta_status":
+                response.status_code,
+
+            "meta_response":
+                meta_response
         }, response.status_code
 
     except Exception as e:
 
-        print("❌ Test send error:", str(e))
+        print(
+            "❌ Test send error:",
+            str(e)
+        )
 
         return {
-            "success": False,
-            "error": str(e)
+            "success":
+                False,
+
+            "error":
+                str(e)
         }, 500
 
 
@@ -477,7 +595,12 @@ def test_send():
 
 if __name__ == "__main__":
 
-    port = int(os.environ.get("PORT", 5000))
+    port = int(
+        os.environ.get(
+            "PORT",
+            5000
+        )
+    )
 
     app.run(
         host="0.0.0.0",
