@@ -150,19 +150,18 @@ def send_ftd_sales(sender):
     reply = (
         "📊 *AI MIS | FTD SALES*\n"
         "10-Aug-26\n\n"
-
+    
         "💰 Net Revenue: ₹XX.XXL\n"
         "🧾 Transactions: X,XXX\n"
         "🛒 Qty Sold: XX.XK\n"
         "🧺 AOV: ₹XXX\n"
         "📉 Discount: XX%\n\n"
-
+    
         "🏪 *Brand Contribution*\n"
         "🍶 Frozen Bottle: XX%\n"
         "🥤 Madno: XX%\n"
         "🧋 Boba Bar: XX%"
     )
-
     send_whatsapp_message(sender, reply)
 
 
