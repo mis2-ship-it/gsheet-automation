@@ -448,8 +448,11 @@ def webhook():
 @app.route("/test-send", methods=["GET"])
 def test_send():
 
-    recipient = "919750820509"
-
+    recipient = {
+        "919750820509",
+        "919535075140",
+        "919620952646",
+    }
     print("=" * 60)
     print("📤 AI MIS WHATSAPP TEST SEND")
     print("=" * 60)
