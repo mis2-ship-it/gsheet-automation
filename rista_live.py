@@ -3422,63 +3422,40 @@ def build_whatsapp_snapshot():
         and not source_analysis.empty
     ):
     
-        for source in source_analysis["Source Group"].dropna().unique():
+        for _, row in source_analysis.iterrows():
     
             source_name = str(
-                source
+                row.get(
+                    "Source Group",
+                    ""
+                )
             ).strip()
     
             if not source_name:
                 continue
     
-            source_rows = source_analysis[
-                (
-                    source_analysis["Source Group"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
-                    == source_name.lower()
-                )
-                &
-                (
-                    source_analysis["Parameters"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
-                    == "net"
-                )
-            ]
-    
-            if source_rows.empty:
-                continue
-    
-            row = source_rows.iloc[0]
-    
             sources[source_name] = {
     
-                "today":
-                    float(
-                        row.get(
-                            "Today",
-                            0
-                        ) or 0
-                    ),
+                "today": float(
+                    row.get(
+                        "Today Rev",
+                        0
+                    ) or 0
+                ),
     
-                "lw":
-                    float(
-                        row.get(
-                            "Last Week",
-                            0
-                        ) or 0
-                    ),
+                "lw": float(
+                    row.get(
+                        "LW Rev",
+                        0
+                    ) or 0
+                ),
     
-                "growth":
-                    float(
-                        row.get(
-                            "Growth %",
-                            0
-                        ) or 0
-                    )
+                "growth": float(
+                    row.get(
+                        "Growth %",
+                        0
+                    ) or 0
+                )
             }
     # -----------------------------------------------------
     # FINAL SNAPSHOT
