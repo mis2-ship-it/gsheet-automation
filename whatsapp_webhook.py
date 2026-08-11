@@ -214,6 +214,7 @@ def update_sales_data():
 
     print("=" * 60)
     print("📥 RISTA LIVE SALES DATA RECEIVED")
+    print("PROCESS ID:", os.getpid())
     print("=" * 60)
 
     # -----------------------------------------------------
@@ -297,12 +298,34 @@ def update_sales_data():
         "message": "Sales data updated successfully"
     }), 200
 
+print("✅ LIVE_SALES_DATA STORED")
+print("PROCESS ID:", os.getpid())
+print("DATA DATE:", LIVE_SALES_DATA.get("date"))
+print("DATA TIME:", LIVE_SALES_DATA.get("report_time"))
+print("DATA KEYS:", list(LIVE_SALES_DATA.keys()))
+print("LIVE_SALES_DATA EMPTY:", not bool(LIVE_SALES_DATA))
+
 # =========================================================
 # DEBUG — CHECK CURRENT SALES SNAPSHOT
 # =========================================================
 
 @app.route("/sales-data", methods=["GET"])
 def sales_data():
+
+    print("=" * 60)
+    print("📤 SALES DATA REQUEST")
+    print("PROCESS ID:", os.getpid())
+    print(
+        "LIVE_SALES_DATA EMPTY:",
+        not bool(LIVE_SALES_DATA)
+    )
+    print(
+        "LIVE_SALES_DATA KEYS:",
+        list(LIVE_SALES_DATA.keys())
+        if LIVE_SALES_DATA
+        else []
+    )
+    print("=" * 60)
 
     if not LIVE_SALES_DATA:
 
