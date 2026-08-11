@@ -1940,6 +1940,11 @@ def test_send():
 
     }, 200
 
+print("=" * 60)
+print("🚀 WHATSAPP WEBHOOK STARTED")
+print("REGISTERED ROUTES:")
+print(app.url_map)
+print("=" * 60)
 
 # =========================================================
 # 🚀 LOCAL RUN
@@ -1960,3 +1965,4 @@ if __name__ == "__main__":
 
         port=port
     )
+
