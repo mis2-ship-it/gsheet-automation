@@ -3456,7 +3456,7 @@ def build_whatsapp_snapshot():
     return snapshot
 
 =========================================================
-📱 UPDATE WHATSAPP BACKEND DATA
+#📱 UPDATE WHATSAPP BACKEND DATA
 =========================================================
 
 def send_whatsapp_backend_data():
