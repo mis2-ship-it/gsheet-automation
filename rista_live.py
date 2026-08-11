@@ -3261,7 +3261,27 @@ def send_tm_mail():
             tm_email
         )
 
+# =========================================================
+# 🔍 DEBUG BRAND / SOURCE ANALYSIS
+# =========================================================
 
+print("=" * 60)
+print("🔍 BRAND ANALYSIS COLUMNS")
+print(
+    brand_analysis.columns.tolist()
+    if brand_analysis is not None
+    else "brand_analysis is None"
+)
+
+print("=" * 60)
+print("🔍 SOURCE ANALYSIS COLUMNS")
+print(
+    source_analysis.columns.tolist()
+    if source_analysis is not None
+    else "source_analysis is None"
+)
+
+print("=" * 60)
 # =========================================================
 # 📱 WHATSAPP BACKEND SNAPSHOT
 # =========================================================
