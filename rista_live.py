@@ -3340,91 +3340,146 @@ def build_whatsapp_snapshot():
         "LW Growth %"
     )
 
+
     # -----------------------------------------------------
     # BRAND
     # -----------------------------------------------------
-
+    
     brands = {}
-
+    
     if (
         brand_analysis is not None
         and not brand_analysis.empty
     ):
-
-        for _, row in brand_analysis.iterrows():
-
-            brand = str(
-                row.get("Brand", "")
+    
+        for brand in brand_analysis["Brand"].dropna().unique():
+    
+            brand_name = str(
+                brand
             ).strip()
-
-            if not brand:
+    
+            if not brand_name:
                 continue
-
-            brands[brand] = {
-                "today": float(
-                    row.get(
-                        "Today Rev",
-                        0
-                    ) or 0
-                ),
-                "lw": float(
-                    row.get(
-                        "LW Rev",
-                        0
-                    ) or 0
-                ),
-                "growth": float(
-                    row.get(
-                        "Growth %",
-                        0
-                    ) or 0
+    
+            brand_rows = brand_analysis[
+                (
+                    brand_analysis["Brand"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == brand_name.lower()
                 )
+                &
+                (
+                    brand_analysis["Parameters"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == "net"
+                )
+            ]
+    
+            if brand_rows.empty:
+                continue
+    
+            row = brand_rows.iloc[0]
+    
+            brands[brand_name] = {
+    
+                "today":
+                    float(
+                        row.get(
+                            "Today",
+                            0
+                        ) or 0
+                    ),
+    
+                "lw":
+                    float(
+                        row.get(
+                            "Last Week",
+                            0
+                        ) or 0
+                    ),
+    
+                "growth":
+                    float(
+                        row.get(
+                            "Growth %",
+                            0
+                        ) or 0
+                    )
             }
 
     # -----------------------------------------------------
     # SOURCE
     # -----------------------------------------------------
-
+    
     sources = {}
-
+    
     if (
         source_analysis is not None
         and not source_analysis.empty
     ):
-
-        for _, row in source_analysis.iterrows():
-
-            source = str(
-                row.get(
-                    "Source Group",
-                    ""
-                )
+    
+        for source in source_analysis["Source Group"].dropna().unique():
+    
+            source_name = str(
+                source
             ).strip()
-
-            if not source:
+    
+            if not source_name:
                 continue
-
-            sources[source] = {
-                "today": float(
-                    row.get(
-                        "Today Rev",
-                        0
-                    ) or 0
-                ),
-                "lw": float(
-                    row.get(
-                        "LW Rev",
-                        0
-                    ) or 0
-                ),
-                "growth": float(
-                    row.get(
-                        "Growth %",
-                        0
-                    ) or 0
+    
+            source_rows = source_analysis[
+                (
+                    source_analysis["Source Group"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == source_name.lower()
                 )
+                &
+                (
+                    source_analysis["Parameters"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    == "net"
+                )
+            ]
+    
+            if source_rows.empty:
+                continue
+    
+            row = source_rows.iloc[0]
+    
+            sources[source_name] = {
+    
+                "today":
+                    float(
+                        row.get(
+                            "Today",
+                            0
+                        ) or 0
+                    ),
+    
+                "lw":
+                    float(
+                        row.get(
+                            "Last Week",
+                            0
+                        ) or 0
+                    ),
+    
+                "growth":
+                    float(
+                        row.get(
+                            "Growth %",
+                            0
+                        ) or 0
+                    )
             }
-
     # -----------------------------------------------------
     # FINAL SNAPSHOT
     # -----------------------------------------------------
