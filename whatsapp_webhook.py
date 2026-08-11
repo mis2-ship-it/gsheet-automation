@@ -661,17 +661,16 @@ def process_message(
 
     print("=" * 60)
     print("🧠 PROCESSING MESSAGE")
-    print("Sender   :", sender)
-    print("Original :", message_text)
-    print("Normalized:", message)
+    print("Sender     :", sender)
+    print("Original   :", message_text)
+    print("Normalized :", message)
     print("=" * 60)
 
     # =====================================================
-    # GREETING
+    # 👋 GREETING
     # =====================================================
 
     if message in [
-
         "hi",
         "hello",
         "hey",
@@ -680,41 +679,12 @@ def process_message(
         "good morning",
         "good afternoon",
         "good evening"
-
     ]:
 
         reply = (
-
-            "👋 Hi! Welcome to "
-            "AI MIS WhatsApp.\n\n"
+            "👋 Hi! Welcome to AI MIS WhatsApp.\n\n"
 
             "You can ask:\n\n"
-
-            "📊 sales today\n"
-            "📅 yesterday sales\n"
-            "📈 sales vs last week\n"
-            "🏪 brand sales\n"
-            "❓ help"
-        )
-
-        send_whatsapp_message(
-            sender,
-            reply
-        )
-
-        return
-
-    # =====================================================
-    # HELP
-    # =====================================================
-
-    if message == "help":
-
-        reply = (
-
-            "🤖 *AI MIS WhatsApp*\n\n"
-
-            "Available commands:\n\n"
 
             "📊 *SALES*\n"
             "• sales today\n"
@@ -735,7 +705,37 @@ def process_message(
         return
 
     # =====================================================
-    # YESTERDAY SALES
+    # ❓ HELP
+    # =====================================================
+
+    if message == "help":
+
+        reply = (
+            "🤖 *AI MIS WhatsApp*\n\n"
+
+            "Available commands:\n\n"
+
+            "📊 *SALES*\n"
+            "• sales today\n"
+            "• yesterday sales\n"
+            "• sales vs last week\n\n"
+
+            "🏪 *PERFORMANCE*\n"
+            "• brand sales\n"
+            "• brand performance\n\n"
+
+            "❓ help"
+        )
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+        return
+
+    # =====================================================
+    # 📅 YESTERDAY SALES
     # =====================================================
 
     yesterday_keywords = [
@@ -750,9 +750,15 @@ def process_message(
         "what was yesterday sales",
         "what was yesterday's sales",
         "how was yesterday sales",
-        "how was yesterday's sales"
+        "how was yesterday's sales",
+        "how were yesterday sales",
+        "what were yesterday sales"
 
     ]
+
+    # -----------------------------------------------------
+    # EXACT MATCH
+    # -----------------------------------------------------
 
     if message in yesterday_keywords:
 
@@ -761,15 +767,33 @@ def process_message(
             "COMMAND DETECTED"
         )
 
-        send_yesterday_sales(
-            sender
-        )
+        try:
+
+            send_yesterday_sales(
+                sender
+            )
+
+            print(
+                "✅ send_yesterday_sales() completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ send_yesterday_sales() ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Yesterday Sales report."
+            )
 
         return
 
-    # =====================================================
-    # NATURAL YESTERDAY SALES
-    # =====================================================
+    # -----------------------------------------------------
+    # NATURAL QUESTION
+    # -----------------------------------------------------
 
     if (
         "sales" in message
@@ -781,14 +805,32 @@ def process_message(
             "SALES QUESTION DETECTED"
         )
 
-        send_yesterday_sales(
-            sender
-        )
+        try:
+
+            send_yesterday_sales(
+                sender
+            )
+
+            print(
+                "✅ Natural Yesterday Sales completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Natural Yesterday Sales ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Yesterday Sales report."
+            )
 
         return
 
     # =====================================================
-    # SALES VS LAST WEEK
+    # 📈 SALES VS LAST WEEK
     # =====================================================
 
     sales_vs_lw_keywords = [
@@ -803,36 +845,53 @@ def process_message(
         "compare sales with last week",
         "how are sales vs last week",
         "how is sales vs last week",
-        "how was sales vs last week"
+        "how was sales vs last week",
+        "sales vs lw"
 
     ]
 
     # -----------------------------------------------------
-    # EXACT KEYWORD MATCH
+    # EXACT MATCH
     # -----------------------------------------------------
 
     if message in sales_vs_lw_keywords:
 
-        print("📈 SALES VS LW COMMAND DETECTED")
-        print("➡️ Calling send_sales_vs_lw()")
-    
+        print(
+            "📈 SALES VS LW "
+            "COMMAND DETECTED"
+        )
+
+        print(
+            "➡️ Calling send_sales_vs_lw()"
+        )
+
         try:
-            send_sales_vs_lw(sender)
-            print("✅ send_sales_vs_lw() completed")
-    
+
+            send_sales_vs_lw(
+                sender
+            )
+
+            print(
+                "✅ send_sales_vs_lw() completed"
+            )
+
         except Exception as e:
-            print("❌ send_sales_vs_lw() ERROR:", str(e))
-    
+
+            print(
+                "❌ send_sales_vs_lw() ERROR:",
+                str(e)
+            )
+
             send_whatsapp_message(
                 sender,
-                "❌ Error while generating Sales vs LW report."
+                "❌ Error while generating Sales vs Last Week report."
             )
-    
+
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # NATURAL SALES VS LW QUESTIONS
-    # =====================================================
+    # -----------------------------------------------------
 
     if (
         "sales" in message
@@ -847,9 +906,27 @@ def process_message(
             "QUESTION DETECTED"
         )
 
-        send_sales_vs_lw(
-            sender
-        )
+        try:
+
+            send_sales_vs_lw(
+                sender
+            )
+
+            print(
+                "✅ Natural Sales vs LW completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Natural Sales vs LW ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Sales vs Last Week report."
+            )
 
         return
 
@@ -863,7 +940,8 @@ def process_message(
         "brand performance",
         "sales by brand",
         "brand wise sales",
-        "brand wise performance"
+        "brand wise performance",
+        "brand"
 
     ]
 
@@ -873,26 +951,42 @@ def process_message(
 
     if message in brand_keywords:
 
-        print("🏪 BRAND PERFORMANCE COMMAND DETECTED")
-        print("➡️ Calling send_brand_performance()")
-    
+        print(
+            "🏪 BRAND PERFORMANCE "
+            "COMMAND DETECTED"
+        )
+
+        print(
+            "➡️ Calling send_brand_performance()"
+        )
+
         try:
-            send_brand_performance(sender)
-            print("✅ send_brand_performance() completed")
-    
+
+            send_brand_performance(
+                sender
+            )
+
+            print(
+                "✅ send_brand_performance() completed"
+            )
+
         except Exception as e:
-            print("❌ send_brand_performance() ERROR:", str(e))
-    
+
+            print(
+                "❌ send_brand_performance() ERROR:",
+                str(e)
+            )
+
             send_whatsapp_message(
                 sender,
                 "❌ Error while generating Brand Performance report."
             )
-    
+
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # NATURAL BRAND QUESTIONS
-    # =====================================================
+    # -----------------------------------------------------
 
     if (
         "brand" in message
@@ -904,14 +998,32 @@ def process_message(
             "QUESTION DETECTED"
         )
 
-        send_brand_performance(
-            sender
-        )
+        try:
+
+            send_brand_performance(
+                sender
+            )
+
+            print(
+                "✅ Natural Brand Performance completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Natural Brand Performance ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Brand Performance report."
+            )
 
         return
 
     # =====================================================
-    # FTD SALES
+    # 📊 FTD SALES
     # =====================================================
 
     sales_keywords = [
@@ -940,31 +1052,47 @@ def process_message(
     ]
 
     # -----------------------------------------------------
-    # EXACT KEYWORD MATCH
+    # EXACT MATCH
     # -----------------------------------------------------
 
     if message in sales_keywords:
 
-        print("📊 FTD SALES COMMAND DETECTED")
-        print("➡️ Calling send_ftd_sales()")
-    
+        print(
+            "📊 FTD SALES "
+            "COMMAND DETECTED"
+        )
+
+        print(
+            "➡️ Calling send_ftd_sales()"
+        )
+
         try:
-            send_ftd_sales(sender)
-            print("✅ send_ftd_sales() completed")
-    
+
+            send_ftd_sales(
+                sender
+            )
+
+            print(
+                "✅ send_ftd_sales() completed"
+            )
+
         except Exception as e:
-            print("❌ send_ftd_sales() ERROR:", str(e))
-    
+
+            print(
+                "❌ send_ftd_sales() ERROR:",
+                str(e)
+            )
+
             send_whatsapp_message(
                 sender,
                 "❌ Error while generating FTD Sales report."
             )
-    
+
         return
 
-    # =====================================================
+    # -----------------------------------------------------
     # NATURAL SALES QUESTIONS
-    # =====================================================
+    # -----------------------------------------------------
 
     if (
         "sales" in message
@@ -976,15 +1104,38 @@ def process_message(
             "QUESTION DETECTED"
         )
 
-        send_ftd_sales(
-            sender
-        )
+        try:
+
+            send_ftd_sales(
+                sender
+            )
+
+            print(
+                "✅ Natural FTD Sales completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Natural FTD Sales ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating FTD Sales report."
+            )
 
         return
 
     # =====================================================
-    # UNKNOWN MESSAGE
+    # ❌ UNKNOWN MESSAGE
     # =====================================================
+
+    print(
+        "❓ UNKNOWN COMMAND:",
+        message
+    )
 
     reply = (
 
@@ -992,16 +1143,17 @@ def process_message(
 
         f"\"{message_text}\"\n\n"
 
-        "Type *help* to see "
-        "available commands."
+        "Type *help* to see available commands."
     )
 
     send_whatsapp_message(
         sender,
         reply
     )
+
+
 # =========================================================
-# META WEBHOOK RECEIVER
+# 📩 META WEBHOOK RECEIVER
 # =========================================================
 
 @app.route(
@@ -1096,112 +1248,125 @@ def webhook():
             # MESSAGE EVENT
             # =================================================
 
-            if field == "messages":
+            if field != "messages":
 
-                messages = value.get(
-                    "messages",
-                    []
+                print(
+                    "ℹ️ Other webhook event:",
+                    field
+                )
+
+                continue
+
+            messages = value.get(
+                "messages",
+                []
+            )
+
+            print(
+                "Number of messages:",
+                len(messages)
+            )
+
+            # =================================================
+            # PROCESS MESSAGES
+            # =================================================
+
+            for incoming_message in messages:
+
+                message_type = (
+                    incoming_message.get(
+                        "type"
+                    )
+                )
+
+                sender = (
+                    incoming_message.get(
+                        "from"
+                    )
                 )
 
                 print(
-                    "Number of messages:",
-                    len(messages)
+                    "Message type:",
+                    message_type
                 )
 
-                for message in messages:
+                print(
+                    "Sender:",
+                    sender
+                )
 
-                    message_type = (
-                        message.get(
-                            "type"
+                # =============================================
+                # TEXT MESSAGE
+                # =============================================
+
+                if message_type == "text":
+
+                    text_data = (
+                        incoming_message.get(
+                            "text",
+                            {}
                         )
                     )
 
-                    sender = (
-                        message.get(
-                            "from"
+                    message_text = (
+                        text_data.get(
+                            "body",
+                            ""
                         )
                     )
 
                     print(
-                        "Message type:",
-                        message_type
+                        "💬 Incoming text:",
+                        message_text
                     )
-
-                    print(
-                        "Sender:",
-                        sender
-                    )
-
-                    # =========================================
-                    # TEXT MESSAGE
-                    # =========================================
 
                     if (
-                        message_type
-                        == "text"
+                        sender
+                        and message_text
                     ):
 
-                        text_data = (
-                            message.get(
-                                "text",
-                                {}
-                            )
-                        )
-
-                        message_text = (
-                            text_data.get(
-                                "body",
-                                ""
-                            )
-                        )
-
-                        print(
-                            "💬 Incoming text:",
-                            message_text
-                        )
-
-                        if (
-                            sender
-                            and message_text
-                        ):
+                        try:
 
                             process_message(
                                 sender,
                                 message_text
                             )
 
-                    # =========================================
-                    # NON-TEXT MESSAGE
-                    # =========================================
-
-                    else:
-
-                        print(
-                            "⚠️ Non-text "
-                            "message received:",
-                            message_type
-                        )
-
-                        if sender:
-
-                            send_whatsapp_message(
-
-                                sender,
-
-                                "🤖 AI MIS currently "
-                                "supports text messages only."
+                            print(
+                                "✅ process_message() completed"
                             )
 
-            # =================================================
-            # OTHER EVENTS
-            # =================================================
+                        except Exception as e:
 
-            else:
+                            print(
+                                "❌ process_message() ERROR:",
+                                str(e)
+                            )
 
-                print(
-                    "ℹ️ Other webhook event:",
-                    field
-                )
+                            send_whatsapp_message(
+                                sender,
+                                "❌ AI MIS encountered an error while processing your request."
+                            )
+
+                # =============================================
+                # NON-TEXT MESSAGE
+                # =============================================
+
+                else:
+
+                    print(
+                        "⚠️ Non-text message received:",
+                        message_type
+                    )
+
+                    if sender:
+
+                        send_whatsapp_message(
+                            sender,
+
+                            "🤖 AI MIS currently "
+                            "supports text messages only."
+                        )
 
     # =====================================================
     # ALWAYS RETURN 200 TO META
@@ -1214,7 +1379,7 @@ def webhook():
 
 
 # =========================================================
-# TEST SEND
+# 📤 TEST SEND
 # =========================================================
 
 @app.route(
@@ -1257,51 +1422,82 @@ def test_send():
         bool(VERIFY_TOKEN)
     )
 
+    # =====================================================
+    # CONFIG CHECK
+    # =====================================================
+
     if not PHONE_NUMBER_ID:
 
         return {
-
             "success": False,
-
             "error":
                 "WHATSAPP_PHONE_NUMBER_ID "
                 "is missing in Render"
-
         }, 500
 
     if not ACCESS_TOKEN:
 
         return {
-
             "success": False,
-
             "error":
                 "WHATSAPP_ACCESS_TOKEN "
                 "is missing in Render"
-
         }, 500
+
+    # =====================================================
+    # SEND TO ALL NUMBERS
+    # =====================================================
 
     results = []
 
     for recipient in recipients:
 
-        success = send_whatsapp_message(
-
-            recipient,
-
-            "🤖 AI MIS webhook "
-            "test message"
+        print(
+            "➡️ Sending test message to:",
+            recipient
         )
 
-        results.append({
+        try:
 
-            "recipient":
+            success = send_whatsapp_message(
                 recipient,
+                "🤖 AI MIS webhook test message"
+            )
 
-            "success":
-                success
+            results.append({
 
-        })
+                "recipient":
+                    recipient,
+
+                "success":
+                    success
+
+            })
+
+        except Exception as e:
+
+            print(
+                "❌ Test send error:",
+                recipient,
+                str(e)
+            )
+
+            results.append({
+
+                "recipient":
+                    recipient,
+
+                "success":
+                    False,
+
+                "error":
+                    str(e)
+
+            })
+
+    # =====================================================
+    # RESULT
+    # =====================================================
 
     return {
 
@@ -1314,7 +1510,7 @@ def test_send():
 
 
 # =========================================================
-# LOCAL RUN
+# 🚀 LOCAL RUN
 # =========================================================
 
 if __name__ == "__main__":
@@ -1327,8 +1523,6 @@ if __name__ == "__main__":
     )
 
     app.run(
-
         host="0.0.0.0",
-
         port=port
     )
