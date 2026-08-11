@@ -680,47 +680,89 @@ def get_overall_value(
 
 def get_ftd_sales():
 
-    records = get_overall()
+    if not LIVE_SALES_DATA:
 
-    net = get_overall_value(
-        records,
-        "Net",
-        "Today"
+        raise Exception(
+            "Live sales backend data is not available"
+        )
+
+    overall_data = LIVE_SALES_DATA.get(
+        "overall",
+        {}
     )
 
-    txn = get_overall_value(
-        records,
-        "Txn",
-        "Today"
-    )
-
-    aov = get_overall_value(
-        records,
-        "AOV",
-        "Today"
-    )
-
-    discount = get_overall_value(
-        records,
-        "Discount %",
-        "Today"
+    brands = LIVE_SALES_DATA.get(
+        "brands",
+        {}
     )
 
     return {
 
         "net":
-            net,
+            float(
+                overall_data.get(
+                    "net",
+                    0
+                )
+            ),
 
         "txn":
-            txn,
+            float(
+                overall_data.get(
+                    "txn",
+                    0
+                )
+            ),
 
         "aov":
-            aov,
+            float(
+                overall_data.get(
+                    "aov",
+                    0
+                )
+            ),
 
         "discount":
-            abs(discount)
-    }
+            float(
+                overall_data.get(
+                    "discount",
+                    0
+                )
+            ),
 
+        "frozen_bottle":
+            float(
+                brands.get(
+                    "Frozen Bottle",
+                    {}
+                ).get(
+                    "today",
+                    0
+                )
+            ),
+
+        "madno":
+            float(
+                brands.get(
+                    "Madno",
+                    {}
+                ).get(
+                    "today",
+                    0
+                )
+            ),
+
+        "boba_bar":
+            float(
+                brands.get(
+                    "Boba Bar",
+                    {}
+                ).get(
+                    "today",
+                    0
+                )
+            )
+    }
 
 # =========================================================
 # 📊 SALES VS LAST WEEK DATA
@@ -728,98 +770,41 @@ def get_ftd_sales():
 
 def get_sales_vs_lw():
 
-    records = get_overall()
+    if not LIVE_SALES_DATA:
 
-    today_net = get_overall_value(
-        records,
-        "Net",
-        "Today"
-    )
-
-    lw_net = get_overall_value(
-        records,
-        "Net",
-        "Last Week"
-    )
-
-    today_txn = get_overall_value(
-        records,
-        "Txn",
-        "Today"
-    )
-
-    lw_txn = get_overall_value(
-        records,
-        "Txn",
-        "Last Week"
-    )
-
-    today_aov = get_overall_value(
-        records,
-        "AOV",
-        "Today"
-    )
-
-    lw_aov = get_overall_value(
-        records,
-        "AOV",
-        "Last Week"
-    )
-
-    today_discount = get_overall_value(
-        records,
-        "Discount %",
-        "Today"
-    )
-
-    lw_discount = get_overall_value(
-        records,
-        "Discount %",
-        "Last Week"
-    )
-
-    growth = (
-        (
-            today_net
-            - lw_net
+        raise Exception(
+            "Live sales backend data is not available"
         )
-        / max(
-            lw_net,
-            1
-        )
-    ) * 100
+
+    overall_data = LIVE_SALES_DATA.get(
+        "overall",
+        {}
+    )
 
     return {
 
-        "today_net":
-            today_net,
-
-        "lw_net":
-            lw_net,
-
-        "growth":
-            growth,
-
-        "today_txn":
-            today_txn,
-
-        "lw_txn":
-            lw_txn,
-
-        "today_aov":
-            today_aov,
-
-        "lw_aov":
-            lw_aov,
-
-        "today_discount":
-            abs(
-                today_discount
+        "today":
+            float(
+                overall_data.get(
+                    "net",
+                    0
+                )
             ),
 
-        "lw_discount":
-            abs(
-                lw_discount
+        "last_week":
+            float(
+                overall_data.get(
+                    "lw_net",
+                    0
+                )
+            ),
+
+        "growth":
+            float(
+                overall_data.get(
+                    "lw_growth",
+                    0
+                )
             )
     }
 
@@ -828,82 +813,18 @@ def get_sales_vs_lw():
 # 🏪 BRAND DATA
 # =========================================================
 
-def get_brand_data():
+def get_brand_performance():
 
-    records = get_sheet_records(
-        "Brand"
-    )
-
-    if not records:
+    if not LIVE_SALES_DATA:
 
         raise Exception(
-            "Brand sheet returned no data"
+            "Live sales backend data is not available"
         )
 
-    result = []
-
-    for row in records:
-
-        brand = str(
-            row.get(
-                "Brand",
-                ""
-            )
-        ).strip()
-
-        if not brand:
-
-            continue
-
-        today_rev = safe_float(
-            row.get(
-                "Today Rev",
-                0
-            )
-        )
-
-        lw_rev = safe_float(
-            row.get(
-                "LW Rev",
-                0
-            )
-        )
-
-        growth = safe_float(
-            row.get(
-                "Growth %",
-                0
-            )
-        )
-
-        today_discount = abs(
-            safe_float(
-                row.get(
-                    "Today Dis %",
-                    0
-                )
-            )
-        )
-
-        result.append({
-
-            "brand":
-                brand,
-
-            "today_rev":
-                today_rev,
-
-            "lw_rev":
-                lw_rev,
-
-            "growth":
-                growth,
-
-            "today_discount":
-                today_discount
-        })
-
-    return result
+    return LIVE_SALES_DATA.get(
+        "brands",
+        {}
+    )
 
 
 # =========================================================
