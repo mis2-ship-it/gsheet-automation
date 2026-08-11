@@ -813,15 +813,21 @@ def process_message(
 
     if message in sales_vs_lw_keywords:
 
-        print(
-            "📈 SALES VS LW "
-            "COMMAND DETECTED"
-        )
-
-        send_sales_vs_lw(
-            sender
-        )
-
+        print("📈 SALES VS LW COMMAND DETECTED")
+        print("➡️ Calling send_sales_vs_lw()")
+    
+        try:
+            send_sales_vs_lw(sender)
+            print("✅ send_sales_vs_lw() completed")
+    
+        except Exception as e:
+            print("❌ send_sales_vs_lw() ERROR:", str(e))
+    
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Sales vs LW report."
+            )
+    
         return
 
     # =====================================================
@@ -867,15 +873,21 @@ def process_message(
 
     if message in brand_keywords:
 
-        print(
-            "🏪 BRAND PERFORMANCE "
-            "COMMAND DETECTED"
-        )
-
-        send_brand_performance(
-            sender
-        )
-
+        print("🏪 BRAND PERFORMANCE COMMAND DETECTED")
+        print("➡️ Calling send_brand_performance()")
+    
+        try:
+            send_brand_performance(sender)
+            print("✅ send_brand_performance() completed")
+    
+        except Exception as e:
+            print("❌ send_brand_performance() ERROR:", str(e))
+    
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating Brand Performance report."
+            )
+    
         return
 
     # =====================================================
@@ -933,15 +945,21 @@ def process_message(
 
     if message in sales_keywords:
 
-        print(
-            "📊 FTD SALES "
-            "COMMAND DETECTED"
-        )
-
-        send_ftd_sales(
-            sender
-        )
-
+        print("📊 FTD SALES COMMAND DETECTED")
+        print("➡️ Calling send_ftd_sales()")
+    
+        try:
+            send_ftd_sales(sender)
+            print("✅ send_ftd_sales() completed")
+    
+        except Exception as e:
+            print("❌ send_ftd_sales() ERROR:", str(e))
+    
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating FTD Sales report."
+            )
+    
         return
 
     # =====================================================
