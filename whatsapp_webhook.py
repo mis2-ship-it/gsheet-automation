@@ -35,6 +35,10 @@ WHATSAPP_DATA_SECRET = os.environ.get(
     "WHATSAPP_DATA_SECRET"
 )
 
+WHATSAPP_WEBHOOK_DATA_URL = os.environ.get(
+    "WHATSAPP_WEBHOOK_DATA_URL"
+)
+
 # =========================================================
 # LIVE SALES BACKEND SNAPSHOT
 # =========================================================
