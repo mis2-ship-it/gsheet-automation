@@ -14,6 +14,10 @@ from google.oauth2.service_account import Credentials
 
 app = Flask(__name__)
 
+print("=" * 60)
+print("🚀 WHATSAPP WEBHOOK APPLICATION LOADED")
+print("=" * 60)
+
 
 # =========================================================
 # 🔐 ENVIRONMENT VARIABLES
@@ -1965,4 +1969,16 @@ if __name__ == "__main__":
 
         port=port
     )
+
+print("=" * 60)
+print("🚀 REGISTERED FLASK ROUTES")
+print("=" * 60)
+
+for rule in app.url_map.iter_rules():
+    print(
+        f"ROUTE: {rule}"
+        f" | METHODS: {sorted(rule.methods)}"
+    )
+
+print("=" * 60)
 
