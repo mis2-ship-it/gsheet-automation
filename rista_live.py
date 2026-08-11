@@ -11,8 +11,10 @@ import matplotlib.pyplot as plt
 from io import BytesIO
 from email.mime.image import MIMEImage
 from whatsapp_recipients import (
+    WHATSAPP_USERS,
     WHATSAPP_RECIPIENTS,
-    WHATSAPP_NUMBERS
+    get_user_access,
+    user_can_access_store
 )
 
 print("🚀 Live Script Started")
