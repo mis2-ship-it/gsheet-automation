@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import os
 import requests
 import json
@@ -29,6 +29,21 @@ PHONE_NUMBER_ID = os.environ.get(
 
 ACCESS_TOKEN = os.environ.get(
     "WHATSAPP_ACCESS_TOKEN"
+)
+
+WHATSAPP_DATA_SECRET = os.environ.get(
+    "WHATSAPP_DATA_SECRET"
+)
+
+# =========================================================
+# LIVE SALES BACKEND SNAPSHOT
+# =========================================================
+
+LIVE_SALES_DATA = {}
+
+print(
+    "WHATSAPP_DATA_SECRET exists :",
+    bool(WHATSAPP_DATA_SECRET)
 )
 
 GOOGLE_CREDENTIALS = os.environ.get(
@@ -179,6 +194,119 @@ def home():
         "AI MIS WhatsApp Webhook is running",
         200
     )
+
+# =========================================================
+# RISTA LIVE → WHATSAPP DATA RECEIVER
+# =========================================================
+
+@app.route("/update-sales-data", methods=["POST"])
+def update_sales_data():
+
+    global LIVE_SALES_DATA
+
+    print("=" * 60)
+    print("📥 RISTA LIVE SALES DATA RECEIVED")
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # SECURITY CHECK
+    # -----------------------------------------------------
+
+    incoming_secret = request.headers.get(
+        "X-WhatsApp-Data-Secret"
+    )
+
+    if not WHATSAPP_DATA_SECRET:
+
+        print(
+            "❌ WHATSAPP_DATA_SECRET is not configured"
+        )
+
+        return jsonify({
+            "success": False,
+            "error": "Server secret not configured"
+        }), 500
+
+    if incoming_secret != WHATSAPP_DATA_SECRET:
+
+        print(
+            "❌ Invalid WhatsApp data secret"
+        )
+
+        return jsonify({
+            "success": False,
+            "error": "Unauthorized"
+        }), 401
+
+    # -----------------------------------------------------
+    # READ JSON
+    # -----------------------------------------------------
+
+    data = request.get_json(
+        silent=True
+    )
+
+    if not data:
+
+        print(
+            "❌ Empty sales data received"
+        )
+
+        return jsonify({
+            "success": False,
+            "error": "Empty JSON payload"
+        }), 400
+
+    # -----------------------------------------------------
+    # STORE LATEST DATA
+    # -----------------------------------------------------
+
+    LIVE_SALES_DATA = data
+
+    print(
+        "✅ WhatsApp sales snapshot updated"
+    )
+
+    print(
+        "Report Date:",
+        data.get("date")
+    )
+
+    print(
+        "Report Time:",
+        data.get("report_time")
+    )
+
+    print(
+        "Available sections:",
+        list(data.keys())
+    )
+
+    print("=" * 60)
+
+    return jsonify({
+        "success": True,
+        "message": "Sales data updated successfully"
+    }), 200
+
+# =========================================================
+# DEBUG — CHECK CURRENT SALES SNAPSHOT
+# =========================================================
+
+@app.route("/sales-data", methods=["GET"])
+def sales_data():
+
+    if not LIVE_SALES_DATA:
+
+        return jsonify({
+            "success": False,
+            "message": "No sales data available"
+        }), 404
+
+    return jsonify({
+        "success": True,
+        "data": LIVE_SALES_DATA
+    }), 200
 
 
 # =========================================================
