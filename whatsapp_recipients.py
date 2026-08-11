@@ -312,90 +312,104 @@ WHATSAPP_USERS = {
 }
 
 # =========================================================
-
 # 🔐 GET USER ACCESS
-
 # =========================================================
 
 def get_user_access(sender):
 
-sender = (
-    str(sender)
-    .replace("+", "")
-    .replace(" ", "")
-    .replace("-", "")
-)
+    sender = (
+        str(sender)
+        .replace("+", "")
+        .replace(" ", "")
+        .replace("-", "")
+    )
 
-user = WHATSAPP_USERS.get(sender)
+    user = WHATSAPP_USERS.get(sender)
 
-print("=" * 60)
-print("🔐 WHATSAPP USER ACCESS")
-print("Sender :", sender)
-
-if not user:
-    print("❌ User not mapped")
     print("=" * 60)
-    return None
+    print("🔐 WHATSAPP USER ACCESS")
+    print("Sender :", sender)
 
-print("Role   :", user["role"])
-print("Region :", user["region"])
-print("Patch  :", user["patch"])
-print("Stores :", user["stores"])
-print("=" * 60)
+    if not user:
 
-return user
+        print("❌ User not mapped")
+        print("=" * 60)
+
+        return None
+
+    print("Role   :", user["role"])
+    print("Region :", user["region"])
+    print("Patch  :", user["patch"])
+    print("Stores :", user["stores"])
+    print("=" * 60)
+
+    return user
+
 
 # =========================================================
-
 # 🏪 CHECK STORE ACCESS
-
 # =========================================================
 
-def user_can_access_store(sender, store_name, region=None):
+def user_can_access_store(
+    sender,
+    store_name,
+    region=None
+):
+
+    user = get_user_access(sender)
+
+    if not user:
+
+        return False
 
 
-user = get_user_access(sender)
+    # -----------------------------------------------------
+    # OPS LEADER
+    # -----------------------------------------------------
 
-if not user:
-    return False
+    if user["role"] == "Ops Leader":
 
-# -----------------------------------------------------
-# OPS LEADER
-# -----------------------------------------------------
-
-if user["role"] == "Ops Leader":
-    return True
-
-# -----------------------------------------------------
-# REGION MANAGER
-# -----------------------------------------------------
-
-if user["role"] == "Region Manager":
-
-    if region is None:
         return True
 
-    return (
-        str(region).strip().lower()
-        == str(user["region"]).strip().lower()
-    )
 
-# -----------------------------------------------------
-# AREA MANAGER
-# -----------------------------------------------------
+    # -----------------------------------------------------
+    # REGION MANAGER
+    # -----------------------------------------------------
 
-if user["role"] == "Area Manager":
+    if user["role"] == "Region Manager":
 
-    allowed_stores = {
-        str(x).strip().lower()
-        for x in user["stores"]
-    }
+        if region is None:
 
-    return (
-        str(store_name).strip().lower()
-        in allowed_stores
-    )
+            return True
 
-return False
+        return (
+            str(region).strip().lower()
+            ==
+            str(user["region"]).strip().lower()
+        )
+
+
+    # -----------------------------------------------------
+    # AREA MANAGER
+    # -----------------------------------------------------
+
+    if user["role"] == "Area Manager":
+
+        allowed_stores = {
+            str(x).strip().lower()
+            for x in user["stores"]
+        }
+
+        return (
+            str(store_name).strip().lower()
+            in allowed_stores
+        )
+
+
+    # -----------------------------------------------------
+    # UNKNOWN ROLE
+    # -----------------------------------------------------
+
+    return False
 
 
