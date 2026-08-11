@@ -3586,8 +3586,51 @@ def build_whatsapp_snapshot():
 
         "sources":
             sources
+
+        "regions": 
+            regions, 
+        
+        "stores": 
+            stores
     }
 
+
+    # -----------------------------------------------------
+    # DEBUG — WHATSAPP REGION / STORE SNAPSHOT
+    # -----------------------------------------------------
+
+    print("=" * 60)
+    print("🔍 WHATSAPP SNAPSHOT DEBUG")
+    print("=" * 60)
+
+    print(
+        "Regions in snapshot:",
+        len(regions)
+    )
+
+    print(
+        "Region names:",
+        list(regions.keys())
+    )
+
+    print(
+        "Stores in snapshot:",
+        len(stores)
+    )
+
+    print(
+        "Store names:",
+        list(stores.keys())
+    )
+
+    print(
+        "Snapshot sections:",
+        list(snapshot.keys())
+    )
+
+    print("=" * 60)
+
+    
     return snapshot
 
 #=========================================================
