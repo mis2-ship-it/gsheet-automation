@@ -3259,458 +3259,6 @@ def send_tm_mail():
             tm_email
         )
 
-# =========================================================
-# 📱 WHATSAPP LIVE SALES REPORT
-# =========================================================
-
-def send_whatsapp_live():
-
-    print("=" * 60)
-    print("📱 SENDING WHATSAPP LIVE SALES REPORT")
-    print("=" * 60)
-
-    PHONE_NUMBER_ID = "1138561289350791"
-
-    ACCESS_TOKEN = os.environ.get(
-        "WHATSAPP_ACCESS_TOKEN"
-    )
-
-    RECIPIENTS = WHATSAPP_NUMBERS
-
-    if not ACCESS_TOKEN:
-
-        print(
-            "❌ WHATSAPP_ACCESS_TOKEN not found"
-        )
-
-        return
-
-    # =====================================================
-    # DATE / TIME
-    # =====================================================
-
-    report_date = business_day.strftime(
-        "%d-%b-%Y"
-    )
-
-    report_time = now.strftime(
-        "%I:%M %p"
-    )
-
-    # =====================================================
-    # BUSINESS OVERVIEW
-    # =====================================================
-
-    try:
-        gross_sales = today_cut[
-            "grossAmount"
-        ].sum()
-
-    except:
-        gross_sales = 0
-
-    try:
-        net_revenue = today_cut[
-            "Net Sales"
-        ].sum()
-
-    except:
-        net_revenue = 0
-
-    try:
-        transactions = len(today_cut)
-
-    except:
-        transactions = 0
-
-
-    # -----------------------------------------------------
-    # AOV
-    # -----------------------------------------------------
-
-    aov = (
-        net_revenue /
-        max(transactions, 1)
-    )
-
-    # -----------------------------------------------------
-    # DISCOUNT %
-    # -----------------------------------------------------
-
-    discount_amount = today_cut[
-        "discountAmount"
-    ].sum()
-
-    discount_pct = (
-        discount_amount /
-        max(gross_sales, 1)
-    ) * 100
-
-    # =====================================================
-    # BRAND CONTRIBUTION
-    # =====================================================
-
-    brand_lines = []
-
-    brand_emojis = {
-        "Frozen Bottle": "🍶",
-        "Madno": "🥤",
-        "Boba Bar": "🧋",
-        "Lubov": "🍨"
-    }
-
-    for brand in [
-        "Frozen Bottle",
-        "Madno",
-        "Boba Bar",
-        "Lubov"
-    ]:
-
-        brand_sales = today_cut[
-            today_cut["Brand"] == brand
-        ]["Net Sales"].sum()
-
-        if brand_sales <= 0:
-            continue
-
-        contribution = (
-            brand_sales /
-            max(net_revenue, 1)
-        ) * 100
-
-        emoji = brand_emojis.get(
-            brand,
-            "🏪"
-        )
-
-        brand_lines.append(
-            f"{emoji} {brand}: "
-            f"₹{brand_sales / 100000:.2f}L "
-            f"({contribution:.0f}%)"
-        )
-
-    brand_text = "\n".join(
-        brand_lines
-    )
-
-    # =====================================================
-    # SOURCE CONTRIBUTION
-    # =====================================================
-
-    source_lines = []
-
-    source_emojis = {
-        "Swiggy": "📍",
-        "Zomato": "📍",
-        "In Store": "📍",
-        "Ownly": "📍",
-        "Magicpin": "📍"
-    }
-
-    for source in [
-        "Swiggy",
-        "Zomato",
-        "In Store",
-        "Ownly",
-        "Magicpin"
-    ]:
-
-        source_sales = today_cut[
-            today_cut["Source Group"] == source
-        ]["Net Sales"].sum()
-
-        if source_sales <= 0:
-            continue
-
-        emoji = source_emojis.get(
-            source,
-            "📍"
-        )
-
-        source_lines.append(
-            f"{emoji} {source}: "
-            f"₹{source_sales / 100000:.2f}L"
-        )
-
-    source_text = "\n".join(
-        source_lines
-    )
-
-    # =====================================================
-    # HOURLY PERFORMANCE
-    # =====================================================
-
-    current_hour = now.hour
-
-    try:
-
-        current_hour_sales = hourly_analysis[
-            hourly_analysis["Hour"] == current_hour
-        ]["Today"].sum()
-
-    except:
-
-        current_hour_sales = 0
-
-    try:
-
-        same_hour_lw = hourly_analysis[
-            hourly_analysis["Hour"] == current_hour
-        ]["Last Week"].sum()
-
-    except:
-
-        same_hour_lw = 0
-
-    hourly_growth = (
-        (
-            current_hour_sales -
-            same_hour_lw
-        )
-        /
-        max(same_hour_lw, 1)
-    ) * 100
-
-    # =====================================================
-    # TARGET / PROJECTION
-    # =====================================================
-
-    try:
-
-        total_target = float(
-            target_summary[
-                target_summary["Metric"] == "Total"
-            ]["Target"].iloc[0]
-        )
-
-    except:
-
-        total_target = 0
-
-    try:
-
-        eod_projection = float(eod)
-
-    except:
-
-        eod_projection = 0
-
-    achievement = (
-        eod_projection /
-        max(total_target, 1)
-    ) * 100
-
-    # =====================================================
-    # INSIGHT
-    # =====================================================
-
-    if insight_text:
-
-        insight = str(
-            insight_text
-        )
-
-    else:
-
-        insight = "No insight available."
-
-    # =====================================================
-    # FINAL WHATSAPP MESSAGE
-    # =====================================================
-
-    message = (
-
-        f"📊 *LIVE SALES | "
-        f"{report_date} {report_time}*\n\n"
-
-        f"💰 *BUSINESS OVERVIEW*\n\n"
-
-        f"💵 Gross Sales: "
-        f"₹{gross_sales / 100000:.2f}L\n"
-
-        f"💵 Net Revenue: "
-        f"₹{net_revenue / 100000:.2f}L\n"
-
-        f"🧾 Transactions: "
-        f"{transactions:,}\n"
-
-        f"🧺 AOV: "
-        f"₹{aov:.0f}\n"
-
-        f"📉 Discount: "
-        f"{abs(discount_pct):.1f}%\n\n"
-
-        f"🏪 *BRAND CONTRIBUTION*\n\n"
-
-        f"{brand_text}\n\n"
-
-        f"📍 *SOURCE CONTRIBUTION*\n\n"
-
-        f"{source_text}\n\n"
-
-        f"⏰ *HOURLY PERFORMANCE*\n\n"
-
-        f"⏰ Current Hour: "
-        f"₹{current_hour_sales / 100000:.2f}L\n"
-
-        f"📊 Same Hour LW: "
-        f"₹{same_hour_lw / 100000:.2f}L\n"
-
-        f"📈 Growth: "
-        f"{hourly_growth:+.1f}%\n\n"
-
-        f"🎯 *TARGET vs PROJECTION*\n\n"
-
-        f"🎯 Target: "
-        f"₹{total_target / 100000:.2f}L\n"
-
-        f"🔮 EOD Projection: "
-        f"₹{eod_projection / 100000:.2f}L\n"
-
-        f"📊 Achievement: "
-        f"{achievement:.1f}%\n\n"
-
-        f"🧠 *INSIGHT*\n\n"
-
-        f"{insight}\n\n"
-
-        f"🤖 AI MIS Automation"
-    )
-
-    # =====================================================
-    # DEBUG
-    # =====================================================
-
-    print("=" * 60)
-    print("📱 WHATSAPP MESSAGE")
-    print("=" * 60)
-    print(message)
-    print("=" * 60)
-
-    # =====================================================
-    # META API
-    # =====================================================
-
-    url = (
-        f"https://graph.facebook.com/v23.0/"
-        f"{PHONE_NUMBER_ID}/messages"
-    )
-
-    headers = {
-
-        "Authorization":
-            f"Bearer {ACCESS_TOKEN}",
-
-        "Content-Type":
-            "application/json"
-    }
-
-    # =====================================================
-    # SEND TO ALL RECIPIENTS
-    # =====================================================
-
-    success_count = 0
-    failed_count = 0
-
-    for recipient in RECIPIENTS:
-
-        payload = {
-
-            "messaging_product":
-                "whatsapp",
-
-            "to":
-                recipient,
-
-            "type":
-                "text",
-
-            "text": {
-
-                "preview_url":
-                    False,
-
-                "body":
-                    message
-            }
-        }
-
-        try:
-
-            response = requests.post(
-
-                url,
-
-                headers=headers,
-
-                json=payload,
-
-                timeout=30
-            )
-
-            print(
-                f"WhatsApp → {recipient}"
-            )
-
-            print(
-                "Status:",
-                response.status_code
-            )
-
-            print(
-                "Response:",
-                response.text
-            )
-
-            if response.ok:
-
-                success_count += 1
-
-                print(
-                    f"✅ WhatsApp sent → "
-                    f"{recipient}"
-                )
-
-            else:
-
-                failed_count += 1
-
-                print(
-                    f"❌ WhatsApp failed → "
-                    f"{recipient}"
-                )
-
-        except Exception as e:
-
-            failed_count += 1
-
-            print(
-                f"❌ WhatsApp error → "
-                f"{recipient}"
-            )
-
-            print(
-                str(e)
-            )
-
-    # =====================================================
-    # FINAL STATUS
-    # =====================================================
-
-    print("=" * 60)
-
-    print(
-        "WhatsApp Success:",
-        success_count
-    )
-
-    print(
-        "WhatsApp Failed:",
-        failed_count
-    )
-
-    print("=" * 60)
-
 
 # =========================================================
 # 📱 WHATSAPP BACKEND SNAPSHOT
@@ -3907,212 +3455,152 @@ def build_whatsapp_snapshot():
 
     return snapshot
 
-# =========================================================
-# 📱 UPDATE WHATSAPP BACKEND DATA
-# =========================================================
+=========================================================
+📱 UPDATE WHATSAPP BACKEND DATA
+=========================================================
 
 def send_whatsapp_backend_data():
 
-    print("=" * 60)
-    print("📱 UPDATING WHATSAPP BACKEND DATA")
-    print("=" * 60)
+print("=" * 60)
+print("📱 UPDATING WHATSAPP BACKEND DATA")
+print("=" * 60)
 
-    webhook_url = os.environ.get(
-        "WHATSAPP_WEBHOOK_DATA_URL"
-    )
+# -----------------------------------------------------
+# GET CONFIGURATION
+# -----------------------------------------------------
 
-    data_secret = os.environ.get(
-        "WHATSAPP_DATA_SECRET"
-    )
+webhook_url = os.environ.get(
+    "WHATSAPP_WEBHOOK_DATA_URL"
+)
 
-    if not webhook_url:
+data_secret = os.environ.get(
+    "WHATSAPP_DATA_SECRET"
+)
 
-        print(
-            "❌ WHATSAPP_WEBHOOK_DATA_URL "
-            "not configured"
-        )
+# -----------------------------------------------------
+# CONFIG CHECK
+# -----------------------------------------------------
 
-        return False
-
-    if not data_secret:
-
-        print(
-            "❌ WHATSAPP_DATA_SECRET "
-            "not configured"
-        )
-
-        return False
+if not webhook_url:
 
     print(
-        "Webhook URL:",
-        webhook_url
+        "❌ WHATSAPP_WEBHOOK_DATA_URL "
+        "not configured"
     )
+
+    return False
+
+if not data_secret:
 
     print(
-        "Data Secret configured:",
-        bool(data_secret)
+        "❌ WHATSAPP_DATA_SECRET "
+        "not configured"
     )
 
-    try:
+    return False
 
-        payload = build_whatsapp_snapshot()
+print(
+    "Webhook URL:",
+    webhook_url
+)
 
-    except Exception as e:
+print(
+    "Data Secret configured:",
+    bool(data_secret)
+)
 
-        print(
-            "❌ Failed to build WhatsApp snapshot:",
-            str(e)
-        )
+# -----------------------------------------------------
+# BUILD BACKEND SNAPSHOT
+# -----------------------------------------------------
 
-        return False
-
-    headers = {
-
-        "Content-Type":
-            "application/json",
-
-        "X-WhatsApp-Data-Secret":
-            data_secret
-    }
-
-    try:
-
-        response = requests.post(
-
-            webhook_url,
-
-            headers=headers,
-
-            json=payload,
-
-            timeout=30
-        )
-
-        print(
-            "📱 WhatsApp Backend Status:",
-            response.status_code
-        )
-
-        print(
-            "WhatsApp Backend Response:",
-            response.text
-        )
-
-        print("=" * 60)
-
-        if response.ok:
-
-            print(
-                "✅ WhatsApp backend snapshot "
-                "updated successfully"
-            )
-
-            return True
-
-        print(
-            "❌ WhatsApp backend update failed"
-        )
-
-        return False
-
-    except Exception as e:
-
-        print(
-            "❌ WhatsApp backend request error:",
-            str(e)
-        )
-
-        return False
-
-# =========================================================
-# 📤 SEND WHATSAPP BACKEND SNAPSHOT
-# =========================================================
-
-def send_whatsapp_backend_data():
-
-    webhook_url = os.environ.get(
-        "WHATSAPP_WEBHOOK_DATA_URL"
-    )
-
-    data_secret = os.environ.get(
-        "WHATSAPP_DATA_SECRET"
-    )
-
-    if not webhook_url:
-
-        print(
-            "⚠️ WHATSAPP_WEBHOOK_DATA_URL "
-            "not configured"
-        )
-
-        return False
-
-    if not data_secret:
-
-        print(
-            "⚠️ WHATSAPP_DATA_SECRET "
-            "not configured"
-        )
-
-        return False
+try:
 
     payload = build_whatsapp_snapshot()
 
-    headers = {
+except Exception as e:
 
-        "Content-Type":
-            "application/json",
+    print(
+        "❌ Failed to build WhatsApp snapshot:",
+        str(e)
+    )
 
-        "X-WhatsApp-Data-Secret":
-            data_secret
-    }
+    return False
 
-    try:
+# -----------------------------------------------------
+# REQUEST HEADERS
+# -----------------------------------------------------
 
-        response = requests.post(
+headers = {
 
-            webhook_url,
+    "Content-Type":
+        "application/json",
 
-            headers=headers,
+    "X-WhatsApp-Data-Secret":
+        data_secret
+}
 
-            json=payload,
+# -----------------------------------------------------
+# SEND TO WHATSAPP WEBHOOK
+# -----------------------------------------------------
 
-            timeout=30
-        )
+try:
+
+    response = requests.post(
+
+        webhook_url,
+
+        headers=headers,
+
+        json=payload,
+
+        timeout=30
+    )
+
+    print(
+        "📱 WhatsApp Backend Status:",
+        response.status_code
+    )
+
+    print(
+        "WhatsApp Backend Response:",
+        response.text
+    )
+
+    print("=" * 60)
+
+    # -------------------------------------------------
+    # SUCCESS
+    # -------------------------------------------------
+
+    if response.ok:
 
         print(
-            "📱 WhatsApp Backend Status:",
-            response.status_code
+            "✅ WhatsApp backend snapshot "
+            "updated successfully"
         )
 
-        print(
-            "WhatsApp Backend Response:",
-            response.text
-        )
+        return True
 
-        if response.ok:
+    # -------------------------------------------------
+    # FAILURE
+    # -------------------------------------------------
 
-            print(
-                "✅ WhatsApp backend snapshot "
-                "updated successfully"
-            )
+    print(
+        "❌ WhatsApp backend update failed"
+    )
 
-            return True
+    return False
 
-        print(
-            "❌ WhatsApp backend update failed"
-        )
+except Exception as e:
 
-        return False
+    print(
+        "❌ WhatsApp backend request error:",
+        str(e)
+    )
 
-    except Exception as e:
+    return False
 
-        print(
-            "❌ WhatsApp backend request error:",
-            str(e)
-        )
 
-        return False
 
 # ---------------- EXECUTE ----------------
 
