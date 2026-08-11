@@ -2,15 +2,21 @@ from flask import Flask, request
 import os
 import requests
 import json
+import gspread
+
+from datetime import datetime, timedelta
+from google.oauth2.service_account import Credentials
+
 
 # =========================================================
-# FLASK APP
+# 🚀 FLASK APP
 # =========================================================
 
 app = Flask(__name__)
 
+
 # =========================================================
-# ENVIRONMENT VARIABLES
+# 🔐 ENVIRONMENT VARIABLES
 # =========================================================
 
 VERIFY_TOKEN = os.environ.get(
@@ -25,39 +31,148 @@ ACCESS_TOKEN = os.environ.get(
     "WHATSAPP_ACCESS_TOKEN"
 )
 
+GOOGLE_CREDENTIALS = os.environ.get(
+    "GOOGLE_CREDENTIALS"
+)
+
 GRAPH_API_VERSION = "v23.0"
 
+
 # =========================================================
-# BASIC CHECK
+# 📊 GOOGLE SHEET
 # =========================================================
 
-print("=" * 60)
-print("🚀 AI MIS WHATSAPP WEBHOOK")
-print("=" * 60)
-
-print(
-    "PHONE_NUMBER_ID exists :",
-    bool(PHONE_NUMBER_ID)
+SHEET_URL = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
 )
 
-print(
-    "ACCESS_TOKEN exists    :",
-    bool(ACCESS_TOKEN)
-)
 
-print(
-    "VERIFY_TOKEN exists    :",
-    bool(VERIFY_TOKEN)
-)
+spreadsheet = None
 
-print("=" * 60)
+
+def connect_google_sheet():
+
+    global spreadsheet
+
+    print("=" * 60)
+    print("📊 CONNECTING GOOGLE SHEET")
+    print("=" * 60)
+
+    if not GOOGLE_CREDENTIALS:
+
+        print(
+            "❌ GOOGLE_CREDENTIALS is missing"
+        )
+
+        return False
+
+    try:
+
+        creds = (
+            Credentials
+            .from_service_account_info(
+                json.loads(
+                    GOOGLE_CREDENTIALS
+                ),
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+            )
+        )
+
+        client = gspread.authorize(
+            creds
+        )
+
+        spreadsheet = (
+            client.open_by_url(
+                SHEET_URL
+            )
+        )
+
+        print(
+            "✅ Google Sheet connected"
+        )
+
+        return True
+
+    except Exception as e:
+
+        print(
+            "❌ Google Sheet connection error:",
+            str(e)
+        )
+
+        spreadsheet = None
+
+        return False
+
+
+# Connect when application starts
+connect_google_sheet()
 
 
 # =========================================================
-# HOME
+# ⏰ BUSINESS DATE
 # =========================================================
 
-@app.route("/", methods=["GET"])
+def get_ist_now():
+
+    return (
+        datetime.utcnow()
+        + timedelta(
+            hours=5,
+            minutes=30
+        )
+    )
+
+
+def get_business_day():
+
+    now = get_ist_now()
+
+    # Same logic as rista_live.py
+    if now.hour < 6:
+
+        return (
+            now.date()
+            - timedelta(days=1)
+        )
+
+    return now.date()
+
+
+business_day = get_business_day()
+
+
+# =========================================================
+# 🔄 REFRESH BUSINESS DATE
+# =========================================================
+
+def refresh_business_day():
+
+    global business_day
+
+    business_day = get_business_day()
+
+    print(
+        "📅 Business Day:",
+        business_day
+    )
+
+    return business_day
+
+
+# =========================================================
+# 🏠 HOME
+# =========================================================
+
+@app.route(
+    "/",
+    methods=["GET"]
+)
 def home():
 
     return (
@@ -67,10 +182,13 @@ def home():
 
 
 # =========================================================
-# META WEBHOOK VERIFICATION
+# 🔐 META WEBHOOK VERIFICATION
 # =========================================================
 
-@app.route("/webhook", methods=["GET"])
+@app.route(
+    "/webhook",
+    methods=["GET"]
+)
 def verify_webhook():
 
     mode = request.args.get(
@@ -86,12 +204,20 @@ def verify_webhook():
     )
 
     print("=" * 60)
-    print("🔐 META WEBHOOK VERIFICATION")
-    print("Mode     :", mode)
     print(
-        "Token OK :",
+        "🔐 META WEBHOOK VERIFICATION"
+    )
+
+    print(
+        "Mode:",
+        mode
+    )
+
+    print(
+        "Token OK:",
         token == VERIFY_TOKEN
     )
+
     print("=" * 60)
 
     if (
@@ -109,11 +235,14 @@ def verify_webhook():
         "❌ WEBHOOK VERIFICATION FAILED"
     )
 
-    return "Forbidden", 403
+    return (
+        "Forbidden",
+        403
+    )
 
 
 # =========================================================
-# SEND WHATSAPP TEXT MESSAGE
+# 📤 SEND WHATSAPP TEXT
 # =========================================================
 
 def send_whatsapp_message(
@@ -124,8 +253,7 @@ def send_whatsapp_message(
     if not PHONE_NUMBER_ID:
 
         print(
-            "❌ WHATSAPP_PHONE_NUMBER_ID "
-            "is missing"
+            "❌ WHATSAPP_PHONE_NUMBER_ID missing"
         )
 
         return False
@@ -133,8 +261,7 @@ def send_whatsapp_message(
     if not ACCESS_TOKEN:
 
         print(
-            "❌ WHATSAPP_ACCESS_TOKEN "
-            "is missing"
+            "❌ WHATSAPP_ACCESS_TOKEN missing"
         )
 
         return False
@@ -176,10 +303,21 @@ def send_whatsapp_message(
     }
 
     print("=" * 60)
-    print("📤 SENDING WHATSAPP MESSAGE")
-    print("To:", recipient)
-    print("Message:")
+    print(
+        "📤 SENDING WHATSAPP MESSAGE"
+    )
+
+    print(
+        "To:",
+        recipient
+    )
+
+    print(
+        "Message:"
+    )
+
     print(message)
+
     print("=" * 60)
 
     try:
@@ -196,16 +334,14 @@ def send_whatsapp_message(
         )
 
         print(
-            "Meta Status   :",
+            "Meta Status:",
             response.status_code
         )
 
         print(
-            "Meta Response :",
+            "Meta Response:",
             response.text
         )
-
-        print("=" * 60)
 
         if response.ok:
 
@@ -232,410 +368,836 @@ def send_whatsapp_message(
 
 
 # =========================================================
-# 📊 FTD SALES
+# 📊 GOOGLE SHEET READER
+# =========================================================
+
+def get_sheet_records(
+    sheet_name
+):
+
+    global spreadsheet
+
+    try:
+
+        if spreadsheet is None:
+
+            if not connect_google_sheet():
+
+                return []
+
+        ws = (
+            spreadsheet
+            .worksheet(sheet_name)
+        )
+
+        records = (
+            ws.get_all_records()
+        )
+
+        print(
+            f"✅ Read {sheet_name}: "
+            f"{len(records)} rows"
+        )
+
+        return records
+
+    except Exception as e:
+
+        print(
+            f"❌ Error reading "
+            f"{sheet_name}:",
+            str(e)
+        )
+
+        # Try reconnect once
+
+        if connect_google_sheet():
+
+            try:
+
+                ws = (
+                    spreadsheet
+                    .worksheet(
+                        sheet_name
+                    )
+                )
+
+                records = (
+                    ws.get_all_records()
+                )
+
+                print(
+                    f"✅ Retry successful: "
+                    f"{sheet_name}"
+                )
+
+                return records
+
+            except Exception as retry_error:
+
+                print(
+                    "❌ Retry failed:",
+                    str(retry_error)
+                )
+
+        return []
+
+
+# =========================================================
+# 🔢 SAFE FLOAT
+# =========================================================
+
+def safe_float(value):
+
+    if value is None:
+
+        return 0.0
+
+    try:
+
+        text = str(value).strip()
+
+        if not text:
+
+            return 0.0
+
+        text = (
+            text
+            .replace(
+                "₹",
+                ""
+            )
+            .replace(
+                ",",
+                ""
+            )
+            .replace(
+                "%",
+                ""
+            )
+            .replace(
+                "L",
+                ""
+            )
+            .strip()
+        )
+
+        return float(text)
+
+    except Exception:
+
+        return 0.0
+
+
+# =========================================================
+# 📊 READ OVERALL
+# =========================================================
+
+def get_overall():
+
+    records = get_sheet_records(
+        "Overall"
+    )
+
+    if not records:
+
+        raise Exception(
+            "Overall sheet returned no data"
+        )
+
+    return records
+
+
+# =========================================================
+# 📊 FIND OVERALL PARAMETER
+# =========================================================
+
+def get_overall_value(
+    records,
+    parameter,
+    column
+):
+
+    for row in records:
+
+        row_parameter = str(
+            row.get(
+                "Parameters",
+                ""
+            )
+        ).strip().lower()
+
+        if (
+            row_parameter
+            == parameter.lower()
+        ):
+
+            return safe_float(
+                row.get(
+                    column,
+                    0
+                )
+            )
+
+    return 0.0
+
+
+# =========================================================
+# 📊 FTD SALES DATA
+# =========================================================
+
+def get_ftd_sales():
+
+    records = get_overall()
+
+    net = get_overall_value(
+        records,
+        "Net",
+        "Today"
+    )
+
+    txn = get_overall_value(
+        records,
+        "Txn",
+        "Today"
+    )
+
+    aov = get_overall_value(
+        records,
+        "AOV",
+        "Today"
+    )
+
+    discount = get_overall_value(
+        records,
+        "Discount %",
+        "Today"
+    )
+
+    return {
+
+        "net":
+            net,
+
+        "txn":
+            txn,
+
+        "aov":
+            aov,
+
+        "discount":
+            abs(discount)
+    }
+
+
+# =========================================================
+# 📊 SALES VS LAST WEEK DATA
+# =========================================================
+
+def get_sales_vs_lw():
+
+    records = get_overall()
+
+    today_net = get_overall_value(
+        records,
+        "Net",
+        "Today"
+    )
+
+    lw_net = get_overall_value(
+        records,
+        "Net",
+        "Last Week"
+    )
+
+    today_txn = get_overall_value(
+        records,
+        "Txn",
+        "Today"
+    )
+
+    lw_txn = get_overall_value(
+        records,
+        "Txn",
+        "Last Week"
+    )
+
+    today_aov = get_overall_value(
+        records,
+        "AOV",
+        "Today"
+    )
+
+    lw_aov = get_overall_value(
+        records,
+        "AOV",
+        "Last Week"
+    )
+
+    today_discount = get_overall_value(
+        records,
+        "Discount %",
+        "Today"
+    )
+
+    lw_discount = get_overall_value(
+        records,
+        "Discount %",
+        "Last Week"
+    )
+
+    growth = (
+        (
+            today_net
+            - lw_net
+        )
+        / max(
+            lw_net,
+            1
+        )
+    ) * 100
+
+    return {
+
+        "today_net":
+            today_net,
+
+        "lw_net":
+            lw_net,
+
+        "growth":
+            growth,
+
+        "today_txn":
+            today_txn,
+
+        "lw_txn":
+            lw_txn,
+
+        "today_aov":
+            today_aov,
+
+        "lw_aov":
+            lw_aov,
+
+        "today_discount":
+            abs(
+                today_discount
+            ),
+
+        "lw_discount":
+            abs(
+                lw_discount
+            )
+    }
+
+
+# =========================================================
+# 🏪 BRAND DATA
+# =========================================================
+
+def get_brand_data():
+
+    records = get_sheet_records(
+        "Brand"
+    )
+
+    if not records:
+
+        raise Exception(
+            "Brand sheet returned no data"
+        )
+
+    result = []
+
+    for row in records:
+
+        brand = str(
+            row.get(
+                "Brand",
+                ""
+            )
+        ).strip()
+
+        if not brand:
+
+            continue
+
+        today_rev = safe_float(
+            row.get(
+                "Today Rev",
+                0
+            )
+        )
+
+        lw_rev = safe_float(
+            row.get(
+                "LW Rev",
+                0
+            )
+        )
+
+        growth = safe_float(
+            row.get(
+                "Growth %",
+                0
+            )
+        )
+
+        today_discount = abs(
+            safe_float(
+                row.get(
+                    "Today Dis %",
+                    0
+                )
+            )
+        )
+
+        result.append({
+
+            "brand":
+                brand,
+
+            "today_rev":
+                today_rev,
+
+            "lw_rev":
+                lw_rev,
+
+            "growth":
+                growth,
+
+            "today_discount":
+                today_discount
+        })
+
+    return result
+
+
+# =========================================================
+# 📊 FTD SALES RESPONSE
 # =========================================================
 
 def send_ftd_sales(sender):
 
-    print("=" * 60)
-    print("📊 FTD SALES REQUEST")
-    print("=" * 60)
+    try:
 
-    # -----------------------------------------------------
-    # GET FTD DATA
-    # -----------------------------------------------------
-
-    sales = get_ftd_sales()
-
-    net = sales["net"]
-    txn = sales["txn"]
-    aov = sales["aov"]
-    discount = sales["discount"]
-
-    frozen_bottle = sales[
-        "frozen_bottle"
-    ]
-
-    madno = sales[
-        "madno"
-    ]
-
-    boba_bar = sales[
-        "boba_bar"
-    ]
-
-    # -----------------------------------------------------
-    # BRAND CONTRIBUTION
-    # -----------------------------------------------------
-
-    total_brand = (
-        frozen_bottle
-        + madno
-        + boba_bar
-    )
-
-    frozen_pct = (
-        frozen_bottle
-        / max(total_brand, 1)
-    ) * 100
-
-    madno_pct = (
-        madno
-        / max(total_brand, 1)
-    ) * 100
-
-    boba_pct = (
-        boba_bar
-        / max(total_brand, 1)
-    ) * 100
-
-    # -----------------------------------------------------
-    # DATE
-    # -----------------------------------------------------
-
-    today_date = (
-        business_day.strftime(
-            "%d-%b-%y"
+        print("=" * 60)
+        print(
+            "📊 FTD SALES REQUEST"
         )
-    )
+        print("=" * 60)
 
-    # -----------------------------------------------------
-    # WHATSAPP RESPONSE
-    # -----------------------------------------------------
+        sales = get_ftd_sales()
 
-    reply = (
+        net = sales[
+            "net"
+        ]
 
-        f"📊 *AI MIS | FTD SALES*\n"
-        f"{today_date}\n\n"
+        txn = sales[
+            "txn"
+        ]
 
-        f"💰 Net Revenue: "
-        f"₹{net / 100000:.2f}L\n"
+        aov = sales[
+            "aov"
+        ]
 
-        f"🧾 Transactions: "
-        f"{int(txn):,}\n"
+        discount = sales[
+            "discount"
+        ]
 
-        f"🧺 AOV: "
-        f"₹{int(round(aov)):,}\n"
+        today_date = (
+            refresh_business_day()
+            .strftime(
+                "%d-%b-%y"
+            )
+        )
 
-        f"📉 Discount: "
-        f"{abs(discount):.1f}%\n\n"
+        reply = (
 
-        f"🏪 *Brand Contribution*\n"
+            "📊 *AI MIS | FTD SALES*\n"
+            f"{today_date}\n\n"
 
-        f"🍶 Frozen Bottle: "
-        f"{frozen_pct:.0f}%\n"
+            f"💰 Net Revenue: "
+            f"₹{net / 100000:.2f}L\n"
 
-        f"🥤 Madno: "
-        f"{madno_pct:.0f}%\n"
+            f"🧾 Transactions: "
+            f"{int(round(txn)):,}\n"
 
-        f"🧋 Boba Bar: "
-        f"{boba_pct:.0f}%"
-    )
+            f"🧺 AOV: "
+            f"₹{int(round(aov)):,}\n"
 
-    print(
-        "WhatsApp FTD Reply:"
-    )
+            f"📉 Discount: "
+            f"{discount:.1f}%"
+        )
 
-    print(reply)
+        print(reply)
 
-    send_whatsapp_message(
-        sender,
-        reply
-    )
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ FTD SALES ERROR:",
+            str(e)
+        )
+
+        send_whatsapp_message(
+            sender,
+            "❌ Error while generating "
+            "FTD Sales report.\n\n"
+            f"Debug: {str(e)}"
+        )
+
+
+# =========================================================
+# 📈 SALES VS LAST WEEK RESPONSE
+# =========================================================
+
+def send_sales_vs_lw(sender):
+
+    try:
+
+        print("=" * 60)
+        print(
+            "📈 SALES VS LAST WEEK REQUEST"
+        )
+        print("=" * 60)
+
+        sales = get_sales_vs_lw()
+
+        today_net = sales[
+            "today_net"
+        ]
+
+        lw_net = sales[
+            "lw_net"
+        ]
+
+        growth = sales[
+            "growth"
+        ]
+
+        today_txn = sales[
+            "today_txn"
+        ]
+
+        lw_txn = sales[
+            "lw_txn"
+        ]
+
+        today_aov = sales[
+            "today_aov"
+        ]
+
+        lw_aov = sales[
+            "lw_aov"
+        ]
+
+        today_discount = sales[
+            "today_discount"
+        ]
+
+        lw_discount = sales[
+            "lw_discount"
+        ]
+
+        if growth > 0:
+
+            growth_icon = "📈"
+
+        elif growth < 0:
+
+            growth_icon = "🔻"
+
+        else:
+
+            growth_icon = "➡️"
+
+        today_date = (
+            refresh_business_day()
+            .strftime(
+                "%d-%b-%y"
+            )
+        )
+
+        reply = (
+
+            "📊 *AI MIS | SALES VS LW*\n"
+            f"{today_date}\n\n"
+
+            "💰 *NET REVENUE*\n"
+
+            f"🟢 Today: "
+            f"₹{today_net / 100000:.2f}L\n"
+
+            f"🔵 Last Week: "
+            f"₹{lw_net / 100000:.2f}L\n"
+
+            f"{growth_icon} Growth: "
+            f"{growth:+.1f}%\n\n"
+
+            "🧾 *TRANSACTIONS*\n"
+
+            f"🟢 Today: "
+            f"{int(round(today_txn)):,}\n"
+
+            f"🔵 Last Week: "
+            f"{int(round(lw_txn)):,}\n\n"
+
+            "🧺 *AOV*\n"
+
+            f"🟢 Today: "
+            f"₹{int(round(today_aov)):,}\n"
+
+            f"🔵 Last Week: "
+            f"₹{int(round(lw_aov)):,}\n\n"
+
+            "📉 *DISCOUNT*\n"
+
+            f"🟢 Today: "
+            f"{today_discount:.1f}%\n"
+
+            f"🔵 Last Week: "
+            f"{lw_discount:.1f}%"
+        )
+
+        print(reply)
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ SALES VS LW ERROR:",
+            str(e)
+        )
+
+        send_whatsapp_message(
+            sender,
+            "❌ Error while generating "
+            "Sales vs Last Week report.\n\n"
+            f"Debug: {str(e)}"
+        )
+
+
+# =========================================================
+# 🏪 BRAND PERFORMANCE RESPONSE
+# =========================================================
+
+def send_brand_performance(sender):
+
+    try:
+
+        print("=" * 60)
+        print(
+            "🏪 BRAND PERFORMANCE REQUEST"
+        )
+        print("=" * 60)
+
+        brands = get_brand_data()
+
+        if not brands:
+
+            raise Exception(
+                "No brand data available"
+            )
+
+        today_date = (
+            refresh_business_day()
+            .strftime(
+                "%d-%b-%y"
+            )
+        )
+
+        # ---------------------------------------------
+        # TOTAL TODAY BRAND REVENUE
+        # ---------------------------------------------
+
+        total_brand = sum(
+            item[
+                "today_rev"
+            ]
+            for item in brands
+        )
+
+        reply_lines = [
+
+            "🏪 *AI MIS | BRAND PERFORMANCE*",
+            today_date,
+            ""
+        ]
+
+        # ---------------------------------------------
+        # BRAND DETAILS
+        # ---------------------------------------------
+
+        for item in brands:
+
+            brand = item[
+                "brand"
+            ]
+
+            revenue = item[
+                "today_rev"
+            ]
+
+            growth = item[
+                "growth"
+            ]
+
+            discount = item[
+                "today_discount"
+            ]
+
+            contribution = (
+
+                revenue
+                / max(
+                    total_brand,
+                    1
+                )
+            ) * 100
+
+            if (
+                growth > 0
+            ):
+
+                growth_icon = "📈"
+
+            elif (
+                growth < 0
+            ):
+
+                growth_icon = "🔻"
+
+            else:
+
+                growth_icon = "➡️"
+
+            if brand.lower() == "frozen bottle":
+
+                icon = "🍶"
+
+            elif brand.lower() == "madno":
+
+                icon = "🥤"
+
+            elif brand.lower() == "boba bar":
+
+                icon = "🧋"
+
+            elif brand.lower() == "lubov":
+
+                icon = "🍨"
+
+            else:
+
+                icon = "🏪"
+
+            reply_lines.extend([
+
+                f"{icon} *{brand}*",
+
+                f"💰 Revenue: "
+                f"₹{revenue / 100000:.2f}L",
+
+                f"📊 Contribution: "
+                f"{contribution:.0f}%",
+
+                f"{growth_icon} Growth vs LW: "
+                f"{growth:+.1f}%",
+
+                f"📉 Discount: "
+                f"{discount:.1f}%",
+
+                ""
+            ])
+
+        reply = "\n".join(
+            reply_lines
+        ).strip()
+
+        print(reply)
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ BRAND PERFORMANCE ERROR:",
+            str(e)
+        )
+
+        send_whatsapp_message(
+            sender,
+            "❌ Error while generating "
+            "Brand Performance report.\n\n"
+            f"Debug: {str(e)}"
+        )
 
 
 # =========================================================
 # 📅 YESTERDAY SALES
 # =========================================================
+#
+# IMPORTANT:
+# Your current rista_live.py does NOT push a separate
+# Yesterday sheet.
+#
+# So this command is kept as a clear message until
+# Yesterday data is added to rista_live.py.
+#
+# We will add the Yesterday sheet in the next step.
+# =========================================================
 
 def send_yesterday_sales(sender):
 
     print("=" * 60)
-    print("📅 YESTERDAY SALES REQUEST")
-    print("=" * 60)
-
-    sales = get_yesterday_sales()
-
-    net = sales["net"]
-    txn = sales["txn"]
-    aov = sales["aov"]
-    discount = sales["discount"]
-
-    frozen_bottle = sales[
-        "frozen_bottle"
-    ]
-
-    madno = sales[
-        "madno"
-    ]
-
-    boba_bar = sales[
-        "boba_bar"
-    ]
-
-    # -----------------------------------------------------
-    # BRAND CONTRIBUTION
-    # -----------------------------------------------------
-
-    total_brand = (
-        frozen_bottle
-        + madno
-        + boba_bar
-    )
-
-    frozen_pct = (
-        frozen_bottle
-        / max(total_brand, 1)
-    ) * 100
-
-    madno_pct = (
-        madno
-        / max(total_brand, 1)
-    ) * 100
-
-    boba_pct = (
-        boba_bar
-        / max(total_brand, 1)
-    ) * 100
-
-    # -----------------------------------------------------
-    # YESTERDAY DATE
-    # -----------------------------------------------------
-
-    yesterday_date = (
-        yesterday_business_day.strftime(
-            "%d-%b-%y"
-        )
-    )
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
-    reply = (
-
-        f"📊 *AI MIS | YESTERDAY SALES*\n"
-        f"{yesterday_date}\n\n"
-
-        f"💰 Net Revenue: "
-        f"₹{net / 100000:.2f}L\n"
-
-        f"🧾 Transactions: "
-        f"{int(txn):,}\n"
-
-        f"🧺 AOV: "
-        f"₹{int(round(aov)):,}\n"
-
-        f"📉 Discount: "
-        f"{abs(discount):.1f}%\n\n"
-
-        f"🏪 *Brand Contribution*\n"
-
-        f"🍶 Frozen Bottle: "
-        f"{frozen_pct:.0f}%\n"
-
-        f"🥤 Madno: "
-        f"{madno_pct:.0f}%\n"
-
-        f"🧋 Boba Bar: "
-        f"{boba_pct:.0f}%"
-    )
-
     print(
-        "WhatsApp Yesterday Reply:"
+        "📅 YESTERDAY SALES REQUEST"
+    )
+    print("=" * 60)
+
+    yesterday = (
+        refresh_business_day()
+        - timedelta(days=1)
     )
 
-    print(reply)
+    message = (
+
+        "📅 *AI MIS | YESTERDAY SALES*\n"
+        f"{yesterday.strftime('%d-%b-%y')}\n\n"
+
+        "⚠️ Yesterday data is not yet "
+        "available in the WhatsApp data source.\n\n"
+
+        "The current rista_live.py pushes:\n"
+        "• Overall\n"
+        "• Source Group\n"
+        "• Region\n"
+        "• Brand\n"
+        "• Session\n"
+        "• Top_Stores\n"
+        "• Bottom_Stores\n"
+        "• Hourly\n\n"
+
+        "We need to add a Yesterday output "
+        "to rista_live.py."
+    )
 
     send_whatsapp_message(
         sender,
-        reply
-    )
-
-
-# =========================================================
-# 📈 SALES VS LAST WEEK
-# =========================================================
-
-def send_sales_vs_lw(sender):
-
-    print("=" * 60)
-    print("📈 SALES VS LAST WEEK REQUEST")
-    print("=" * 60)
-
-    sales = get_sales_vs_lw()
-
-    today_net = sales[
-        "today_net"
-    ]
-
-    lw_net = sales[
-        "lw_net"
-    ]
-
-    growth = sales[
-        "growth"
-    ]
-
-    today_txn = sales[
-        "today_txn"
-    ]
-
-    lw_txn = sales[
-        "lw_txn"
-    ]
-
-    today_aov = sales[
-        "today_aov"
-    ]
-
-    lw_aov = sales[
-        "lw_aov"
-    ]
-
-    today_discount = sales[
-        "today_discount"
-    ]
-
-    lw_discount = sales[
-        "lw_discount"
-    ]
-
-    # -----------------------------------------------------
-    # GROWTH ICON
-    # -----------------------------------------------------
-
-    if growth > 0:
-
-        growth_icon = "📈"
-
-    elif growth < 0:
-
-        growth_icon = "🔻"
-
-    else:
-
-        growth_icon = "➡️"
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
-    today_date = (
-        business_day.strftime(
-            "%d-%b-%y"
-        )
-    )
-
-    reply = (
-
-        f"📊 *AI MIS | SALES VS LW*\n"
-        f"{today_date}\n\n"
-
-        f"💰 *NET REVENUE*\n"
-
-        f"🟢 Today: "
-        f"₹{today_net / 100000:.2f}L\n"
-
-        f"🔵 Last Week: "
-        f"₹{lw_net / 100000:.2f}L\n"
-
-        f"{growth_icon} Growth: "
-        f"{growth:+.1f}%\n\n"
-
-        f"🧾 *TRANSACTIONS*\n"
-
-        f"🟢 Today: "
-        f"{int(today_txn):,}\n"
-
-        f"🔵 Last Week: "
-        f"{int(lw_txn):,}\n\n"
-
-        f"🧺 *AOV*\n"
-
-        f"🟢 Today: "
-        f"₹{int(round(today_aov)):,}\n"
-
-        f"🔵 Last Week: "
-        f"₹{int(round(lw_aov)):,}\n\n"
-
-        f"📉 *DISCOUNT*\n"
-
-        f"🟢 Today: "
-        f"{abs(today_discount):.1f}%\n"
-
-        f"🔵 Last Week: "
-        f"{abs(lw_discount):.1f}%"
-    )
-
-    print(
-        "WhatsApp Sales vs LW Reply:"
-    )
-
-    print(reply)
-
-    send_whatsapp_message(
-        sender,
-        reply
-    )
-
-def send_brand_performance(sender):
-
-    print("=" * 60)
-    print("🏪 BRAND PERFORMANCE REQUEST")
-    print("=" * 60)
-
-    sales = get_ftd_sales()
-
-    frozen_bottle = sales["frozen_bottle"]
-    madno = sales["madno"]
-    boba_bar = sales["boba_bar"]
-
-    total_brand = (
-        frozen_bottle
-        + madno
-        + boba_bar
-    )
-
-    frozen_pct = (
-        frozen_bottle / max(total_brand, 1)
-    ) * 100
-
-    madno_pct = (
-        madno / max(total_brand, 1)
-    ) * 100
-
-    boba_pct = (
-        boba_bar / max(total_brand, 1)
-    ) * 100
-
-    today_date = business_day.strftime(
-        "%d-%b-%y"
-    )
-
-    reply = (
-        f"🏪 *AI MIS | BRAND PERFORMANCE*\n"
-        f"{today_date}\n\n"
-
-        f"🍶 *Frozen Bottle*\n"
-        f"💰 Revenue: ₹{frozen_bottle / 100000:.2f}L\n"
-        f"📊 Contribution: {frozen_pct:.0f}%\n\n"
-
-        f"🥤 *Madno*\n"
-        f"💰 Revenue: ₹{madno / 100000:.2f}L\n"
-        f"📊 Contribution: {madno_pct:.0f}%\n\n"
-
-        f"🧋 *Boba Bar*\n"
-        f"💰 Revenue: ₹{boba_bar / 100000:.2f}L\n"
-        f"📊 Contribution: {boba_pct:.0f}%"
-    )
-
-    print("WhatsApp Brand Reply:")
-    print(reply)
-
-    send_whatsapp_message(
-        sender,
-        reply
+        message
     )
 
 
@@ -648,10 +1210,6 @@ def process_message(
     message_text
 ):
 
-    # -----------------------------------------------------
-    # NORMALIZE MESSAGE
-    # -----------------------------------------------------
-
     message = " ".join(
         message_text
         .strip()
@@ -660,17 +1218,35 @@ def process_message(
     )
 
     print("=" * 60)
-    print("🧠 PROCESSING MESSAGE")
-    print("Sender     :", sender)
-    print("Original   :", message_text)
-    print("Normalized :", message)
+
+    print(
+        "🧠 PROCESSING MESSAGE"
+    )
+
+    print(
+        "Sender:",
+        sender
+    )
+
+    print(
+        "Original:",
+        message_text
+    )
+
+    print(
+        "Normalized:",
+        message
+    )
+
     print("=" * 60)
+
 
     # =====================================================
     # 👋 GREETING
     # =====================================================
 
     if message in [
+
         "hi",
         "hello",
         "hey",
@@ -679,19 +1255,24 @@ def process_message(
         "good morning",
         "good afternoon",
         "good evening"
+
     ]:
 
         reply = (
-            "👋 Hi! Welcome to AI MIS WhatsApp.\n\n"
+
+            "👋 Hi! Welcome to "
+            "AI MIS WhatsApp.\n\n"
 
             "You can ask:\n\n"
 
             "📊 *SALES*\n"
+
             "• sales today\n"
             "• yesterday sales\n"
             "• sales vs last week\n\n"
 
             "🏪 *PERFORMANCE*\n"
+
             "• brand sales\n\n"
 
             "❓ help"
@@ -704,6 +1285,7 @@ def process_message(
 
         return
 
+
     # =====================================================
     # ❓ HELP
     # =====================================================
@@ -711,16 +1293,19 @@ def process_message(
     if message == "help":
 
         reply = (
+
             "🤖 *AI MIS WhatsApp*\n\n"
 
             "Available commands:\n\n"
 
             "📊 *SALES*\n"
+
             "• sales today\n"
             "• yesterday sales\n"
             "• sales vs last week\n\n"
 
             "🏪 *PERFORMANCE*\n"
+
             "• brand sales\n"
             "• brand performance\n\n"
 
@@ -733,6 +1318,7 @@ def process_message(
         )
 
         return
+
 
     # =====================================================
     # 📅 YESTERDAY SALES
@@ -750,15 +1336,9 @@ def process_message(
         "what was yesterday sales",
         "what was yesterday's sales",
         "how was yesterday sales",
-        "how was yesterday's sales",
-        "how were yesterday sales",
-        "what were yesterday sales"
+        "how was yesterday's sales"
 
     ]
-
-    # -----------------------------------------------------
-    # EXACT MATCH
-    # -----------------------------------------------------
 
     if message in yesterday_keywords:
 
@@ -767,33 +1347,16 @@ def process_message(
             "COMMAND DETECTED"
         )
 
-        try:
-
-            send_yesterday_sales(
-                sender
-            )
-
-            print(
-                "✅ send_yesterday_sales() completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ send_yesterday_sales() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Yesterday Sales report."
-            )
+        send_yesterday_sales(
+            sender
+        )
 
         return
 
-    # -----------------------------------------------------
-    # NATURAL QUESTION
-    # -----------------------------------------------------
+
+    # =====================================================
+    # NATURAL YESTERDAY
+    # =====================================================
 
     if (
         "sales" in message
@@ -805,29 +1368,12 @@ def process_message(
             "SALES QUESTION DETECTED"
         )
 
-        try:
-
-            send_yesterday_sales(
-                sender
-            )
-
-            print(
-                "✅ Natural Yesterday Sales completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ Natural Yesterday Sales ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Yesterday Sales report."
-            )
+        send_yesterday_sales(
+            sender
+        )
 
         return
+
 
     # =====================================================
     # 📈 SALES VS LAST WEEK
@@ -841,18 +1387,14 @@ def process_message(
         "last week sales",
         "lw sales",
         "sales lw",
+        "sales vs lw",
         "compare sales last week",
         "compare sales with last week",
         "how are sales vs last week",
         "how is sales vs last week",
-        "how was sales vs last week",
-        "sales vs lw"
+        "how was sales vs last week"
 
     ]
-
-    # -----------------------------------------------------
-    # EXACT MATCH
-    # -----------------------------------------------------
 
     if message in sales_vs_lw_keywords:
 
@@ -861,37 +1403,16 @@ def process_message(
             "COMMAND DETECTED"
         )
 
-        print(
-            "➡️ Calling send_sales_vs_lw()"
+        send_sales_vs_lw(
+            sender
         )
-
-        try:
-
-            send_sales_vs_lw(
-                sender
-            )
-
-            print(
-                "✅ send_sales_vs_lw() completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ send_sales_vs_lw() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Sales vs Last Week report."
-            )
 
         return
 
-    # -----------------------------------------------------
-    # NATURAL SALES VS LW QUESTIONS
-    # -----------------------------------------------------
+
+    # =====================================================
+    # NATURAL SALES VS LW
+    # =====================================================
 
     if (
         "sales" in message
@@ -906,29 +1427,12 @@ def process_message(
             "QUESTION DETECTED"
         )
 
-        try:
-
-            send_sales_vs_lw(
-                sender
-            )
-
-            print(
-                "✅ Natural Sales vs LW completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ Natural Sales vs LW ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Sales vs Last Week report."
-            )
+        send_sales_vs_lw(
+            sender
+        )
 
         return
+
 
     # =====================================================
     # 🏪 BRAND PERFORMANCE
@@ -936,18 +1440,15 @@ def process_message(
 
     brand_keywords = [
 
+        "brand",
         "brand sales",
         "brand performance",
         "sales by brand",
         "brand wise sales",
         "brand wise performance",
-        "brand"
+        "brand performance today"
 
     ]
-
-    # -----------------------------------------------------
-    # EXACT BRAND COMMAND
-    # -----------------------------------------------------
 
     if message in brand_keywords:
 
@@ -956,71 +1457,36 @@ def process_message(
             "COMMAND DETECTED"
         )
 
-        print(
-            "➡️ Calling send_brand_performance()"
+        send_brand_performance(
+            sender
         )
-
-        try:
-
-            send_brand_performance(
-                sender
-            )
-
-            print(
-                "✅ send_brand_performance() completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ send_brand_performance() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Brand Performance report."
-            )
 
         return
 
-    # -----------------------------------------------------
+
+    # =====================================================
     # NATURAL BRAND QUESTIONS
-    # -----------------------------------------------------
+    # =====================================================
 
     if (
         "brand" in message
-        and "sales" in message
+        and (
+            "sales" in message
+            or "performance" in message
+        )
     ):
 
         print(
-            "🏪 NATURAL BRAND PERFORMANCE "
-            "QUESTION DETECTED"
+            "🏪 NATURAL BRAND "
+            "PERFORMANCE QUESTION"
         )
 
-        try:
-
-            send_brand_performance(
-                sender
-            )
-
-            print(
-                "✅ Natural Brand Performance completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ Natural Brand Performance ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating Brand Performance report."
-            )
+        send_brand_performance(
+            sender
+        )
 
         return
+
 
     # =====================================================
     # 📊 FTD SALES
@@ -1031,29 +1497,23 @@ def process_message(
         "sales",
         "sales today",
         "today sales",
-        "how was the sales today",
+        "today's sales",
+        "todays sales",
+        "sales for today",
+        "today's sale",
+        "todays sale",
+        "ftd",
+        "ftd sales",
         "how was sales today",
+        "how was the sales today",
         "how are sales today",
-        "how was the sale today",
         "how are the sales today",
-        "how is the sales today",
         "what is today's sales",
         "what is todays sales",
         "what are today's sales",
-        "what are todays sales",
-        "today's sales",
-        "todays sales",
-        "ftd",
-        "ftd sales",
-        "sales for today",
-        "today's sale",
-        "todays sale"
+        "what are todays sales"
 
     ]
-
-    # -----------------------------------------------------
-    # EXACT MATCH
-    # -----------------------------------------------------
 
     if message in sales_keywords:
 
@@ -1062,37 +1522,16 @@ def process_message(
             "COMMAND DETECTED"
         )
 
-        print(
-            "➡️ Calling send_ftd_sales()"
+        send_ftd_sales(
+            sender
         )
-
-        try:
-
-            send_ftd_sales(
-                sender
-            )
-
-            print(
-                "✅ send_ftd_sales() completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ send_ftd_sales() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating FTD Sales report."
-            )
 
         return
 
-    # -----------------------------------------------------
-    # NATURAL SALES QUESTIONS
-    # -----------------------------------------------------
+
+    # =====================================================
+    # NATURAL FTD SALES
+    # =====================================================
 
     if (
         "sales" in message
@@ -1104,32 +1543,15 @@ def process_message(
             "QUESTION DETECTED"
         )
 
-        try:
-
-            send_ftd_sales(
-                sender
-            )
-
-            print(
-                "✅ Natural FTD Sales completed"
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ Natural FTD Sales ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                "❌ Error while generating FTD Sales report."
-            )
+        send_ftd_sales(
+            sender
+        )
 
         return
 
+
     # =====================================================
-    # ❌ UNKNOWN MESSAGE
+    # ❓ UNKNOWN COMMAND
     # =====================================================
 
     print(
@@ -1143,7 +1565,8 @@ def process_message(
 
         f"\"{message_text}\"\n\n"
 
-        "Type *help* to see available commands."
+        "Type *help* to see "
+        "available commands."
     )
 
     send_whatsapp_message(
@@ -1167,9 +1590,11 @@ def webhook():
     )
 
     print("=" * 60)
+
     print(
         "📩 WHATSAPP WEBHOOK RECEIVED"
     )
+
     print("=" * 60)
 
     print(
@@ -1182,9 +1607,6 @@ def webhook():
 
     print("=" * 60)
 
-    # =====================================================
-    # SAFETY CHECK
-    # =====================================================
 
     if not data:
 
@@ -1197,9 +1619,6 @@ def webhook():
             200
         )
 
-    # =====================================================
-    # META OBJECT CHECK
-    # =====================================================
 
     if (
         data.get("object")
@@ -1207,8 +1626,7 @@ def webhook():
     ):
 
         print(
-            "⚠️ Not a WhatsApp "
-            "Business Account event"
+            "⚠️ Not WhatsApp Business Account"
         )
 
         return (
@@ -1216,8 +1634,9 @@ def webhook():
             200
         )
 
+
     # =====================================================
-    # ENTRY
+    # PROCESS ENTRIES
     # =====================================================
 
     for entry in data.get(
@@ -1244,18 +1663,16 @@ def webhook():
                 field
             )
 
-            # =================================================
-            # MESSAGE EVENT
-            # =================================================
 
             if field != "messages":
 
                 print(
-                    "ℹ️ Other webhook event:",
+                    "ℹ️ Other event:",
                     field
                 )
 
                 continue
+
 
             messages = value.get(
                 "messages",
@@ -1267,9 +1684,6 @@ def webhook():
                 len(messages)
             )
 
-            # =================================================
-            # PROCESS MESSAGES
-            # =================================================
 
             for incoming_message in messages:
 
@@ -1285,6 +1699,7 @@ def webhook():
                     )
                 )
 
+
                 print(
                     "Message type:",
                     message_type
@@ -1295,9 +1710,10 @@ def webhook():
                     sender
                 )
 
-                # =============================================
-                # TEXT MESSAGE
-                # =============================================
+
+                # =========================================
+                # TEXT
+                # =========================================
 
                 if message_type == "text":
 
@@ -1320,6 +1736,7 @@ def webhook():
                         message_text
                     )
 
+
                     if (
                         sender
                         and message_text
@@ -1333,29 +1750,34 @@ def webhook():
                             )
 
                             print(
-                                "✅ process_message() completed"
+                                "✅ process_message "
+                                "completed"
                             )
 
                         except Exception as e:
 
                             print(
-                                "❌ process_message() ERROR:",
+                                "❌ process_message "
+                                "ERROR:",
                                 str(e)
                             )
 
                             send_whatsapp_message(
                                 sender,
-                                "❌ AI MIS encountered an error while processing your request."
+                                "❌ AI MIS encountered "
+                                "an error while "
+                                "processing your request."
                             )
 
-                # =============================================
-                # NON-TEXT MESSAGE
-                # =============================================
+
+                # =========================================
+                # NON TEXT
+                # =========================================
 
                 else:
 
                     print(
-                        "⚠️ Non-text message received:",
+                        "⚠️ Non-text message:",
                         message_type
                     )
 
@@ -1368,9 +1790,6 @@ def webhook():
                             "supports text messages only."
                         )
 
-    # =====================================================
-    # ALWAYS RETURN 200 TO META
-    # =====================================================
 
     return (
         "EVENT_RECEIVED",
@@ -1391,77 +1810,39 @@ def test_send():
     recipients = [
 
         "919750820509",
+
         "919535075140",
+
         "919620952646"
 
     ]
 
     print("=" * 60)
+
     print(
         "📤 AI MIS WHATSAPP TEST SEND"
     )
+
     print("=" * 60)
 
     print(
-        "Sending to:",
+        "Recipients:",
         recipients
     )
 
-    print(
-        "PHONE_NUMBER_ID exists:",
-        bool(PHONE_NUMBER_ID)
-    )
-
-    print(
-        "ACCESS_TOKEN exists:",
-        bool(ACCESS_TOKEN)
-    )
-
-    print(
-        "VERIFY_TOKEN exists:",
-        bool(VERIFY_TOKEN)
-    )
-
-    # =====================================================
-    # CONFIG CHECK
-    # =====================================================
-
-    if not PHONE_NUMBER_ID:
-
-        return {
-            "success": False,
-            "error":
-                "WHATSAPP_PHONE_NUMBER_ID "
-                "is missing in Render"
-        }, 500
-
-    if not ACCESS_TOKEN:
-
-        return {
-            "success": False,
-            "error":
-                "WHATSAPP_ACCESS_TOKEN "
-                "is missing in Render"
-        }, 500
-
-    # =====================================================
-    # SEND TO ALL NUMBERS
-    # =====================================================
-
     results = []
+
 
     for recipient in recipients:
 
-        print(
-            "➡️ Sending test message to:",
-            recipient
-        )
-
         try:
 
-            success = send_whatsapp_message(
-                recipient,
-                "🤖 AI MIS webhook test message"
+            success = (
+                send_whatsapp_message(
+                    recipient,
+                    "🤖 AI MIS webhook "
+                    "test message"
+                )
             )
 
             results.append({
@@ -1471,7 +1852,6 @@ def test_send():
 
                 "success":
                     success
-
             })
 
         except Exception as e:
@@ -1492,16 +1872,13 @@ def test_send():
 
                 "error":
                     str(e)
-
             })
 
-    # =====================================================
-    # RESULT
-    # =====================================================
 
     return {
 
-        "success": True,
+        "success":
+            True,
 
         "results":
             results
@@ -1523,6 +1900,8 @@ if __name__ == "__main__":
     )
 
     app.run(
+
         host="0.0.0.0",
+
         port=port
     )
