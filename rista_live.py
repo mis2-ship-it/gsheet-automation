@@ -3282,6 +3282,87 @@ print(
 )
 
 print("=" * 60)
+
+# =========================================================
+# 🔍 DEBUG REGION + STORE DATA
+# =========================================================
+
+print("=" * 60)
+print("🔍 WHATSAPP REGION / STORE DEBUG")
+print("=" * 60)
+
+# ---------------------------------------------------------
+# REGION ANALYSIS
+# ---------------------------------------------------------
+
+print("\n🔍 REGION ANALYSIS")
+
+if region_analysis is None:
+    print("❌ region_analysis is None")
+
+elif region_analysis.empty:
+    print("⚠️ region_analysis is EMPTY")
+
+else:
+    print(
+        "Region Rows:",
+        len(region_analysis)
+    )
+
+    print(
+        "Region Columns:",
+        region_analysis.columns.tolist()
+    )
+
+    print(
+        "\nRegion Sample:"
+    )
+
+    print(
+        region_analysis.head(10).to_string(
+            index=False
+        )
+    )
+
+
+# ---------------------------------------------------------
+# STORE DATA
+# ---------------------------------------------------------
+
+print("\n🔍 STORE DATA")
+
+if top_stores is None:
+    print("❌ top_stores is None")
+
+elif top_stores.empty:
+    print("⚠️ top_stores is EMPTY")
+
+else:
+    print(
+        "Store Rows:",
+        len(top_stores)
+    )
+
+    print(
+        "Store Columns:",
+        top_stores.columns.tolist()
+    )
+
+    print(
+        "\nStore Sample:"
+    )
+
+    print(
+        top_stores.head(10).to_string(
+            index=False
+        )
+    )
+
+
+print("\n" + "=" * 60)
+print("🔍 END REGION / STORE DEBUG")
+print("=" * 60)
+
 # =========================================================
 # 📱 WHATSAPP BACKEND SNAPSHOT
 # =========================================================
