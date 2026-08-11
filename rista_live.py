@@ -3364,404 +3364,265 @@ print("🔍 END REGION / STORE DEBUG")
 print("=" * 60)
 
 # =========================================================
-# 📱 WHATSAPP BACKEND SNAPSHOT
+# 📱 WHATSAPP LIVE SALES
 # =========================================================
 
-def build_whatsapp_snapshot():
-
-    # -----------------------------------------------------
-    # OVERALL
-    # -----------------------------------------------------
-
-    def get_overall_value(
-        parameter,
-        column="Today"
-    ):
-
-        try:
-
-            value = overall.loc[
-                overall["Parameters"] == parameter,
-                column
-            ].iloc[0]
-
-            return float(value)
-
-        except Exception:
-
-            return 0.0
-
-    today_net = get_overall_value(
-        "Net"
-    )
-
-    today_txn = get_overall_value(
-        "Txn"
-    )
-
-    today_aov = get_overall_value(
-        "AOV"
-    )
-
-    today_discount = get_overall_value(
-        "Discount %"
-    )
-
-    today_gross = get_overall_value(
-        "Gross"
-    )
-
-    lw_net = get_overall_value(
-        "Net",
-        "Last Week"
-    )
-
-    lw_growth = get_overall_value(
-        "Net",
-        "LW Growth %"
-    )
-
-
-    # -----------------------------------------------------
-    # BRAND
-    # -----------------------------------------------------
-    
-    brands = {}
-    
-    if (
-        brand_analysis is not None
-        and not brand_analysis.empty
-    ):
-    
-        for brand in brand_analysis["Brand"].dropna().unique():
-    
-            brand_name = str(
-                brand
-            ).strip()
-    
-            if not brand_name:
-                continue
-    
-            brand_rows = brand_analysis[
-                (
-                    brand_analysis["Brand"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
-                    == brand_name.lower()
-                )
-                &
-                (
-                    brand_analysis["Parameters"]
-                    .astype(str)
-                    .str.strip()
-                    .str.lower()
-                    == "net"
-                )
-            ]
-    
-            if brand_rows.empty:
-                continue
-    
-            row = brand_rows.iloc[0]
-    
-            brands[brand_name] = {
-    
-                "today":
-                    float(
-                        row.get(
-                            "Today",
-                            0
-                        ) or 0
-                    ),
-    
-                "lw":
-                    float(
-                        row.get(
-                            "Last Week",
-                            0
-                        ) or 0
-                    ),
-    
-                "growth":
-                    float(
-                        row.get(
-                            "Growth %",
-                            0
-                        ) or 0
-                    )
-            }
-
-    # -----------------------------------------------------
-    # SOURCE
-    # -----------------------------------------------------
-    
-    sources = {}
-    
-    if (
-        source_analysis is not None
-        and not source_analysis.empty
-    ):
-    
-        for _, row in source_analysis.iterrows():
-    
-            source_name = str(
-                row.get(
-                    "Source Group",
-                    ""
-                )
-            ).strip()
-    
-            if not source_name:
-                continue
-    
-            sources[source_name] = {
-    
-                "today": float(
-                    row.get(
-                        "Today Rev",
-                        0
-                    ) or 0
-                ),
-    
-                "lw": float(
-                    row.get(
-                        "LW Rev",
-                        0
-                    ) or 0
-                ),
-    
-                "growth": float(
-                    row.get(
-                        "Growth %",
-                        0
-                    ) or 0
-                )
-            }
-    # -----------------------------------------------------
-    # FINAL SNAPSHOT
-    # -----------------------------------------------------
-
-    snapshot = {
-
-        "date":
-            business_day.strftime(
-                "%d-%b-%y"
-            ),
-
-        "report_time":
-            now.strftime(
-                "%I:%M %p"
-            ),
-
-        "overall": {
-
-            "gross":
-                today_gross,
-
-            "net":
-                today_net,
-
-            "txn":
-                today_txn,
-
-            "aov":
-                today_aov,
-
-            "discount":
-                today_discount,
-
-            "lw_net":
-                lw_net,
-
-            "lw_growth":
-                lw_growth,
-
-            "eod_projection":
-                float(eod or 0)
-        },
-
-        "brands":
-            brands,
-
-        "sources":
-            sources
-
-        "regions": 
-            regions, 
-        
-        "stores": 
-            stores
-    }
-
-
-    # -----------------------------------------------------
-    # DEBUG — WHATSAPP REGION / STORE SNAPSHOT
-    # -----------------------------------------------------
+def send_whatsapp_live():
 
     print("=" * 60)
-    print("🔍 WHATSAPP SNAPSHOT DEBUG")
+    print("Sending WhatsApp Live Sales")
     print("=" * 60)
 
-    print(
-        "Regions in snapshot:",
-        len(regions)
+    PHONE_NUMBER_ID = "1138561289350791"
+
+    ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
+
+    RECIPIENTS = [
+        "919750820509",
+        "919535075140",
+        "919620952646",
+        "919750820509",
+        "919959347168",
+        "919710926088",
+        "918553666666"
+
+    ]
+
+    if not ACCESS_TOKEN:
+        print("❌ WHATSAPP_ACCESS_TOKEN not found")
+        return
+
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
     )
 
-    print(
-        "Region names:",
-        list(regions.keys())
-    )
+    # =====================================================
+    # OVERALL KPI
+    # =====================================================
 
-    print(
-        "Stores in snapshot:",
-        len(stores)
-    )
+    net_row = overall[
+        overall["Parameters"] == "Net"
+    ].iloc[0]
 
-    print(
-        "Store names:",
-        list(stores.keys())
-    )
+    gross_row = overall[
+        overall["Parameters"] == "Gross"
+    ].iloc[0]
 
-    print(
-        "Snapshot sections:",
-        list(snapshot.keys())
-    )
+    txn_row = overall[
+        overall["Parameters"] == "Txn"
+    ].iloc[0]
 
-    print("=" * 60)
+    aov_row = overall[
+        overall["Parameters"] == "AOV"
+    ].iloc[0]
 
-    
-    return snapshot
+    discount_row = overall[
+        overall["Parameters"] == "Discount %"
+    ].iloc[0]
 
-#=========================================================
-#📱 UPDATE WHATSAPP BACKEND DATA
-#=========================================================
+    net_sales = float(net_row["Today"])
+    gross_sales = float(gross_row["Today"])
+    transactions = int(txn_row["Today"])
+    aov = float(aov_row["Today"])
+    discount_pct = float(discount_row["Today"])
 
-def send_whatsapp_backend_data():
+    # =====================================================
+    # BRAND SALES
+    # =====================================================
 
-    print("=" * 60)
-    print("📱 UPDATING WHATSAPP BACKEND DATA")
-    print("=" * 60)
+    brand_lines = []
 
-    webhook_url = os.environ.get(
-        "WHATSAPP_WEBHOOK_DATA_URL"
-    )
+    if not brand_summary.empty:
 
-    data_secret = os.environ.get(
-        "WHATSAPP_DATA_SECRET"
-    )
+        total_brand_sales = brand_summary["Today Rev"].sum()
 
-    if not webhook_url:
+        for _, r in brand_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
 
-        print(
-            "❌ WHATSAPP_WEBHOOK_DATA_URL "
-            "not configured"
+            rev = float(r["Today Rev"])
+
+            contribution = (
+                rev / max(total_brand_sales, 1)
+            ) * 100
+
+            brand_lines.append(
+                f"🍶 {r['Brand']}: "
+                f"₹{rev/100000:.2f}L "
+                f"({contribution:.0f}%)"
+            )
+
+    brand_text = "\n".join(brand_lines)
+
+    # =====================================================
+    # SOURCE SALES
+    # =====================================================
+
+    source_lines = []
+
+    if not source_summary.empty:
+
+        for _, r in source_summary.sort_values(
+            "Today Rev",
+            ascending=False
+        ).iterrows():
+
+            rev = float(r["Today Rev"])
+
+            source_lines.append(
+                f"📍 {r['Source Group']}: "
+                f"₹{rev/100000:.2f}L"
+            )
+
+    source_text = "\n".join(source_lines)
+
+    # =====================================================
+    # HOURLY SALES
+    # =====================================================
+
+    hourly_lines = []
+
+    if not hourly_analysis.empty:
+
+        latest_hour = hourly_analysis.iloc[-1]
+
+        hourly_today = float(latest_hour["Today"])
+        hourly_lw = float(latest_hour["Last Week"])
+        hourly_growth = float(latest_hour["Growth %"])
+
+        hourly_lines.append(
+            f"⏰ Current Hour: "
+            f"₹{hourly_today/100000:.2f}L"
         )
 
-        return False
-
-    if not data_secret:
-
-        print(
-            "❌ WHATSAPP_DATA_SECRET "
-            "not configured"
+        hourly_lines.append(
+            f"📊 Same Hour LW: "
+            f"₹{hourly_lw/100000:.2f}L"
         )
 
-        return False
+        hourly_lines.append(
+            f"📈 Growth: "
+            f"{hourly_growth:+.1f}%"
+        )
 
-    print(
-        "Webhook URL:",
-        webhook_url
-    )
+    hourly_text = "\n".join(hourly_lines)
 
-    print(
-        "Data Secret configured:",
-        bool(data_secret)
-    )
-
-    # -------------------------------------------------
-    # BUILD SNAPSHOT
-    # -------------------------------------------------
+    # =====================================================
+    # TARGET
+    # =====================================================
 
     try:
 
-        payload = build_whatsapp_snapshot()
+        target_row = target_summary[
+            target_summary["Metric"] == "Total"
+        ].iloc[0]
 
-    except Exception as e:
-
-        print(
-            "❌ Failed to build WhatsApp snapshot:",
-            str(e)
+        target = float(target_row["Target"])
+        eod_projection = float(
+            target_row["EOD Projection"]
         )
 
-        return False
+        achievement = float(
+            target_row["Ach %"]
+        )
 
-    # -------------------------------------------------
-    # REQUEST HEADERS
-    # -------------------------------------------------
+        target_text = (
+            f"🎯 Target: ₹{target/100000:.2f}L\n"
+            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
+            f"📊 Achievement: {achievement:.1f}%"
+        )
+
+    except Exception:
+
+        target_text = "🎯 Target information unavailable"
+
+    # =====================================================
+    # MESSAGE
+    # =====================================================
+
+    message = f"""
+📊 LIVE SALES | {report_time.strftime('%d-%b-%Y %I:%M %p')}
+
+💰 BUSINESS OVERVIEW
+
+💵 Gross Sales: ₹{gross_sales/100000:.2f}L
+💵 Net Revenue: ₹{net_sales/100000:.2f}L
+🧾 Transactions: {transactions:,}
+🧺 AOV: ₹{aov:,.0f}
+📉 Discount: {discount_pct:.1f}%
+
+🏪 BRAND CONTRIBUTION
+
+{brand_text}
+
+📍 SOURCE CONTRIBUTION
+
+{source_text}
+
+⏰ HOURLY PERFORMANCE
+
+{hourly_text}
+
+🎯 TARGET vs PROJECTION
+
+{target_text}
+
+🧠 INSIGHT
+
+{insight_text}
+
+🤖 AI MIS Automation
+"""
+
+    # =====================================================
+    # SEND
+    # =====================================================
+
+    url = (
+        f"https://graph.facebook.com/v23.0/"
+        f"{PHONE_NUMBER_ID}/messages"
+    )
 
     headers = {
-
-        "Content-Type":
-            "application/json",
-
-        "X-WhatsApp-Data-Secret":
-            data_secret
+        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Content-Type": "application/json"
     }
 
-    # -------------------------------------------------
-    # SEND BACKEND DATA
-    # -------------------------------------------------
+    for recipient in RECIPIENTS:
 
-    try:
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "text",
+            "text": {
+                "preview_url": False,
+                "body": message
+            }
+        }
 
         response = requests.post(
-
-            webhook_url,
-
+            url,
             headers=headers,
-
             json=payload,
-
             timeout=30
         )
 
         print(
-            "📱 WhatsApp Backend Status:",
-            response.status_code
+            f"WhatsApp → {recipient} | "
+            f"Status : {response.status_code}"
         )
-
-        print(
-            "WhatsApp Backend Response:",
-            response.text
-        )
-
-        print("=" * 60)
 
         if response.ok:
+            print("✅ WhatsApp Live Sales Sent")
+        else:
+            print("❌ WhatsApp Send Failed")
+            print(response.text)
 
-            print(
-                "✅ WhatsApp backend snapshot "
-                "updated successfully"
-            )
-
-            return True
-
-        print(
-            "❌ WhatsApp backend update failed"
-        )
-
-        return False
-
-    except Exception as e:
-
-        print(
-            "❌ WhatsApp backend request error:",
-            str(e)
-        )
-
-        return False
-
+    print("=" * 60)
 
 # ---------------- EXECUTE ----------------
 
@@ -3786,22 +3647,6 @@ print(
     "🎉 ALL EMAILS SENT SUCCESSFULLY"
 )
 
-# =========================================================
-# 📱 UPDATE WHATSAPP BACKEND
-# =========================================================
+send_whatsapp_live()
 
-whatsapp_backend_updated = (
-    send_whatsapp_backend_data()
-)
-
-if whatsapp_backend_updated:
-
-    print(
-        "✅ WhatsApp backend data is ready"
-    )
-
-else:
-
-    print(
-        "⚠️ WhatsApp backend data was NOT updated"
-    )
+print("🎉 WHATSAPP LIVE SALES SENT SUCCESSFULLY")
