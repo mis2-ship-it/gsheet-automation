@@ -3461,145 +3461,128 @@ def build_whatsapp_snapshot():
 
 def send_whatsapp_backend_data():
 
-print("=" * 60)
-print("📱 UPDATING WHATSAPP BACKEND DATA")
-print("=" * 60)
-
-# -----------------------------------------------------
-# GET CONFIGURATION
-# -----------------------------------------------------
-
-webhook_url = os.environ.get(
-    "WHATSAPP_WEBHOOK_DATA_URL"
-)
-
-data_secret = os.environ.get(
-    "WHATSAPP_DATA_SECRET"
-)
-
-# -----------------------------------------------------
-# CONFIG CHECK
-# -----------------------------------------------------
-
-if not webhook_url:
-
-    print(
-        "❌ WHATSAPP_WEBHOOK_DATA_URL "
-        "not configured"
-    )
-
-    return False
-
-if not data_secret:
-
-    print(
-        "❌ WHATSAPP_DATA_SECRET "
-        "not configured"
-    )
-
-    return False
-
-print(
-    "Webhook URL:",
-    webhook_url
-)
-
-print(
-    "Data Secret configured:",
-    bool(data_secret)
-)
-
-# -----------------------------------------------------
-# BUILD BACKEND SNAPSHOT
-# -----------------------------------------------------
-
-try:
-
-    payload = build_whatsapp_snapshot()
-
-except Exception as e:
-
-    print(
-        "❌ Failed to build WhatsApp snapshot:",
-        str(e)
-    )
-
-    return False
-
-# -----------------------------------------------------
-# REQUEST HEADERS
-# -----------------------------------------------------
-
-headers = {
-
-    "Content-Type":
-        "application/json",
-
-    "X-WhatsApp-Data-Secret":
-        data_secret
-}
-
-# -----------------------------------------------------
-# SEND TO WHATSAPP WEBHOOK
-# -----------------------------------------------------
-
-try:
-
-    response = requests.post(
-
-        webhook_url,
-
-        headers=headers,
-
-        json=payload,
-
-        timeout=30
-    )
-
-    print(
-        "📱 WhatsApp Backend Status:",
-        response.status_code
-    )
-
-    print(
-        "WhatsApp Backend Response:",
-        response.text
-    )
-
+    print("=" * 60)
+    print("📱 UPDATING WHATSAPP BACKEND DATA")
     print("=" * 60)
 
-    # -------------------------------------------------
-    # SUCCESS
-    # -------------------------------------------------
+    webhook_url = os.environ.get(
+        "WHATSAPP_WEBHOOK_DATA_URL"
+    )
 
-    if response.ok:
+    data_secret = os.environ.get(
+        "WHATSAPP_DATA_SECRET"
+    )
+
+    if not webhook_url:
 
         print(
-            "✅ WhatsApp backend snapshot "
-            "updated successfully"
+            "❌ WHATSAPP_WEBHOOK_DATA_URL "
+            "not configured"
         )
 
-        return True
+        return False
 
-    # -------------------------------------------------
-    # FAILURE
-    # -------------------------------------------------
+    if not data_secret:
 
-    print(
-        "❌ WhatsApp backend update failed"
-    )
+        print(
+            "❌ WHATSAPP_DATA_SECRET "
+            "not configured"
+        )
 
-    return False
-
-except Exception as e:
+        return False
 
     print(
-        "❌ WhatsApp backend request error:",
-        str(e)
+        "Webhook URL:",
+        webhook_url
     )
 
-    return False
+    print(
+        "Data Secret configured:",
+        bool(data_secret)
+    )
 
+    # -------------------------------------------------
+    # BUILD SNAPSHOT
+    # -------------------------------------------------
+
+    try:
+
+        payload = build_whatsapp_snapshot()
+
+    except Exception as e:
+
+        print(
+            "❌ Failed to build WhatsApp snapshot:",
+            str(e)
+        )
+
+        return False
+
+    # -------------------------------------------------
+    # REQUEST HEADERS
+    # -------------------------------------------------
+
+    headers = {
+
+        "Content-Type":
+            "application/json",
+
+        "X-WhatsApp-Data-Secret":
+            data_secret
+    }
+
+    # -------------------------------------------------
+    # SEND BACKEND DATA
+    # -------------------------------------------------
+
+    try:
+
+        response = requests.post(
+
+            webhook_url,
+
+            headers=headers,
+
+            json=payload,
+
+            timeout=30
+        )
+
+        print(
+            "📱 WhatsApp Backend Status:",
+            response.status_code
+        )
+
+        print(
+            "WhatsApp Backend Response:",
+            response.text
+        )
+
+        print("=" * 60)
+
+        if response.ok:
+
+            print(
+                "✅ WhatsApp backend snapshot "
+                "updated successfully"
+            )
+
+            return True
+
+        print(
+            "❌ WhatsApp backend update failed"
+        )
+
+        return False
+
+    except Exception as e:
+
+        print(
+            "❌ WhatsApp backend request error:",
+            str(e)
+        )
+
+        return False
 
 
 # ---------------- EXECUTE ----------------
