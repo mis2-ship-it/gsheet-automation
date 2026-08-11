@@ -10,6 +10,10 @@ from google.oauth2.service_account import Credentials
 import matplotlib.pyplot as plt
 from io import BytesIO
 from email.mime.image import MIMEImage
+from whatsapp_recipients import (
+    WHATSAPP_RECIPIENTS,
+    WHATSAPP_NUMBERS
+)
 
 print("🚀 Live Script Started")
 
@@ -3271,14 +3275,7 @@ def send_whatsapp_live():
         "WHATSAPP_ACCESS_TOKEN"
     )
 
-    RECIPIENTS = [
-        "919750820509",
-        "919535075140",
-        "918892390985",
-        "919620952646",
-        "918553666666",
-        "919959347168"
-    ]
+    RECIPIENTS = WHATSAPP_NUMBERS
 
     if not ACCESS_TOKEN:
 
@@ -3911,6 +3908,123 @@ def build_whatsapp_snapshot():
     return snapshot
 
 # =========================================================
+# 📱 UPDATE WHATSAPP BACKEND DATA
+# =========================================================
+
+def send_whatsapp_backend_data():
+
+    print("=" * 60)
+    print("📱 UPDATING WHATSAPP BACKEND DATA")
+    print("=" * 60)
+
+    webhook_url = os.environ.get(
+        "WHATSAPP_WEBHOOK_DATA_URL"
+    )
+
+    data_secret = os.environ.get(
+        "WHATSAPP_DATA_SECRET"
+    )
+
+    if not webhook_url:
+
+        print(
+            "❌ WHATSAPP_WEBHOOK_DATA_URL "
+            "not configured"
+        )
+
+        return False
+
+    if not data_secret:
+
+        print(
+            "❌ WHATSAPP_DATA_SECRET "
+            "not configured"
+        )
+
+        return False
+
+    print(
+        "Webhook URL:",
+        webhook_url
+    )
+
+    print(
+        "Data Secret configured:",
+        bool(data_secret)
+    )
+
+    try:
+
+        payload = build_whatsapp_snapshot()
+
+    except Exception as e:
+
+        print(
+            "❌ Failed to build WhatsApp snapshot:",
+            str(e)
+        )
+
+        return False
+
+    headers = {
+
+        "Content-Type":
+            "application/json",
+
+        "X-WhatsApp-Data-Secret":
+            data_secret
+    }
+
+    try:
+
+        response = requests.post(
+
+            webhook_url,
+
+            headers=headers,
+
+            json=payload,
+
+            timeout=30
+        )
+
+        print(
+            "📱 WhatsApp Backend Status:",
+            response.status_code
+        )
+
+        print(
+            "WhatsApp Backend Response:",
+            response.text
+        )
+
+        print("=" * 60)
+
+        if response.ok:
+
+            print(
+                "✅ WhatsApp backend snapshot "
+                "updated successfully"
+            )
+
+            return True
+
+        print(
+            "❌ WhatsApp backend update failed"
+        )
+
+        return False
+
+    except Exception as e:
+
+        print(
+            "❌ WhatsApp backend request error:",
+            str(e)
+        )
+
+        return False
+
+# =========================================================
 # 📤 SEND WHATSAPP BACKEND SNAPSHOT
 # =========================================================
 
@@ -4011,24 +4125,34 @@ push("Top_Stores", top_stores)
 push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
 
+# =========================================================
+# 📧 EMAIL REPORTS
+# =========================================================
+
 send_email()
 send_am_mail()
 send_tm_mail()
 
-print("🎉 ALL EMAILS SENT SUCCESSFULLY")
-
-# =========================================================
-# 📱 UPDATE WHATSAPP BACKEND DATA
-# =========================================================
-
-send_whatsapp_backend_data()
-
-# =========================================================
-# 📱 SEND LIVE SALES MESSAGE
-# =========================================================
-
-send_whatsapp_live()
-
 print(
-    "🎉 WHATSAPP LIVE SALES SENT SUCCESSFULLY"
+    "🎉 ALL EMAILS SENT SUCCESSFULLY"
 )
+
+# =========================================================
+# 📱 UPDATE WHATSAPP BACKEND
+# =========================================================
+
+whatsapp_backend_updated = (
+    send_whatsapp_backend_data()
+)
+
+if whatsapp_backend_updated:
+
+    print(
+        "✅ WhatsApp backend data is ready"
+    )
+
+else:
+
+    print(
+        "⚠️ WhatsApp backend data was NOT updated"
+    )
