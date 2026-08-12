@@ -59,15 +59,29 @@ MAX_WORKERS = 8
 MAX_RETRIES = 5
 RETRY_BASE_SECONDS = 2
 
-# Historical months to create.
-BACKFILL_MONTHS = [
-    (2025, month) for month in range(1, 13)
-] + [
-    (2026, month) for month in range(1, 7)
-]
+# =========================================================
+# MONTHS TO FETCH
+# =========================================================
+#
+# Add only the months that you want to fetch/rebuild.
+#
+# Examples:
+#
+# (2026, 7)       = July 2026
+# (2026, 8)       = August 2026
+# (2026, 9)       = September 2026
+#
+# Multiple months:
+# [(2026, 7), (2026, 8), (2026, 9)]
+#
+# Full 2025:
+# [(2025, month) for month in range(1, 13)]
+#
+# =========================================================
 
-# Existing current files are deliberately excluded:
-# 2026 Jul and 2026 Aug
+BACKFILL_MONTHS = [
+    (2026, 7),
+]
 
 
 # =========================================================
@@ -1445,7 +1459,9 @@ print("\n📂 CSV folders created under:")
 print("    monthly_data/2025/")
 print("    monthly_data/2026/")
 
-print("\n⚠️ Existing July/August 2026 files were not modified.")
+print("\n📌 Requested months were fetched/rebuilt:")
+for year, month in BACKFILL_MONTHS:
+    print(f"    {year}-{month:02d}")
 print("=" * 80)
 
 if failed:
