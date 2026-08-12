@@ -633,8 +633,22 @@ mtd_summary.columns = [
     "Discount",
     "Taxes",
     "Gross Sales",
+    "Quantity",
     "Orders"
 ]
+
+# =========================================================
+# SUMMARY COLUMN CHECK
+# =========================================================
+
+print("Summary Columns :", mtd_summary.columns.tolist())
+print("Summary Column Count :", len(mtd_summary.columns))
+
+if len(mtd_summary.columns) != 14:
+    raise ValueError(
+        f"Unexpected summary column count: {len(mtd_summary.columns)}. "
+        "Expected 14 columns."
+    )
 
 # =========================================================
 # KEEP ONLY CURRENT MONTH
@@ -657,6 +671,23 @@ print(
     "→",
     mtd_summary["Date"].max().date()
 )
+
+# =========================================================
+# NUMERIC SUMMARY FIELDS
+# =========================================================
+
+for col in [
+    "Net Sales",
+    "Discount",
+    "Taxes",
+    "Gross Sales",
+    "Quantity",
+    "Orders"
+]:
+    mtd_summary[col] = pd.to_numeric(
+        mtd_summary[col],
+        errors="coerce"
+    ).fillna(0)
 
 # =========================================================
 # AOV + DIS%
@@ -794,5 +825,3 @@ final_csv.to_csv(
 
 print("✅ Monthly CSV Updated")
 print("Total Rows :", len(final_csv))
-
-
