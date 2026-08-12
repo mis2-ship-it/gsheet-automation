@@ -2094,29 +2094,81 @@ def build_whatsapp_snapshot():
     
     snapshot = {
         "date": business_day.strftime("%d-%b-%y"),
-        "report_time": now.strftime("%I:%M %p"),
+
+        "report_time":
+            now.strftime("%I:%M %p"),
+
         "overall": {
-            "gross": _get_kpi(overall, "Gross"),
-            "net": _get_kpi(overall, "Net"),
-            "txn": _get_kpi(overall, "Txn"),
-            "aov": _get_kpi(overall, "AOV"),
-            "discount": _get_kpi(overall, "Discount %"),
-            "lw_net": _get_kpi(overall, "Net", "Last Week"),
-            "lw_growth": _get_kpi(overall, "Net", "LW Growth %"),
-            "eod_projection": _safe_float(eod)
+
+            "gross":
+                _get_kpi(
+                    overall,
+                    "Gross"
+                ),
+
+            "net":
+                _get_kpi(
+                    overall,
+                    "Net"
+                ),
+
+            "txn":
+                _get_kpi(
+                    overall,
+                    "Txn"
+                ),
+
+            "aov":
+                _get_kpi(
+                    overall,
+                    "AOV"
+                ),
+
+            "discount":
+                _get_kpi(
+                    overall,
+                    "Discount %"
+                ),
+
+            "lw_net":
+                _get_kpi(
+                    overall,
+                    "Net",
+                    "Last Week"
+                ),
+
+            "lw_growth":
+                _get_kpi(
+                    overall,
+                    "Net",
+                    "LW Growth %"
+                ),
+
+            "eod_projection":
+                _safe_float(eod)
         },
-        "brands": _build_analysis_dict(
-            brand_analysis,
-            "Brand"
-        ),
-        "sources": _build_analysis_dict(
-            source_analysis,
-            "Source Group"
-        ),
-        "regions": _build_analysis_dict(
-            region_analysis,
-            "Region"
-        )
+
+        "brands":
+            _build_analysis_dict(
+                brand_analysis,
+                "Brand"
+            ),
+
+        "sources":
+            _build_analysis_dict(
+                source_analysis,
+                "Source Group"
+            ),
+
+        "regions":
+            _build_analysis_dict(
+                region_analysis,
+                "Region"
+            ),
+
+        # ✅ IMPORTANT
+        "stores":
+            stores
     }
 
     print("📅 Date:", snapshot["date"])
