@@ -20,7 +20,11 @@ import gspread
 from google.oauth2.service_account import (
     Credentials
 )
-
+from whatsapp_recipients import (
+    WHATSAPP_USERS,
+    get_user_access,
+    user_can_access_store
+)
 print("=" * 60)
 print("🚀 RISTA WHATSAPP SCRIPT STARTED")
 print("=" * 60)
