@@ -1,0 +1,74 @@
+
+name: Rista WhatsApp Automation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  whatsapp:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # -------------------------------------------------
+      # CHECKOUT
+      # -------------------------------------------------
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------
+      # PYTHON
+      # -------------------------------------------------
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # -------------------------------------------------
+      # INSTALL DEPENDENCIES
+      # -------------------------------------------------
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+
+          pip install \
+            pandas \
+            requests \
+            PyJWT \
+            gspread \
+            google-auth
+
+      # -------------------------------------------------
+      # CHECK PYTHON FILE
+      # -------------------------------------------------
+
+      - name: Check WhatsApp Script
+        run: |
+          python -m py_compile rista_whatsapp.py
+
+      # -------------------------------------------------
+      # RUN WHATSAPP SCRIPT
+      # -------------------------------------------------
+
+      - name: Run Rista WhatsApp Automation
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          WHATSAPP_WEBHOOK_DATA_URL: ${{ secrets.WHATSAPP_WEBHOOK_DATA_URL }}
+          WHATSAPP_DATA_SECRET: ${{ secrets.WHATSAPP_DATA_SECRET }}
+
+        run: |
+          echo "============================================================"
+          echo "📱 Running Rista WhatsApp Automation..."
+          echo "============================================================"
+
+          python rista_whatsapp.py
+
+          echo "============================================================"
+          echo "✅ Rista WhatsApp Automation Completed"
+          echo "============================================================"
+
