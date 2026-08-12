@@ -1982,6 +1982,116 @@ def build_whatsapp_snapshot():
     print("📱 BUILDING WHATSAPP SNAPSHOT")
     print("=" * 60)
 
+    # =========================================================
+    # 🏪 ALL STORE SALES
+    # =========================================================
+    
+    stores = {}
+    
+    try:
+    
+        # Today's COCO stores
+        today_store_df = (
+            today_cut
+            .groupby("branchName")["Net Sales"]
+            .sum()
+            .reset_index()
+        )
+    
+        today_store_df.rename(
+            columns={
+                "branchName": "Store Name",
+                "Net Sales": "Today_Sales"
+            },
+            inplace=True
+        )
+    
+        # Last Week COCO stores
+        lw_store_df = (
+            lastweek_cut
+            .groupby("branchName")["Net Sales"]
+            .sum()
+            .reset_index()
+        )
+    
+        lw_store_df.rename(
+            columns={
+                "branchName": "Store Name",
+                "Net Sales": "LW_Sales"
+            },
+            inplace=True
+        )
+    
+        # Merge
+        store_df = today_store_df.merge(
+            lw_store_df,
+            on="Store Name",
+            how="outer"
+        ).fillna(0)
+    
+        # Growth
+        store_df["Growth %"] = (
+            (
+                store_df["Today_Sales"]
+                -
+                store_df["LW_Sales"]
+            )
+            /
+            store_df["LW_Sales"].replace(
+                0,
+                1
+            )
+        ) * 100
+    
+        # Build JSON
+        for _, row in store_df.iterrows():
+    
+            store_name = str(
+                row["Store Name"]
+            ).strip()
+    
+            if not store_name:
+                continue
+    
+            stores[store_name] = {
+    
+                "today":
+                    round(
+                        float(
+                            row["Today_Sales"]
+                            or 0
+                        ),
+                        2
+                    ),
+    
+                "lw":
+                    round(
+                        float(
+                            row["LW_Sales"]
+                            or 0
+                        ),
+                        2
+                    ),
+    
+                "growth":
+                    round(
+                        float(
+                            row["Growth %"]
+                            or 0
+                        ),
+                        2
+                    )
+            }
+    
+    except Exception as e:
+    
+        print(
+            "❌ Store snapshot build error:",
+            str(e)
+        )
+    
+        stores = {}
+    
     snapshot = {
         "date": business_day.strftime("%d-%b-%y"),
         "report_time": now.strftime("%I:%M %p"),
@@ -2006,9 +2116,6 @@ def build_whatsapp_snapshot():
         "regions": _build_analysis_dict(
             region_analysis,
             "Region"
-        ),
-        "stores": _build_store_dict(
-            top_stores
         )
     }
 
@@ -2023,7 +2130,29 @@ def build_whatsapp_snapshot():
     print("📋 Sections:", list(snapshot.keys()))
     print("=" * 60)
 
+    print("=" * 60)
+    print("📱 WHATSAPP STORE SNAPSHOT DEBUG")
+    print("=" * 60)
+    
+    print(
+        "Total stores in snapshot:",
+        len(stores)
+    )
+    
+    print(
+        "Store names:",
+        list(stores.keys())
+    )
+    
+    print(
+        "Snapshot sections:",
+        list(snapshot.keys())
+    )
+    
+    print("=" * 60)
+    
     return snapshot
+
 
 
 # =========================================================
