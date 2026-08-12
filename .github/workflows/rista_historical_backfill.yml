@@ -68,7 +68,19 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No CSV changes to commit."
-          else
-            git commit -m "Backfill historical Rista monthly CSV data"
-            git push
+            exit 0
           fi
+
+          git commit -m "Backfill historical Rista monthly CSV data"
+
+          # =================================================
+          # SYNC WITH REMOTE BEFORE PUSH
+          # =================================================
+
+          git pull --rebase origin main
+
+          # =================================================
+          # PUSH CSV FILES
+          # =================================================
+
+          git push origin main
