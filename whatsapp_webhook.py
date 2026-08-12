@@ -73,6 +73,57 @@ print(
 
 print("=" * 60)
 
+# =========================================================
+# 🔐 DEBUG USER ACCESS
+# =========================================================
+
+def debug_user_access(sender):
+
+    print("=" * 60)
+    print("🔐 WHATSAPP ACCESS DEBUG")
+    print("=" * 60)
+
+    user = get_user_access(sender)
+
+    if not user:
+
+        print(
+            "❌ User not mapped:",
+            sender
+        )
+
+        print("=" * 60)
+
+        return None
+
+    print(
+        "Sender :",
+        sender
+    )
+
+    print(
+        "Role   :",
+        user.get("role")
+    )
+
+    print(
+        "Region :",
+        user.get("region")
+    )
+
+    print(
+        "Patch  :",
+        user.get("patch")
+    )
+
+    print(
+        "Stores :",
+        user.get("stores")
+    )
+
+    print("=" * 60)
+
+    return user
 
 # =========================================================
 # 🏠 HOME
