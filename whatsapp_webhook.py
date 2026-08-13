@@ -929,6 +929,12 @@ def process_message(
         .split()
     )
 
+# =====================================================
+# 🔐 USER ACCESS DEBUG
+# =====================================================
+
+debug_user_access(sender)
+
     print("=" * 60)
     print("🧠 PROCESSING MESSAGE")
     print("Sender     :", sender)
