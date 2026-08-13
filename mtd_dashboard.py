@@ -1,2467 +1,2628 @@
-import os
-import json
-import time
-import jwt
-import requests
-import pandas as pd
+# =========================================================
+# RISTA DSR / MTD DASHBOARD
+# =========================================================
+#
+# Purpose:
+#   Read historical monthly Rista CSV files and send
+#   one complete FTD + MTD dashboard by email.
+#
+# Comparisons:
+#   FTD vs LW same day
+#   FTD vs LM same day
+#   FTD vs LY same day
+#   MTD vs LM MTD
+#   MTD vs LY MTD
+#
+# Google Sheets:
+#   NOT USED
+#
+# CSV SOURCE:
+#   monthly_data/2025/
+#   monthly_data/2026/
+#
+# =========================================================
+
+
+# =========================================================
+# IMPORTS
+# =========================================================
+
+from pathlib import Path
 from datetime import datetime, timedelta
-import gspread
-from google.oauth2.service_account import Credentials
-import matplotlib.pyplot as plt
-from io import BytesIO
-from email.mime.image import MIMEImage
+import os
+import re
+import smtplib
 
-print("🚀 Live Script Started")
+import pandas as pd
 
-# ---------------- AUTH ---------------- #
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-API_KEY = os.environ["API_KEY"]
-SECRET_KEY = os.environ["SECRET_KEY"]
 
-def get_token():
-    payload = {"iss": API_KEY, "iat": int(time.time())}
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+print("=" * 80)
+print("🚀 RISTA DSR / MTD DASHBOARD STARTED")
+print("=" * 80)
 
-def headers():
-    return {
-        "x-api-key": API_KEY,
-        "x-api-token": get_token(),
-        "content-type": "application/json"
-    }
 
-# ---------------- GOOGLE ---------------- #
+# =========================================================
+# CONFIGURATION
+# =========================================================
 
-creds = Credentials.from_service_account_info(
-    json.loads(os.environ["GOOGLE_CREDENTIALS"]),
-    scopes=[
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+BASE_FOLDER = Path("monthly_data")
+
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+
+EMAIL = os.environ.get("EMAIL_USER")
+PASSWORD = os.environ.get("EMAIL_PASS")
+
+# ---------------------------------------------------------
+# TEST RECIPIENT
+# ---------------------------------------------------------
+# Later you can change this to the team distribution list.
+# No EMAIL_TO / EMAIL_CC environment variables required.
+# ---------------------------------------------------------
+
+TO = [
+    "mis2@frozenbottle.in"
+]
+
+CC = []
+
+
+# =========================================================
+# EMAIL VALIDATION
+# =========================================================
+
+if not EMAIL:
+    raise RuntimeError(
+        "❌ EMAIL_USER environment variable is missing"
+    )
+
+if not PASSWORD:
+    raise RuntimeError(
+        "❌ EMAIL_PASS environment variable is missing"
+    )
+
+TO = [
+    x.strip()
+    for x in TO
+    if x and x.strip()
+]
+
+CC = [
+    x.strip()
+    for x in CC
+    if x and x.strip()
+]
+
+if not TO:
+    raise RuntimeError(
+        "❌ No email recipient configured"
+    )
+
+
+print("📧 Email From :", EMAIL)
+print("📧 Email To   :", TO)
+
+
+# =========================================================
+# FIND ALL MONTHLY CSV FILES
+# =========================================================
+
+if not BASE_FOLDER.exists():
+
+    raise RuntimeError(
+        f"❌ Folder not found: {BASE_FOLDER}"
+    )
+
+
+csv_files = sorted(
+    BASE_FOLDER.rglob("MTD_*.csv")
 )
 
-client = gspread.authorize(creds)
-sheet_url = "https://docs.google.com/spreadsheets/d/1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM/edit"
 
-retry = 5
+print("=" * 80)
+print("CSV FILE CHECK")
+print("=" * 80)
 
-for i in range(retry):
+print(
+    "📂 CSV Files Found:",
+    len(csv_files)
+)
+
+
+if not csv_files:
+
+    raise RuntimeError(
+        "❌ No MTD CSV files found under monthly_data/"
+    )
+
+
+for file in csv_files:
+
+    print(
+        "   ",
+        file
+    )
+
+
+# =========================================================
+# MONTH / YEAR FROM FILE NAME
+# =========================================================
+
+MONTH_MAP = {
+    "Jan": 1,
+    "Feb": 2,
+    "Mar": 3,
+    "Apr": 4,
+    "May": 5,
+    "Jun": 6,
+    "Jul": 7,
+    "Aug": 8,
+    "Sep": 9,
+    "Oct": 10,
+    "Nov": 11,
+    "Dec": 12
+}
+
+
+def extract_month_year(path):
+
+    match = re.search(
+        r"MTD_([A-Za-z]{3})_(\d{2})\.csv",
+        path.name
+    )
+
+    if not match:
+
+        return datetime(
+            1900,
+            1,
+            1
+        )
+
+    month_name = match.group(1)
+
+    year_short = int(
+        match.group(2)
+    )
+
+    month = MONTH_MAP.get(
+        month_name
+    )
+
+    if month is None:
+
+        return datetime(
+            1900,
+            1,
+            1
+        )
+
+    year = 2000 + year_short
+
+    return datetime(
+        year,
+        month,
+        1
+    )
+
+
+# =========================================================
+# LOAD ALL CSV FILES
+# =========================================================
+
+all_data = []
+
+print("=" * 80)
+print("READING MONTHLY CSV FILES")
+print("=" * 80)
+
+
+for csv_file in csv_files:
+
+    print(
+        f"📥 Reading: {csv_file}"
+    )
 
     try:
 
-        spreadsheet = client.open_by_url(sheet_url)
+        df = pd.read_csv(
+            csv_file,
+            low_memory=False
+        )
 
-        print("✅ Connected to Google Sheet")
+        if df.empty:
 
-        break
-
-    except Exception as e:
-
-        print(f"⚠️ Google Sheet connection failed ({i+1}/{retry})")
-        print(str(e))
-
-        time.sleep(10)
-
-else:
-
-    raise Exception("❌ Failed to connect Google Sheet after retries")
-
-# ---------------- TIME ---------------- #
-
-now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-
-print("⏰ Auto Trigger Time:", now)
-print("🕒 IST Time:", now)
-
-# ---------------- BUSINESS DATE FIX ---------------- #
-
-def get_business_day(now):
-    if now.hour < 6:
-        return (now - timedelta(days=1)).date()
-    return now.date()
-
-business_day = get_business_day(now)
-
-today = business_day.strftime("%Y-%m-%d")
-last_week = (business_day - timedelta(days=7)).strftime("%Y-%m-%d")
-last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
-month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
-last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
-
-print("📅 Business Day:", today)
-print("📅 Last Week:", last_week)
-print(f"🧠 Business Window: {business_day} 09:00 → Next Day 06:00")
-
-# ---------------- FETCH BRANCH ---------------- #
-
-b_resp = requests.get("https://api.ristaapps.com/v1/branch/list", headers=headers())
-data = b_resp.json()
-data = data.get("data", []) if isinstance(data, dict) else data
-
-branches = [b["branchCode"] for b in data if b.get("status") == "Active"]
-
-print("🏪 Branch count:", len(branches))
-
-
-# ---------------- FETCH SALES ---------------- #
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-def fetch_branch_data(branch, day):
-    all_data = []
-    last_key = None
-
-    while True:
-        params = {"branch": branch, "day": day}
-        if last_key:
-            params["lastKey"] = last_key
-
-        try:
-            r = requests.get(
-                "https://api.ristaapps.com/v1/sales/summary",
-                headers=headers(),
-                params=params,
-                timeout=20
+            print(
+                "   ⚠️ Empty file - skipped"
             )
 
-            if r.status_code != 200:
-                return pd.DataFrame()
+            continue
 
-            js = r.json()
-            data = js.get("data", [])
+        df["__source_file"] = str(
+            csv_file
+        )
 
-            if not data:
-                break
-
-            all_data.append(pd.json_normalize(data))
-
-            last_key = js.get("lastKey")
-            if not last_key:
-                break
-
-        except:
-            return pd.DataFrame()
-
-    return pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
-
-
-def fetch_sales(day):
-
-    results = []
-
-    # 🔥 THREAD CONTROL
-    max_threads = 10
-
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
-
-        futures = [
-            executor.submit(fetch_branch_data, b, day)
-            for b in branches
-        ]
-
-        for future in as_completed(futures):
-
-            df = future.result()
-
-            if df is not None and not df.empty:
-                results.append(df)
-
-    # =====================================================
-    # FINAL CONCAT
-    # =====================================================
-
-    final_sales_df = (
-        pd.concat(results, ignore_index=True)
-        if results
-        else pd.DataFrame()
-    )
-
-    # =====================================================
-    # RAW DATA CHECK
-    # =====================================================
-
-    print("RAW DATA CHECK")
-    print(final_sales_df.shape)
-
-    if (
-        not final_sales_df.empty
-        and "businessDate" in final_sales_df.columns
-    ):
+        all_data.append(
+            df
+        )
 
         print(
-            sorted(
-                pd.to_datetime(
-                    final_sales_df["businessDate"]
-                ).dt.date.unique()
-            )[:15]
+            f"   ✅ Rows: {len(df):,}"
         )
 
-    return final_sales_df
+    except Exception as exc:
 
-# ---------------- RUN ---------------- #
-
-today_df = fetch_sales(today)
-lastweek_df = fetch_sales(last_week)
-
-if today_df.empty:
-    print("❌ No today data")
-    exit()
-
-last2week = (business_day - timedelta(days=14)).strftime("%Y-%m-%d")
-month_on_month = (business_day - timedelta(days=28)).strftime("%Y-%m-%d")
-last_year = (business_day - timedelta(days=364)).strftime("%Y-%m-%d")
-
-last2week_df = fetch_sales(last2week)
-month_on_month_df = fetch_sales(month_on_month)
-lastyear_df = fetch_sales(last_year)
-
-# ---------------- DATE CLEAN ---------------- #
-
-def prepare_dates(df):
-    if df.empty:
-        return df
-
-    df["invoiceDate"] = pd.to_datetime(df["invoiceDate"], errors="coerce").dt.tz_localize(None)
-
-    def get_business_date(dt):
-        if pd.isna(dt):
-            return pd.NaT
-        return (dt - pd.Timedelta(days=1)).date() if dt.hour < 5 else dt.date()
-
-    df["businessDate"] = df["invoiceDate"].apply(get_business_date)
-    df["Date"] = df["businessDate"]
-    df["Hour"] = df["invoiceDate"].dt.hour
-
-    return df
-
-today_df = prepare_dates(today_df)
-lastweek_df = prepare_dates(lastweek_df)
-last2week_df = prepare_dates(last2week_df)
-month_on_month_df = prepare_dates(month_on_month_df)
-lastyear_df = prepare_dates(lastyear_df)
-
-# ---------------- TAGGING ---------------- #
-
-today_df["Data_Type"] = "Today"
-lastweek_df["Data_Type"] = "Last Week"
-last2week_df["Data_Type"] = "Last 2 Week"
-month_on_month_df["Data_Type"] = "Last Month"
-lastyear_df["Data_Type"] = "Last Year"
-
-final_df = pd.concat([
-    today_df,
-    lastweek_df,
-    last2week_df,
-    month_on_month_df,
-    lastyear_df
-], ignore_index=True)
-
-# ================================
-# 📌 SAFE COLUMN FIX (IMPORTANT)
-# ================================
-
-if "channel" not in final_df.columns:
-    final_df["channel"] = "Unknown"
-
-if "branchName" not in final_df.columns:
-    final_df["branchName"] = "Unknown"
+        print(
+            f"   ❌ Failed: {exc}"
+        )
 
 
-# ---------------- SAFE COLUMN CHECK ---------------- #
+if not all_data:
 
-required_cols = ["netAmount", "chargeAmount", "status", "branchName", "channel"]
-for col in required_cols:
-    if col not in final_df.columns:
-        final_df[col] = 0
+    raise RuntimeError(
+        "❌ No usable CSV data found"
+    )
 
-# ---------------- NET SALES ---------------- #
 
-final_df["netAmount"] = pd.to_numeric(final_df["netAmount"], errors="coerce").fillna(0)
-final_df["chargeAmount"] = pd.to_numeric(final_df["chargeAmount"], errors="coerce").fillna(0)
-
-final_df["Net Sales"] = (
-    (final_df["netAmount"] + final_df["chargeAmount"])
-    .where(final_df["status"] == "Closed", 0)
+final_df = pd.concat(
+    all_data,
+    ignore_index=True
 )
 
-# =========================================================
-# HELP SHEET MAPPING (FINAL STABLE VERSION)
-# =========================================================
 
-sheet = client.open(
-    "Sales Dashboard"
-).worksheet("Help Sheet")
+print("=" * 80)
+print("COMBINED DATA")
+print("=" * 80)
 
-# =========================================================
-# STORE / REGION / AM / TM MASTER
-# =========================================================
-
-branch_master = pd.DataFrame(
-    sheet.get("G:M")[1:],
-    columns=sheet.get("G:M")[0]
+print(
+    "Total Rows   :",
+    f"{len(final_df):,}"
 )
 
-# Clean text
-for col in branch_master.columns:
-    branch_master[col] = (
-        branch_master[col]
+print(
+    "Total Columns:",
+    len(final_df.columns)
+)
+
+
+# =========================================================
+# REQUIRED COLUMNS
+# =========================================================
+
+REQUIRED_COLUMNS = [
+    "Brand Name",
+    "Date",
+    "Week",
+    "Branch",
+    "Source",
+    "Session",
+    "Store Type",
+    "Region",
+    "Net Sales",
+    "Discount",
+    "Taxes",
+    "Gross Sales",
+    "Quantity",
+    "Orders"
+]
+
+
+missing_columns = [
+    col
+    for col in REQUIRED_COLUMNS
+    if col not in final_df.columns
+]
+
+
+if missing_columns:
+
+    raise RuntimeError(
+        "❌ Required columns missing:\n"
+        + "\n".join(
+            f"   - {col}"
+            for col in missing_columns
+        )
+    )
+
+
+# =========================================================
+# CLEAN DATA
+# =========================================================
+
+final_df["Date"] = pd.to_datetime(
+    final_df["Date"],
+    errors="coerce"
+)
+
+
+final_df = final_df[
+    final_df["Date"].notna()
+].copy()
+
+
+# ---------------------------------------------------------
+# Numeric columns
+# ---------------------------------------------------------
+
+NUMERIC_COLUMNS = [
+    "Net Sales",
+    "Discount",
+    "Taxes",
+    "Gross Sales",
+    "Quantity",
+    "Orders"
+]
+
+
+for col in NUMERIC_COLUMNS:
+
+    final_df[col] = pd.to_numeric(
+        final_df[col],
+        errors="coerce"
+    ).fillna(0)
+
+
+# ---------------------------------------------------------
+# Text columns
+# ---------------------------------------------------------
+
+TEXT_COLUMNS = [
+    "Brand Name",
+    "Branch",
+    "Source",
+    "Session",
+    "Store Type",
+    "Region"
+]
+
+
+for col in TEXT_COLUMNS:
+
+    final_df[col] = (
+        final_df[col]
+        .fillna("")
         .astype(str)
         .str.strip()
     )
 
-# =========================================================
-# STORE TYPE MAP
-# =========================================================
-
-storetype_map = dict(
-    zip(
-        branch_master["Store Name"],
-        branch_master["Ownership"]
-    )
-)
-
-# =========================================================
-# REGION MAP
-# =========================================================
-
-region_map = dict(
-    zip(
-        branch_master["Store Name"],
-        branch_master["Region"]
-    )
-)
-
-# =========================================================
-# AM / TM MAP
-# =========================================================
-
-branch_master["AM Mail"] = (
-    branch_master["AM Mail"]
-    .astype(str)
-    .str.strip()
-    .str.lower()
-)
-
-branch_master["TM Mail"] = (
-    branch_master["TM Mail"]
-    .astype(str)
-    .str.strip()
-    .str.lower()
-)
-
-am_store_map = (
-    branch_master
-    .groupby("AM Mail")["Store Name"]
-    .apply(list)
-    .to_dict()
-)
-
-tm_region_map = (
-    branch_master
-    .groupby("TM Mail")["Region"]
-    .apply(list)
-    .to_dict()
-)
-
-# remove blank emails
-am_store_map = {
-    k: v
-    for k, v in am_store_map.items()
-    if k and k != "nan"
-}
-
-tm_region_map = {
-    k: v
-    for k, v in tm_region_map.items()
-    if k and k != "nan"
-}
-
-# =========================================================
-# SOURCE + BRAND MASTER
-# D:F = Channel, Source Group, Brand
-# =========================================================
-
-source_master = pd.DataFrame(
-    sheet.get("D:F")[1:],
-    columns=sheet.get("D:F")[0]
-)
-
-# =========================================================
-# CLEAN TEXT
-# =========================================================
-
-for col in source_master.columns:
-    source_master[col] = (
-        source_master[col]
-        .astype(str)
-        .str.strip()
-    )
-
-source_master["Channel"] = (
-    source_master["Channel"]
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
-
-# =========================================================
-# FINAL DF CHANNEL CLEAN
-# =========================================================
-
-final_df["channel"] = (
-    final_df["channel"]
-    .astype(str)
-    .str.upper()
-    .str.strip()
-)
-
-# =========================================================
-# SOURCE MAP
-# =========================================================
-
-source_map = dict(
-    zip(
-        source_master["Channel"],
-        source_master["Source Group"]
-    )
-)
-
-# =========================================================
-# BRAND MAP
-# =========================================================
-
-brand_map = dict(
-    zip(
-        source_master["Channel"],
-        source_master["Brand"]
-    )
-)
-
-# =========================================================
-# APPLY MAPPING
-# =========================================================
-
-final_df["Source Group"] = (
-    final_df["channel"]
-    .map(source_map)
-    .fillna("Others")
-)
-
-final_df["Brand"] = (
-    final_df["channel"]
-    .map(brand_map)
-    .fillna("Unknown")
-)
 
 final_df["Store Type"] = (
-    final_df["branchName"]
-    .astype(str)
-    .str.strip()
-    .map(storetype_map)
-    .fillna("UNKNOWN")
-)
-
-final_df["Region"] = (
-    final_df["branchName"]
-    .astype(str)
-    .str.strip()
-    .map(region_map)
-    .fillna("UNKNOWN")
-)
-
-# =========================================================
-# DEBUG
-# =========================================================
-
-print("SOURCE GROUP CHECK")
-print(
-    final_df["Source Group"]
-    .value_counts(dropna=False)
-)
-
-print("BRAND CHECK")
-print(
-    final_df["Brand"]
-    .value_counts(dropna=False)
-)
-
-print("UNMAPPED CHANNELS")
-print(
-    set(final_df["channel"].unique())
-    - set(source_master["Channel"].unique())
-)
-
-print("STORE TYPE CHECK")
-print(
     final_df["Store Type"]
-    .value_counts(dropna=False)
+    .str.upper()
 )
 
-print("AM EMAIL SAMPLE")
-print(list(am_store_map.keys())[:5])
-
-print("TM EMAIL SAMPLE")
-print(list(tm_region_map.keys())[:5])
-
-print("✅ AM Count:", len(am_store_map))
-print("✅ TM Count:", len(tm_region_map))
-print("✅ Final Mapping Completed")
-
-
-# ---------------- FILTER ---------------- #
-
-today_cut = final_df[
-    (final_df["Data_Type"] == "Today") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-lastweek_cut = final_df[
-    (final_df["Data_Type"] == "Last Week") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-last2week_cut = final_df[
-    (final_df["Data_Type"] == "Last 2 Week") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-month_on_month_cut = final_df[
-    (final_df["Data_Type"] == "Last Month") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-lastyear_cut = final_df[
-    (final_df["Data_Type"] == "Last Year") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]
-
-
-# ---------------- BUSINESS HOUR ---------------- #
-
-def map_business_hour(h):
-    return h if h >= 8 else h + 24
-
-for df in [today_cut, lastweek_cut]:
-    df["BusinessHour"] = df["Hour"].apply(map_business_hour)
-
-# ---------------- TIME FILTER ---------------- #
-
-current_hour = now.hour
-cutoff_hour = current_hour + 24 if current_hour < 8 else current_hour - 1
-
-today_cut = today_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
-lastweek_cut = lastweek_cut.query("BusinessHour>=8 and BusinessHour<=@cutoff_hour")
-
-print("✅ Data Prepared Successfully")
-
-# ---------------- APPLY SAME TIME FILTER TO L2W & LY ---------------- #
-
-last2week_cut["BusinessHour"] = last2week_cut["Hour"].apply(map_business_hour)
-month_on_month_cut["BusinessHour"] = month_on_month_cut["Hour"].apply(map_business_hour)
-lastyear_cut["BusinessHour"] = lastyear_cut["Hour"].apply(map_business_hour)
-
-last2week_cut = last2week_cut[
-    (last2week_cut["BusinessHour"] >= 8) &
-    (last2week_cut["BusinessHour"] <= cutoff_hour)
-]
-
-month_on_month_cut = month_on_month_cut[
-    (month_on_month_cut["BusinessHour"] >= 8) &
-    (month_on_month_cut["BusinessHour"] <= cutoff_hour)
-]
-
-lastyear_cut = lastyear_cut[
-    (lastyear_cut["BusinessHour"] >= 8) &
-    (lastyear_cut["BusinessHour"] <= cutoff_hour)
-]
-
-# ---------------- SESSION ---------------- #
-
-def get_session(h):
-    if 8 <= h <= 11: return "Breakfast"
-    elif 12 <= h <= 15: return "Lunch"
-    elif 16 <= h <= 19: return "Snacks"
-    elif 20 <= h <= 23: return "Dinner"
-    else: return "Post Dinner"
-
-today_cut["Session"] = today_cut["Hour"].apply(get_session)
-lastweek_cut["Session"] = lastweek_cut["Hour"].apply(get_session)
-
-def add_session(df):
-    if "Session" not in df.columns:
-        df["Session"] = df["Hour"].apply(get_session)
-    return df
-
-
-final_df = add_session(final_df)
 
 # =========================================================
-# 🔥 KPI FUNCTION
+# REMOVE INTERNAL COLUMN
 # =========================================================
 
-def build_kpi(df_today, df_lw, label=None):
-
-    def calc(df):
-        if df is None or df.empty:
-            return 0,0,0,0
-        return (
-            df["grossAmount"].sum(),
-            df["discountAmount"].sum(),
-            df["Net Sales"].sum(),
-            len(df)
-        )
-
-    gt, dt, nt, tt = calc(df_today)
-    gl, dl, nl, tl = calc(df_lw)
-
-    data = pd.DataFrame({
-        "Parameters": ["Gross","Discount","Net","Txn","AOV","Discount %"],
-        "Today": [gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
-        "Last Week": [gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100]
-    })
-
-    data["Growth %"] = ((data["Today"]-data["Last Week"])/data["Last Week"].replace(0,1))*100
-
-    if label:
-        data.insert(0,label[0],label[1])
-
-    return data.round(2)
-
-#Store Metrics
-
-def calc_store_metrics(df, lw_df):
-
-    def agg(d):
-        return (
-            d["Net Sales"].sum(),
-            d["grossAmount"].sum(),
-            d["discountAmount"].sum()
-        )
-
-    t_net, t_gross, t_disc = agg(df)
-    l_net, l_gross, l_disc = agg(lw_df)
-
-    return {
-        "Today Rev": t_net,
-        "LW Rev": l_net,
-        "Growth %": (t_net - l_net) / max(l_net, 1) * 100,
-        "Today Dis %": (t_disc / max(t_gross,1)) * 100,
-        "LW Dis %": (l_disc / max(l_gross,1)) * 100,
-        "Changes %": ((t_disc / max(t_gross,1)) - (l_disc / max(l_gross,1))) * 100
-    }
-
-# =========================================================
-# 📅 DATE LOGIC (CRITICAL FIX)
-# =========================================================
-
-def get_same_weekday_last_year(date):
-    last_year_date = date - pd.DateOffset(years=1)
-    
-    # Align weekday
-    while last_year_date.weekday() != date.weekday():
-        last_year_date += timedelta(days=1)
-    
-    return last_year_date
-
-
-# =========================================================
-# 📈 OVERALL EXTENDED FUNCTION
-# =========================================================
-
-def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
-
-    def calc(df):
-        if df is None or df.empty:
-            return 0,0,0,0
-        return (
-            df["grossAmount"].sum(),
-            df["discountAmount"].sum(),
-            df["Net Sales"].sum(),
-            len(df)
-        )
-
-    gt,dt,nt,tt = calc(today_df)
-    gl,dl,nl,tl = calc(lw_df)
-    g2,d2,n2,t2 = calc(l2w_df)
-    gm,dm,nm,tm = calc(mom_df)
-    gy,dy,ny,ty = calc(ly_df)
-
-    df = pd.DataFrame({
-        "Parameters":["Gross","Discount","Net","Txn","AOV","Discount %"],
-        "Today":[gt,dt,nt,tt,nt/max(tt,1),dt/max(gt,1)*100],
-        "Last Week":[gl,dl,nl,tl,nl/max(tl,1),dl/max(gl,1)*100],
-        "Last 2 Week":[g2,d2,n2,t2,n2/max(t2,1),d2/max(g2,1)*100],
-        "Last Month":[gm,dm,nm,tm,nm/max(tm,1),dm/max(gm,1)*100],
-        "Last Year":[gy,dy,ny,ty,ny/max(ty,1),dy/max(gy,1)*100]
-    })
-
-    # Growth calculations
-    df["LW Growth %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
-    df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
-    df["MoM Growth %"] = ((df["Today"]-df["Last Month"]) / df["Last Month"].replace(0,1)) * 100
-    df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
-
-    # =========================================================
-    # 🔮 EOD PROJECTION
-    # =========================================================
-
-    growth = ((nt - nl) / max(nl,1)) * 100
-
-    lw_full = final_df[
-        (final_df["Date"] == lw_df["Date"].max()) &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ]["Net Sales"].sum()
-
-    eod = lw_full * (1 + growth/100)
-
-    df["EOD Projection"] = 0.0
-    df.loc[df["Parameters"]=="Net","EOD Projection"] = round(eod,2)
-
-    return df.round(2), eod
-
-    
-
-# =========================================================
-# 🔥 FINAL EXECUTION
-# =========================================================
-
-def prepare_data_cuts(final_df):
-
-    today_df = final_df[
-        (final_df["Data_Type"] == "Today") &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-    lw_df = final_df[
-        (final_df["Data_Type"] == "Last Week") &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-    l2w_df = final_df[
-        (final_df["Data_Type"] == "Last 2 Week") &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-    mom_df = final_df[
-        (final_df["Data_Type"] == "Last Month") &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-    ly_df = final_df[
-        (final_df["Data_Type"] == "Last Year") &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-    # Business date (safe)
-    today = final_df["Date"].dropna().max()
-
-    return today_df, lw_df, l2w_df, mom_df, ly_df, today
-
-print("Today rows:", len(today_cut))
-print("LW rows:", len(lastweek_cut))
-print("L2W rows:", len(last2week_cut))
-print("MoM rows:", len(month_on_month_cut))
-print("LY rows:", len(lastyear_cut))
-
-# =====================================================
-# 📌 STORE FILTER
-# =====================================================
-
-def filter_store_data(store_list):
-    return final_df[
-        (final_df["branchName"].isin(store_list)) &
-        (final_df["Store Type"] == "COCO") &
-        (final_df["status"] == "Closed")
-    ].copy()
-
-
-# =====================================================
-# 📌 STORE KPI TABLE
-# =====================================================
-
-def store_kpi(df):
-    grouped = df.groupby("branchName")
-
-    rows = []
-
-    for store, g in grouped:
-
-        lw = lastweek_cut[lastweek_cut["branchName"] == store]
-
-        t_rev = g["Net Sales"].sum()
-        lw_rev = lw["Net Sales"].sum()
-
-        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
-
-        t_disc = (g["discountAmount"].sum() / max(g["grossAmount"].sum(), 1)) * 100
-        lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
-
-        rows.append({
-            "Store Name": store,
-            "Today Rev": round(t_rev, 2),
-            "LW Rev": round(lw_rev, 2),
-            "Growth %": round(growth, 2),
-            "Today Dis %": round(t_disc, 2),
-            "LW Dis %": round(lw_disc, 2),
-            "Changes %": round(t_disc - lw_disc, 2)
-        })
-
-    return pd.DataFrame(rows)
-
-# =====================================================
-# 📌 SESSION REPORT
-# =====================================================
-
-def session_report(df, lw_df):
-    out = []
-
-    for store in df["branchName"].unique():
-
-        s_df = df[df["branchName"] == store]
-        s_lw = lw_df[lw_df["branchName"] == store]
-
-        for session in ["Breakfast","Lunch","Snacks","Dinner","Post Dinner"]:
-
-            t = s_df[s_df["Session"] == session]["Net Sales"].sum()
-            lw = s_lw[s_lw["Session"] == session]["Net Sales"].sum()
-
-            growth = ((t - lw) / max(lw, 1)) * 100
-
-            out.append({
-                "Store Name": store,
-                "Session": session,
-                "Today Rev": round(t, 2),
-                "LW Rev": round(lw, 2),
-                "Growth %": round(growth, 2)
-            })
-
-    return pd.DataFrame(out)
-
-
-# =====================================================
-# 📌 BRAND REPORT
-# =====================================================
-
-def brand_report(df, lw_df):
-    rows = []
-
-    for store in df["branchName"].unique():
-
-        s_df = df[df["branchName"] == store]
-        s_lw = lw_df[lw_df["branchName"] == store]
-
-        for brand in s_df["Brand"].unique():
-
-            t = s_df[s_df["Brand"] == brand]
-            lw = s_lw[s_lw["Brand"] == brand]
-
-            t_rev = t["Net Sales"].sum()
-            lw_rev = lw["Net Sales"].sum()
-
-            growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
-
-            t_disc = (t["discountAmount"].sum() / max(t["grossAmount"].sum(), 1)) * 100
-            lw_disc = (lw["discountAmount"].sum() / max(lw["grossAmount"].sum(), 1)) * 100
-
-            rows.append({
-                "Store Name": store,
-                "Brand": brand,
-                "Today Rev": round(t_rev, 2),
-                "LW Rev": round(lw_rev, 2),
-                "Growth %": round(growth, 2),
-                "Today Dis %": round(t_disc, 2),
-                "LW Dis %": round(lw_disc, 2),
-                "Changes %": round(t_disc - lw_disc, 2)
-            })
-
-    return pd.DataFrame(rows)
-
-
-# =========================================================
-# 🔥 INSIGHT ENGINE
-# =========================================================
-
-def generate_insight(overall):
-
-    try:
-        row = overall[overall["Parameters"]=="Net"].iloc[0]
-
-        lw = row["LW Growth %"]
-        l2w = row["L2W Growth %"]
-        mom = row["MoM Growth %"]
-        ly = row["LY Growth %"]
-
-        text = f"{lw:+.1f}% vs LW, {l2w:+.1f}% vs L2W, {mom:+.1f}% vs MoM, {ly:+.1f}% vs LY"
-
-        if lw>0 and ly<0:
-            text += " → ⚠️ slowdown"
-        elif lw>0 and ly>0:
-            text += " → 🚀 strong growth"
-        elif lw<0:
-            text += " → 🔻 decline"
-
-        return text
-    except:
-        return "Insight not available"
-
-# =========================================================
-# 🔥 SAFE ANALYSIS BUILDER
-# =========================================================
-
-def safe_kpi_builder(df_today, df_lw, col, label):
-
-    if df_today.empty or col not in df_today.columns:
-        return pd.DataFrame()
-
-    grouped_today = df_today.groupby(col)
-    grouped_lw = df_lw.groupby(col)
-
-    frames = []
-
-    for key in grouped_today.groups.keys():
-
-        t_df = grouped_today.get_group(key)
-        lw_df = grouped_lw.get_group(key) if key in grouped_lw.groups else pd.DataFrame()
-
-        frames.append(build_kpi(t_df, lw_df, (label, key)))
-
-    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-
-
-
-# ---------------- SUMMARY ---------------- #
-
-today_total = today_cut["Net Sales"].sum()
-lw_total = lastweek_cut["Net Sales"].sum()
-
-growth = ((today_total - lw_total) / max(lw_total, 1)) * 100
-
-lw_full_day = final_df[
-    (final_df["Data_Type"] == "Last Week") &
-    (final_df["Store Type"] == "COCO") &
-    (final_df["status"] == "Closed")
-]["Net Sales"].sum()
-
-eod_projection = lw_full_day * (1 + (growth / 100))
-
-summary = pd.DataFrame({
-    "Metric": ["Total Sales"],
-    "Today": [today_total],
-    "Last Week (Till Now)": [lw_total],
-    "Growth %": [growth],
-    "EOD Projection": [eod_projection]
-}).round(2)
-
-print("✅ Summary Created")
-
-
-
-# ---------------- HOURLY ANALYSIS ---------------- #
-
-hourly_today = today_cut.groupby("BusinessHour")["Net Sales"].sum()
-hourly_lw = lastweek_cut.groupby("BusinessHour")["Net Sales"].sum()
-
-hourly_analysis = pd.DataFrame({
-    "Today": hourly_today,
-    "Last Week": hourly_lw
-}).fillna(0)
-
-hourly_analysis["Growth %"] = ((hourly_analysis["Today"] - hourly_analysis["Last Week"]) /
-                               hourly_analysis["Last Week"].replace(0,1))*100
-
-hourly_analysis = hourly_analysis.reset_index()
-hourly_analysis["Hour"] = hourly_analysis["BusinessHour"].apply(lambda x: x if x < 24 else x-24)
-hourly_analysis = hourly_analysis.sort_values("BusinessHour")
-
-# ---------------- HOURLY TREND ---------------- #
-
-hourly_analysis["Spike"] = hourly_analysis["Growth %"].apply(
-    lambda x: "🚀 Spike" if x > 50 else ("🔻 Drop" if x < -30 else "")
-)
-
-# =========================================================
-# 🔥 OVERALL ANALYSIS Summary
-# =========================================================
-
-overall, eod = build_overall_extended(
-    today_cut,
-    lastweek_cut,
-    last2week_cut,
-    month_on_month_cut,
-    lastyear_cut
-)
-
-insight_text = generate_insight(overall)
-
-print("🧠 Insight:", insight_text)
-
-print("✅ Summary Created")
-
-# =========================================================
-# 🎯 TARGET SUMMARY
-# =========================================================
-
-target_ws = spreadsheet.worksheet("Target Sheet")
-
-target_df = pd.DataFrame(
-    target_ws.get_all_records()
-)
-
-target_df["Date"] = pd.to_datetime(
-    target_df["Date"]
-).dt.date
-
-today_target_row = target_df[
-    target_df["Date"] == business_day
-]
-
-if not today_target_row.empty:
-
-    # =====================================================
-    # SAFE TARGET FETCH
-    # =====================================================
-
-    try:
-        total_target = float(
-            str(
-                today_target_row["Total Target"]
-                .iloc[0]
-            )
-            .replace(",", "")
-            .strip()
-        )
-    except:
-        total_target = 0
-
-    try:
-        offline_target = float(
-            str(
-                today_target_row["Offline Target"]
-                .iloc[0]
-            )
-            .replace(",", "")
-            .strip()
-        )
-    except:
-        offline_target = 0
-
-    try:
-        online_target = float(
-            str(
-                today_target_row["Online Target"]
-                .iloc[0]
-            )
-            .replace(",", "")
-            .strip()
-        )
-    except:
-        online_target = 0
-
-
-today_sales_total = today_cut["Net Sales"].sum()
-
-instore_sales = today_cut[
-    today_cut["Source Group"] == "In Store"
-]["Net Sales"].sum()
-
-online_sales = (
-    today_sales_total - instore_sales
-)
-
-offline_mix = (
-    instore_sales /
-    max(today_sales_total, 1)
-)
-
-online_mix = (
-    online_sales /
-    max(today_sales_total, 1)
-)
-
-offline_eod = eod * offline_mix
-online_eod = eod * online_mix
-
-
-target_summary = pd.DataFrame([
-    {
-        "Metric": "Total",
-        "Target": round(total_target,2),
-        "EOD Projection": round(eod,2),
-        "Ach %": round(
-            (eod /
-             max(total_target,1))*100,
-            2
-        )
-    },
-    {
-        "Metric": "Offline",
-        "Target": round(offline_target,2),
-        "EOD Projection": round(offline_eod,2),
-        "Ach %": round(
-            (offline_eod /
-             max(offline_target,1))*100,
-            2
-        )
-    },
-    {
-        "Metric": "Online",
-        "Target": round(online_target,2),
-        "EOD Projection": round(online_eod,2),
-        "Ach %": round(
-            (online_eod /
-             max(online_target,1))*100,
-            2
-        )
-    }
-])
-
-print("✅ Target Summary Created")
-
-
-# =========================================================
-# 🔥 BRAND ANALYSIS
-# =========================================================
-
-brand_rows = []
-
-brands = sorted(today_cut["Brand"].dropna().unique())
-
-for brand in brands:
-
-    t = today_cut[today_cut["Brand"] == brand]
-    lw = lastweek_cut[lastweek_cut["Brand"] == brand]
-
-    t_rev = t["Net Sales"].sum()
-    lw_rev = lw["Net Sales"].sum()
-
-    growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
-
-    t_gross = t["grossAmount"].sum()
-    lw_gross = lw["grossAmount"].sum()
-
-    t_disc = (t["discountAmount"].sum() / max(t_gross, 1)) * 100
-    lw_disc = (lw["discountAmount"].sum() / max(lw_gross, 1)) * 100
-
-    disc_change = t_disc - lw_disc
-
-    brand_rows.append({
-        "Brand": brand,
-        "Today Rev": round(t_rev, 2),
-        "LW Rev": round(lw_rev, 2),
-        "Growth %": round(growth, 2),
-        "Today Dis %": round(t_disc, 2),
-        "LW Dis %": round(lw_disc, 2),
-        "Dis Change %": round(disc_change, 2)
-    })
-
-brand_summary = pd.DataFrame(brand_rows)
-
-print("✅ Brand Summary Created")
-
-# =========================================================
-# 🔥 SOURCE ANALYSIS
-# =========================================================
-
-source_rows = []
-
-sources = sorted(
-    today_cut["Source Group"]
-    .dropna()
-    .unique()
-)
-
-for source in sources:
-
-    t = today_cut[
-        today_cut["Source Group"] == source
-    ]
-
-    lw = lastweek_cut[
-        lastweek_cut["Source Group"] == source
-    ]
-
-    t_rev = t["Net Sales"].sum()
-    lw_rev = lw["Net Sales"].sum()
-
-    growth = (
-        (t_rev - lw_rev)
-        / max(lw_rev, 1)
-    ) * 100
-
-    t_gross = t["grossAmount"].sum()
-    lw_gross = lw["grossAmount"].sum()
-
-    t_disc = (
-        t["discountAmount"].sum()
-        / max(t_gross, 1)
-    ) * 100
-
-    lw_disc = (
-        lw["discountAmount"].sum()
-        / max(lw_gross, 1)
-    ) * 100
-
-    disc_change = (
-        t_disc - lw_disc
+if "__source_file" in final_df.columns:
+
+    final_df.drop(
+        columns="__source_file",
+        inplace=True
     )
 
-    source_rows.append({
-        "Source Group": source,
-        "Today Rev": round(t_rev, 2),
-        "LW Rev": round(lw_rev, 2),
-        "Growth %": round(growth, 2),
-        "Today Dis %": round(t_disc, 2),
-        "LW Dis %": round(lw_disc, 2),
-        "Dis Change %": round(disc_change, 2)
-    })
-
-source_summary = pd.DataFrame(source_rows)
-
-print("SOURCE SUMMARY CHECK")
-print(source_summary)
 
 # =========================================================
-# 🔥 BRAND x SOURCE
+# DATE RANGE
 # =========================================================
 
-brand_source_rows = []
-
-source = sorted(
-    today_cut["Source Group"]
-    .dropna()
+available_dates = sorted(
+    final_df["Date"]
+    .dt.normalize()
     .unique()
 )
 
-brands_required = [
-    "Frozen Bottle",
-    "Madno",
-    "Boba Bar",
-    "Lubov"
-]
 
-for brand in brands_required:
+if not available_dates:
 
-    # BRAND HEADER
-    brand_source_rows.append({
-        "Brand": f"🔹 {brand}",
-        "Source Group": "Total",
-        "Today Rev": "",
-        "LW Rev": "",
-        "Growth %": "",
-        "Today Dis %": "",
-        "LW Dis %": "",
-        "Dis Change %": ""
-    })
+    raise RuntimeError(
+        "❌ No valid dates available"
+    )
 
-    for source in sources:
 
-        t = today_cut[
-            (today_cut["Brand"] == brand)
-            & (today_cut["Source Group"] == source)
-        ]
+latest_date = pd.Timestamp(
+    available_dates[-1]
+)
 
-        lw = lastweek_cut[
-            (lastweek_cut["Brand"] == brand)
-            & (lastweek_cut["Source Group"] == source)
-        ]
 
-        t_rev = t["Net Sales"].sum()
-        lw_rev = lw["Net Sales"].sum()
+print("=" * 80)
+print("AVAILABLE DATE RANGE")
+print("=" * 80)
 
-        growth = (
-            (t_rev - lw_rev)
-            / max(lw_rev, 1)
-        ) * 100
+print(
+    "Minimum Date:",
+    final_df["Date"].min().date()
+)
 
-        t_disc = (
-            t["discountAmount"].sum()
-            / max(t["grossAmount"].sum(), 1)
-        ) * 100
+print(
+    "Maximum Date:",
+    final_df["Date"].max().date()
+)
 
-        lw_disc = (
-            lw["discountAmount"].sum()
-            / max(lw["grossAmount"].sum(), 1)
-        ) * 100
 
-        disc_change = (
-            t_disc - lw_disc
+# =========================================================
+# CURRENT / FTD DATE
+# =========================================================
+#
+# The latest available date in the CSV is treated as FTD.
+#
+# Current:
+#   12-Aug-26
+#
+# =========================================================
+
+ftd_date = latest_date.date()
+
+
+# =========================================================
+# COMPARISON DATES
+# =========================================================
+
+lw_date = (
+    ftd_date
+    - timedelta(days=7)
+)
+
+
+lm_date = (
+    pd.Timestamp(ftd_date)
+    - pd.DateOffset(months=1)
+).date()
+
+
+ly_date = (
+    pd.Timestamp(ftd_date)
+    - pd.DateOffset(years=1)
+).date()
+
+
+print("=" * 80)
+print("COMPARISON DATE CHECK")
+print("=" * 80)
+
+print(
+    "FTD:",
+    ftd_date
+)
+
+print(
+    "LW :",
+    lw_date
+)
+
+print(
+    "LM :",
+    lm_date
+)
+
+print(
+    "LY :",
+    ly_date
+)
+
+
+# =========================================================
+# MONTH START DATES
+# =========================================================
+
+current_month_start = pd.Timestamp(
+    year=ftd_date.year,
+    month=ftd_date.month,
+    day=1
+).date()
+
+
+lm_month_start = pd.Timestamp(
+    year=lm_date.year,
+    month=lm_date.month,
+    day=1
+).date()
+
+
+ly_month_start = pd.Timestamp(
+    year=ly_date.year,
+    month=ly_date.month,
+    day=1
+).date()
+
+
+print("=" * 80)
+print("MTD PERIODS")
+print("=" * 80)
+
+print(
+    "Current MTD:",
+    current_month_start,
+    "→",
+    ftd_date
+)
+
+print(
+    "LM MTD     :",
+    lm_month_start,
+    "→",
+    lm_date
+)
+
+print(
+    "LY MTD     :",
+    ly_month_start,
+    "→",
+    ly_date
+)
+
+
+# =========================================================
+# DATE FILTER HELPER
+# =========================================================
+
+def date_filter(
+    start_date,
+    end_date
+):
+
+    start = pd.Timestamp(
+        start_date
+    )
+
+    end = pd.Timestamp(
+        end_date
+    )
+
+    return final_df.loc[
+        (
+            final_df["Date"]
+            .dt.normalize()
+            >= start
+        )
+        &
+        (
+            final_df["Date"]
+            .dt.normalize()
+            <= end
+        )
+    ].copy()
+
+
+def single_date_filter(
+    target_date
+):
+
+    target = pd.Timestamp(
+        target_date
+    )
+
+    return final_df.loc[
+        final_df["Date"]
+        .dt.normalize()
+        .eq(target)
+    ].copy()
+
+
+# =========================================================
+# FTD DATASETS
+# =========================================================
+
+ftd_df = single_date_filter(
+    ftd_date
+)
+
+
+lw_df = single_date_filter(
+    lw_date
+)
+
+
+lm_df = single_date_filter(
+    lm_date
+)
+
+
+ly_df = single_date_filter(
+    ly_date
+)
+
+
+# =========================================================
+# MTD DATASETS
+# =========================================================
+
+mtd_df = date_filter(
+    current_month_start,
+    ftd_date
+)
+
+
+lm_mtd_df = date_filter(
+    lm_month_start,
+    lm_date
+)
+
+
+ly_mtd_df = date_filter(
+    ly_month_start,
+    ly_date
+)
+
+
+# =========================================================
+# DATA CHECK
+# =========================================================
+
+print("=" * 80)
+print("FILTER CHECK")
+print("=" * 80)
+
+print(
+    "FTD Rows    :",
+    f"{len(ftd_df):,}"
+)
+
+print(
+    "LW Rows     :",
+    f"{len(lw_df):,}"
+)
+
+print(
+    "LM Rows     :",
+    f"{len(lm_df):,}"
+)
+
+print(
+    "LY Rows     :",
+    f"{len(ly_df):,}"
+)
+
+print(
+    "MTD Rows    :",
+    f"{len(mtd_df):,}"
+)
+
+print(
+    "LM MTD Rows :",
+    f"{len(lm_mtd_df):,}"
+)
+
+print(
+    "LY MTD Rows :",
+    f"{len(ly_mtd_df):,}"
+)
+
+
+# =========================================================
+# VALIDATION
+# =========================================================
+
+if ftd_df.empty:
+
+    raise RuntimeError(
+        f"❌ No FTD data found for {ftd_date}"
+    )
+
+
+if lw_df.empty:
+
+    print(
+        f"⚠️ No LW data found for {lw_date}"
+    )
+
+
+if lm_df.empty:
+
+    print(
+        f"⚠️ No LM data found for {lm_date}"
+    )
+
+
+if ly_df.empty:
+
+    print(
+        f"⚠️ No LY data found for {ly_date}"
+    )
+
+
+# =========================================================
+# KPI BUILDER
+# =========================================================
+
+def get_kpi(df):
+
+    if df.empty:
+
+        return {
+            "Gross": 0,
+            "Net": 0,
+            "Discount": 0,
+            "Orders": 0,
+            "Qty": 0,
+            "AOV": 0,
+            "Dis %": 0
+        }
+
+
+    gross = df[
+        "Gross Sales"
+    ].sum()
+
+
+    net = df[
+        "Net Sales"
+    ].sum()
+
+
+    discount = df[
+        "Discount"
+    ].sum()
+
+
+    orders = df[
+        "Orders"
+    ].sum()
+
+
+    qty = df[
+        "Quantity"
+    ].sum()
+
+
+    aov = (
+        net / orders
+        if orders
+        else 0
+    )
+
+
+    dis_pct = (
+        discount / gross * 100
+        if gross
+        else 0
+    )
+
+
+    return {
+
+        "Gross": round(
+            gross,
+            2
+        ),
+
+        "Net": round(
+            net,
+            2
+        ),
+
+        "Discount": round(
+            discount,
+            2
+        ),
+
+        "Orders": int(
+            orders
+        ),
+
+        "Qty": round(
+            qty,
+            2
+        ),
+
+        "AOV": round(
+            aov,
+            2
+        ),
+
+        "Dis %": round(
+            dis_pct,
+            2
+        )
+    }
+
+
+# =========================================================
+# KPI OBJECTS
+# =========================================================
+
+ftd_kpi = get_kpi(
+    ftd_df
+)
+
+lw_kpi = get_kpi(
+    lw_df
+)
+
+lm_kpi = get_kpi(
+    lm_df
+)
+
+ly_kpi = get_kpi(
+    ly_df
+)
+
+mtd_kpi = get_kpi(
+    mtd_df
+)
+
+lm_mtd_kpi = get_kpi(
+    lm_mtd_df
+)
+
+ly_mtd_kpi = get_kpi(
+    ly_mtd_df
+)
+
+
+# =========================================================
+# GROWTH %
+# =========================================================
+
+def growth_pct(
+    current,
+    previous
+):
+
+    if previous == 0:
+
+        return 0
+
+    return round(
+        (
+            (current - previous)
+            / previous
+        ) * 100,
+        1
+    )
+
+
+def build_growth_kpi(
+    current,
+    previous
+):
+
+    return {
+
+        "Gross %":
+            growth_pct(
+                current["Gross"],
+                previous["Gross"]
+            ),
+
+        "Net %":
+            growth_pct(
+                current["Net"],
+                previous["Net"]
+            ),
+
+        "Orders %":
+            growth_pct(
+                current["Orders"],
+                previous["Orders"]
+            ),
+
+        "Qty %":
+            growth_pct(
+                current["Qty"],
+                previous["Qty"]
+            )
+    }
+
+
+ftd_lw_growth = build_growth_kpi(
+    ftd_kpi,
+    lw_kpi
+)
+
+
+ftd_lm_growth = build_growth_kpi(
+    ftd_kpi,
+    lm_kpi
+)
+
+
+ftd_ly_growth = build_growth_kpi(
+    ftd_kpi,
+    ly_kpi
+)
+
+
+mtd_lm_growth = build_growth_kpi(
+    mtd_kpi,
+    lm_mtd_kpi
+)
+
+
+mtd_ly_growth = build_growth_kpi(
+    mtd_kpi,
+    ly_mtd_kpi
+)
+
+
+# =========================================================
+# STORE TYPE KPI
+# =========================================================
+
+def store_type_kpi(
+    df,
+    store_type
+):
+
+    return get_kpi(
+        df[
+            df["Store Type"]
+            == store_type
+        ].copy()
+    )
+
+
+# =========================================================
+# FTD STORE TYPE
+# =========================================================
+
+ftd_coco_kpi = store_type_kpi(
+    ftd_df,
+    "COCO"
+)
+
+
+ftd_fofo_kpi = store_type_kpi(
+    ftd_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# MTD STORE TYPE
+# =========================================================
+
+mtd_coco_kpi = store_type_kpi(
+    mtd_df,
+    "COCO"
+)
+
+
+mtd_fofo_kpi = store_type_kpi(
+    mtd_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# SUMMARY BUILDER
+# =========================================================
+
+def build_summary(
+    df,
+    column
+):
+
+    if df.empty:
+
+        return pd.DataFrame(
+            columns=[
+                column,
+                "Gross",
+                "Net",
+                "Discount",
+                "Orders",
+                "Qty",
+                "AOV",
+                "Dis %",
+                "Contribution %"
+            ]
         )
 
-        brand_source_rows.append({
-            "Brand": "",
-            "Source Group": source,
-            "Today Rev": round(t_rev, 2),
-            "LW Rev": round(lw_rev, 2),
-            "Growth %": round(growth, 2),
-            "Today Dis %": round(t_disc, 2),
-            "LW Dis %": round(lw_disc, 2),
-            "Dis Change %": round(disc_change, 2)
-        })
 
-brand_source_analysis = pd.DataFrame(
-    brand_source_rows
-)
+    work = df.copy()
 
-print("✅ Brand Source Analysis Created")
 
-# =========================================================
-# 🔥 REGION x SOURCE
-# =========================================================
+    work[column] = (
+        work[column]
+        .fillna("Others")
+        .astype(str)
+        .replace("", "Others")
+    )
 
-region_source_rows = []
 
-source = sorted(
-    today_cut["Source Group"]
-    .dropna()
-    .unique()
-)
+    summary = (
+        work
+        .groupby(
+            column,
+            dropna=False
+        )
+        .agg(
+            Gross=(
+                "Gross Sales",
+                "sum"
+            ),
+            Net=(
+                "Net Sales",
+                "sum"
+            ),
+            Discount=(
+                "Discount",
+                "sum"
+            ),
+            Orders=(
+                "Orders",
+                "sum"
+            ),
+            Qty=(
+                "Quantity",
+                "sum"
+            )
+        )
+        .reset_index()
+    )
 
-regions_required = ["KA", "MH", "TN", "Kerela"]
 
-for region in regions_required:
+    summary["AOV"] = (
+        summary["Net"]
+        /
+        summary["Orders"]
+        .replace(0, 1)
+    )
 
-    region_source_rows.append({
-        "Region": f"🔹 {region}",
-        "Source Group": "Total",
-        "Today Rev": "",
-        "LW Rev": "",
-        "Growth %": "",
-        "Today Dis %": "",
-        "LW Dis %": "",
-        "Dis Change %": ""
-    })
 
-    for source in sources:
+    summary["Dis %"] = (
+        summary["Discount"]
+        /
+        summary["Gross"]
+        .replace(0, 1)
+    ) * 100
 
-        t = today_cut[
-            (today_cut["Region"] == region) &
-            (today_cut["Source Group"] == source)
-        ]
 
-        lw = lastweek_cut[
-            (lastweek_cut["Region"] == region) &
-            (lastweek_cut["Source Group"] == source)
-        ]
+    total_net = (
+        summary["Net"].sum()
+    )
 
-        t_rev = t["Net Sales"].sum()
-        lw_rev = lw["Net Sales"].sum()
 
-        growth = ((t_rev - lw_rev) / max(lw_rev, 1)) * 100
+    if total_net:
 
-        t_disc = (
-            t["discountAmount"].sum()
-            / max(t["grossAmount"].sum(), 1)
+        summary["Contribution %"] = (
+            summary["Net"]
+            / total_net
         ) * 100
 
-        lw_disc = (
-            lw["discountAmount"].sum()
-            / max(lw["grossAmount"].sum(), 1)
-        ) * 100
+    else:
 
-        disc_change = t_disc - lw_disc
+        summary["Contribution %"] = 0
 
-        region_source_rows.append({
-            "Region": "",
-            "Source Group": source,
-            "Today Rev": round(t_rev, 2),
-            "LW Rev": round(lw_rev, 2),
-            "Growth %": round(growth, 2),
-            "Today Dis %": round(t_disc, 2),
-            "LW Dis %": round(lw_disc, 2),
-            "Dis Change %": round(disc_change, 2)
-        })
 
-region_source_analysis = pd.DataFrame(region_source_rows)
+    summary = (
+        summary
+        .sort_values(
+            "Net",
+            ascending=False
+        )
+        .reset_index(
+            drop=True
+        )
+    )
 
-print("✅ Region Source Analysis Created")
+
+    return summary.round(2)
+
 
 # =========================================================
-# 🔥 SESSION ANALYSIS
+# COCO DATA
 # =========================================================
 
-sessions = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner"]
+ftd_coco_df = ftd_df[
+    ftd_df["Store Type"]
+    == "COCO"
+].copy()
 
-# ---------------- BRAND SESSION ---------------- #
 
-brand_session = pd.pivot_table(
-    today_cut,
-    index="Brand",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
+mtd_coco_df = mtd_df[
+    mtd_df["Store Type"]
+    == "COCO"
+].copy()
 
-lw_brand_session = pd.pivot_table(
-    lastweek_cut,
-    index="Brand",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
 
-for s in sessions:
+lw_coco_df = lw_df[
+    lw_df["Store Type"]
+    == "COCO"
+].copy()
 
-    if s not in brand_session.columns:
-        brand_session[s] = 0
 
-    if s not in lw_brand_session.columns:
-        lw_brand_session[s] = 0
+lm_coco_df = lm_df[
+    lm_df["Store Type"]
+    == "COCO"
+].copy()
 
-    brand_session[f"{s} Growth %"] = (
-        (brand_session[s] - lw_brand_session[s])
-        / lw_brand_session[s].replace(0, 1)
+
+ly_coco_df = ly_df[
+    ly_df["Store Type"]
+    == "COCO"
+].copy()
+
+
+lm_mtd_coco_df = lm_mtd_df[
+    lm_mtd_df["Store Type"]
+    == "COCO"
+].copy()
+
+
+ly_mtd_coco_df = ly_mtd_df[
+    ly_mtd_df["Store Type"]
+    == "COCO"
+].copy()
+
+
+# =========================================================
+# GENERIC PERFORMANCE SUMMARY
+# =========================================================
+
+def performance_summary(
+    current_df,
+    previous_df,
+    group_column
+):
+
+    current = build_summary(
+        current_df,
+        group_column
+    )
+
+
+    previous = build_summary(
+        previous_df,
+        group_column
+    )
+
+
+    if current.empty:
+
+        return current
+
+
+    previous_net = (
+        previous[
+            [
+                group_column,
+                "Net",
+                "Orders"
+            ]
+        ]
+        .rename(
+            columns={
+                "Net":
+                    "Previous Net",
+                "Orders":
+                    "Previous Orders"
+            }
+        )
+    )
+
+
+    result = current.merge(
+        previous_net,
+        on=group_column,
+        how="left"
+    )
+
+
+    result[
+        "Previous Net"
+    ] = (
+        result[
+            "Previous Net"
+        ]
+        .fillna(0)
+    )
+
+
+    result[
+        "Previous Orders"
+    ] = (
+        result[
+            "Previous Orders"
+        ]
+        .fillna(0)
+    )
+
+
+    result["Net Growth %"] = (
+        (
+            result["Net"]
+            -
+            result["Previous Net"]
+        )
+        /
+        result[
+            "Previous Net"
+        ].replace(
+            0,
+            pd.NA
+        )
     ) * 100
 
-brand_session = brand_session.reset_index()
 
-print("✅ Brand Session Analysis Created")
-
-# ---------------- Source SESSION ---------------- #
-
-source_session = pd.pivot_table(
-    today_cut,
-    index="Source Group",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
-
-lw_source_session = pd.pivot_table(
-    lastweek_cut,
-    index="Source Group",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
-
-for s in sessions:
-
-    if s not in source_session.columns:
-        source_session[s] = 0
-
-    if s not in lw_source_session.columns:
-        lw_source_session[s] = 0
-
-    source_session[f"{s} Growth %"] = (
-        (source_session[s] - lw_source_session[s])
-        / lw_source_session[s].replace(0, 1)
+    result["Orders Growth %"] = (
+        (
+            result["Orders"]
+            -
+            result["Previous Orders"]
+        )
+        /
+        result[
+            "Previous Orders"
+        ].replace(
+            0,
+            pd.NA
+        )
     ) * 100
 
-source_session = source_session.reset_index()
 
-print("✅ Source Session Analysis Created")
+    result[
+        "Net Growth %"
+    ] = (
+        result[
+            "Net Growth %"
+        ]
+        .fillna(0)
+        .round(1)
+    )
 
-# ---------------- REGION SESSION ---------------- #
 
-region_session = pd.pivot_table(
-    today_cut,
-    index="Region",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
+    result[
+        "Orders Growth %"
+    ] = (
+        result[
+            "Orders Growth %"
+        ]
+        .fillna(0)
+        .round(1)
+    )
 
-lw_region_session = pd.pivot_table(
-    lastweek_cut,
-    index="Region",
-    columns="Session",
-    values="Net Sales",
-    aggfunc="sum",
-    fill_value=0
-)
 
-for s in sessions:
+    result.drop(
+        columns=[
+            "Previous Net",
+            "Previous Orders"
+        ],
+        inplace=True
+    )
 
-    if s not in region_session.columns:
-        region_session[s] = 0
 
-    if s not in lw_region_session.columns:
-        lw_region_session[s] = 0
-
-    region_session[f"{s} Growth %"] = (
-        (region_session[s] - lw_region_session[s])
-        / lw_region_session[s].replace(0, 1)
-    ) * 100
-
-region_session = region_session.reset_index()
-
-print("✅ Region Session Analysis Created")
+    return result.round(2)
 
 
 # =========================================================
-# 🔥 ALL ANALYSIS (SAFE & CLEAN)
+# FTD PERFORMANCE TABLES
 # =========================================================
 
-source_analysis = safe_kpi_builder(
-    today_cut,
-    lastweek_cut,
-    "Source Group",
-    "Source Group"
+brand_ftd_lw = performance_summary(
+    ftd_coco_df,
+    lw_coco_df,
+    "Brand Name"
 )
 
-region_analysis = safe_kpi_builder(
-    today_cut,
-    lastweek_cut,
-    "Region",
+
+brand_ftd_lm = performance_summary(
+    ftd_coco_df,
+    lm_coco_df,
+    "Brand Name"
+)
+
+
+brand_ftd_ly = performance_summary(
+    ftd_coco_df,
+    ly_coco_df,
+    "Brand Name"
+)
+
+
+source_ftd_lw = performance_summary(
+    ftd_coco_df,
+    lw_coco_df,
+    "Source"
+)
+
+
+source_ftd_lm = performance_summary(
+    ftd_coco_df,
+    lm_coco_df,
+    "Source"
+)
+
+
+source_ftd_ly = performance_summary(
+    ftd_coco_df,
+    ly_coco_df,
+    "Source"
+)
+
+
+region_ftd_lw = performance_summary(
+    ftd_coco_df,
+    lw_coco_df,
     "Region"
 )
 
-brand_analysis = safe_kpi_builder(
-    today_cut,
-    lastweek_cut,
-    "Brand",
-    "Brand"
+
+region_ftd_lm = performance_summary(
+    ftd_coco_df,
+    lm_coco_df,
+    "Region"
 )
 
-session_analysis = safe_kpi_builder(
-    today_cut,
-    lastweek_cut,
-    "Session",
+
+region_ftd_ly = performance_summary(
+    ftd_coco_df,
+    ly_coco_df,
+    "Region"
+)
+
+
+session_ftd_lw = performance_summary(
+    ftd_coco_df,
+    lw_coco_df,
     "Session"
 )
 
-print("✅ All Analysis Completed")
 
-# =========================================================
-# 📊 CHART DATA BLOCK
-# =========================================================
-chart_df = today_cut.copy()
-# =========================================================
-# BRAND SALES CHART
-# =========================================================
-
-brand_chart_df = (
-    chart_df.groupby("Brand")["Net Sales"]
-    .sum()
-    .reset_index()
-    .sort_values(
-        "Net Sales",
-        ascending=False
-    )
+session_ftd_lm = performance_summary(
+    ftd_coco_df,
+    lm_coco_df,
+    "Session"
 )
 
-# =========================================================
-# SOURCE MIX CHART
-# =========================================================
 
-source_chart_df = (
-    chart_df.groupby("Source Group")["Net Sales"]
-    .sum()
-    .reset_index()
+session_ftd_ly = performance_summary(
+    ftd_coco_df,
+    ly_coco_df,
+    "Session"
 )
 
+
 # =========================================================
-# BRAND x SOURCE DISCOUNT %
+# MTD PERFORMANCE TABLES
 # =========================================================
 
-discount_brand_source = (
-    chart_df.groupby(
-        ["Brand", "Source Group"]
-    )
-    .agg({
-        "discountAmount": "sum",
-        "grossAmount": "sum"
-    })
-    .reset_index()
+brand_mtd_lm = performance_summary(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    "Brand Name"
 )
 
-discount_brand_source["Discount %"] = (
-    discount_brand_source["discountAmount"]
-    / discount_brand_source[
-        "grossAmount"
-    ].replace(0, 1)
-) * 100
 
-print("✅ Today Chart Data Prepared")
-
-# =========================================================
-# 📈 HOURLY SALES TREND CHART DATA
-# =========================================================
-
-hourly_chart_df = hourly_analysis.copy()
-
-print("✅ Chart Data Prepared")
-
-# =========================================================
-# 📈 HOURLY SALES TREND CHART
-# =========================================================
-
-def create_hourly_chart():
-
-    chart_df = hourly_analysis.copy()
-
-    if chart_df.empty:
-        return None
-
-    fig, ax = plt.subplots(figsize=(10, 4))
-
-    # TODAY LINE
-    ax.plot(
-        chart_df["Hour"],
-        chart_df["Today"],
-        marker="o",
-        linewidth=2,
-        label="Today"
-    )
-
-    # LAST WEEK LINE
-    ax.plot(
-        chart_df["Hour"],
-        chart_df["Last Week"],
-        marker="o",
-        linewidth=2,
-        label="Last Week"
-    )
-
-    ax.set_title(
-        "Hourly Sales Trend (Today vs Last Week)"
-    )
-
-    ax.set_xlabel("Hour")
-    ax.set_ylabel("Net Sales")
-
-    ax.legend()
-
-    ax.grid(True)
-
-    # =====================================================
-    # TODAY DATA LABELS (Lakhs)
-    # =====================================================
-
-    for x, y in zip(
-        chart_df["Hour"],
-        chart_df["Today"]
-    ):
-
-        ax.text(
-            x,
-            y,
-            f"{y/100000:.1f}L",
-            fontsize=8,
-            ha="center",
-            va="bottom",
-            fontweight="bold"
-        )
-
-    # =====================================================
-    # LAST WEEK DATA LABELS (Lakhs)
-    # =====================================================
-
-    for x, y in zip(
-        chart_df["Hour"],
-        chart_df["Last Week"]
-    ):
-
-        ax.text(
-            x,
-            y,
-            f"{y/100000:.1f}L",
-            fontsize=8,
-            ha="center",
-            va="top"
-        )
-
-    img_buffer = BytesIO()
-
-    plt.tight_layout()
-
-    plt.savefig(
-        img_buffer,
-        format="png",
-        bbox_inches="tight"
-    )
-
-    img_buffer.seek(0)
-
-    plt.close()
-
-    return img_buffer
-
-print("✅ Hourly Chart Ready")
-
-# =========================================================
-# 📊 BRAND SALES CHART
-# =========================================================
-
-def create_brand_chart():
-
-    if brand_chart_df.empty:
-        return None
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    bars = ax.bar(
-        brand_chart_df["Brand"],
-        brand_chart_df["Net Sales"]
-    )
-
-    ax.set_title("Brand Sales")
-
-    ax.set_xlabel("Brand")
-    ax.set_ylabel("Net Sales")
-
-    plt.xticks(rotation=45)
-
-    ax.grid(True)
-
-    # =====================================================
-    # DATA LABELS
-    # =====================================================
-
-    for bar in bars:
-
-        height = bar.get_height()
-
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            height,
-            f'{height/100000:.1f}L',
-            ha='center',
-            va='bottom',
-            fontsize=9,
-            fontweight='bold'
-        )
-
-    img_buffer = BytesIO()
-
-    plt.tight_layout()
-
-    plt.savefig(
-        img_buffer,
-        format="png",
-        bbox_inches="tight"
-    )
-
-    img_buffer.seek(0)
-
-    plt.close()
-
-    return img_buffer
-
-# =========================================================
-# 📦 SOURCE MIX CHART
-# =========================================================
-
-def create_source_chart():
-
-    if source_chart_df.empty:
-        return None
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-
-    ax.pie(
-        source_chart_df["Net Sales"],
-        labels=source_chart_df["Source Group"],
-        autopct="%1.1f%%"
-    )
-
-    ax.set_title("Source Mix")
-
-    img_buffer = BytesIO()
-
-    plt.tight_layout()
-
-    plt.savefig(
-        img_buffer,
-        format="png",
-        bbox_inches="tight"
-    )
-
-    img_buffer.seek(0)
-
-    plt.close()
-
-    return img_buffer
-
-
-# =========================================================
-# 💸 BRAND X SOURCE DISCOUNT % CHART
-# =========================================================
-
-def create_discount_chart():
-
-    if discount_brand_source.empty:
-        return None
-
-    pivot_df = discount_brand_source.pivot_table(
-        index="Brand",
-        columns="Source Group",
-        values="Discount %",
-        aggfunc="sum",
-        fill_value=0
-    )
-
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    pivot_df.plot(
-        kind="bar",
-        ax=ax
-    )
-
-    ax.set_title(
-        "Brand x Source Discount %"
-    )
-
-    ax.set_xlabel("Brand")
-    ax.set_ylabel("Discount %")
-
-    plt.xticks(rotation=45)
-
-    ax.grid(True)
-
-    # =====================================================
-    # DATA LABELS
-    # =====================================================
-
-    for container in ax.containers:
-
-        for bar in container:
-
-            height = bar.get_height()
-
-            if height > 0:
-
-                ax.text(
-                    bar.get_x() + bar.get_width()/2,
-                    height,
-                    f"{height:.1f}%",
-                    ha="center",
-                    va="bottom",
-                    fontsize=8,
-                    fontweight="bold"
-                )
-
-    img_buffer = BytesIO()
-
-    plt.tight_layout()
-
-    plt.savefig(
-        img_buffer,
-        format="png",
-        bbox_inches="tight"
-    )
-
-    img_buffer.seek(0)
-
-    plt.close()
-
-    return img_buffer
-
-# =========================================================
-# 🔥 TOP 10 STORES
-# =========================================================
-
-top_stores = (
-    today_cut.groupby("branchName")
-    .agg(Today_Sales=("Net Sales", "sum"))
-    .sort_values("Today_Sales", ascending=False)
-    .head(10)
+brand_mtd_ly = performance_summary(
+    mtd_coco_df,
+    ly_mtd_coco_df,
+    "Brand Name"
 )
 
-lw_store = (
-    lastweek_cut.groupby("branchName")
-    .agg(LW_Sales=("Net Sales", "sum"))
+
+source_mtd_lm = performance_summary(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    "Source"
 )
 
-top_stores = top_stores.join(lw_store, how="left").fillna(0)
 
-top_stores["Growth %"] = (
-    (top_stores["Today_Sales"] - top_stores["LW_Sales"])
-    / top_stores["LW_Sales"].replace(0, 1)
-) * 100
-
-top_stores = top_stores.reset_index()
-top_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
-
-top_stores = top_stores.round(2)
-
-# =========================================================
-# 🔥 BOTTOM 10 STORES
-# =========================================================
-
-bottom_stores = (
-    today_cut.groupby("branchName")
-    .agg(Today_Sales=("Net Sales", "sum"))
-    .sort_values("Today_Sales", ascending=True)  # 👈 change here
-    .head(10)
+source_mtd_ly = performance_summary(
+    mtd_coco_df,
+    ly_mtd_coco_df,
+    "Source"
 )
 
-lw_store = (
-    lastweek_cut.groupby("branchName")
-    .agg(LW_Sales=("Net Sales", "sum"))
+
+region_mtd_lm = performance_summary(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    "Region"
 )
 
-bottom_stores = bottom_stores.join(lw_store, how="left").fillna(0)
 
-bottom_stores["Growth %"] = (
-    (bottom_stores["Today_Sales"] - bottom_stores["LW_Sales"])
-    / bottom_stores["LW_Sales"].replace(0, 1)
-) * 100
-
-bottom_stores = bottom_stores.reset_index()
-bottom_stores.rename(columns={"branchName": "Store Name"}, inplace=True)
-
-bottom_stores = bottom_stores.round(2)
+region_mtd_ly = performance_summary(
+    mtd_coco_df,
+    ly_mtd_coco_df,
+    "Region"
+)
 
 
-# =========================================================
-# 🔍 DEBUG (CORRECT VARIABLES)
-# =========================================================
+session_mtd_lm = performance_summary(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    "Session"
+)
 
 
-print("🔍 Top Stores Check")
-print(top_stores.head())
-
-print("🔍 Bottom Stores Check")
-print(bottom_stores.head())
+session_mtd_ly = performance_summary(
+    mtd_coco_df,
+    ly_mtd_coco_df,
+    "Session"
+)
 
 
 # =========================================================
-# FINAL DATAFRAME READY
+# TOP 10 BRANCHES
 # =========================================================
 
-print("\n==============================")
-print("FINAL_DF COLUMNS")
-print("==============================")
-print(final_df.columns.tolist())
-
-print("\nTotal Rows :", len(final_df))
-
-# ---------------- PUSH ---------------- #
-
-def push(name, df):
-    try:
-        ws = spreadsheet.worksheet(name)
-    except:
-        ws = spreadsheet.add_worksheet(title=name, rows="1000", cols="50")
-
-    ws.clear()
-    ws.batch_clear(["A:Z"])
-    
-    time.sleep(2)
-    
-    ws.update(
-        [df.columns.tolist()] +
-        df.astype(str).values.tolist()
-    )
+top_branch_ftd_lw = performance_summary(
+    ftd_coco_df,
+    lw_coco_df,
+    "Branch"
+).head(10)
 
 
-        
-# =====================================================
-# FINAL HTML TABLE
-# =====================================================
+top_branch_ftd_lm = performance_summary(
+    ftd_coco_df,
+    lm_coco_df,
+    "Branch"
+).head(10)
 
-def styled_html(df):
 
-    df = df.copy()
+top_branch_mtd_lm = performance_summary(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    "Branch"
+).head(10)
 
-    growth_cols = [c for c in df.columns if "Growth" in c]
 
-    text_cols = [
-        "Parameters",
-        "Parameter",
-        "Metric",
-        "Source Group",
-        "Region",
-        "Brand",
-        "Session",
-        "Hour",
-        "Store Name",
-        "Insight"
+# =========================================================
+# KPI TABLE
+# =========================================================
+
+kpi_table = pd.DataFrame({
+
+    "Metric": [
+        "Gross Revenue",
+        "Net Revenue",
+        "Discount",
+        "Orders",
+        "Qty",
+        "AOV",
+        "Discount %"
+    ],
+
+    "FTD": [
+        ftd_kpi["Gross"],
+        ftd_kpi["Net"],
+        ftd_kpi["Discount"],
+        ftd_kpi["Orders"],
+        ftd_kpi["Qty"],
+        ftd_kpi["AOV"],
+        ftd_kpi["Dis %"]
+    ],
+
+    "MTD": [
+        mtd_kpi["Gross"],
+        mtd_kpi["Net"],
+        mtd_kpi["Discount"],
+        mtd_kpi["Orders"],
+        mtd_kpi["Qty"],
+        mtd_kpi["AOV"],
+        mtd_kpi["Dis %"]
     ]
 
-    # =====================================================
-    # FORMAT
-    # =====================================================
+})
 
-    for col in df.columns:
 
-        # ---------------- TEXT COLUMNS ---------------- #
+# =========================================================
+# STORE TYPE TABLE
+# =========================================================
 
-        if col in text_cols:
+store_type_table = pd.DataFrame({
 
-            df[col] = df[col].fillna("").astype(str)
+    "Metric": [
+        "Gross Revenue",
+        "Net Revenue",
+        "Discount",
+        "Orders",
+        "Qty",
+        "AOV",
+        "Discount %"
+    ],
 
-        # ---------------- GROWTH COLUMNS ---------------- #
+    "FTD COCO": [
+        ftd_coco_kpi["Gross"],
+        ftd_coco_kpi["Net"],
+        ftd_coco_kpi["Discount"],
+        ftd_coco_kpi["Orders"],
+        ftd_coco_kpi["Qty"],
+        ftd_coco_kpi["AOV"],
+        ftd_coco_kpi["Dis %"]
+    ],
 
-        elif col in growth_cols:
+    "MTD COCO": [
+        mtd_coco_kpi["Gross"],
+        mtd_coco_kpi["Net"],
+        mtd_coco_kpi["Discount"],
+        mtd_coco_kpi["Orders"],
+        mtd_coco_kpi["Qty"],
+        mtd_coco_kpi["AOV"],
+        mtd_coco_kpi["Dis %"]
+    ],
 
-            def growth_format(x):
+    "FTD FOFO": [
+        ftd_fofo_kpi["Gross"],
+        ftd_fofo_kpi["Net"],
+        ftd_fofo_kpi["Discount"],
+        ftd_fofo_kpi["Orders"],
+        ftd_fofo_kpi["Qty"],
+        ftd_fofo_kpi["AOV"],
+        ftd_fofo_kpi["Dis %"]
+    ],
 
-                try:
+    "MTD FOFO": [
+        mtd_fofo_kpi["Gross"],
+        mtd_fofo_kpi["Net"],
+        mtd_fofo_kpi["Discount"],
+        mtd_fofo_kpi["Orders"],
+        mtd_fofo_kpi["Qty"],
+        mtd_fofo_kpi["AOV"],
+        mtd_fofo_kpi["Dis %"]
+    ]
 
-                    if str(x).strip() == "":
-                        return ""
+})
 
-                    val = float(str(x).replace("%", "").replace(",", "").strip())
 
-                    bg = "#d4edda" if val >= 0 else "#f8d7da"
-                    color = "#155724" if val >= 0 else "#721c24"
+# =========================================================
+# COMPARISON KPI TABLE
+# =========================================================
 
-                    return (
-                        f'<div style="'
-                        f'background:{bg};'
-                        f'color:{color};'
-                        f'padding:4px 8px;'
-                        f'border-radius:4px;'
-                        f'font-weight:bold;'
-                        f'text-align:center;'
-                        f'white-space:nowrap;'
-                        f'">'
-                        f'{val:.2f}%'
-                        f'</div>'
-                    )
+comparison_table = pd.DataFrame({
 
-                except:
-                    return ""
+    "Metric": [
+        "Gross Revenue",
+        "Net Revenue",
+        "Orders",
+        "Qty"
+    ],
 
-            df[col] = df[col].apply(growth_format)
+    "FTD": [
+        ftd_kpi["Gross"],
+        ftd_kpi["Net"],
+        ftd_kpi["Orders"],
+        ftd_kpi["Qty"]
+    ],
 
-        # ---------------- NORMAL NUMBER COLUMNS ---------------- #
+    "LW Same Day": [
+        lw_kpi["Gross"],
+        lw_kpi["Net"],
+        lw_kpi["Orders"],
+        lw_kpi["Qty"]
+    ],
 
-        else:
+    "FTD vs LW %": [
+        ftd_lw_growth["Gross %"],
+        ftd_lw_growth["Net %"],
+        ftd_lw_growth["Orders %"],
+        ftd_lw_growth["Qty %"]
+    ],
 
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+    "LM Same Day": [
+        lm_kpi["Gross"],
+        lm_kpi["Net"],
+        lm_kpi["Orders"],
+        lm_kpi["Qty"]
+    ],
 
-            df[col] = df[col].apply(
-                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+    "FTD vs LM %": [
+        ftd_lm_growth["Gross %"],
+        ftd_lm_growth["Net %"],
+        ftd_lm_growth["Orders %"],
+        ftd_lm_growth["Qty %"]
+    ],
+
+    "LY Same Day": [
+        ly_kpi["Gross"],
+        ly_kpi["Net"],
+        ly_kpi["Orders"],
+        ly_kpi["Qty"]
+    ],
+
+    "FTD vs LY %": [
+        ftd_ly_growth["Gross %"],
+        ftd_ly_growth["Net %"],
+        ftd_ly_growth["Orders %"],
+        ftd_ly_growth["Qty %"]
+    ]
+
+})
+
+
+# =========================================================
+# MTD COMPARISON TABLE
+# =========================================================
+
+mtd_comparison_table = pd.DataFrame({
+
+    "Metric": [
+        "Gross Revenue",
+        "Net Revenue",
+        "Orders",
+        "Qty"
+    ],
+
+    "Current MTD": [
+        mtd_kpi["Gross"],
+        mtd_kpi["Net"],
+        mtd_kpi["Orders"],
+        mtd_kpi["Qty"]
+    ],
+
+    "LM MTD": [
+        lm_mtd_kpi["Gross"],
+        lm_mtd_kpi["Net"],
+        lm_mtd_kpi["Orders"],
+        lm_mtd_kpi["Qty"]
+    ],
+
+    "MTD vs LM %": [
+        mtd_lm_growth["Gross %"],
+        mtd_lm_growth["Net %"],
+        mtd_lm_growth["Orders %"],
+        mtd_lm_growth["Qty %"]
+    ],
+
+    "LY MTD": [
+        ly_mtd_kpi["Gross"],
+        ly_mtd_kpi["Net"],
+        ly_mtd_kpi["Orders"],
+        ly_mtd_kpi["Qty"]
+    ],
+
+    "MTD vs LY %": [
+        mtd_ly_growth["Gross %"],
+        mtd_ly_growth["Net %"],
+        mtd_ly_growth["Orders %"],
+        mtd_ly_growth["Qty %"]
+    ]
+
+})
+
+
+# =========================================================
+# HTML FORMATTERS
+# =========================================================
+
+def format_number(value):
+
+    if pd.isna(value):
+
+        return ""
+
+
+    if isinstance(
+        value,
+        (int, float)
+    ):
+
+        return f"{value:,.2f}"
+
+
+    return value
+
+
+def html_table(
+    df,
+    percent_columns=None
+):
+
+    if df is None:
+
+        return ""
+
+
+    if df.empty:
+
+        return """
+        <p style="color:#777;">
+        No data available.
+        </p>
+        """
+
+
+    work = df.copy()
+
+
+    percent_columns = (
+        percent_columns
+        or []
+    )
+
+
+    for col in work.columns:
+
+        if col in percent_columns:
+
+            work[col] = work[col].apply(
+                lambda x:
+                    f"{x:,.1f}%"
+                    if pd.notna(x)
+                    else ""
             )
 
-    # =====================================================
-    # HTML CONVERT
-    # =====================================================
+        elif pd.api.types.is_numeric_dtype(
+            work[col]
+        ):
 
-    html = df.to_html(
+            work[col] = work[col].apply(
+                lambda x:
+                    f"{x:,.2f}"
+                    if pd.notna(x)
+                    else ""
+            )
+
+
+    return work.to_html(
         index=False,
-        escape=False,
-        border=0
+        border=0,
+        classes="data-table",
+        justify="center"
     )
 
-    # =====================================================
-    # TABLE STYLE
-    # =====================================================
 
-    html = html.replace(
-        '<table class="dataframe">',
-        '''
-        <table style="
-            border-collapse:collapse;
-            width:auto;
-            min-width:60%;
-            font-family:Arial;
-            font-size:12px;
-            background:white;
-        ">
-        '''
-    )
+# =========================================================
+# KPI CARD
+# =========================================================
 
-    # =====================================================
-    # HEADER STYLE
-    # =====================================================
+def kpi_card(
+    title,
+    ftd_value,
+    mtd_value,
+    prefix="",
+    suffix=""
+):
 
-    html = html.replace(
-        '<th>',
-        '''
-        <th style="
-            background:#1f4e78;
-            color:white;
-            padding:8px;
-            border:1px solid #d9d9d9;
-            text-align:center;
-            white-space:nowrap;
-        ">
-        '''
-    )
+    return f"""
+    <div class="kpi-card">
 
-    # =====================================================
-    # CELL STYLE
-    # =====================================================
-
-    html = html.replace(
-        '<td>',
-        '''
-        <td style="
-            padding:6px;
-            border:1px solid #e5e5e5;
-            text-align:left;
-            white-space:nowrap;
-        ">
-        '''
-    )
-
-    return html
-
-# ---------------- SAFE TABLE ---------------- #
-
-def safe_table(df, title):
-
-    if df is None or df.empty:
-        return f"<p>⚠️ No data available for {title}</p>"
-
-    return styled_html(df)
-
-
-# ---------------- SEND EMAIL ---------------- #
-
-def send_email():
-
-    import smtplib
-    import os
-
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.mime.image import MIMEImage
-
-    EMAIL_USER = os.environ.get("EMAIL_USER")
-    EMAIL_PASS = os.environ.get("EMAIL_PASS")
-    TO_EMAIL = "vivek@frozenbottle.in"
-    CC_EMAIL = "Faraz@frozenbottle.in"
-
-    report_time = now.replace(
-        minute=0,
-        second=0,
-        microsecond=0
-    )
-
-    # =====================================================
-    # CREATE MESSAGE
-    # =====================================================
-
-    source_df = pd.DataFrame(source_rows)
-
-    print("SOURCE DF CHECK")
-    print(source_df.head(10))
-    
-    msg = MIMEMultipart("related")
-
-    msg["From"] = EMAIL_USER
-    msg["To"] = "vivek@frozenbottle.in"
-    msg["Cc"] = "faraz@frozenbottle.in"
-
-    msg["Subject"] = (
-        f"📊 Sales Dashboard - "
-        f"{report_time.strftime('%d %b %Y')}"
-    )
-
-    # =====================================================
-    # EMAIL BODY
-    # =====================================================
-
-    body = f"""
-
-    <div style="
-        font-family:Arial;
-        background:#f4f6f9;
-        padding:20px;
-    ">
-
-        <h1 style="color:#1f4e78;">
-            📊 SALES DASHBOARD
-        </h1>
-
-        <p>
-            🕒 Data Till:
-            <b>{report_time.strftime('%d %b %Y %I:%M %p')}</b>
-        </p>
-
-        <div style="
-            background:white;
-            padding:15px;
-            border-radius:8px;
-            margin-bottom:20px;
-        ">
-
-            <h2>🧠 Executive Insight</h2>
-
-            <p style="
-                font-size:15px;
-                font-weight:bold;
-                color:#333;
-            ">
-                {insight_text}
-            </p>
-
+        <div class="kpi-title">
+            {title}
         </div>
 
-        <h2>📈 Overall KPI</h2>
-        {styled_html(overall)}
+        <div class="period-label">
+            FTD
+        </div>
 
-        <br><br>
+        <div class="kpi-value">
+            {prefix}{ftd_value:,.0f}{suffix}
+        </div>
 
-        <h2>🎯 Target vs EOD Projection</h2>
-        {styled_html(target_summary)}
+        <div class="divider"></div>
 
-        <br><br>
+        <div class="period-label">
+            MTD
+        </div>
 
-        <h2>🏷️ Brand Sales</h2>
-
-        <img src="cid:brand_chart"
-        style="
-        width:60%;
-        max-width:900px;
-        border-radius:8px;
-        margin-bottom:15px;
-        ">
-
-        <br><br>
-
-        <h2>📦 Source Mix</h2>
-
-        <img src="cid:source_chart"
-        style="
-        width:60%;
-        max-width:700px;
-        border-radius:8px;
-        margin-bottom:15px;
-        ">
-
-        <br><br>
-
-        <h2>💸 Brand x Source Discount %</h2>
-
-        <img src="cid:discount_chart"
-        style="
-        width:60%;
-        max-width:900px;
-        border-radius:8px;
-        margin-bottom:15px;
-        ">
-
-        <br><br>
-
-
-        <h2>🏷️ Brand Summary</h2>
-        {styled_html(brand_summary)}
-
-        <br><br>
-
-        <h2>🏷️ Source Summary</h2>
-        {styled_html(source_summary)}
-
-        <br><br>
-
-        <h2>🏷️ Brand Source Analysis</h2>
-        {styled_html(brand_source_analysis)}
-
-        <br><br>
-
-        <h2>🌍 Region Source Analysis</h2>
-        {styled_html(region_source_analysis)}
-
-        <br><br>
-
-        <h2>🍽️ Brand Session Analysis</h2>
-        {styled_html(brand_session)}
-
-        <br><br>
-
-        <h2>🌍 Region Session Analysis</h2>
-        {styled_html(region_session)}
-
-        <br><br>
-
-        <h2>🌍 Source Session Analysis</h2>
-        {styled_html(source_session)}
-
-        <br><br>
-
-        <h2>⏰ Hourly Sales Trend</h2>
-
-        <img src="cid:hourly_chart"
-        style="
-        width:60%;
-        max-width:900px;
-        border-radius:8px;
-        margin-bottom:15px;
-        ">
-
-        {styled_html(hourly_analysis)}
-
-        <br><br>
-
-        <h2>🏆 Top Stores</h2>
-        {styled_html(top_stores)}
-
-        <br><br>
-
-        <h2>⚠️ Bottom Stores</h2>
-        {styled_html(bottom_stores)}
+        <div class="kpi-value">
+            {prefix}{mtd_value:,.0f}{suffix}
+        </div>
 
     </div>
-
     """
 
-    # =====================================================
-    # ATTACH HTML BODY
-    # =====================================================
 
-    msg.attach(MIMEText(body, "html"))
+# =========================================================
+# EMAIL HTML
+# =========================================================
 
-    # =====================================================
-    # ATTACH CHARTS
-    # =====================================================
+body = f"""
+<!DOCTYPE html>
 
-    chart_mapping = {
+<html>
 
-        "brand_chart":
-            create_brand_chart(),
+<head>
 
-        "source_chart":
-            create_source_chart(),
+<meta charset="UTF-8">
 
-        "discount_chart":
-            create_discount_chart(),
+<style>
 
-        "hourly_chart":
-            create_hourly_chart()
-    }
+body {{
+    font-family: Calibri, Arial, sans-serif;
+    background: #F4F6F8;
+    color: #222;
+    margin: 0;
+    padding: 20px;
+}}
 
-    for cid, chart_buffer in chart_mapping.items():
+.container {{
+    max-width: 1400px;
+    margin: auto;
+    background: white;
+    padding: 20px;
+}}
 
-        if chart_buffer:
+.header {{
+    background: #243447;
+    color: white;
+    padding: 18px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}}
 
-            image = MIMEImage(
-                chart_buffer.read()
-            )
+.header-title {{
+    font-size: 24px;
+    font-weight: bold;
+}}
 
-            image.add_header(
-                "Content-ID",
-                f"<{cid}>"
-            )
+.header-subtitle {{
+    margin-top: 6px;
+    font-size: 14px;
+}}
 
-            image.add_header(
-                "Content-Disposition",
-                "inline",
-                filename=f"{cid}.png"
-            )
+.section-title {{
+    background: #2E8B57;
+    color: white;
+    padding: 9px 12px;
+    margin-top: 25px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+}}
 
-            msg.attach(image)
+.period-title {{
+    background: #EAF2F8;
+    color: #243447;
+    padding: 8px 12px;
+    margin-top: 18px;
+    margin-bottom: 10px;
+    border-left: 5px solid #243447;
+    font-weight: bold;
+}}
 
-    # =====================================================
-    # RECEIVERS
-    # =====================================================
+.kpi-row {{
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}}
 
-    receivers = []
+.kpi-card {{
+    background: #FFFFFF;
+    border: 1px solid #D9DEE3;
+    border-radius: 8px;
+    padding: 12px;
+    width: 165px;
+    text-align: center;
+}}
 
-    if TO_EMAIL:
-        receivers += TO_EMAIL.split(",")
+.kpi-title {{
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}}
 
-    if CC_EMAIL:
-        receivers += CC_EMAIL.split(",")
+.period-label {{
+    font-size: 11px;
+    color: #777;
+    text-transform: uppercase;
+}}
 
-    # =====================================================
-    # SEND EMAIL
-    # =====================================================
+.kpi-value {{
+    font-size: 21px;
+    font-weight: bold;
+    color: #0A7D32;
+    margin-top: 3px;
+}}
 
-    server = smtplib.SMTP(
-        "smtp.gmail.com",
-        587
+.divider {{
+    border-top: 1px solid #DDD;
+    margin: 9px 0;
+}}
+
+.data-table {{
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 20px;
+    font-size: 12px;
+}}
+
+.data-table th {{
+    background: #243447;
+    color: white;
+    padding: 7px;
+    border: 1px solid #243447;
+    text-align: center;
+}}
+
+.data-table td {{
+    padding: 6px;
+    border: 1px solid #D9DEE3;
+    text-align: center;
+}}
+
+.data-table tr:nth-child(even) {{
+    background: #F7F8F9;
+}}
+
+.note {{
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 10px;
+}}
+
+.footer {{
+    margin-top: 30px;
+    padding-top: 12px;
+    border-top: 1px solid #DDD;
+    color: #777;
+    font-size: 11px;
+}}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+
+<div class="header">
+
+    <div class="header-title">
+        📊 Frozen Bottle DSR Dashboard
+    </div>
+
+    <div class="header-subtitle">
+        FTD: {ftd_date.strftime("%d-%b-%Y")}
+        &nbsp; | &nbsp;
+        MTD: {current_month_start.strftime("%d-%b-%Y")}
+        → {ftd_date.strftime("%d-%b-%Y")}
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     KPI CARDS
+     ===================================================== -->
+
+<div class="section-title">
+    📌 FTD | MTD KPI
+</div>
+
+
+<div class="kpi-row">
+
+    {kpi_card(
+        "Gross Revenue",
+        ftd_kpi["Gross"],
+        mtd_kpi["Gross"],
+        "₹"
+    )}
+
+    {kpi_card(
+        "Net Revenue",
+        ftd_kpi["Net"],
+        mtd_kpi["Net"],
+        "₹"
+    )}
+
+    {kpi_card(
+        "Discount",
+        ftd_kpi["Discount"],
+        mtd_kpi["Discount"],
+        "₹"
+    )}
+
+    {kpi_card(
+        "Orders",
+        ftd_kpi["Orders"],
+        mtd_kpi["Orders"]
+    )}
+
+    {kpi_card(
+        "Qty",
+        ftd_kpi["Qty"],
+        mtd_kpi["Qty"]
+    )}
+
+    {kpi_card(
+        "AOV",
+        ftd_kpi["AOV"],
+        mtd_kpi["AOV"],
+        "₹"
+    )}
+
+    {kpi_card(
+        "Discount %",
+        ftd_kpi["Dis %"],
+        mtd_kpi["Dis %"],
+        "",
+        "%"
+    )}
+
+</div>
+
+
+<!-- =====================================================
+     KPI SUMMARY
+     ===================================================== -->
+
+<div class="section-title">
+    📊 KPI Summary
+</div>
+
+{html_table(
+    kpi_table
+)}
+
+
+<!-- =====================================================
+     STORE TYPE
+     ===================================================== -->
+
+<div class="section-title">
+    🏢 COCO vs FOFO
+</div>
+
+{html_table(
+    store_type_table
+)}
+
+
+<!-- =====================================================
+     FTD COMPARISON
+     ===================================================== -->
+
+<div class="section-title">
+    📅 FTD Comparison
+</div>
+
+<div class="note">
+    FTD: {ftd_date.strftime("%d-%b-%Y")}
+    &nbsp; | &nbsp;
+    LW: {lw_date.strftime("%d-%b-%Y")}
+    &nbsp; | &nbsp;
+    LM: {lm_date.strftime("%d-%b-%Y")}
+    &nbsp; | &nbsp;
+    LY: {ly_date.strftime("%d-%b-%Y")}
+</div>
+
+{html_table(
+    comparison_table,
+    percent_columns=[
+        "FTD vs LW %",
+        "FTD vs LM %",
+        "FTD vs LY %"
+    ]
+)}
+
+
+<!-- =====================================================
+     MTD COMPARISON
+     ===================================================== -->
+
+<div class="section-title">
+    📈 MTD Comparison
+</div>
+
+<div class="note">
+    Current MTD:
+    {current_month_start.strftime("%d-%b-%Y")}
+    →
+    {ftd_date.strftime("%d-%b-%Y")}
+    <br>
+
+    LM MTD:
+    {lm_month_start.strftime("%d-%b-%Y")}
+    →
+    {lm_date.strftime("%d-%b-%Y")}
+    <br>
+
+    LY MTD:
+    {ly_month_start.strftime("%d-%b-%Y")}
+    →
+    {ly_date.strftime("%d-%b-%Y")}
+</div>
+
+{html_table(
+    mtd_comparison_table,
+    percent_columns=[
+        "MTD vs LM %",
+        "MTD vs LY %"
+    ]
+)}
+
+
+<!-- =====================================================
+     BRAND
+     ===================================================== -->
+
+<div class="section-title">
+    🏷 Brand Performance - FTD vs LW
+</div>
+
+{html_table(
+    brand_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Brand - FTD vs LM
+</div>
+
+{html_table(
+    brand_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Brand - FTD vs LY
+</div>
+
+{html_table(
+    brand_ftd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Brand - MTD vs LM MTD
+</div>
+
+{html_table(
+    brand_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Brand - MTD vs LY MTD
+</div>
+
+{html_table(
+    brand_mtd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<!-- =====================================================
+     SOURCE
+     ===================================================== -->
+
+<div class="section-title">
+    🛒 Source Performance
+</div>
+
+
+<div class="period-title">
+    FTD vs LW
+</div>
+
+{html_table(
+    source_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LM
+</div>
+
+{html_table(
+    source_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LY
+</div>
+
+{html_table(
+    source_ftd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LM MTD
+</div>
+
+{html_table(
+    source_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LY MTD
+</div>
+
+{html_table(
+    source_mtd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<!-- =====================================================
+     REGION
+     ===================================================== -->
+
+<div class="section-title">
+    🌎 Region Performance
+</div>
+
+
+<div class="period-title">
+    FTD vs LW
+</div>
+
+{html_table(
+    region_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LM
+</div>
+
+{html_table(
+    region_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LY
+</div>
+
+{html_table(
+    region_ftd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LM MTD
+</div>
+
+{html_table(
+    region_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LY MTD
+</div>
+
+{html_table(
+    region_mtd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<!-- =====================================================
+     SESSION
+     ===================================================== -->
+
+<div class="section-title">
+    🕒 Session Performance
+</div>
+
+
+<div class="period-title">
+    FTD vs LW
+</div>
+
+{html_table(
+    session_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LM
+</div>
+
+{html_table(
+    session_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    FTD vs LY
+</div>
+
+{html_table(
+    session_ftd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LM MTD
+</div>
+
+{html_table(
+    session_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    MTD vs LY MTD
+</div>
+
+{html_table(
+    session_mtd_ly,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<!-- =====================================================
+     TOP BRANCHES
+     ===================================================== -->
+
+<div class="section-title">
+    🏪 Top 10 Branches - FTD vs LW
+</div>
+
+{html_table(
+    top_branch_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Top 10 Branches - FTD vs LM
+</div>
+
+{html_table(
+    top_branch_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Top 10 Branches - MTD vs LM MTD
+</div>
+
+{html_table(
+    top_branch_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<!-- =====================================================
+     FOOTER
+     ===================================================== -->
+
+<div class="footer">
+
+    Generated automatically from Rista monthly CSV data.
+
+    <br>
+
+    FTD Date:
+    {ftd_date.strftime("%d-%b-%Y")}
+
+    <br>
+
+    Data through:
+    {ftd_date.strftime("%d-%b-%Y")}
+
+</div>
+
+
+</div>
+
+</body>
+
+</html>
+"""
+
+
+# =========================================================
+# SEND EMAIL
+# =========================================================
+
+def send_mail(
+    subject,
+    html_body
+):
+
+    msg = MIMEMultipart(
+        "alternative"
     )
 
-    server.starttls()
 
-    server.login(
-        EMAIL_USER,
-        EMAIL_PASS
+    msg["From"] = EMAIL
+
+    msg["To"] = ", ".join(
+        TO
     )
 
-    server.sendmail(
-        EMAIL_USER,
-        receivers,
-        msg.as_string()
+
+    if CC:
+
+        msg["Cc"] = ", ".join(
+            CC
+        )
+
+
+    msg["Subject"] = subject
+
+
+    msg.attach(
+        MIMEText(
+            html_body,
+            "html",
+            "utf-8"
+        )
     )
 
-    server.quit()
 
-    print("📩 Email Sent Successfully")
-
-
-# ================================
-# 📌 ROLE DASHBOARD ENGINE
-# ================================
-
-def build_role_scope(role, identifier):
-
-    if role == "AM":
-
-        stores = am_store_map.get(identifier, [])
-
-        df_today = today_cut[
-            today_cut["branchName"].isin(stores)
-        ].copy()
-
-        df_lw = lastweek_cut[
-            lastweek_cut["branchName"].isin(stores)
-        ].copy()
-
-        return df_today, df_lw, stores, None
+    recipients = (
+        TO + CC
+    )
 
 
-    elif role == "TM":
+    print("=" * 80)
+    print("SENDING EMAIL")
+    print("=" * 80)
 
-        regions = tm_region_map.get(identifier, [])
-
-        df_today = today_cut[
-            today_cut["Region"].isin(regions)
-        ].copy()
-
-        df_lw = lastweek_cut[
-            lastweek_cut["Region"].isin(regions)
-        ].copy()
-
-        return df_today, df_lw, None, regions
+    print(
+        "To:",
+        recipients
+    )
 
 
-    else:
-        return pd.DataFrame(), pd.DataFrame(), None, None
+    with smtplib.SMTP(
+        SMTP_SERVER,
+        SMTP_PORT,
+        timeout=60
+    ) as server:
 
-# ================================
-# CLEAN PERIOD FILTERING
-# ================================
+        server.ehlo()
 
-today_df_clean = final_df[final_df["Data_Type"] == "Today"].copy()
-lw_df_clean = final_df[final_df["Data_Type"] == "Last Week"].copy()
+        server.starttls()
 
-# =====================================================
-# 📩 AM MAIL
-# =====================================================
+        server.ehlo()
 
-# (AM mail removed as requested)
+        server.login(
+            EMAIL,
+            PASSWORD
+        )
 
-# =====================================================
-# 📩 TM MAIL
-# =====================================================
-
-# (TM mail removed as requested)
-
-
-# ---------------- EXECUTE ---------------- #
-
-push("Overall", overall)
-push("Source Group", source_analysis)
-push("Region", region_analysis)
-push("Brand", brand_analysis)
-push("Session", session_analysis)
-push("Top_Stores", top_stores)
-push("Bottom_Stores", bottom_stores)
-push("Hourly", hourly_analysis)
+        server.sendmail(
+            EMAIL,
+            recipients,
+            msg.as_string()
+        )
 
 
-send_email()        # Full dashboard
+    print(
+        "✅ Dashboard Mail Sent"
+    )
 
-print("🎉 ALL EMAILS SENT SUCCESSFULLY")
+
+# =========================================================
+# SEND
+# =========================================================
+
+subject = (
+    "📊 DSR Dashboard | "
+    f"FTD & MTD | "
+    f"{ftd_date.strftime('%d-%b-%Y')}"
+)
+
+
+send_mail(
+    subject,
+    body
+)
+
+
+# =========================================================
+# FINAL LOG
+# =========================================================
+
+print("=" * 80)
+print("🏁 DSR DASHBOARD COMPLETED")
+print("=" * 80)
+
+print(
+    "FTD:",
+    ftd_date
+)
+
+print(
+    "MTD:",
+    current_month_start,
+    "→",
+    ftd_date
+)
+
+print(
+    "LW:",
+    lw_date
+)
+
+print(
+    "LM:",
+    lm_date
+)
+
+print(
+    "LY:",
+    ly_date
+)
+
+print("=" * 80)
