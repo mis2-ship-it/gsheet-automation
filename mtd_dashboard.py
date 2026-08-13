@@ -1460,6 +1460,43 @@ top_branch_mtd_lm = performance_summary(
     "Branch"
 ).head(10)
 
+# =========================================================
+# DAY-LEVEL COCO METRICS
+# =========================================================
+
+day_coco_summary = (
+    coco_mtd_df
+    .groupby("Date")
+    .agg(
+        Gross=("Gross Sales", "sum"),
+        Net=("Net Sales", "sum"),
+        Discount=("Discount", "sum"),
+        Orders=("Orders", "sum"),
+        Qty=("Quantity", "sum")
+    )
+    .reset_index()
+)
+
+day_coco_summary["AOV"] = (
+    day_coco_summary["Net"]
+    /
+    day_coco_summary["Orders"].replace(0, 1)
+)
+
+day_coco_summary["Dis %"] = (
+    day_coco_summary["Discount"]
+    /
+    day_coco_summary["Gross"].replace(0, 1)
+) * 100
+
+day_coco_summary = (
+    day_coco_summary
+    .sort_values("Date", ascending=False)
+    .reset_index(drop=True)
+)
+
+day_coco_summary = day_coco_summary.round(2)
+
 
 # =========================================================
 # KPI TABLE
@@ -2428,6 +2465,47 @@ body {{
     ]
 )}
 
+<!-- =====================================================
+     DAY LEVEL PERFORMANCE
+     ===================================================== -->
+
+<div class="section-title">
+    📅 Day Level Performance - FTD vs LW
+</div>
+
+{html_table(
+    day_level_ftd_lw,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Day Level Performance - FTD vs LM
+</div>
+
+{html_table(
+    day_level_ftd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Day Level Performance - MTD vs LM MTD
+</div>
+
+{html_table(
+    day_level_mtd_lm,
+    percent_columns=[
+        "Net Growth %",
+        "Orders Growth %"
+    ]
+)}
 
 <!-- =====================================================
      FOOTER
