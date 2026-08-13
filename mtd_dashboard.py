@@ -306,8 +306,7 @@ REQUIRED_COLUMNS = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Orders",
-    "Quantity"
+    "Orders"
 ]
 
 
@@ -353,8 +352,7 @@ NUMERIC_COLUMNS = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Orders",
-    "Quantity"
+    "Orders"
 ]
 
 
@@ -390,37 +388,30 @@ for col in TEXT_COLUMNS:
     )
 
 
-final_df["Store Type"] = (
-    final_df["Store Type"]
-    .str.upper()
-)
-
-# =========================================================
-# SESSION NORMALIZATION
-# =========================================================
-
+# ---------------------------------------------------------
+# Session standardization for dashboard
+# Breakfast > Lunch > Snacks > Dinner > Post Dinner
+# Late Night and Closing are treated as Post Dinner
+# ---------------------------------------------------------
 SESSION_MAP = {
-    "BREAKFAST": "Breakfast",
-    "LUNCH": "Lunch",
-    "SNACKS": "Snacks",
-    "SNACK": "Snacks",
-    "DINNER": "Dinner",
-    "POST DINNER": "Post Dinner",
-    "POST-DINNER": "Post Dinner",
-    "LATE NIGHT": "Post Dinner",
-    "LATE-NIGHT": "Post Dinner",
-    "CLOSING": "Post Dinner",
-    "CLOSING TIME": "Post Dinner"
+    "breakfast": "Breakfast",
+    "lunch": "Lunch",
+    "snacks": "Snacks",
+    "snack": "Snacks",
+    "dinner": "Dinner",
+    "late night": "Post Dinner",
+    "latenight": "Post Dinner",
+    "closing": "Post Dinner",
+    "post dinner": "Post Dinner",
+    "post-dinner": "Post Dinner",
+    "": "Post Dinner"
 }
 
 final_df["Session"] = (
     final_df["Session"]
-    .fillna("")
-    .astype(str)
-    .str.strip()
-    .str.upper()
+    .str.lower()
     .map(SESSION_MAP)
-    .fillna("Post Dinner")
+    .fillna(final_df["Session"].str.title())
 )
 
 SESSION_ORDER = {
@@ -430,6 +421,12 @@ SESSION_ORDER = {
     "Dinner": 4,
     "Post Dinner": 5
 }
+
+
+final_df["Store Type"] = (
+    final_df["Store Type"]
+    .str.upper()
+)
 
 
 # =========================================================
@@ -955,8 +952,8 @@ def build_growth_kpi(
 # =========================================================
 
 ftd_lw_growth = build_growth_kpi(
-    ftd_coco_compare_kpi,
-    lw_coco_compare_kpi
+    ftd_kpi,
+    lw_kpi
 )
 
 
@@ -965,8 +962,8 @@ ftd_lw_growth = build_growth_kpi(
 # =========================================================
 
 ftd_lm_growth = build_growth_kpi(
-    ftd_coco_compare_kpi,
-    lm_coco_compare_kpi
+    ftd_kpi,
+    lm_kpi
 )
 
 
@@ -975,8 +972,8 @@ ftd_lm_growth = build_growth_kpi(
 # =========================================================
 
 ftd_ly_growth = build_growth_kpi(
-    ftd_coco_compare_kpi,
-    ly_coco_compare_kpi
+    ftd_kpi,
+    ly_kpi
 )
 
 
@@ -985,8 +982,8 @@ ftd_ly_growth = build_growth_kpi(
 # =========================================================
 
 mtd_lm_growth = build_growth_kpi(
-    mtd_coco_compare_kpi,
-    lm_mtd_coco_compare_kpi
+    mtd_kpi,
+    lm_mtd_kpi
 )
 
 
@@ -995,8 +992,8 @@ mtd_lm_growth = build_growth_kpi(
 # =========================================================
 
 mtd_ly_growth = build_growth_kpi(
-    mtd_coco_compare_kpi,
-    ly_mtd_coco_compare_kpi
+    mtd_kpi,
+    ly_mtd_kpi
 )
 
 # =========================================================
@@ -1046,21 +1043,6 @@ mtd_fofo_kpi = store_type_kpi(
     mtd_df,
     "FOFO"
 )
-
-# =========================================================
-# COCO COMPARISON KPI OBJECTS
-# =========================================================
-
-# All comparison tables below the COCO vs FOFO section use COCO only.
-
-ftd_coco_compare_kpi = ftd_coco_kpi
-lw_coco_compare_kpi = store_type_kpi(lw_df, "COCO")
-lm_coco_compare_kpi = store_type_kpi(lm_df, "COCO")
-ly_coco_compare_kpi = store_type_kpi(ly_df, "COCO")
-
-mtd_coco_compare_kpi = mtd_coco_kpi
-lm_mtd_coco_compare_kpi = store_type_kpi(lm_mtd_df, "COCO")
-ly_mtd_coco_compare_kpi = store_type_kpi(ly_mtd_df, "COCO")
 
 
 # =========================================================
@@ -1253,7 +1235,8 @@ def performance_summary(
             [
                 group_column,
                 "Net",
-                "Orders"
+                "Orders",
+                "Dis %"
             ]
         ]
         .rename(
@@ -1261,7 +1244,9 @@ def performance_summary(
                 "Net":
                     "Previous Net",
                 "Orders":
-                    "Previous Orders"
+                    "Previous Orders",
+                "Dis %":
+                    "Previous Dis %"
             }
         )
     )
@@ -1289,6 +1274,15 @@ def performance_summary(
     ] = (
         result[
             "Previous Orders"
+        ]
+        .fillna(0)
+    )
+
+    result[
+        "Previous Dis %"
+    ] = (
+        result[
+            "Previous Dis %"
         ]
         .fillna(0)
     )
@@ -1337,6 +1331,12 @@ def performance_summary(
     )
 
 
+    # Negative = discount reduced (good); positive = discount increased (bad).
+    result["Dis % Change"] = (
+        result["Dis %"] - result["Previous Dis %"]
+    ).round(1)
+
+
     result[
         "Orders Growth %"
     ] = (
@@ -1351,36 +1351,14 @@ def performance_summary(
     result.drop(
         columns=[
             "Previous Net",
-            "Previous Orders"
+            "Previous Orders",
+            "Previous Dis %"
         ],
         inplace=True
     )
 
 
     return result.round(2)
-
-
-def sort_session_table(df):
-
-    if df is None or df.empty or "Session" not in df.columns:
-        return df
-
-    work = df.copy()
-    work["__session_order"] = (
-        work["Session"]
-        .map(SESSION_ORDER)
-        .fillna(99)
-    )
-
-    return (
-        work
-        .sort_values(
-            ["__session_order", "Net"],
-            ascending=[True, False]
-        )
-        .drop(columns="__session_order")
-        .reset_index(drop=True)
-    )
 
 
 # =========================================================
@@ -1456,8 +1434,6 @@ session_ftd_lw = performance_summary(
     "Session"
 )
 
-session_ftd_lw = sort_session_table(session_ftd_lw)
-
 
 session_ftd_lm = performance_summary(
     ftd_coco_df,
@@ -1465,16 +1441,12 @@ session_ftd_lm = performance_summary(
     "Session"
 )
 
-session_ftd_lm = sort_session_table(session_ftd_lm)
-
 
 session_ftd_ly = performance_summary(
     ftd_coco_df,
     ly_coco_df,
     "Session"
 )
-
-session_ftd_ly = sort_session_table(session_ftd_ly)
 
 
 # =========================================================
@@ -1529,16 +1501,12 @@ session_mtd_lm = performance_summary(
     "Session"
 )
 
-session_mtd_lm = sort_session_table(session_mtd_lm)
-
 
 session_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Session"
 )
-
-session_mtd_ly = sort_session_table(session_mtd_ly)
 
 
 # =========================================================
@@ -1570,7 +1538,7 @@ top_branch_mtd_lm = performance_summary(
 # =========================================================
 
 day_coco_summary = (
-    mtd_coco_df.assign(Date=mtd_coco_df["Date"].dt.normalize())
+    coco_mtd_df
     .groupby("Date")
     .agg(
         Gross=("Gross Sales", "sum"),
@@ -1603,126 +1571,6 @@ day_coco_summary = (
 day_coco_summary = day_coco_summary.round(2)
 
 
-def day_kpi_comparison(current_df, previous_df, current_label, previous_label):
-
-    current_kpi = get_kpi(current_df)
-    previous_kpi = get_kpi(previous_df)
-
-    return pd.DataFrame({
-        "Metric": [
-            "Gross Revenue",
-            "Net Revenue",
-            "Orders",
-            "AOV",
-            "Discount %"
-        ],
-        current_label: [
-            current_kpi["Gross"],
-            current_kpi["Net"],
-            current_kpi["Orders"],
-            current_kpi["AOV"],
-            current_kpi["Dis %"]
-        ],
-        previous_label: [
-            previous_kpi["Gross"],
-            previous_kpi["Net"],
-            previous_kpi["Orders"],
-            previous_kpi["AOV"],
-            previous_kpi["Dis %"]
-        ],
-        "Growth %": [
-            growth_pct(current_kpi["Gross"], previous_kpi["Gross"]),
-            growth_pct(current_kpi["Net"], previous_kpi["Net"]),
-            growth_pct(current_kpi["Orders"], previous_kpi["Orders"]),
-            growth_pct(current_kpi["AOV"], previous_kpi["AOV"]),
-            growth_pct(current_kpi["Dis %"], previous_kpi["Dis %"])
-        ]
-    }).round(2)
-
-
-def day_level_mtd_lm_table():
-
-    current_daily = (
-        mtd_coco_df.assign(Day=mtd_coco_df["Date"].dt.day)
-        .groupby("Day")
-        .agg(
-            Gross=("Gross Sales", "sum"),
-            Net=("Net Sales", "sum"),
-            Orders=("Orders", "sum")
-        )
-        .reset_index()
-    )
-
-    previous_daily = (
-        lm_mtd_coco_df.assign(Day=lm_mtd_coco_df["Date"].dt.day)
-        .groupby("Day")
-        .agg(
-            Previous_Gross=("Gross Sales", "sum"),
-            Previous_Net=("Net Sales", "sum"),
-            Previous_Orders=("Orders", "sum")
-        )
-        .reset_index()
-    )
-
-    result = current_daily.merge(
-        previous_daily,
-        on="Day",
-        how="left"
-    ).fillna(0)
-
-    result["Net Growth %"] = (
-        (result["Net"] - result["Previous_Net"])
-        / result["Previous_Net"].replace(0, pd.NA)
-    ) * 100
-
-    result["Orders Growth %"] = (
-        (result["Orders"] - result["Previous_Orders"])
-        / result["Previous_Orders"].replace(0, pd.NA)
-    ) * 100
-
-    return (
-        result
-        .rename(columns={
-            "Gross": "Current MTD Gross",
-            "Net": "Current MTD Net",
-            "Orders": "Current MTD Orders",
-            "Previous_Gross": "LM MTD Gross",
-            "Previous_Net": "LM MTD Net",
-            "Previous_Orders": "LM MTD Orders"
-        })
-        [[
-            "Day",
-            "Current MTD Gross",
-            "LM MTD Gross",
-            "Current MTD Net",
-            "LM MTD Net",
-            "Net Growth %",
-            "Current MTD Orders",
-            "LM MTD Orders",
-            "Orders Growth %"
-        ]]
-        .sort_values("Day")
-        .round(2)
-    )
-
-
-day_level_ftd_lw = day_kpi_comparison(
-    ftd_coco_df,
-    lw_coco_df,
-    "FTD COCO",
-    "LW COCO"
-)
-
-day_level_ftd_lm = day_kpi_comparison(
-    ftd_coco_df,
-    lm_coco_df,
-    "FTD COCO",
-    "LM COCO"
-)
-
-day_level_mtd_lm = day_level_mtd_lm_table()
-
-
 # =========================================================
 # KPI TABLE
 # =========================================================
@@ -1739,21 +1587,21 @@ kpi_table = pd.DataFrame({
     ],
 
     "FTD": [
-        ftd_kpi["Gross"],
-        ftd_kpi["Net"],
-        ftd_kpi["Discount"],
-        ftd_kpi["Orders"],
-        ftd_kpi["AOV"],
-        ftd_kpi["Dis %"]
+        ftd_coco_kpi["Gross"],
+        ftd_coco_kpi["Net"],
+        ftd_coco_kpi["Discount"],
+        ftd_coco_kpi["Orders"],
+        ftd_coco_kpi["AOV"],
+        ftd_coco_kpi["Dis %"]
     ],
 
     "MTD": [
-        mtd_kpi["Gross"],
-        mtd_kpi["Net"],
-        mtd_kpi["Discount"],
-        mtd_kpi["Orders"],
-        mtd_kpi["AOV"],
-        mtd_kpi["Dis %"]
+        mtd_coco_kpi["Gross"],
+        mtd_coco_kpi["Net"],
+        mtd_coco_kpi["Discount"],
+        mtd_coco_kpi["Orders"],
+        mtd_coco_kpi["AOV"],
+        mtd_coco_kpi["Dis %"]
     ]
 
 })
@@ -1822,49 +1670,57 @@ comparison_table = pd.DataFrame({
     "Metric": [
         "Gross Revenue",
         "Net Revenue",
-        "Orders"
+        "Orders",
+        "Discount %"
     ],
 
     "FTD": [
-        ftd_coco_compare_kpi["Gross"],
-        ftd_coco_compare_kpi["Net"],
-        ftd_coco_compare_kpi["Orders"]
+        ftd_coco_kpi["Gross"],
+        ftd_coco_kpi["Net"],
+        ftd_coco_kpi["Orders"],
+        ftd_coco_kpi["Dis %"]
     ],
 
     "LW Same Day": [
-        lw_coco_compare_kpi["Gross"],
-        lw_coco_compare_kpi["Net"],
-        lw_coco_compare_kpi["Orders"]
+        store_type_kpi(lw_df, "COCO")["Gross"],
+        store_type_kpi(lw_df, "COCO")["Net"],
+        store_type_kpi(lw_df, "COCO")["Orders"],
+        store_type_kpi(lw_df, "COCO")["Dis %"]
     ],
 
     "FTD vs LW %": [
         ftd_lw_growth["Gross %"],
         ftd_lw_growth["Net %"],
-        ftd_lw_growth["Orders %"]
+        ftd_lw_growth["Orders %"],
+        ftd_coco_kpi["Dis %"] - store_type_kpi(lw_df, "COCO")["Dis %"]
     ],
 
     "LM Same Day": [
-        lm_coco_compare_kpi["Gross"],
-        lm_coco_compare_kpi["Net"],
-        lm_coco_compare_kpi["Orders"]
+        store_type_kpi(lm_df, "COCO")["Gross"],
+        store_type_kpi(lm_df, "COCO")["Net"],
+        store_type_kpi(lm_df, "COCO")["Orders"],
+        store_type_kpi(lm_df, "COCO")["Dis %"]
     ],
 
     "FTD vs LM %": [
         ftd_lm_growth["Gross %"],
         ftd_lm_growth["Net %"],
-        ftd_lm_growth["Orders %"]
+        ftd_lm_growth["Orders %"],
+        ftd_coco_kpi["Dis %"] - store_type_kpi(lm_df, "COCO")["Dis %"]
     ],
 
     "LY Same Day": [
-        ly_coco_compare_kpi["Gross"],
-        ly_coco_compare_kpi["Net"],
-        ly_coco_compare_kpi["Orders"]
+        store_type_kpi(ly_df, "COCO")["Gross"],
+        store_type_kpi(ly_df, "COCO")["Net"],
+        store_type_kpi(ly_df, "COCO")["Orders"],
+        store_type_kpi(ly_df, "COCO")["Dis %"]
     ],
 
     "FTD vs LY %": [
         ftd_ly_growth["Gross %"],
         ftd_ly_growth["Net %"],
-        ftd_ly_growth["Orders %"]
+        ftd_ly_growth["Orders %"],
+        ftd_coco_kpi["Dis %"] - store_type_kpi(ly_df, "COCO")["Dis %"]
     ]
 
 })
@@ -1879,37 +1735,41 @@ mtd_comparison_table = pd.DataFrame({
     "Metric": [
         "Gross Revenue",
         "Net Revenue",
-        "Orders"
+        "Orders",
+        "Discount %"
     ],
 
     "Current MTD": [
-        mtd_coco_compare_kpi["Gross"],
-        mtd_coco_compare_kpi["Net"],
-        mtd_coco_compare_kpi["Orders"]
+        mtd_coco_kpi["Gross"],
+        mtd_coco_kpi["Net"],
+        mtd_coco_kpi["Orders"],
+        mtd_coco_kpi["Dis %"]
     ],
 
     "LM MTD": [
-        lm_mtd_coco_compare_kpi["Gross"],
-        lm_mtd_coco_compare_kpi["Net"],
-        lm_mtd_coco_compare_kpi["Orders"]
+        lm_mtd_coco_kpi["Gross"],
+        lm_mtd_coco_kpi["Net"],
+        lm_mtd_coco_kpi["Orders"]
     ],
 
     "MTD vs LM %": [
         mtd_lm_growth["Gross %"],
         mtd_lm_growth["Net %"],
-        mtd_lm_growth["Orders %"]
+        mtd_lm_growth["Orders %"],
+        mtd_coco_kpi["Dis %"] - get_kpi(lm_mtd_coco_df)["Dis %"]
     ],
 
     "LY MTD": [
-        ly_mtd_coco_compare_kpi["Gross"],
-        ly_mtd_coco_compare_kpi["Net"],
-        ly_mtd_coco_compare_kpi["Orders"]
+        ly_mtd_coco_kpi["Gross"],
+        ly_mtd_coco_kpi["Net"],
+        ly_mtd_coco_kpi["Orders"]
     ],
 
     "MTD vs LY %": [
         mtd_ly_growth["Gross %"],
         mtd_ly_growth["Net %"],
-        mtd_ly_growth["Orders %"]
+        mtd_ly_growth["Orders %"],
+        mtd_coco_kpi["Dis %"] - get_kpi(ly_mtd_coco_df)["Dis %"]
     ]
 
 })
@@ -1943,57 +1803,110 @@ def html_table(
 ):
 
     if df is None:
-
         return ""
 
-
     if df.empty:
-
-        return """
-        <p style="color:#777;">
-        No data available.
-        </p>
-        """
-
+        return ""
 
     work = df.copy()
-
-
-    percent_columns = (
-        percent_columns
-        or []
-    )
-
+    percent_columns = percent_columns or []
 
     for col in work.columns:
+        if col.lower() in ("dis %", "discount %", "dis % change") and col not in percent_columns:
+            percent_columns.append(col)
 
-        if col in percent_columns:
+    headers = list(work.columns)
 
-            work[col] = work[col].apply(
-                lambda x:
-                    f"{x:,.1f}%"
-                    if pd.notna(x)
-                    else ""
-            )
+    html = ['<table class="data-table"><thead><tr>']
+    for col in headers:
+        html.append(f'<th>{col}</th>')
+    html.append('</tr></thead><tbody>')
 
-        elif pd.api.types.is_numeric_dtype(
-            work[col]
-        ):
+    for _, row in work.iterrows():
+        html.append('<tr>')
+        for col in headers:
+            value = row[col]
 
-            work[col] = work[col].apply(
-                lambda x:
-                    f"{x:,.2f}"
-                    if pd.notna(x)
-                    else ""
-            )
+            if pd.isna(value):
+                display = ""
+            elif col in percent_columns:
+                display = f"{float(value):,.1f}%"
+            elif isinstance(value, (int, float)) or pd.api.types.is_number(value):
+                display = f"{float(value):,.2f}"
+            else:
+                display = str(value)
+
+            cell_style = ""
+            if col in percent_columns and pd.notna(value):
+                number = float(value)
+                lower_col = col.lower()
+
+                # Growth: positive = green, negative = red
+                if "growth" in lower_col or "vs" in lower_col:
+                    if number > 0:
+                        cell_style = ' style="background:#E8F5E9;color:#2E7D32;font-weight:bold;"'
+                    elif number < 0:
+                        cell_style = ' style="background:#FFEBEE;color:#C62828;font-weight:bold;"'
+
+                # Discount %: lower is good, higher is bad
+                elif "dis %" in lower_col or "discount %" in lower_col:
+                    if number < 0:
+                        cell_style = ' style="background:#E8F5E9;color:#2E7D32;font-weight:bold;"'
+                    elif number > 0:
+                        cell_style = ' style="background:#FFEBEE;color:#C62828;font-weight:bold;"'
+
+            html.append(f'<td{cell_style}>{display}</td>')
+        html.append('</tr>')
+
+    html.append('</tbody></table>')
+    return ''.join(html)
 
 
-    return work.to_html(
-        index=False,
-        border=0,
-        classes="data-table",
-        justify="center"
-    )
+def insight_block(label, df, comparison_name="FTD vs LW"):
+    if df is None or df.empty or "Net Growth %" not in df.columns:
+        return ""
+
+    work = df.copy()
+    work = work[pd.to_numeric(work["Net"], errors="coerce").fillna(0) > 0]
+    work["Net Growth %"] = pd.to_numeric(work["Net Growth %"], errors="coerce").fillna(0)
+
+    if work.empty:
+        return ""
+
+    positives = work[work["Net Growth %"] > 0].sort_values("Net Growth %", ascending=False).head(3)
+    negatives = work[work["Net Growth %"] < 0].sort_values("Net Growth %", ascending=True).head(3)
+
+    parts = []
+    if not positives.empty:
+        items = []
+        for _, r in positives.iterrows():
+            items.append(f"<b>{r.iloc[0]}</b> (+{r['Net Growth %']:.1f}%, ₹{r['Net']:,.0f})")
+        parts.append(f"<li><span class='insight-good'>🟢 {label} growth:</span> {', '.join(items)}</li>")
+
+    if not negatives.empty:
+        items = []
+        for _, r in negatives.iterrows():
+            items.append(f"<b>{r.iloc[0]}</b> ({r['Net Growth %']:.1f}%, ₹{r['Net']:,.0f})")
+        parts.append(f"<li><span class='insight-bad'>🔴 {label} needs improvement:</span> {', '.join(items)}</li>")
+
+    return ''.join(parts)
+
+
+def build_insights():
+    sections = []
+
+    sections.append(insight_block("Source", source_ftd_lw))
+    sections.append(insight_block("Session", session_ftd_lw))
+    sections.append(insight_block("Region", region_ftd_lw))
+
+    content = ''.join(x for x in sections if x)
+    if not content:
+        return "<p style='color:#777;'>No comparison data available for insights.</p>"
+
+    return f"<ul class='insight-list'>{content}</ul>"
+
+
+insights_html = build_insights()
 
 
 # =========================================================
@@ -2171,6 +2084,26 @@ body {{
     background: #F7F8F9;
 }}
 
+.insights {{
+    background: #F8FAFC;
+    border: 1px solid #D9DEE3;
+    border-left: 5px solid #2E8B57;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+}}
+
+.insight-list {{
+    margin: 6px 0 0 18px;
+    padding: 0;
+}}
+
+.insight-list li {{
+    margin: 7px 0;
+}}
+
+.insight-good {{ color: #2E7D32; font-weight: bold; }}
+.insight-bad {{ color: #C62828; font-weight: bold; }}
+
 .note {{
     font-size: 12px;
     color: #666;
@@ -2212,6 +2145,22 @@ body {{
 
 
 <!-- =====================================================
+     YESTERDAY / FTD INSIGHTS
+     ===================================================== -->
+
+<div class="section-title">
+    💡 Yesterday COCO Sales Insights
+</div>
+
+<div class="insights">
+    <div class="note">
+        Based on FTD {ftd_date.strftime("%d-%b-%Y")} vs LW same day.
+        Green = growth opportunity / positive movement. Red = needs improvement.
+    </div>
+    {insights_html}
+</div>
+
+<!-- =====================================================
      KPI CARDS
      ===================================================== -->
 
@@ -2224,42 +2173,42 @@ body {{
 
     {kpi_card(
         "Gross Revenue",
-        ftd_coco_compare_kpi["Gross"],
-        mtd_coco_compare_kpi["Gross"],
+        ftd_coco_kpi["Gross"],
+        mtd_coco_kpi["Gross"],
         "₹"
     )}
 
     {kpi_card(
         "Net Revenue",
-        ftd_coco_compare_kpi["Net"],
-        mtd_coco_compare_kpi["Net"],
+        ftd_coco_kpi["Net"],
+        mtd_coco_kpi["Net"],
         "₹"
     )}
 
     {kpi_card(
         "Discount",
-        ftd_kpi["Discount"],
-        mtd_kpi["Discount"],
+        ftd_coco_kpi["Discount"],
+        mtd_coco_kpi["Discount"],
         "₹"
     )}
 
     {kpi_card(
         "Orders",
-        ftd_coco_compare_kpi["Orders"],
-        mtd_coco_compare_kpi["Orders"]
+        ftd_coco_kpi["Orders"],
+        mtd_coco_kpi["Orders"]
     )}
 
     {kpi_card(
         "AOV",
-        ftd_kpi["AOV"],
-        mtd_kpi["AOV"],
+        ftd_coco_kpi["AOV"],
+        mtd_coco_kpi["AOV"],
         "₹"
     )}
 
     {kpi_card(
         "Discount %",
-        ftd_kpi["Dis %"],
-        mtd_kpi["Dis %"],
+        ftd_coco_kpi["Dis %"],
+        mtd_coco_kpi["Dis %"],
         "",
         "%"
     )}
@@ -2272,7 +2221,7 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
-    📊 KPI Summary - PAN INDIA
+    📊 KPI Summary
 </div>
 
 {html_table(
@@ -2298,7 +2247,7 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
-    📅 FTD Comparison - COCO
+    📅 FTD Comparison
 </div>
 
 <div class="note">
@@ -2316,7 +2265,8 @@ body {{
     percent_columns=[
         "FTD vs LW %",
         "FTD vs LM %",
-        "FTD vs LY %"
+        "FTD vs LY %",
+        "Discount %"
     ]
 )}
 
@@ -2326,7 +2276,7 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
-    📈 MTD Comparison - COCO
+    📈 MTD Comparison
 </div>
 
 <div class="note">
@@ -2352,7 +2302,8 @@ body {{
     mtd_comparison_table,
     percent_columns=[
         "MTD vs LM %",
-        "MTD vs LY %"
+        "MTD vs LY %",
+        "Discount %"
     ]
 )}
 
@@ -2369,7 +2320,8 @@ body {{
     brand_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2382,7 +2334,8 @@ body {{
     brand_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2395,7 +2348,8 @@ body {{
     brand_ftd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2408,7 +2362,8 @@ body {{
     brand_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2421,7 +2376,8 @@ body {{
     brand_mtd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2443,7 +2399,8 @@ body {{
     source_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2456,7 +2413,8 @@ body {{
     source_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2469,7 +2427,8 @@ body {{
     source_ftd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2482,7 +2441,8 @@ body {{
     source_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2495,7 +2455,8 @@ body {{
     source_mtd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2517,7 +2478,8 @@ body {{
     region_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2530,7 +2492,8 @@ body {{
     region_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2543,7 +2506,8 @@ body {{
     region_ftd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2556,7 +2520,8 @@ body {{
     region_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2569,7 +2534,8 @@ body {{
     region_mtd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2591,7 +2557,8 @@ body {{
     session_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2604,7 +2571,8 @@ body {{
     session_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2617,7 +2585,8 @@ body {{
     session_ftd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2630,7 +2599,8 @@ body {{
     session_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2643,7 +2613,8 @@ body {{
     session_mtd_ly,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2660,7 +2631,8 @@ body {{
     top_branch_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2673,7 +2645,8 @@ body {{
     top_branch_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2686,61 +2659,13 @@ body {{
     top_branch_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
 <!-- =====================================================
-     DAY LEVEL COCO METRICS
-     ===================================================== -->
-
-<div class="section-title">
-    📅 Day Level COCO Metrics
-</div>
-
-{html_table(
-    day_coco_summary,
-    percent_columns=[
-        "Dis %"
-    ]
-)}
-
-<div class="period-title">
-    Day Level - FTD vs LW
-</div>
-
-{html_table(
-    day_level_ftd_lw,
-    percent_columns=[
-        "Growth %"
-    ]
-)}
-
-<div class="period-title">
-    Day Level - FTD vs LM
-</div>
-
-{html_table(
-    day_level_ftd_lm,
-    percent_columns=[
-        "Growth %"
-    ]
-)}
-
-<div class="period-title">
-    Day Level - MTD vs LM MTD
-</div>
-
-{html_table(
-    day_level_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-<!-- =====================================================
-     FOOTER
+     DAY LEVEL PERFORMANCE
      ===================================================== -->
 
 <div class="section-title">
@@ -2751,7 +2676,8 @@ body {{
     day_level_ftd_lw,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2764,7 +2690,8 @@ body {{
     day_level_ftd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
@@ -2777,7 +2704,8 @@ body {{
     day_level_mtd_lm,
     percent_columns=[
         "Net Growth %",
-        "Orders Growth %"
+        "Orders Growth %",
+        "Dis % Change"
     ]
 )}
 
