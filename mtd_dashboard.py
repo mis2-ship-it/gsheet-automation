@@ -1753,22 +1753,14 @@ day_coco_summary["AOV"] = day_coco_summary["AOV"].round(2)
 day_coco_summary["Dis %"] = day_coco_summary["Dis %"].round(2)
 
 # =========================================================
-# DAY-LEVEL COMPARISON TABLES - COCO
+# DAY LEVEL MTD VS LM MTD - COCO
+# SAME CALENDAR DAY OF PREVIOUS MONTH
 # =========================================================
 
-def build_day_level_comparison(current_df, previous_df):
-    """
-    Compare each available day in current_df against the
-    corresponding comparison date in previous_df.
-
-    Used for:
-        FTD vs LW
-        FTD vs LM
-        FTD vs LY
-    """
+def day_level_mtd_lm_table():
 
     current = (
-        current_df
+        mtd_coco_df
         .groupby("Date")
         .agg(
             Gross=("Gross Sales", "sum"),
@@ -1780,7 +1772,7 @@ def build_day_level_comparison(current_df, previous_df):
     )
 
     previous = (
-        previous_df
+        lm_mtd_coco_df
         .groupby("Date")
         .agg(
             Prev_Gross=("Gross Sales", "sum"),
@@ -1791,101 +1783,215 @@ def build_day_level_comparison(current_df, previous_df):
         .reset_index()
     )
 
-    if current.empty or previous.empty:
-        return pd.DataFrame()
+    # -----------------------------------------------------
+    # Ensure Date is datetime
+    # -----------------------------------------------------
 
-    # Use the first/only comparison date
-    previous_row = previous.iloc[0]
+    current["Date"] = pd.to_datetime(
+        current["Date"]
+    ).dt.normalize()
 
-    current["Prev Gross"] = previous_row["Prev_Gross"]
-    current["Prev Net"] = previous_row["Prev_Net"]
-    current["Prev Orders"] = previous_row["Prev_Orders"]
+    previous["Date"] = pd.to_datetime(
+        previous["Date"]
+    ).dt.normalize()
 
-    current["Gross Growth %"] = (
-        (
-            current["Gross"]
-            - current["Prev Gross"]
+    # -----------------------------------------------------
+    # Create matching previous-month date
+    #
+    # 01-Aug -> 01-Jul
+    # 02-Aug -> 02-Jul
+    # 12-Aug -> 12-Jul
+    # -----------------------------------------------------
+
+    # -----------------------------------------------------
+    # MATCH SAME WEEKDAY IN PREVIOUS MONTH
+    # -----------------------------------------------------
+    
+    def get_same_weekday_previous_month(current_date):
+    
+        current_date = pd.Timestamp(current_date)
+    
+        # Go to previous month
+        target = (
+            current_date
+            - pd.DateOffset(months=1)
         )
-        / current["Prev Gross"].replace(0, 1)
-        * 100
+    
+        # Move backwards until weekday matches
+        while target.weekday() != current_date.weekday():
+    
+            target -= pd.Timedelta(days=1)
+    
+        return target.normalize()
+    
+    
+    current["Prev Date"] = (
+        current["Date"]
+        .apply(get_same_weekday_previous_month)
     )
 
-    current["Net Growth %"] = (
-        (
-            current["Net"]
-            - current["Prev Net"]
+    # -----------------------------------------------------
+    # Rename previous date for merge
+    # -----------------------------------------------------
+
+    previous = previous.rename(
+        columns={
+            "Date": "Prev Date"
+        }
+    )
+
+    # -----------------------------------------------------
+    # Merge current date with same calendar date
+    # in previous month
+    # -----------------------------------------------------
+
+    result = current.merge(
+        previous,
+        on="Prev Date",
+        how="left"
+    )
+
+    # -----------------------------------------------------
+    # Fill missing previous values
+    # -----------------------------------------------------
+
+    prev_columns = [
+        "Prev_Gross",
+        "Prev_Net",
+        "Prev_Orders",
+        "Prev_Discount"
+    ]
+
+    for col in prev_columns:
+
+        result[col] = (
+            pd.to_numeric(
+                result[col],
+                errors="coerce"
+            )
+            .fillna(0)
         )
-        / current["Prev Net"].replace(0, 1)
-        * 100
-    )
 
-    current["Orders Growth %"] = (
+    # -----------------------------------------------------
+    # Growth %
+    # -----------------------------------------------------
+
+    result["Gross Growth %"] = (
         (
-            current["Orders"]
-            - current["Prev Orders"]
+            result["Gross"]
+            - result["Prev_Gross"]
         )
-        / current["Prev Orders"].replace(0, 1)
-        * 100
+        /
+        result["Prev_Gross"].replace(0, 1)
+    ) * 100
+
+    result["Net Growth %"] = (
+        (
+            result["Net"]
+            - result["Prev_Net"]
+        )
+        /
+        result["Prev_Net"].replace(0, 1)
+    ) * 100
+
+    result["Orders Growth %"] = (
+        (
+            result["Orders"]
+            - result["Prev_Orders"]
+        )
+        /
+        result["Prev_Orders"].replace(0, 1)
+    ) * 100
+
+
+    # -----------------------------------------------------
+    # AOV
+    # -----------------------------------------------------
+
+    result["AOV"] = (
+        result["Net"]
+        /
+        result["Orders"].replace(0, 1)
+    )
+
+    # -----------------------------------------------------
+    # Final columns
+    # -----------------------------------------------------
+
+    result = result[
+        [
+            "Date",
+            "Gross",
+            "Net",
+            "Orders",
+            "Discount",
+
+            "Prev_Gross",
+            "Prev_Net",
+            "Prev_Orders",
+
+            "Gross Growth %",
+            "Net Growth %",
+            "Orders Growth %",
+            "AOV"
+        ]
+    ]
+
+    # -----------------------------------------------------
+    # Display names
+    # -----------------------------------------------------
+
+    result = result.rename(
+        columns={
+            "Prev_Gross": "Prev Gross",
+            "Prev_Net": "Prev Net",
+            "Prev_Orders": "Prev Orders"
+        }
+    )
+
+    # -----------------------------------------------------
+    # Sort latest date first
+    # -----------------------------------------------------
+
+    result = (
+        result
+        .sort_values(
+            "Date",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+    # -----------------------------------------------------
+    # Numeric rounding
+    # -----------------------------------------------------
+
+    numeric_columns = [
+        "Gross",
+        "Net",
+        "Discount",
+        "Prev Gross",
+        "Prev Net",
+        "Prev Orders",
+        "Gross Growth %",
+        "Net Growth %",
+        "Orders Growth %",
+        "AOV"
+    ]
+
+    result[numeric_columns] = (
+        result[numeric_columns]
+        .round(2)
+    )
+
+    result["Orders"] = (
+        result["Orders"]
+        .round(0)
+        .astype(int)
     )
 
 
-    current["AOV"] = (
-        current["Net"]
-        / current["Orders"].replace(0, 1)
-    )
-
-    current = current.round(2)
-
-    return current
-
-
-# =========================================================
-# FTD vs LW - COCO
-# =========================================================
-
-day_level_ftd_lw = build_day_level_comparison(
-    ftd_coco_df,
-    lw_coco_df
-)
-
-
-# =========================================================
-# FTD vs LM - COCO
-# =========================================================
-
-day_level_ftd_lm = build_day_level_comparison(
-    ftd_coco_df,
-    lm_coco_df
-)
-
-
-# =========================================================
-# FTD vs LY - COCO
-# =========================================================
-
-day_level_ftd_ly = build_day_level_comparison(
-    ftd_coco_df,
-    ly_coco_df
-)
-
-# =========================================================
-# MTD vs LM MTD - DAY LEVEL COCO
-# =========================================================
-
-day_level_mtd_lm = build_day_level_comparison(
-    mtd_coco_df,
-    lm_mtd_coco_df
-)
-
-
-# =========================================================
-# MTD vs LY MTD - DAY LEVEL COCO
-# =========================================================
-
-day_level_mtd_ly = build_day_level_comparison(
-    mtd_coco_df,
-    ly_mtd_coco_df
-)
+    return result
 # =========================================================
 # KPI TABLE
 # =========================================================
@@ -2124,7 +2230,8 @@ def html_table(
     for _, row in work.iterrows():
         html.append('<tr>')
         for col in headers:
-            value = row[col]
+            if col == "Date" and pd.notna(value):
+                value = pd.to_datetime(value).strftime("%-d-%b")
 
             if pd.isna(value):
                 display = ""
