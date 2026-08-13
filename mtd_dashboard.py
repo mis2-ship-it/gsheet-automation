@@ -874,7 +874,6 @@ def growth_pct(
 ):
 
     if previous == 0:
-
         return 0
 
     return round(
@@ -910,7 +909,12 @@ def build_growth_kpi(
                 current["Orders"],
                 previous["Orders"]
             )
+    }
 
+
+# =========================================================
+# FTD vs LW
+# =========================================================
 
 ftd_lw_growth = build_growth_kpi(
     ftd_kpi,
@@ -918,11 +922,19 @@ ftd_lw_growth = build_growth_kpi(
 )
 
 
+# =========================================================
+# FTD vs LM
+# =========================================================
+
 ftd_lm_growth = build_growth_kpi(
     ftd_kpi,
     lm_kpi
 )
 
+
+# =========================================================
+# FTD vs LY
+# =========================================================
 
 ftd_ly_growth = build_growth_kpi(
     ftd_kpi,
@@ -930,17 +942,24 @@ ftd_ly_growth = build_growth_kpi(
 )
 
 
+# =========================================================
+# MTD vs LM MTD
+# =========================================================
+
 mtd_lm_growth = build_growth_kpi(
     mtd_kpi,
     lm_mtd_kpi
 )
 
 
+# =========================================================
+# MTD vs LY MTD
+# =========================================================
+
 mtd_ly_growth = build_growth_kpi(
     mtd_kpi,
     ly_mtd_kpi
 )
-
 
 # =========================================================
 # STORE TYPE KPI
