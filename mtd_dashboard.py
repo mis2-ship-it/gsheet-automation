@@ -508,25 +508,62 @@ ftd_date = (
 # COMPARISON DATES
 # =========================================================
 
-# Last Week - Same Day
+# ---------------------------------------------------------
+# LAST WEEK - SAME WEEKDAY
+# ---------------------------------------------------------
+
 lw_date = (
     ftd_date
     - timedelta(days=7)
 )
 
 
-# Last Month - Same Day
-lm_date = (
-    pd.Timestamp(ftd_date)
-    - pd.DateOffset(months=1)
-).date()
+# ---------------------------------------------------------
+# LAST MONTH - SAME WEEKDAY
+# ---------------------------------------------------------
+
+def same_weekday_last_month(current_date):
+
+    current_date = pd.Timestamp(current_date)
+
+    target = (
+        current_date
+        - pd.DateOffset(months=1)
+    )
+
+    while target.weekday() != current_date.weekday():
+        target -= pd.Timedelta(days=1)
+
+    return target.date()
 
 
-# Last Year - Same Day
-ly_date = (
-    pd.Timestamp(ftd_date)
-    - pd.DateOffset(years=1)
-).date()
+lm_date = same_weekday_last_month(
+    ftd_date
+)
+
+
+# ---------------------------------------------------------
+# LAST YEAR - SAME WEEKDAY
+# ---------------------------------------------------------
+
+def same_weekday_last_year(current_date):
+
+    current_date = pd.Timestamp(current_date)
+
+    target = (
+        current_date
+        - pd.DateOffset(years=1)
+    )
+
+    while target.weekday() != current_date.weekday():
+        target -= pd.Timedelta(days=1)
+
+    return target.date()
+
+
+ly_date = same_weekday_last_year(
+    ftd_date
+)
 
 
 print("=" * 80)
@@ -1685,8 +1722,7 @@ day_coco_summary = (
         Gross=("Gross Sales", "sum"),
         Net=("Net Sales", "sum"),
         Discount=("Discount", "sum"),
-        Orders=("Orders", "sum"),
-        Qty=("Quantity", "sum")
+        Orders=("Orders", "sum")
     )
     .reset_index()
 )
@@ -1713,7 +1749,6 @@ day_coco_summary["Gross"] = day_coco_summary["Gross"].round(2)
 day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
 day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
 day_coco_summary["Orders"] = day_coco_summary["Orders"].round(0).astype(int)
-day_coco_summary["Qty"] = day_coco_summary["Qty"].round(0).astype(int)
 day_coco_summary["AOV"] = day_coco_summary["AOV"].round(2)
 day_coco_summary["Dis %"] = day_coco_summary["Dis %"].round(2)
 
@@ -1739,7 +1774,6 @@ def build_day_level_comparison(current_df, previous_df):
             Gross=("Gross Sales", "sum"),
             Net=("Net Sales", "sum"),
             Orders=("Orders", "sum"),
-            Qty=("Quantity", "sum"),
             Discount=("Discount", "sum")
         )
         .reset_index()
@@ -1752,7 +1786,6 @@ def build_day_level_comparison(current_df, previous_df):
             Prev_Gross=("Gross Sales", "sum"),
             Prev_Net=("Net Sales", "sum"),
             Prev_Orders=("Orders", "sum"),
-            Prev_Qty=("Quantity", "sum"),
             Prev_Discount=("Discount", "sum")
         )
         .reset_index()
@@ -1767,7 +1800,6 @@ def build_day_level_comparison(current_df, previous_df):
     current["Prev Gross"] = previous_row["Prev_Gross"]
     current["Prev Net"] = previous_row["Prev_Net"]
     current["Prev Orders"] = previous_row["Prev_Orders"]
-    current["Prev Qty"] = previous_row["Prev_Qty"]
 
     current["Gross Growth %"] = (
         (
@@ -1796,14 +1828,6 @@ def build_day_level_comparison(current_df, previous_df):
         * 100
     )
 
-    current["Qty Growth %"] = (
-        (
-            current["Qty"]
-            - current["Prev Qty"]
-        )
-        / current["Prev Qty"].replace(0, 1)
-        * 100
-    )
 
     current["AOV"] = (
         current["Net"]
