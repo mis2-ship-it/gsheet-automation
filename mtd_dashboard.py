@@ -1754,8 +1754,7 @@ day_coco_summary = (
         Gross=("Gross Sales", "sum"),
         Net=("Net Sales", "sum"),
         Discount=("Discount", "sum"),
-        Orders=("Orders", "sum"),
-        Qty=("Quantity", "sum")
+        Orders=("Orders", "sum")
     )
     .reset_index()
 )
@@ -1777,11 +1776,6 @@ day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
 day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
 day_coco_summary["Orders"] = (
     day_coco_summary["Orders"]
-    .round(0)
-    .astype(int)
-)
-day_coco_summary["Qty"] = (
-    day_coco_summary["Qty"]
     .round(0)
     .astype(int)
 )
@@ -1823,275 +1817,64 @@ def get_same_weekday_previous_month(current_date):
 
 
 # =========================================================
-# DAY LEVEL MTD vs LM MTD - COCO
-# PREVIOUS DATE = EXACTLY 28 DAYS BEFORE
+# DAY-LEVEL FTD vs LW
+# 7 DAYS BEFORE
 # =========================================================
 
-def day_level_mtd_lm_table():
-
-    # =====================================================
-    # CURRENT MTD - COCO
-    # =====================================================
-
-    current = (
-        mtd_coco_df
-        .groupby("Date")
-        .agg(
-            Gross=("Gross Sales", "sum"),
-            Net=("Net Sales", "sum"),
-            Orders=("Orders", "sum"),
-            Qty=("Quantity", "sum"),
-            Discount=("Discount", "sum")
-        )
-        .reset_index()
-    )
-
-    # =====================================================
-    # ALL COCO DATA
-    #
-    # IMPORTANT:
-    # Do NOT use lm_mtd_coco_df here.
-    #
-    # lm_mtd_coco_df stops at lm_date.
-    # We need July 15 for Aug 12.
-    # =====================================================
-
-    coco_all = (
-        df[
-            df["Store Type"].astype(str).str.upper().eq("COCO")
-        ]
-        .copy()
-    )
-
-    previous = (
-        coco_all
-        .groupby("Date")
-        .agg(
-            Prev_Gross=("Gross Sales", "sum"),
-            Prev_Net=("Net Sales", "sum"),
-            Prev_Orders=("Orders", "sum"),
-            Prev_Qty=("Quantity", "sum"),
-            Prev_Discount=("Discount", "sum")
-        )
-        .reset_index()
-    )
-
-    # =====================================================
-    # ENSURE DATE FORMAT
-    # =====================================================
-
-    current["Date"] = pd.to_datetime(
-        current["Date"]
-    ).dt.normalize()
-
-    previous["Date"] = pd.to_datetime(
-        previous["Date"]
-    ).dt.normalize()
-
-    # =====================================================
-    # PREVIOUS DATE
-    #
-    # EXACTLY 28 DAYS BEFORE
-    #
-    # 12-Aug -> 15-Jul
-    # 11-Aug -> 14-Jul
-    # 10-Aug -> 13-Jul
-    # =====================================================
-
-    current["Prev Date"] = (
-        current["Date"]
-        - pd.Timedelta(days=28)
-    )
-
-    # =====================================================
-    # RENAME PREVIOUS DATE
-    # =====================================================
-
-    previous = previous.rename(
-        columns={
-            "Date": "Prev Date"
-        }
-    )
-
-    # =====================================================
-    # MERGE
-    # =====================================================
-
-    result = current.merge(
-        previous,
-        on="Prev Date",
-        how="left"
-    )
-
-    # =====================================================
-    # FILL MISSING PREVIOUS VALUES
-    # =====================================================
-
-    prev_columns = [
-        "Prev_Gross",
-        "Prev_Net",
-        "Prev_Orders",
-        "Prev_Qty",
-        "Prev_Discount"
-    ]
-
-    for col in prev_columns:
-
-        result[col] = (
-            pd.to_numeric(
-                result[col],
-                errors="coerce"
-            )
-            .fillna(0)
-        )
-
-    # =====================================================
-    # GROWTH %
-    # =====================================================
-
-    result["Gross Growth %"] = (
-        (
-            result["Gross"]
-            - result["Prev_Gross"]
-        )
-        /
-        result["Prev_Gross"].replace(0, 1)
-    ) * 100
-
-    result["Net Growth %"] = (
-        (
-            result["Net"]
-            - result["Prev_Net"]
-        )
-        /
-        result["Prev_Net"].replace(0, 1)
-    ) * 100
-
-    result["Orders Growth %"] = (
-        (
-            result["Orders"]
-            - result["Prev_Orders"]
-        )
-        /
-        result["Prev_Orders"].replace(0, 1)
-    ) * 100
-
-    result["Qty Growth %"] = (
-        (
-            result["Qty"]
-            - result["Prev_Qty"]
-        )
-        /
-        result["Prev_Qty"].replace(0, 1)
-    ) * 100
-
-    # =====================================================
-    # AOV
-    # =====================================================
-
-    result["AOV"] = (
-        result["Net"]
-        /
-        result["Orders"].replace(0, 1)
-    )
-
-    # =====================================================
-    # FINAL COLUMNS
-    # =====================================================
-
-    result = result[
-        [
-            "Date",
-            "Gross",
-            "Net",
-            "Orders",
-            "Qty",
-            "Discount",
-
-            "Prev_Gross",
-            "Prev_Net",
-            "Prev_Orders",
-            "Prev_Qty",
-
-            "Gross Growth %",
-            "Net Growth %",
-            "Orders Growth %",
-            "Qty Growth %",
-
-            "AOV"
-        ]
-    ]
-
-    # =====================================================
-    # DISPLAY COLUMN NAMES
-    # =====================================================
-
-    result = result.rename(
-        columns={
-            "Prev_Gross": "Prev Gross",
-            "Prev_Net": "Prev Net",
-            "Prev_Orders": "Prev Orders",
-            "Prev_Qty": "Prev Qty"
-        }
-    )
-
-    # =====================================================
-    # SORT
-    # =====================================================
-
-    result = (
-        result
-        .sort_values(
-            "Date",
-            ascending=False
-        )
-        .reset_index(drop=True)
-    )
-
-    # =====================================================
-    # ROUNDING
-    # =====================================================
-
-    decimal_columns = [
-        "Gross",
-        "Net",
-        "Discount",
-        "Prev Gross",
-        "Prev Net",
-        "Prev Orders",
-        "Prev Qty",
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %",
-        "Qty Growth %",
-        "AOV"
-    ]
-
-    result[decimal_columns] = (
-        result[decimal_columns]
-        .round(2)
-    )
-
-    result["Orders"] = (
-        result["Orders"]
-        .round(0)
-        .astype(int)
-    )
-
-    result["Qty"] = (
-        result["Qty"]
-        .round(0)
-        .astype(int)
-    )
-
-    return result
+day_level_ftd_lw = build_day_level_comparison(
+    ftd_coco_df,
+    lw_coco_df,
+    7
+)
 
 
 # =========================================================
-# CREATE DAY-LEVEL FTD vs LW
+# DAY-LEVEL FTD vs LM
+# 28 DAYS BEFORE
 # =========================================================
 
-day_level_mtd_lm = day_level_mtd_lm_table()
+day_level_ftd_lm = build_day_level_comparison(
+    ftd_coco_df,
+    lm_coco_df,
+    28
+)
+
+
+# =========================================================
+# DAY-LEVEL FTD vs LY
+# 364 DAYS BEFORE
+# =========================================================
+
+day_level_ftd_ly = build_day_level_comparison(
+    ftd_coco_df,
+    ly_coco_df,
+    364
+)
+
+
+# =========================================================
+# DAY-LEVEL MTD vs LM MTD
+# 28 DAYS BEFORE
+# =========================================================
+
+day_level_mtd_lm = build_day_level_comparison(
+    mtd_coco_df,
+    lm_mtd_coco_df,
+    28
+)
+
+
+# =========================================================
+# DAY-LEVEL MTD vs LY MTD
+# 364 DAYS BEFORE
+# =========================================================
+
+day_level_mtd_ly = build_day_level_comparison(
+    mtd_coco_df,
+    ly_mtd_coco_df,
+    364
+)
+
 # =========================================================
 # KPI TABLE
 # =========================================================
