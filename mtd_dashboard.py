@@ -37,6 +37,7 @@ import pandas as pd
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from zoneinfo import ZoneInfo
 
 
 print("=" * 80)
@@ -305,7 +306,6 @@ REQUIRED_COLUMNS = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Quantity",
     "Orders"
 ]
 
@@ -352,7 +352,6 @@ NUMERIC_COLUMNS = [
     "Discount",
     "Taxes",
     "Gross Sales",
-    "Quantity",
     "Orders"
 ]
 
@@ -446,35 +445,49 @@ print(
 
 
 # =========================================================
-# CURRENT / FTD DATE
+# DASHBOARD BUSINESS DATE
 # =========================================================
 #
-# The latest available date in the CSV is treated as FTD.
+# FTD = Yesterday
 #
-# Current:
-#   12-Aug-26
+# Example:
+# Today      : 13-Aug-2026
+# FTD        : 12-Aug-2026
+# LW Same Day: 05-Aug-2026
+# LM Same Day: 12-Jul-2026
+# LY Same Day: 12-Aug-2025
 #
 # =========================================================
 
-ftd_date = latest_date.date()
+india_today = datetime.now(
+    ZoneInfo("Asia/Kolkata")
+).date()
+
+ftd_date = (
+    india_today
+    - timedelta(days=1)
+)
 
 
 # =========================================================
 # COMPARISON DATES
 # =========================================================
 
+# Last Week - Same Day
 lw_date = (
     ftd_date
     - timedelta(days=7)
 )
 
 
+# Last Month - Same Day
 lm_date = (
     pd.Timestamp(ftd_date)
     - pd.DateOffset(months=1)
 ).date()
 
 
+# Last Year - Same Day
 ly_date = (
     pd.Timestamp(ftd_date)
     - pd.DateOffset(years=1)
@@ -482,8 +495,13 @@ ly_date = (
 
 
 print("=" * 80)
-print("COMPARISON DATE CHECK")
+print("DASHBOARD BUSINESS DATE CHECK")
 print("=" * 80)
+
+print(
+    "India Today:",
+    india_today
+)
 
 print(
     "FTD:",
@@ -510,6 +528,7 @@ print(
 # MONTH START DATES
 # =========================================================
 
+# Current MTD
 current_month_start = pd.Timestamp(
     year=ftd_date.year,
     month=ftd_date.month,
@@ -517,6 +536,7 @@ current_month_start = pd.Timestamp(
 ).date()
 
 
+# Last Month MTD
 lm_month_start = pd.Timestamp(
     year=lm_date.year,
     month=lm_date.month,
@@ -524,6 +544,7 @@ lm_month_start = pd.Timestamp(
 ).date()
 
 
+# Last Year MTD
 ly_month_start = pd.Timestamp(
     year=ly_date.year,
     month=ly_date.month,
@@ -555,7 +576,6 @@ print(
     "→",
     ly_date
 )
-
 
 # =========================================================
 # DATE FILTER HELPER
@@ -739,7 +759,6 @@ def get_kpi(df):
             "Net": 0,
             "Discount": 0,
             "Orders": 0,
-            "Qty": 0,
             "AOV": 0,
             "Dis %": 0
         }
@@ -763,12 +782,6 @@ def get_kpi(df):
     orders = df[
         "Orders"
     ].sum()
-
-
-    qty = df[
-        "Quantity"
-    ].sum()
-
 
     aov = (
         net / orders
@@ -805,10 +818,6 @@ def get_kpi(df):
             orders
         ),
 
-        "Qty": round(
-            qty,
-            2
-        ),
 
         "AOV": round(
             aov,
@@ -900,14 +909,7 @@ def build_growth_kpi(
             growth_pct(
                 current["Orders"],
                 previous["Orders"]
-            ),
-
-        "Qty %":
-            growth_pct(
-                current["Qty"],
-                previous["Qty"]
             )
-    }
 
 
 ftd_lw_growth = build_growth_kpi(
@@ -1007,7 +1009,6 @@ def build_summary(
                 "Net",
                 "Discount",
                 "Orders",
-                "Qty",
                 "AOV",
                 "Dis %",
                 "Contribution %"
@@ -1047,10 +1048,6 @@ def build_summary(
             ),
             Orders=(
                 "Orders",
-                "sum"
-            ),
-            Qty=(
-                "Quantity",
                 "sum"
             )
         )
@@ -1475,7 +1472,6 @@ kpi_table = pd.DataFrame({
         "Net Revenue",
         "Discount",
         "Orders",
-        "Qty",
         "AOV",
         "Discount %"
     ],
@@ -1485,7 +1481,6 @@ kpi_table = pd.DataFrame({
         ftd_kpi["Net"],
         ftd_kpi["Discount"],
         ftd_kpi["Orders"],
-        ftd_kpi["Qty"],
         ftd_kpi["AOV"],
         ftd_kpi["Dis %"]
     ],
@@ -1495,7 +1490,6 @@ kpi_table = pd.DataFrame({
         mtd_kpi["Net"],
         mtd_kpi["Discount"],
         mtd_kpi["Orders"],
-        mtd_kpi["Qty"],
         mtd_kpi["AOV"],
         mtd_kpi["Dis %"]
     ]
@@ -1514,7 +1508,6 @@ store_type_table = pd.DataFrame({
         "Net Revenue",
         "Discount",
         "Orders",
-        "Qty",
         "AOV",
         "Discount %"
     ],
@@ -1524,7 +1517,6 @@ store_type_table = pd.DataFrame({
         ftd_coco_kpi["Net"],
         ftd_coco_kpi["Discount"],
         ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["Qty"],
         ftd_coco_kpi["AOV"],
         ftd_coco_kpi["Dis %"]
     ],
@@ -1534,7 +1526,6 @@ store_type_table = pd.DataFrame({
         mtd_coco_kpi["Net"],
         mtd_coco_kpi["Discount"],
         mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["Qty"],
         mtd_coco_kpi["AOV"],
         mtd_coco_kpi["Dis %"]
     ],
@@ -1544,7 +1535,6 @@ store_type_table = pd.DataFrame({
         ftd_fofo_kpi["Net"],
         ftd_fofo_kpi["Discount"],
         ftd_fofo_kpi["Orders"],
-        ftd_fofo_kpi["Qty"],
         ftd_fofo_kpi["AOV"],
         ftd_fofo_kpi["Dis %"]
     ],
@@ -1554,7 +1544,6 @@ store_type_table = pd.DataFrame({
         mtd_fofo_kpi["Net"],
         mtd_fofo_kpi["Discount"],
         mtd_fofo_kpi["Orders"],
-        mtd_fofo_kpi["Qty"],
         mtd_fofo_kpi["AOV"],
         mtd_fofo_kpi["Dis %"]
     ]
@@ -1571,57 +1560,49 @@ comparison_table = pd.DataFrame({
     "Metric": [
         "Gross Revenue",
         "Net Revenue",
-        "Orders",
-        "Qty"
+        "Orders"
     ],
 
     "FTD": [
         ftd_kpi["Gross"],
         ftd_kpi["Net"],
-        ftd_kpi["Orders"],
-        ftd_kpi["Qty"]
+        ftd_kpi["Orders"]
     ],
 
     "LW Same Day": [
         lw_kpi["Gross"],
         lw_kpi["Net"],
-        lw_kpi["Orders"],
-        lw_kpi["Qty"]
+        lw_kpi["Orders"]
     ],
 
     "FTD vs LW %": [
         ftd_lw_growth["Gross %"],
         ftd_lw_growth["Net %"],
-        ftd_lw_growth["Orders %"],
-        ftd_lw_growth["Qty %"]
+        ftd_lw_growth["Orders %"]
     ],
 
     "LM Same Day": [
         lm_kpi["Gross"],
         lm_kpi["Net"],
-        lm_kpi["Orders"],
-        lm_kpi["Qty"]
+        lm_kpi["Orders"]
     ],
 
     "FTD vs LM %": [
         ftd_lm_growth["Gross %"],
         ftd_lm_growth["Net %"],
-        ftd_lm_growth["Orders %"],
-        ftd_lm_growth["Qty %"]
+        ftd_lm_growth["Orders %"]
     ],
 
     "LY Same Day": [
         ly_kpi["Gross"],
         ly_kpi["Net"],
-        ly_kpi["Orders"],
-        ly_kpi["Qty"]
+        ly_kpi["Orders"]
     ],
 
     "FTD vs LY %": [
         ftd_ly_growth["Gross %"],
         ftd_ly_growth["Net %"],
-        ftd_ly_growth["Orders %"],
-        ftd_ly_growth["Qty %"]
+        ftd_ly_growth["Orders %"]
     ]
 
 })
@@ -1636,43 +1617,37 @@ mtd_comparison_table = pd.DataFrame({
     "Metric": [
         "Gross Revenue",
         "Net Revenue",
-        "Orders",
-        "Qty"
+        "Orders"
     ],
 
     "Current MTD": [
         mtd_kpi["Gross"],
         mtd_kpi["Net"],
-        mtd_kpi["Orders"],
-        mtd_kpi["Qty"]
+        mtd_kpi["Orders"]
     ],
 
     "LM MTD": [
         lm_mtd_kpi["Gross"],
         lm_mtd_kpi["Net"],
-        lm_mtd_kpi["Orders"],
-        lm_mtd_kpi["Qty"]
+        lm_mtd_kpi["Orders"]
     ],
 
     "MTD vs LM %": [
         mtd_lm_growth["Gross %"],
         mtd_lm_growth["Net %"],
-        mtd_lm_growth["Orders %"],
-        mtd_lm_growth["Qty %"]
+        mtd_lm_growth["Orders %"]
     ],
 
     "LY MTD": [
         ly_mtd_kpi["Gross"],
         ly_mtd_kpi["Net"],
-        ly_mtd_kpi["Orders"],
-        ly_mtd_kpi["Qty"]
+        ly_mtd_kpi["Orders"]
     ],
 
     "MTD vs LY %": [
         mtd_ly_growth["Gross %"],
         mtd_ly_growth["Net %"],
-        mtd_ly_growth["Orders %"],
-        mtd_ly_growth["Qty %"]
+        mtd_ly_growth["Orders %"]
     ]
 
 })
@@ -2010,12 +1985,6 @@ body {{
         "Orders",
         ftd_kpi["Orders"],
         mtd_kpi["Orders"]
-    )}
-
-    {kpi_card(
-        "Qty",
-        ftd_kpi["Qty"],
-        mtd_kpi["Qty"]
     )}
 
     {kpi_card(
