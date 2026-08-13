@@ -1709,7 +1709,13 @@ day_coco_summary = (
     .reset_index(drop=True)
 )
 
-day_coco_summary = day_coco_summary.round(2)
+day_coco_summary["Gross"] = day_coco_summary["Gross"].round(2)
+day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
+day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
+day_coco_summary["Orders"] = day_coco_summary["Orders"].round(0).astype(int)
+day_coco_summary["Qty"] = day_coco_summary["Qty"].round(0).astype(int)
+day_coco_summary["AOV"] = day_coco_summary["AOV"].round(2)
+day_coco_summary["Dis %"] = day_coco_summary["Dis %"].round(2)
 
 
 # =========================================================
@@ -1871,50 +1877,34 @@ comparison_table = pd.DataFrame({
 # MTD COMPARISON TABLE
 # =========================================================
 
-mtd_comparison_table = pd.DataFrame({
-
-    "Metric": [
-        "Gross Revenue",
-        "Net Revenue",
-        "Orders",
-        "Discount %"
-    ],
-
-    "Current MTD": [
-        mtd_coco_kpi["Gross"],
-        mtd_coco_kpi["Net"],
-        mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["Dis %"]
-    ],
-
-    "LM MTD": [
-        lm_mtd_coco_kpi["Gross"],
-        lm_mtd_coco_kpi["Net"],
-        lm_mtd_coco_kpi["Orders"]
-    ],
-
-    "MTD vs LM %": [
-        mtd_lm_growth["Gross %"],
-        mtd_lm_growth["Net %"],
-        mtd_lm_growth["Orders %"],
-        mtd_coco_kpi["Dis %"] - get_kpi(lm_mtd_coco_df)["Dis %"]
-    ],
-
-    "LY MTD": [
-        ly_mtd_coco_kpi["Gross"],
-        ly_mtd_coco_kpi["Net"],
-        ly_mtd_coco_kpi["Orders"]
-    ],
-
-    "MTD vs LY %": [
-        mtd_ly_growth["Gross %"],
-        mtd_ly_growth["Net %"],
-        mtd_ly_growth["Orders %"],
-        mtd_coco_kpi["Dis %"] - get_kpi(ly_mtd_coco_df)["Dis %"]
+mtd_comparison_table = pd.DataFrame(
+    [
+        {
+            "Metric": "Gross Revenue",
+            "Current MTD": mtd_kpi["Gross"],
+            "LM MTD": lm_mtd_kpi["Gross"],
+            "MTD vs LM %": mtd_lm_growth["Gross %"],
+            "LY MTD": ly_mtd_kpi["Gross"],
+            "MTD vs LY %": mtd_ly_growth["Gross %"]
+        },
+        {
+            "Metric": "Net Revenue",
+            "Current MTD": mtd_kpi["Net"],
+            "LM MTD": lm_mtd_kpi["Net"],
+            "MTD vs LM %": mtd_lm_growth["Net %"],
+            "LY MTD": ly_mtd_kpi["Net"],
+            "MTD vs LY %": mtd_ly_growth["Net %"]
+        },
+        {
+            "Metric": "Orders",
+            "Current MTD": mtd_kpi["Orders"],
+            "LM MTD": lm_mtd_kpi["Orders"],
+            "MTD vs LM %": mtd_lm_growth["Orders %"],
+            "LY MTD": ly_mtd_kpi["Orders"],
+            "MTD vs LY %": mtd_ly_growth["Orders %"]
+        }
     ]
-
-})
-
+)
 
 # =========================================================
 # HTML FORMATTERS
