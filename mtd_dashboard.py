@@ -1815,6 +1815,230 @@ def get_same_weekday_previous_month(current_date):
 
     return prev_month.normalize()
 
+# =========================================================
+# GENERIC DAY-LEVEL COCO COMPARISON
+# =========================================================
+
+def build_day_level_comparison(
+    current_df,
+    previous_df,
+    comparison_days
+):
+
+    current = (
+        current_df
+        .groupby("Date")
+        .agg(
+            Gross=("Gross Sales", "sum"),
+            Net=("Net Sales", "sum"),
+            Orders=("Orders", "sum"),
+            Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    previous = (
+        previous_df
+        .groupby("Date")
+        .agg(
+            Prev_Gross=("Gross Sales", "sum"),
+            Prev_Net=("Net Sales", "sum"),
+            Prev_Orders=("Orders", "sum"),
+            Prev_Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    # =====================================================
+    # ENSURE DATE IS DATETIME
+    # =====================================================
+
+    current["Date"] = (
+        pd.to_datetime(current["Date"])
+        .dt.normalize()
+    )
+
+    previous["Date"] = (
+        pd.to_datetime(previous["Date"])
+        .dt.normalize()
+    )
+
+    # =====================================================
+    # PREVIOUS COMPARISON DATE
+    #
+    # LW = 7 days before
+    # LM = 28 days before
+    # LY = 364 days before
+    # =====================================================
+
+    current["Prev Date"] = (
+        current["Date"]
+        - pd.Timedelta(days=comparison_days)
+    )
+
+    previous = previous.rename(
+        columns={
+            "Date": "Prev Date"
+        }
+    )
+
+    # =====================================================
+    # MERGE CURRENT DATE WITH PREVIOUS DATE
+    # =====================================================
+
+    result = current.merge(
+        previous,
+        on="Prev Date",
+        how="left"
+    )
+
+    # =====================================================
+    # FILL MISSING PREVIOUS VALUES
+    # =====================================================
+
+    prev_columns = [
+        "Prev_Gross",
+        "Prev_Net",
+        "Prev_Orders",
+        "Prev_Discount"
+    ]
+
+    for col in prev_columns:
+
+        result[col] = (
+            pd.to_numeric(
+                result[col],
+                errors="coerce"
+            )
+            .fillna(0)
+        )
+
+    # =====================================================
+    # GROWTH %
+    # =====================================================
+
+    result["Gross Growth %"] = (
+        (
+            result["Gross"]
+            - result["Prev_Gross"]
+        )
+        /
+        result["Prev_Gross"].replace(0, 1)
+    ) * 100
+
+    result["Net Growth %"] = (
+        (
+            result["Net"]
+            - result["Prev_Net"]
+        )
+        /
+        result["Prev_Net"].replace(0, 1)
+    ) * 100
+
+    result["Orders Growth %"] = (
+        (
+            result["Orders"]
+            - result["Prev_Orders"]
+        )
+        /
+        result["Prev_Orders"].replace(0, 1)
+    ) * 100
+
+    # =====================================================
+    # AOV
+    # =====================================================
+
+    result["AOV"] = (
+        result["Net"]
+        /
+        result["Orders"].replace(0, 1)
+    )
+
+    # =====================================================
+    # FINAL COLUMNS
+    # =====================================================
+
+    result = result[
+        [
+            "Date",
+            "Gross",
+            "Net",
+            "Orders",
+            "Discount",
+
+            "Prev_Gross",
+            "Prev_Net",
+            "Prev_Orders",
+
+            "Gross Growth %",
+            "Net Growth %",
+            "Orders Growth %",
+
+            "AOV"
+        ]
+    ]
+
+    # =====================================================
+    # DISPLAY NAMES
+    # =====================================================
+
+    result = result.rename(
+        columns={
+            "Prev_Gross": "Prev Gross",
+            "Prev_Net": "Prev Net",
+            "Prev_Orders": "Prev Orders"
+        }
+    )
+
+    # =====================================================
+    # SORT LATEST DATE FIRST
+    # =====================================================
+
+    result = (
+        result
+        .sort_values(
+            "Date",
+            ascending=False
+        )
+        .reset_index(drop=True)
+    )
+
+    # =====================================================
+    # NUMERIC ROUNDING
+    # =====================================================
+
+    numeric_columns = [
+        "Gross",
+        "Net",
+        "Discount",
+        "Prev Gross",
+        "Prev Net",
+        "Prev Orders",
+        "Gross Growth %",
+        "Net Growth %",
+        "Orders Growth %",
+        "AOV"
+    ]
+
+    result[numeric_columns] = (
+        result[numeric_columns]
+        .round(2)
+    )
+
+    # Orders as integer
+    result["Orders"] = (
+        result["Orders"]
+        .round(0)
+        .astype(int)
+    )
+
+    result["Prev Orders"] = (
+        result["Prev Orders"]
+        .round(0)
+        .astype(int)
+    )
+
+    return result
 
 # =========================================================
 # DAY-LEVEL FTD vs LW
@@ -3423,11 +3647,11 @@ body {{
 </div>
 
 {html_table(
-    day_level_mtd_lm,
+    day_level_ftd_lw,
     percent_columns=[
+        "Gross Growth %",
         "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
+        "Orders Growth %"
     ]
 )}
 
@@ -3437,11 +3661,25 @@ body {{
 </div>
 
 {html_table(
-    day_level_mtd_lm,
+    day_level_ftd_lm,
     percent_columns=[
+        "Gross Growth %",
         "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Day Level Performance - FTD vs LY
+</div>
+
+{html_table(
+    day_level_ftd_ly,
+    percent_columns=[
+        "Gross Growth %",
+        "Net Growth %",
+        "Orders Growth %"
     ]
 )}
 
@@ -3453,9 +3691,23 @@ body {{
 {html_table(
     day_level_mtd_lm,
     percent_columns=[
+        "Gross Growth %",
         "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
+        "Orders Growth %"
+    ]
+)}
+
+
+<div class="period-title">
+    Day Level Performance - MTD vs LY MTD
+</div>
+
+{html_table(
+    day_level_mtd_ly,
+    percent_columns=[
+        "Gross Growth %",
+        "Net Growth %",
+        "Orders Growth %"
     ]
 )}
 
