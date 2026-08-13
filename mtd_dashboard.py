@@ -2498,6 +2498,266 @@ def html_table(
         html
     )
 
+# =========================================================
+# INSIGHT BLOCK
+# =========================================================
+
+def insight_block(title, df):
+    """
+    Build a simple insight section from a performance summary table.
+
+    Expected columns:
+        - Branch / Source / Session / Region
+        - Net Growth %
+        - Orders Growth %
+    """
+
+    if df is None or df.empty:
+        return ""
+
+    work = df.copy()
+
+    # -----------------------------------------------------
+    # Find growth columns safely
+    # -----------------------------------------------------
+
+    net_growth_col = None
+    orders_growth_col = None
+
+    for col in work.columns:
+
+        col_lower = str(col).lower()
+
+        if "net growth" in col_lower:
+            net_growth_col = col
+
+        elif "orders growth" in col_lower:
+            orders_growth_col = col
+
+    # -----------------------------------------------------
+    # If no growth columns are available
+    # -----------------------------------------------------
+
+    if net_growth_col is None:
+        return ""
+
+    # -----------------------------------------------------
+    # Convert growth columns to numeric
+    # -----------------------------------------------------
+
+    work[net_growth_col] = pd.to_numeric(
+        work[net_growth_col],
+        errors="coerce"
+    )
+
+    if orders_growth_col:
+        work[orders_growth_col] = pd.to_numeric(
+            work[orders_growth_col],
+            errors="coerce"
+        )
+
+    work = work.dropna(
+        subset=[net_growth_col]
+    )
+
+    if work.empty:
+        return ""
+
+    # -----------------------------------------------------
+    # Find name column
+    # -----------------------------------------------------
+
+    name_col = None
+
+    for candidate in [
+        title,
+        "Branch",
+        "Source",
+        "Session",
+        "Region",
+        "Brand Name"
+    ]:
+
+        if candidate in work.columns:
+            name_col = candidate
+            break
+
+    if name_col is None:
+        return ""
+
+    # -----------------------------------------------------
+    # Top growth
+    # -----------------------------------------------------
+
+    top_growth = (
+        work
+        .sort_values(
+            net_growth_col,
+            ascending=False
+        )
+        .head(3)
+    )
+
+    # -----------------------------------------------------
+    # Biggest drop
+    # -----------------------------------------------------
+
+    biggest_drop = (
+        work
+        .sort_values(
+            net_growth_col,
+            ascending=True
+        )
+        .head(3)
+    )
+
+    items = []
+
+    # =====================================================
+    # GROWTH
+    # =====================================================
+
+    for _, row in top_growth.iterrows():
+
+        name = str(
+            row[name_col]
+        )
+
+        growth = row[net_growth_col]
+
+        if pd.isna(growth):
+            continue
+
+        if growth > 0:
+
+            orders_text = ""
+
+            if orders_growth_col:
+                orders_growth = row[orders_growth_col]
+
+                if pd.notna(orders_growth):
+                    orders_text = (
+                        f", Orders {orders_growth:+.1f}%"
+                    )
+
+            items.append(
+                f"<li><b>{title}:</b> "
+                f"{name} grew "
+                f"<span class='growth-positive'>"
+                f"{growth:+.1f}%"
+                f"</span>"
+                f"{orders_text}.</li>"
+            )
+
+    # =====================================================
+    # IMPROVEMENT AREAS
+    # =====================================================
+
+    for _, row in biggest_drop.iterrows():
+
+        name = str(
+            row[name_col]
+        )
+
+        growth = row[net_growth_col]
+
+        if pd.isna(growth):
+            continue
+
+        if growth < 0:
+
+            orders_text = ""
+
+            if orders_growth_col:
+                orders_growth = row[orders_growth_col]
+
+                if pd.notna(orders_growth):
+                    orders_text = (
+                        f", Orders {orders_growth:+.1f}%"
+                    )
+
+            items.append(
+                f"<li><b>Needs improvement:</b> "
+                f"{name} declined "
+                f"<span class='growth-negative'>"
+                f"{growth:+.1f}%"
+                f"</span>"
+                f"{orders_text}.</li>"
+            )
+
+    if not items:
+        return ""
+
+    # -----------------------------------------------------
+    # Section heading
+    # -----------------------------------------------------
+
+    items.insert(
+        0,
+        f"<li class='insight-heading'>"
+        f"{title}"
+        f"</li>"
+    )
+
+    return "".join(items)
+
+
+# =========================================================
+# BUILD INSIGHTS
+# =========================================================
+
+def build_insights():
+
+    sections = []
+
+    sections.append(
+        insight_block(
+            "Source",
+            source_ftd_lw
+        )
+    )
+
+    sections.append(
+        insight_block(
+            "Session",
+            session_ftd_lw
+        )
+    )
+
+    sections.append(
+        insight_block(
+            "Region",
+            region_ftd_lw
+        )
+    )
+
+    content = "".join(
+        x
+        for x in sections
+        if x
+    )
+
+    if not content:
+
+        return (
+            "<p style='color:#777;'>"
+            "No comparison data available for insights."
+            "</p>"
+        )
+
+    return (
+        "<ul class='insight-list'>"
+        f"{content}"
+        "</ul>"
+    )
+
+
+# =========================================================
+# GENERATE INSIGHTS HTML
+# =========================================================
+
+insights_html = build_insights()
+
 
 def build_insights():
     sections = []
