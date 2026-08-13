@@ -3521,7 +3521,7 @@ body {{
 </div>
 
 {html_table(
-    day_level_ftd_lm,
+    day_level_mtd_lm,
     percent_columns=[
         "Net Growth %",
         "Orders Growth %",
