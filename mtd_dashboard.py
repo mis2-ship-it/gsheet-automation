@@ -948,6 +948,10 @@ def build_growth_kpi(
 
 
 # =========================================================
+# GROWTH KPI
+# =========================================================
+
+# =========================================================
 # FTD vs LW
 # =========================================================
 
@@ -996,32 +1000,32 @@ mtd_ly_growth = build_growth_kpi(
     ly_mtd_kpi
 )
 
+
 # =========================================================
-# STORE TYPE KPI
+# STORE TYPE KPI HELPER
 # =========================================================
 
-def store_type_kpi(
-    df,
-    store_type
-):
+def store_type_kpi(df, store_type):
 
     return get_kpi(
         df[
             df["Store Type"]
-            == store_type
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            == store_type.upper()
         ].copy()
     )
 
 
 # =========================================================
-# FTD STORE TYPE
+# FTD STORE TYPE KPI
 # =========================================================
 
 ftd_coco_kpi = store_type_kpi(
     ftd_df,
     "COCO"
 )
-
 
 ftd_fofo_kpi = store_type_kpi(
     ftd_df,
@@ -1030,7 +1034,52 @@ ftd_fofo_kpi = store_type_kpi(
 
 
 # =========================================================
-# MTD STORE TYPE
+# LW STORE TYPE KPI
+# =========================================================
+
+lw_coco_kpi = store_type_kpi(
+    lw_df,
+    "COCO"
+)
+
+lw_fofo_kpi = store_type_kpi(
+    lw_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# LM STORE TYPE KPI
+# =========================================================
+
+lm_coco_kpi = store_type_kpi(
+    lm_df,
+    "COCO"
+)
+
+lm_fofo_kpi = store_type_kpi(
+    lm_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# LY STORE TYPE KPI
+# =========================================================
+
+ly_coco_kpi = store_type_kpi(
+    ly_df,
+    "COCO"
+)
+
+ly_fofo_kpi = store_type_kpi(
+    ly_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# MTD STORE TYPE KPI
 # =========================================================
 
 mtd_coco_kpi = store_type_kpi(
@@ -1038,12 +1087,70 @@ mtd_coco_kpi = store_type_kpi(
     "COCO"
 )
 
-
 mtd_fofo_kpi = store_type_kpi(
     mtd_df,
     "FOFO"
 )
 
+
+# =========================================================
+# LM MTD STORE TYPE KPI
+# =========================================================
+
+lm_mtd_coco_kpi = store_type_kpi(
+    lm_mtd_df,
+    "COCO"
+)
+
+lm_mtd_fofo_kpi = store_type_kpi(
+    lm_mtd_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# LY MTD STORE TYPE KPI
+# =========================================================
+
+ly_mtd_coco_kpi = store_type_kpi(
+    ly_mtd_df,
+    "COCO"
+)
+
+ly_mtd_fofo_kpi = store_type_kpi(
+    ly_mtd_df,
+    "FOFO"
+)
+
+
+# =========================================================
+# COCO GROWTH KPI
+# =========================================================
+
+ftd_coco_lw_growth = build_growth_kpi(
+    ftd_coco_kpi,
+    lw_coco_kpi
+)
+
+ftd_coco_lm_growth = build_growth_kpi(
+    ftd_coco_kpi,
+    lm_coco_kpi
+)
+
+ftd_coco_ly_growth = build_growth_kpi(
+    ftd_coco_kpi,
+    ly_coco_kpi
+)
+
+mtd_coco_lm_growth = build_growth_kpi(
+    mtd_coco_kpi,
+    lm_mtd_coco_kpi
+)
+
+mtd_coco_ly_growth = build_growth_kpi(
+    mtd_coco_kpi,
+    ly_mtd_coco_kpi
+)
 
 # =========================================================
 # SUMMARY BUILDER
