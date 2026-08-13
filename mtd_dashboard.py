@@ -2207,95 +2207,296 @@ def html_table(
     percent_columns=None
 ):
 
+    # =====================================================
+    # EMPTY DATA CHECK
+    # =====================================================
+
     if df is None:
         return ""
 
     if df.empty:
         return ""
 
+    # =====================================================
+    # COPY DATA
+    # =====================================================
+
     work = df.copy()
-    percent_columns = percent_columns or []
+
+    percent_columns = list(
+        percent_columns or []
+    )
+
+    # =====================================================
+    # AUTOMATICALLY IDENTIFY PERCENTAGE COLUMNS
+    # =====================================================
 
     for col in work.columns:
-        if col.lower() in ("dis %", "discount %", "dis % change") and col not in percent_columns:
+
+        col_lower = str(col).lower()
+
+        if (
+            col_lower in (
+                "dis %",
+                "discount %",
+                "dis % change"
+            )
+            and col not in percent_columns
+        ):
             percent_columns.append(col)
 
-    headers = list(work.columns)
+    # =====================================================
+    # HEADERS
+    # =====================================================
 
-    html = ['<table class="data-table"><thead><tr>']
+    headers = list(
+        work.columns
+    )
+
+    html = [
+        '<table class="data-table">',
+        '<thead>',
+        '<tr>'
+    ]
+
     for col in headers:
-        html.append(f'<th>{col}</th>')
-    html.append('</tr></thead><tbody>')
+
+        html.append(
+            f'<th>{col}</th>'
+        )
+
+    html.extend([
+        '</tr>',
+        '</thead>',
+        '<tbody>'
+    ])
+
+    # =====================================================
+    # TABLE ROWS
+    # =====================================================
 
     for _, row in work.iterrows():
-        html.append('<tr>')
+
+        html.append(
+            '<tr>'
+        )
+
         for col in headers:
-            if col == "Date" and pd.notna(value):
-                value = pd.to_datetime(value).strftime("%-d-%b")
+
+            # -------------------------------------------------
+            # IMPORTANT:
+            # Get value BEFORE using it
+            # -------------------------------------------------
+
+            value = row[col]
+
+            # -------------------------------------------------
+            # DATE FORMAT
+            #
+            # Example:
+            # 2026-08-01 -> 1-Aug
+            # 2026-08-12 -> 12-Aug
+            # -------------------------------------------------
+
+            if (
+                col == "Date"
+                and pd.notna(value)
+            ):
+
+                try:
+
+                    value = pd.to_datetime(
+                        value
+                    ).strftime("%-d-%b")
+
+                except Exception:
+
+                    value = str(
+                        value
+                    )
+
+            # -------------------------------------------------
+            # EMPTY / NaN
+            # -------------------------------------------------
 
             if pd.isna(value):
+
                 display = ""
+
+            # -------------------------------------------------
+            # PERCENTAGE
+            # -------------------------------------------------
+
             elif col in percent_columns:
-                display = f"{float(value):,.1f}%"
-            elif isinstance(value, (int, float)) or pd.api.types.is_number(value):
-                display = f"{float(value):,.2f}"
+
+                try:
+
+                    display = (
+                        f"{float(value):,.1f}%"
+                    )
+
+                except Exception:
+
+                    display = str(
+                        value
+                    )
+
+            # -------------------------------------------------
+            # NUMERIC
+            # -------------------------------------------------
+
+            elif (
+                isinstance(
+                    value,
+                    (int, float)
+                )
+                or pd.api.types.is_number(
+                    value
+                )
+            ):
+
+                try:
+
+                    display = (
+                        f"{float(value):,.2f}"
+                    )
+
+                except Exception:
+
+                    display = str(
+                        value
+                    )
+
+            # -------------------------------------------------
+            # TEXT
+            # -------------------------------------------------
+
             else:
-                display = str(value)
+
+                display = str(
+                    value
+                )
+
+            # =================================================
+            # CELL HIGHLIGHTING
+            # =================================================
 
             cell_style = ""
-            if col in percent_columns and pd.notna(value):
-                number = float(value)
-                lower_col = col.lower()
 
-                # Growth: positive = green, negative = red
-                if "growth" in lower_col or "vs" in lower_col:
-                    if number > 0:
-                        cell_style = ' style="background:#E8F5E9;color:#2E7D32;font-weight:bold;"'
-                    elif number < 0:
-                        cell_style = ' style="background:#FFEBEE;color:#C62828;font-weight:bold;"'
+            if (
+                col in percent_columns
+                and pd.notna(value)
+            ):
 
-                # Discount %: lower is good, higher is bad
-                elif "dis %" in lower_col or "discount %" in lower_col:
-                    if number < 0:
-                        cell_style = ' style="background:#E8F5E9;color:#2E7D32;font-weight:bold;"'
-                    elif number > 0:
-                        cell_style = ' style="background:#FFEBEE;color:#C62828;font-weight:bold;"'
+                try:
 
-            html.append(f'<td{cell_style}>{display}</td>')
-        html.append('</tr>')
+                    number = float(
+                        value
+                    )
 
-    html.append('</tbody></table>')
-    return ''.join(html)
+                    lower_col = (
+                        str(col)
+                        .lower()
+                    )
 
+                    # -----------------------------------------
+                    # GROWTH %
+                    #
+                    # Positive = GREEN
+                    # Negative = RED
+                    # -----------------------------------------
 
-def insight_block(label, df, comparison_name="FTD vs LW"):
-    if df is None or df.empty or "Net Growth %" not in df.columns:
-        return ""
+                    if (
+                        "growth"
+                        in lower_col
+                        or "vs"
+                        in lower_col
+                    ):
 
-    work = df.copy()
-    work = work[pd.to_numeric(work["Net"], errors="coerce").fillna(0) > 0]
-    work["Net Growth %"] = pd.to_numeric(work["Net Growth %"], errors="coerce").fillna(0)
+                        if number > 0:
 
-    if work.empty:
-        return ""
+                            cell_style = (
+                                ' style="'
+                                'background:#E8F5E9;'
+                                'color:#2E7D32;'
+                                'font-weight:bold;'
+                                '"'
+                            )
 
-    positives = work[work["Net Growth %"] > 0].sort_values("Net Growth %", ascending=False).head(3)
-    negatives = work[work["Net Growth %"] < 0].sort_values("Net Growth %", ascending=True).head(3)
+                        elif number < 0:
 
-    parts = []
-    if not positives.empty:
-        items = []
-        for _, r in positives.iterrows():
-            items.append(f"<b>{r.iloc[0]}</b> (+{r['Net Growth %']:.1f}%, ₹{r['Net']:,.0f})")
-        parts.append(f"<li><span class='insight-good'>🟢 {label} growth:</span> {', '.join(items)}</li>")
+                            cell_style = (
+                                ' style="'
+                                'background:#FFEBEE;'
+                                'color:#C62828;'
+                                'font-weight:bold;'
+                                '"'
+                            )
 
-    if not negatives.empty:
-        items = []
-        for _, r in negatives.iterrows():
-            items.append(f"<b>{r.iloc[0]}</b> ({r['Net Growth %']:.1f}%, ₹{r['Net']:,.0f})")
-        parts.append(f"<li><span class='insight-bad'>🔴 {label} needs improvement:</span> {', '.join(items)}</li>")
+                    # -----------------------------------------
+                    # DISCOUNT %
+                    #
+                    # Decrease = GREEN
+                    # Increase = RED
+                    # -----------------------------------------
 
-    return ''.join(parts)
+                    elif (
+                        "dis %"
+                        in lower_col
+                        or "discount %"
+                        in lower_col
+                    ):
+
+                        if number < 0:
+
+                            cell_style = (
+                                ' style="'
+                                'background:#E8F5E9;'
+                                'color:#2E7D32;'
+                                'font-weight:bold;'
+                                '"'
+                            )
+
+                        elif number > 0:
+
+                            cell_style = (
+                                ' style="'
+                                'background:#FFEBEE;'
+                                'color:#C62828;'
+                                'font-weight:bold;'
+                                '"'
+                            )
+
+                except Exception:
+
+                    cell_style = ""
+
+            # =================================================
+            # ADD CELL
+            # =================================================
+
+            html.append(
+                f'<td{cell_style}>'
+                f'{display}'
+                f'</td>'
+            )
+
+        html.append(
+            '</tr>'
+        )
+
+    # =====================================================
+    # CLOSE TABLE
+    # =====================================================
+
+    html.extend([
+        '</tbody>',
+        '</table>'
+    ])
+
+    return ''.join(
+        html
+    )
 
 
 def build_insights():
