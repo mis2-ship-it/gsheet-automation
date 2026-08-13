@@ -1592,6 +1592,8 @@ session_ftd_ly = performance_summary(
     "Session"
 )
 
+
+
 # =========================================================
 # COCO DATA FILTERS
 # =========================================================
@@ -1711,6 +1713,8 @@ top_branch_mtd_lm = performance_summary(
     "Branch"
 ).head(10)
 
+
+
 # =========================================================
 # DAY-LEVEL COCO METRICS
 # =========================================================
@@ -1722,7 +1726,8 @@ day_coco_summary = (
         Gross=("Gross Sales", "sum"),
         Net=("Net Sales", "sum"),
         Discount=("Discount", "sum"),
-        Orders=("Orders", "sum")
+        Orders=("Orders", "sum"),
+        Qty=("Quantity", "sum")
     )
     .reset_index()
 )
@@ -1739,22 +1744,58 @@ day_coco_summary["Dis %"] = (
     day_coco_summary["Gross"].replace(0, 1)
 ) * 100
 
+day_coco_summary["Gross"] = day_coco_summary["Gross"].round(2)
+day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
+day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
+day_coco_summary["Orders"] = (
+    day_coco_summary["Orders"]
+    .round(0)
+    .astype(int)
+)
+day_coco_summary["Qty"] = (
+    day_coco_summary["Qty"]
+    .round(0)
+    .astype(int)
+)
+
+day_coco_summary["AOV"] = (
+    day_coco_summary["AOV"]
+    .round(2)
+)
+
+day_coco_summary["Dis %"] = (
+    day_coco_summary["Dis %"]
+    .round(2)
+)
+
 day_coco_summary = (
     day_coco_summary
     .sort_values("Date", ascending=False)
     .reset_index(drop=True)
 )
 
-day_coco_summary["Gross"] = day_coco_summary["Gross"].round(2)
-day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
-day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
-day_coco_summary["Orders"] = day_coco_summary["Orders"].round(0).astype(int)
-day_coco_summary["AOV"] = day_coco_summary["AOV"].round(2)
-day_coco_summary["Dis %"] = day_coco_summary["Dis %"].round(2)
+# =========================================================
+# SAME WEEKDAY PREVIOUS MONTH
+# =========================================================
+
+def get_same_weekday_previous_month(current_date):
+
+    current_date = pd.Timestamp(current_date)
+
+    prev_month = (
+        current_date
+        - pd.DateOffset(months=1)
+    )
+
+    while prev_month.weekday() != current_date.weekday():
+
+        prev_month -= pd.Timedelta(days=1)
+
+    return prev_month.normalize()
+
 
 # =========================================================
-# DAY LEVEL MTD VS LM MTD - COCO
-# SAME CALENDAR DAY OF PREVIOUS MONTH
+# DAY LEVEL MTD vs LM
 # =========================================================
 
 def day_level_mtd_lm_table():
@@ -1766,73 +1807,39 @@ def day_level_mtd_lm_table():
             Gross=("Gross Sales", "sum"),
             Net=("Net Sales", "sum"),
             Orders=("Orders", "sum"),
+            Qty=("Quantity", "sum"),
             Discount=("Discount", "sum")
         )
         .reset_index()
     )
 
     previous = (
-        lm_mtd_coco_df
+        lm_coco_df
         .groupby("Date")
         .agg(
             Prev_Gross=("Gross Sales", "sum"),
             Prev_Net=("Net Sales", "sum"),
             Prev_Orders=("Orders", "sum"),
+            Prev_Qty=("Quantity", "sum"),
             Prev_Discount=("Discount", "sum")
         )
         .reset_index()
     )
 
-    # -----------------------------------------------------
-    # Ensure Date is datetime
-    # -----------------------------------------------------
+    current["Date"] = (
+        pd.to_datetime(current["Date"])
+        .dt.normalize()
+    )
 
-    current["Date"] = pd.to_datetime(
-        current["Date"]
-    ).dt.normalize()
+    previous["Date"] = (
+        pd.to_datetime(previous["Date"])
+        .dt.normalize()
+    )
 
-    previous["Date"] = pd.to_datetime(
-        previous["Date"]
-    ).dt.normalize()
-
-    # -----------------------------------------------------
-    # Create matching previous-month date
-    #
-    # 01-Aug -> 01-Jul
-    # 02-Aug -> 02-Jul
-    # 12-Aug -> 12-Jul
-    # -----------------------------------------------------
-
-    # -----------------------------------------------------
-    # MATCH SAME WEEKDAY IN PREVIOUS MONTH
-    # -----------------------------------------------------
-    
-    def get_same_weekday_previous_month(current_date):
-    
-        current_date = pd.Timestamp(current_date)
-    
-        # Go to previous month
-        target = (
-            current_date
-            - pd.DateOffset(months=1)
-        )
-    
-        # Move backwards until weekday matches
-        while target.weekday() != current_date.weekday():
-    
-            target -= pd.Timedelta(days=1)
-    
-        return target.normalize()
-    
-    
     current["Prev Date"] = (
         current["Date"]
         .apply(get_same_weekday_previous_month)
     )
-
-    # -----------------------------------------------------
-    # Rename previous date for merge
-    # -----------------------------------------------------
 
     previous = previous.rename(
         columns={
@@ -1840,29 +1847,21 @@ def day_level_mtd_lm_table():
         }
     )
 
-    # -----------------------------------------------------
-    # Merge current date with same calendar date
-    # in previous month
-    # -----------------------------------------------------
-
     result = current.merge(
         previous,
         on="Prev Date",
         how="left"
     )
 
-    # -----------------------------------------------------
-    # Fill missing previous values
-    # -----------------------------------------------------
-
-    prev_columns = [
+    fill_cols = [
         "Prev_Gross",
         "Prev_Net",
         "Prev_Orders",
+        "Prev_Qty",
         "Prev_Discount"
     ]
 
-    for col in prev_columns:
+    for col in fill_cols:
 
         result[col] = (
             pd.to_numeric(
@@ -1871,10 +1870,6 @@ def day_level_mtd_lm_table():
             )
             .fillna(0)
         )
-
-    # -----------------------------------------------------
-    # Growth %
-    # -----------------------------------------------------
 
     result["Gross Growth %"] = (
         (
@@ -1903,10 +1898,14 @@ def day_level_mtd_lm_table():
         result["Prev_Orders"].replace(0, 1)
     ) * 100
 
-
-    # -----------------------------------------------------
-    # AOV
-    # -----------------------------------------------------
+    result["Qty Growth %"] = (
+        (
+            result["Qty"]
+            - result["Prev_Qty"]
+        )
+        /
+        result["Prev_Qty"].replace(0, 1)
+    ) * 100
 
     result["AOV"] = (
         result["Net"]
@@ -1914,84 +1913,55 @@ def day_level_mtd_lm_table():
         result["Orders"].replace(0, 1)
     )
 
-    # -----------------------------------------------------
-    # Final columns
-    # -----------------------------------------------------
-
     result = result[
         [
             "Date",
             "Gross",
             "Net",
             "Orders",
+            "Qty",
             "Discount",
 
             "Prev_Gross",
             "Prev_Net",
             "Prev_Orders",
+            "Prev_Qty",
 
             "Gross Growth %",
             "Net Growth %",
             "Orders Growth %",
+            "Qty Growth %",
+
             "AOV"
         ]
     ]
-
-    # -----------------------------------------------------
-    # Display names
-    # -----------------------------------------------------
 
     result = result.rename(
         columns={
             "Prev_Gross": "Prev Gross",
             "Prev_Net": "Prev Net",
-            "Prev_Orders": "Prev Orders"
+            "Prev_Orders": "Prev Orders",
+            "Prev_Qty": "Prev Qty"
         }
     )
 
-    # -----------------------------------------------------
-    # Sort latest date first
-    # -----------------------------------------------------
-
     result = (
         result
-        .sort_values(
-            "Date",
-            ascending=False
-        )
+        .sort_values("Date", ascending=False)
         .reset_index(drop=True)
     )
 
-    # -----------------------------------------------------
-    # Numeric rounding
-    # -----------------------------------------------------
-
-    numeric_columns = [
-        "Gross",
-        "Net",
-        "Discount",
-        "Prev Gross",
-        "Prev Net",
-        "Prev Orders",
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %",
-        "AOV"
-    ]
-
-    result[numeric_columns] = (
-        result[numeric_columns]
-        .round(2)
-    )
-
-    result["Orders"] = (
-        result["Orders"]
-        .round(0)
-        .astype(int)
-    )
-
-
     return result
+
+
+# =========================================================
+# CREATE DAY-LEVEL FTD vs LW
+# =========================================================
+
+day_level_ftd_lw = build_day_level_comparison(
+    ftd_coco_df,
+    lw_coco_df
+)
 # =========================================================
 # KPI TABLE
 # =========================================================
