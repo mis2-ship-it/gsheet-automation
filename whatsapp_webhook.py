@@ -913,6 +913,421 @@ def debug_user_access(sender):
     return user
 
 # =========================================================
+# 🌍 FIND REGION IN WHATSAPP SNAPSHOT
+# =========================================================
+
+def find_region_snapshot_key(
+    requested_region
+):
+
+    regions = LIVE_SALES_DATA.get(
+        "regions",
+        {}
+    )
+
+    requested = (
+        str(requested_region)
+        .strip()
+        .lower()
+    )
+
+    # Direct match
+    for region_name in regions.keys():
+
+        if (
+            str(region_name)
+            .strip()
+            .lower()
+            == requested
+        ):
+
+            return region_name
+
+    # Kerala / Kerela spelling handling
+    if requested in [
+        "kerala",
+        "kerela"
+    ]:
+
+        for region_name in regions.keys():
+
+            normalized = (
+                str(region_name)
+                .strip()
+                .lower()
+            )
+
+            if normalized in [
+                "kerala",
+                "kerela"
+            ]:
+
+                return region_name
+
+    return None
+
+
+# =========================================================
+# 🌍 REGION MANAGER FTD SALES
+# =========================================================
+
+def send_region_ftd_sales(
+    sender,
+    user
+):
+
+    print("=" * 60)
+    print("🌍 REGION MANAGER FTD SALES")
+    print("=" * 60)
+
+    region_name = (
+        user.get(
+            "region",
+            ""
+        )
+    )
+
+    print(
+        "Sender :",
+        sender
+    )
+
+    print(
+        "Role   :",
+        user.get("role")
+    )
+
+    print(
+        "Region requested:",
+        region_name
+    )
+
+    # -----------------------------------------------------
+    # CHECK SNAPSHOT
+    # -----------------------------------------------------
+
+    if not LIVE_SALES_DATA:
+
+        print(
+            "❌ LIVE_SALES_DATA is empty"
+        )
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Sales data is not available right now."
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # FIND REGION
+    # -----------------------------------------------------
+
+    snapshot_region = (
+        find_region_snapshot_key(
+            region_name
+        )
+    )
+
+    if not snapshot_region:
+
+        print(
+            "❌ Region not found in snapshot:",
+            region_name
+        )
+
+        available_regions = ", ".join(
+            LIVE_SALES_DATA.get(
+                "regions",
+                {}
+            ).keys()
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "⚠️ Region data is not available "
+                "for your mapped region.\n\n"
+                f"Mapped Region: {region_name}\n"
+                f"Available Regions: {available_regions}"
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GET REGION DATA
+    # -----------------------------------------------------
+
+    region_data = (
+        LIVE_SALES_DATA
+        .get("regions", {})
+        .get(snapshot_region, {})
+    )
+
+    today_net = float(
+        region_data.get(
+            "today",
+            0
+        ) or 0
+    )
+
+    lw_net = float(
+        region_data.get(
+            "lw",
+            0
+        ) or 0
+    )
+
+    growth = float(
+        region_data.get(
+            "growth",
+            0
+        ) or 0
+    )
+
+    # -----------------------------------------------------
+    # GROWTH ICON
+    # -----------------------------------------------------
+
+    if growth > 0:
+
+        growth_icon = "📈"
+
+    elif growth < 0:
+
+        growth_icon = "🔻"
+
+    else:
+
+        growth_icon = "➡️"
+
+    # -----------------------------------------------------
+    # DATE
+    # -----------------------------------------------------
+
+    report_date = (
+        LIVE_SALES_DATA.get(
+            "date",
+            ""
+        )
+    )
+
+    report_time = (
+        LIVE_SALES_DATA.get(
+            "report_time",
+            ""
+        )
+    )
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
+
+    reply = (
+
+        f"🌍 *AI MIS | REGION SALES*\n"
+        f"{report_date}\n"
+        f"{report_time}\n\n"
+
+        f"📍 *Region:* "
+        f"{snapshot_region}\n\n"
+
+        f"💰 *NET REVENUE*\n"
+        f"🟢 Today: "
+        f"₹{today_net / 100000:.2f}L\n"
+
+        f"🔵 Last Week: "
+        f"₹{lw_net / 100000:.2f}L\n"
+
+        f"{growth_icon} Growth: "
+        f"{growth:+.1f}%"
+    )
+
+    # -----------------------------------------------------
+    # DEBUG
+    # -----------------------------------------------------
+
+    print(
+        "🌍 Region Snapshot:"
+    )
+
+    print(
+        "Region:",
+        snapshot_region
+    )
+
+    print(
+        "Today Net:",
+        today_net
+    )
+
+    print(
+        "LW Net:",
+        lw_net
+    )
+
+    print(
+        "Growth:",
+        growth
+    )
+
+    print(
+        "Region Manager Reply:"
+    )
+
+    print(reply)
+
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # SEND
+    # -----------------------------------------------------
+
+    send_whatsapp_message(
+        sender,
+        reply
+    )
+
+
+# =========================================================
+# 🔐 ROLE BASED FTD SALES
+# =========================================================
+
+def send_role_based_ftd_sales(
+    sender
+):
+
+    print("=" * 60)
+    print("🔐 ROLE BASED FTD SALES")
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+
+        print(
+            "❌ User not mapped:",
+            sender
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "❌ Your mobile number is "
+                "not mapped for AI MIS access."
+            )
+        )
+
+        return
+
+    role = (
+        str(
+            user.get(
+                "role",
+                ""
+            )
+        )
+        .strip()
+        .lower()
+    )
+
+    print(
+        "Sender:",
+        sender
+    )
+
+    print(
+        "Role:",
+        user.get("role")
+    )
+
+    print(
+        "Region:",
+        user.get("region")
+    )
+
+    print(
+        "Patch:",
+        user.get("patch")
+    )
+
+    print(
+        "Stores:",
+        user.get("stores")
+    )
+
+    # -----------------------------------------------------
+    # OPS LEADER
+    # -----------------------------------------------------
+
+    if role == "ops leader":
+
+        print(
+            "👔 Ops Leader → Overall Sales"
+        )
+
+        send_ftd_sales(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # REGION MANAGER
+    # -----------------------------------------------------
+
+    if role == "region manager":
+
+        print(
+            "🌍 Region Manager → Region Sales"
+        )
+
+        send_region_ftd_sales(
+            sender,
+            user
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # AREA MANAGER
+    # -----------------------------------------------------
+
+    if role == "area manager":
+
+        print(
+            "🏪 Area Manager → Area Manager "
+            "store filtering will be enabled next"
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "⚠️ Area Manager store-level "
+                "access is being configured."
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # UNKNOWN ROLE
+    # -----------------------------------------------------
+
+    print(
+        "❌ Unknown role:",
+        role
+    )
+
+    send_whatsapp_message(
+        sender,
+        "❌ Your AI MIS role is not configured."
+    )
+
+# =========================================================
 # 👋 PROCESS MESSAGE
 # =========================================================
 
@@ -1068,39 +1483,35 @@ def process_message(
 
     ]
 
-    if message in sales_lw_keywords:
+    if message in sales_keywords:
 
         print(
-            "📊 SALES VS LW COMMAND DETECTED"
+            "📊 FTD SALES "
+            "COMMAND DETECTED"
         )
-
-        send_sales_vs_lw(
-            sender
-        )
-
-        return
-
-    # =====================================================
-    # NATURAL SALES QUESTION
-    # =====================================================
-
-    if (
-
-        "sales" in message
-        and
-        "today" in message
-
-    ):
-
-        print(
-            "📊 NATURAL FTD SALES "
-            "QUESTION DETECTED"
-        )
-
-        send_ftd_sales(
-            sender
-        )
-
+    
+        try:
+    
+            send_role_based_ftd_sales(
+                sender
+            )
+    
+            print(
+                "✅ send_role_based_ftd_sales() completed"
+            )
+    
+        except Exception as e:
+    
+            print(
+                "❌ send_role_based_ftd_sales() ERROR:",
+                str(e)
+            )
+    
+            send_whatsapp_message(
+                sender,
+                "❌ Error while generating FTD Sales report."
+            )
+    
         return
 
     # =====================================================
