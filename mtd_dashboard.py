@@ -1958,10 +1958,7 @@ def day_level_mtd_lm_table():
 # CREATE DAY-LEVEL FTD vs LW
 # =========================================================
 
-day_level_ftd_lw = build_day_level_comparison(
-    ftd_coco_df,
-    lw_coco_df
-)
+day_level_mtd_lm = day_level_mtd_lm_table()
 # =========================================================
 # KPI TABLE
 # =========================================================
@@ -3510,7 +3507,7 @@ body {{
 </div>
 
 {html_table(
-    day_level_ftd_lw,
+    day_level_mtd_lm,
     percent_columns=[
         "Net Growth %",
         "Orders Growth %",
