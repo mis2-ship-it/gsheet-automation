@@ -1538,7 +1538,7 @@ top_branch_mtd_lm = performance_summary(
 # =========================================================
 
 day_coco_summary = (
-    coco_mtd_df
+    mtd_coco_df
     .groupby("Date")
     .agg(
         Gross=("Gross Sales", "sum"),
