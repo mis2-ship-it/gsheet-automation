@@ -86,15 +86,125 @@ print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
-# DATE RANGE - LAST 2 DAYS ONLY
+# DATE RANGE - AUTO CATCH-UP MISSING DAYS
 # =========================================================
 
 today = datetime.now().date()
 
-start_date = today - timedelta(days=2)
+# Yesterday is the latest completed business calendar date
 end_date = today - timedelta(days=1)
 
-print(f"📅 Date Range: {start_date} → {end_date}")
+# Current monthly CSV
+current_month_file = (
+    Path("monthly_data")
+    / str(today.year)
+    / today.strftime("MTD_%b_%y.csv")
+)
+
+print("=" * 60)
+print("DATE RANGE CHECK")
+print("=" * 60)
+
+if current_month_file.exists():
+
+    print("📂 Existing CSV Found:")
+    print("   ", current_month_file)
+
+    try:
+
+        existing_df = pd.read_csv(
+            current_month_file,
+            low_memory=False
+        )
+
+        if "Date" not in existing_df.columns:
+
+            raise RuntimeError(
+                "❌ Existing CSV does not contain Date column"
+            )
+
+        existing_df["Date"] = pd.to_datetime(
+            existing_df["Date"],
+            errors="coerce"
+        )
+
+        last_existing_date = (
+            existing_df["Date"]
+            .dropna()
+            .max()
+            .date()
+        )
+
+        start_date = (
+            last_existing_date
+            + timedelta(days=1)
+        )
+
+        print(
+            "📅 Last CSV Date :",
+            last_existing_date
+        )
+
+        print(
+            "📥 Fetch From    :",
+            start_date
+        )
+
+        print(
+            "📥 Fetch Until   :",
+            end_date
+        )
+
+    except Exception as e:
+
+        print(
+            "⚠️ Existing CSV could not be read:"
+        )
+
+        print(str(e))
+
+        # Safe fallback
+        start_date = (
+            today - timedelta(days=2)
+        )
+
+else:
+
+    print("🆕 No current month CSV found")
+
+    # First run of the month
+    start_date = (
+        today.replace(day=1)
+    )
+
+    print(
+        "📥 Fetching from month start:",
+        start_date
+    )
+
+# ---------------------------------------------------------
+# Nothing missing
+# ---------------------------------------------------------
+
+if start_date > end_date:
+
+    print("=" * 60)
+    print("✅ CSV IS ALREADY UP TO DATE")
+    print("=" * 60)
+
+    print(
+        "Latest available date:",
+        start_date - timedelta(days=1)
+    )
+
+    raise SystemExit(0)
+
+print("=" * 60)
+print(
+    f"📅 Fetch Date Range: "
+    f"{start_date} → {end_date}"
+)
+print("=" * 60)
 
 
 # =========================================================
