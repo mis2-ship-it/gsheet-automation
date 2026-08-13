@@ -529,12 +529,32 @@ def same_weekday_last_month(current_date):
     target = (
         current_date
         - pd.DateOffset(months=1)
+    ).normalize()
+
+    candidates = []
+
+    for offset in range(-7, 8):
+
+        candidate = (
+            target
+            + pd.Timedelta(days=offset)
+        ).normalize()
+
+        if (
+            candidate.month == target.month
+            and candidate.weekday() == current_date.weekday()
+        ):
+            candidates.append(candidate)
+
+    if not candidates:
+        return target.date()
+
+    nearest = min(
+        candidates,
+        key=lambda d: abs((d - target).days)
     )
 
-    while target.weekday() != current_date.weekday():
-        target -= pd.Timedelta(days=1)
-
-    return target.date()
+    return nearest.date()
 
 
 lm_date = same_weekday_last_month(
@@ -553,12 +573,33 @@ def same_weekday_last_year(current_date):
     target = (
         current_date
         - pd.DateOffset(years=1)
+    ).normalize()
+
+    candidates = []
+
+    for offset in range(-7, 8):
+
+        candidate = (
+            target
+            + pd.Timedelta(days=offset)
+        ).normalize()
+
+        if (
+            candidate.year == target.year
+            and candidate.month == target.month
+            and candidate.weekday() == current_date.weekday()
+        ):
+            candidates.append(candidate)
+
+    if not candidates:
+        return target.date()
+
+    nearest = min(
+        candidates,
+        key=lambda d: abs((d - target).days)
     )
 
-    while target.weekday() != current_date.weekday():
-        target -= pd.Timedelta(days=1)
-
-    return target.date()
+    return nearest.date()
 
 
 ly_date = same_weekday_last_year(
@@ -760,13 +801,13 @@ mtd_df = date_filter(
 
 lm_mtd_df = date_filter(
     lm_month_start,
-    lm_date
+    lm_mtd_end
 )
 
 
 ly_mtd_df = date_filter(
     ly_month_start,
-    ly_date
+    ly_mtd_end
 )
 
 
@@ -1821,7 +1862,7 @@ def get_same_weekday_previous_month(current_date):
 # FOR DAY-LEVEL COMPARISON
 # =========================================================
 
-lm_full_month_coco_df = combined_df[
+lm_full_month_coco_df = final_df[
     (combined_df["Date"] >= pd.Timestamp(
         lm_date.year,
         lm_date.month,
@@ -1846,7 +1887,7 @@ lm_full_month_coco_df = combined_df[
 # FOR DAY-LEVEL COMPARISON
 # =========================================================
 
-ly_full_month_coco_df = combined_df[
+ly_full_month_coco_df = final_df[
     (combined_df["Date"] >= pd.Timestamp(
         ly_date.year,
         ly_date.month,
@@ -2934,24 +2975,6 @@ def build_insights():
 
 insights_html = build_insights()
 
-
-def build_insights():
-    sections = []
-
-    sections.append(insight_block("Source", source_ftd_lw))
-    sections.append(insight_block("Session", session_ftd_lw))
-    sections.append(insight_block("Region", region_ftd_lw))
-
-    content = ''.join(x for x in sections if x)
-    if not content:
-        return "<p style='color:#777;'>No comparison data available for insights.</p>"
-
-    return f"<ul class='insight-list'>{content}</ul>"
-
-
-insights_html = build_insights()
-
-
 # =========================================================
 # KPI CARD
 # =========================================================
@@ -3332,13 +3355,13 @@ body {{
     LM MTD:
     {lm_month_start.strftime("%d-%b-%Y")}
     →
-    {lm_date.strftime("%d-%b-%Y")}
+    {lm_mtd_end.strftime("%d-%b-%Y")}
     <br>
 
     LY MTD:
     {ly_month_start.strftime("%d-%b-%Y")}
     →
-    {ly_date.strftime("%d-%b-%Y")}
+    {ly_mtd_end.strftime("%d-%b-%Y")}
 </div>
 
 {html_table(
