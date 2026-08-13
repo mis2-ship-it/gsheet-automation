@@ -8,7 +8,11 @@ import os
 import requests
 import json
 from datetime import datetime
-
+from whatsapp_recipients import (
+    WHATSAPP_USERS,
+    get_user_access,
+    user_can_access_store
+)
 
 app = Flask(__name__)
 
@@ -1256,6 +1260,134 @@ def webhook():
         200
     )
 
+# =========================================================
+# 👔 TEST SEND — OPS LEADERS ONLY
+# =========================================================
+
+@app.route(
+    "/test-ops-leaders",
+    methods=["GET"]
+)
+def test_ops_leaders():
+
+    print("=" * 60)
+    print("👔 OPS LEADER WHATSAPP TEST")
+    print("=" * 60)
+
+    ops_leaders = []
+
+    for mobile, user in WHATSAPP_USERS.items():
+
+        role = str(
+            user.get("role", "")
+        ).strip().lower()
+
+        if role == "ops leader":
+
+            recipient = (
+                str(mobile)
+                .replace("+", "")
+                .replace(" ", "")
+                .replace("-", "")
+            )
+
+            ops_leaders.append(
+                recipient
+            )
+
+    ops_leaders = list(
+        dict.fromkeys(
+            ops_leaders
+        )
+    )
+
+    print(
+        "Ops Leaders found:",
+        len(ops_leaders)
+    )
+
+    print(
+        "Ops Leader numbers:",
+        ops_leaders
+    )
+
+    if not ops_leaders:
+
+        return jsonify({
+            "success": False,
+            "message": "No Ops Leaders found"
+        }), 404
+
+    message = (
+        "👔 *AI MIS | OPS LEADER TEST*\n\n"
+        "✅ Your WhatsApp access mapping "
+        "is working.\n\n"
+        "Role: Ops Leader\n"
+        "Access: Overall"
+    )
+
+    results = []
+
+    for recipient in ops_leaders:
+
+        print(
+            "➡️ Sending to:",
+            recipient
+        )
+
+        try:
+
+            success = send_whatsapp_message(
+                recipient,
+                message
+            )
+
+            results.append({
+                "recipient": recipient,
+                "success": success
+            })
+
+        except Exception as e:
+
+            print(
+                "❌ Send error:",
+                recipient,
+                str(e)
+            )
+
+            results.append({
+                "recipient": recipient,
+                "success": False,
+                "error": str(e)
+            })
+
+    success_count = sum(
+        1
+        for item in results
+        if item["success"]
+    )
+
+    failed_count = (
+        len(results)
+        - success_count
+    )
+
+    print("=" * 60)
+    print(
+        "Success:",
+        success_count
+    )
+    print(
+        "Failed:",
+        failed_count
+    )
+    print("=" * 60)
+
+    return jsonify({
+        "success": failed_count == 0,
+        "ops_leaders": ops_leaders,
+        "results": results
+    }), 200
 
 # =========================================================
 # 🧪 TEST SEND
