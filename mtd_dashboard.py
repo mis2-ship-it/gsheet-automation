@@ -1816,6 +1816,70 @@ def get_same_weekday_previous_month(current_date):
     return prev_month.normalize()
 
 # =========================================================
+# FULL PREVIOUS MONTH COCO DATA
+# FOR DAY-LEVEL COMPARISON
+# =========================================================
+
+lm_full_month_coco_df = combined_df[
+    (combined_df["Date"] >= pd.Timestamp(
+        lm_date.year,
+        lm_date.month,
+        1
+    ))
+    &
+    (combined_df["Date"] < (
+        pd.Timestamp(
+            lm_date.year,
+            lm_date.month,
+            1
+        )
+        + pd.DateOffset(months=1)
+    ))
+    &
+    (combined_df["Store Type"] == "COCO")
+].copy()
+
+
+# =========================================================
+# FULL PREVIOUS YEAR MONTH COCO DATA
+# FOR DAY-LEVEL COMPARISON
+# =========================================================
+
+ly_full_month_coco_df = combined_df[
+    (combined_df["Date"] >= pd.Timestamp(
+        ly_date.year,
+        ly_date.month,
+        1
+    ))
+    &
+    (combined_df["Date"] < (
+        pd.Timestamp(
+            ly_date.year,
+            ly_date.month,
+            1
+        )
+        + pd.DateOffset(months=1)
+    ))
+    &
+    (combined_df["Store Type"] == "COCO")
+].copy()
+
+
+print("=" * 80)
+print("FULL MONTH COCO DATA FOR DAY-LEVEL COMPARISON")
+print("=" * 80)
+
+print(
+    "LM Full Month COCO:",
+    len(lm_full_month_coco_df)
+)
+
+print(
+    "LY Full Month COCO:",
+    len(ly_full_month_coco_df)
+)
+
+# =========================================================
 # GENERIC DAY-LEVEL COCO COMPARISON
 # =========================================================
 
@@ -2055,11 +2119,12 @@ day_level_ftd_lw = build_day_level_comparison(
 # =========================================================
 # DAY-LEVEL FTD vs LM
 # 28 DAYS BEFORE
+# FULL PREVIOUS MONTH
 # =========================================================
 
 day_level_ftd_lm = build_day_level_comparison(
     ftd_coco_df,
-    lm_coco_df,
+    lm_full_month_coco_df,
     28
 )
 
@@ -2067,11 +2132,12 @@ day_level_ftd_lm = build_day_level_comparison(
 # =========================================================
 # DAY-LEVEL FTD vs LY
 # 364 DAYS BEFORE
+# FULL PREVIOUS YEAR MONTH
 # =========================================================
 
 day_level_ftd_ly = build_day_level_comparison(
     ftd_coco_df,
-    ly_coco_df,
+    ly_full_month_coco_df,
     364
 )
 
@@ -2079,11 +2145,12 @@ day_level_ftd_ly = build_day_level_comparison(
 # =========================================================
 # DAY-LEVEL MTD vs LM MTD
 # 28 DAYS BEFORE
+# FULL PREVIOUS MONTH
 # =========================================================
 
 day_level_mtd_lm = build_day_level_comparison(
     mtd_coco_df,
-    lm_mtd_coco_df,
+    lm_full_month_coco_df,
     28
 )
 
@@ -2091,11 +2158,12 @@ day_level_mtd_lm = build_day_level_comparison(
 # =========================================================
 # DAY-LEVEL MTD vs LY MTD
 # 364 DAYS BEFORE
+# FULL PREVIOUS YEAR MONTH
 # =========================================================
 
 day_level_mtd_ly = build_day_level_comparison(
     mtd_coco_df,
-    ly_mtd_coco_df,
+    ly_full_month_coco_df,
     364
 )
 
