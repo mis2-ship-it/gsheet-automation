@@ -1843,6 +1843,25 @@ day_level_ftd_ly = build_day_level_comparison(
     ftd_coco_df,
     ly_coco_df
 )
+
+# =========================================================
+# MTD vs LM MTD - DAY LEVEL COCO
+# =========================================================
+
+day_level_mtd_lm = build_day_level_comparison(
+    mtd_coco_df,
+    lm_mtd_coco_df
+)
+
+
+# =========================================================
+# MTD vs LY MTD - DAY LEVEL COCO
+# =========================================================
+
+day_level_mtd_ly = build_day_level_comparison(
+    mtd_coco_df,
+    ly_mtd_coco_df
+)
 # =========================================================
 # KPI TABLE
 # =========================================================
