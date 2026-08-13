@@ -1448,6 +1448,50 @@ session_ftd_ly = performance_summary(
     "Session"
 )
 
+# =========================================================
+# COCO DATA FILTERS
+# =========================================================
+
+ftd_coco_df = ftd_df[
+    ftd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+lw_coco_df = lw_df[
+    lw_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+lm_coco_df = lm_df[
+    lm_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+ly_coco_df = ly_df[
+    ly_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+mtd_coco_df = mtd_df[
+    mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+lm_mtd_coco_df = lm_mtd_df[
+    lm_mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+ly_mtd_coco_df = ly_mtd_df[
+    ly_mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
+].copy()
+
+
+print("=" * 80)
+print("COCO FILTER CHECK")
+print("=" * 80)
+
+print("FTD COCO       :", len(ftd_coco_df))
+print("LW COCO        :", len(lw_coco_df))
+print("LM COCO        :", len(lm_coco_df))
+print("LY COCO        :", len(ly_coco_df))
+print("MTD COCO       :", len(mtd_coco_df))
+print("LM MTD COCO    :", len(lm_mtd_coco_df))
+print("LY MTD COCO    :", len(ly_mtd_coco_df))
 
 # =========================================================
 # MTD PERFORMANCE TABLES
@@ -1459,13 +1503,11 @@ brand_mtd_lm = performance_summary(
     "Brand Name"
 )
 
-
 brand_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Brand Name"
 )
-
 
 source_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1473,13 +1515,11 @@ source_mtd_lm = performance_summary(
     "Source"
 )
 
-
 source_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Source"
 )
-
 
 region_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1487,13 +1527,11 @@ region_mtd_lm = performance_summary(
     "Region"
 )
 
-
 region_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Region"
 )
-
 
 session_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1501,13 +1539,11 @@ session_mtd_lm = performance_summary(
     "Session"
 )
 
-
 session_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Session"
 )
-
 
 # =========================================================
 # TOP 10 BRANCHES
@@ -1519,13 +1555,11 @@ top_branch_ftd_lw = performance_summary(
     "Branch"
 ).head(10)
 
-
 top_branch_ftd_lm = performance_summary(
     ftd_coco_df,
     lm_coco_df,
     "Branch"
 ).head(10)
-
 
 top_branch_mtd_lm = performance_summary(
     mtd_coco_df,
