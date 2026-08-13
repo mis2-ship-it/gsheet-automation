@@ -1717,7 +1717,132 @@ day_coco_summary["Qty"] = day_coco_summary["Qty"].round(0).astype(int)
 day_coco_summary["AOV"] = day_coco_summary["AOV"].round(2)
 day_coco_summary["Dis %"] = day_coco_summary["Dis %"].round(2)
 
+# =========================================================
+# DAY-LEVEL COMPARISON TABLES - COCO
+# =========================================================
 
+def build_day_level_comparison(current_df, previous_df):
+    """
+    Compare each available day in current_df against the
+    corresponding comparison date in previous_df.
+
+    Used for:
+        FTD vs LW
+        FTD vs LM
+        FTD vs LY
+    """
+
+    current = (
+        current_df
+        .groupby("Date")
+        .agg(
+            Gross=("Gross Sales", "sum"),
+            Net=("Net Sales", "sum"),
+            Orders=("Orders", "sum"),
+            Qty=("Quantity", "sum"),
+            Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    previous = (
+        previous_df
+        .groupby("Date")
+        .agg(
+            Prev_Gross=("Gross Sales", "sum"),
+            Prev_Net=("Net Sales", "sum"),
+            Prev_Orders=("Orders", "sum"),
+            Prev_Qty=("Quantity", "sum"),
+            Prev_Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    if current.empty or previous.empty:
+        return pd.DataFrame()
+
+    # Use the first/only comparison date
+    previous_row = previous.iloc[0]
+
+    current["Prev Gross"] = previous_row["Prev_Gross"]
+    current["Prev Net"] = previous_row["Prev_Net"]
+    current["Prev Orders"] = previous_row["Prev_Orders"]
+    current["Prev Qty"] = previous_row["Prev_Qty"]
+
+    current["Gross Growth %"] = (
+        (
+            current["Gross"]
+            - current["Prev Gross"]
+        )
+        / current["Prev Gross"].replace(0, 1)
+        * 100
+    )
+
+    current["Net Growth %"] = (
+        (
+            current["Net"]
+            - current["Prev Net"]
+        )
+        / current["Prev Net"].replace(0, 1)
+        * 100
+    )
+
+    current["Orders Growth %"] = (
+        (
+            current["Orders"]
+            - current["Prev Orders"]
+        )
+        / current["Prev Orders"].replace(0, 1)
+        * 100
+    )
+
+    current["Qty Growth %"] = (
+        (
+            current["Qty"]
+            - current["Prev Qty"]
+        )
+        / current["Prev Qty"].replace(0, 1)
+        * 100
+    )
+
+    current["AOV"] = (
+        current["Net"]
+        / current["Orders"].replace(0, 1)
+    )
+
+    current = current.round(2)
+
+    return current
+
+
+# =========================================================
+# FTD vs LW - COCO
+# =========================================================
+
+day_level_ftd_lw = build_day_level_comparison(
+    ftd_coco_df,
+    lw_coco_df
+)
+
+
+# =========================================================
+# FTD vs LM - COCO
+# =========================================================
+
+day_level_ftd_lm = build_day_level_comparison(
+    ftd_coco_df,
+    lm_coco_df
+)
+
+
+# =========================================================
+# FTD vs LY - COCO
+# =========================================================
+
+day_level_ftd_ly = build_day_level_comparison(
+    ftd_coco_df,
+    ly_coco_df
+)
 # =========================================================
 # KPI TABLE
 # =========================================================
