@@ -1863,13 +1863,13 @@ def get_same_weekday_previous_month(current_date):
 # =========================================================
 
 lm_full_month_coco_df = final_df[
-    (combined_df["Date"] >= pd.Timestamp(
+    (final_df["Date"] >= pd.Timestamp(
         lm_date.year,
         lm_date.month,
         1
     ))
     &
-    (combined_df["Date"] < (
+    (final_df["Date"] < (
         pd.Timestamp(
             lm_date.year,
             lm_date.month,
@@ -1878,7 +1878,7 @@ lm_full_month_coco_df = final_df[
         + pd.DateOffset(months=1)
     ))
     &
-    (combined_df["Store Type"] == "COCO")
+    (final_df["Store Type"] == "COCO")
 ].copy()
 
 
@@ -1888,22 +1888,22 @@ lm_full_month_coco_df = final_df[
 # =========================================================
 
 ly_full_month_coco_df = final_df[
-    (combined_df["Date"] >= pd.Timestamp(
+    (final_df["Date"] >= pd.Timestamp(
         ly_date.year,
         ly_date.month,
         1
     ))
     &
-    (combined_df["Date"] < (
+    (final_df["Date"] < (
         pd.Timestamp(
             ly_date.year,
             ly_date.month,
-            1
+        1
         )
         + pd.DateOffset(months=1)
     ))
     &
-    (combined_df["Store Type"] == "COCO")
+    (final_df["Store Type"] == "COCO")
 ].copy()
 
 
