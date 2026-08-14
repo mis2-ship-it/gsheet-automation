@@ -1,4 +1,3 @@
-
 # =========================================================
 # 📱 AI MIS WHATSAPP WEBHOOK
 # =========================================================
@@ -615,98 +614,15 @@ def get_ftd_sales():
 
     return result
 
-# =========================================================
-# 📈 SALES VS LAST WEEK DATA
-# =========================================================
 
-def get_sales_vs_lw():
-
-    if not LIVE_SALES_DATA:
-
-        raise Exception(
-            "Live sales backend data is not available"
-        )
-
-    overall_data = (
-        LIVE_SALES_DATA.get(
-            "overall",
-            {}
-        )
-    )
-
-    return {
-
-        "today_net":
-            float(
-                overall_data.get(
-                    "net",
-                    0
-                ) or 0
-            ),
-
-        "lw_net":
-            float(
-                overall_data.get(
-                    "lw_net",
-                    0
-                ) or 0
-            ),
-
-        "growth":
-            float(
-                overall_data.get(
-                    "lw_growth",
-                    0
-                ) or 0
-            ),
-
-        "today_txn":
-            float(
-                overall_data.get(
-                    "txn",
-                    0
-                ) or 0
-            ),
-
-        "lw_txn": 0.0,
-
-        "today_aov":
-            float(
-                overall_data.get(
-                    "aov",
-                    0
-                ) or 0
-            ),
-
-        "lw_aov": 0.0,
-
-        "today_discount":
-            float(
-                overall_data.get(
-                    "discount",
-                    0
-                ) or 0
-            ),
-
-        "lw_discount": 0.0
-    }
 
 # =========================================================
 # 📊 GET BRAND DATA
 # =========================================================
 
 def get_brand_data():
-
-    brands = LIVE_SALES_DATA.get(
-        "brands",
-        {}
-    )
-
-    print(
-        "Brands available:",
-        list(brands.keys())
-    )
-
+    brands = LIVE_SALES_DATA.get("brands", {})
+    print("Brands available:", list(brands.keys()))
     return brands
 
 
@@ -715,2662 +631,502 @@ def get_brand_data():
 # =========================================================
 
 def get_source_data():
-
-    sources = LIVE_SALES_DATA.get(
-        "sources",
-        {}
-    )
-
-    print(
-        "Sources available:",
-        list(sources.keys())
-    )
-
+    sources = LIVE_SALES_DATA.get("sources", {})
+    print("Sources available:", list(sources.keys()))
     return sources
 
-# =========================================================
-# 🏪 AREA MANAGER FTD SALES
-# =========================================================
-
-def send_area_manager_ftd_sales(
-    sender,
-    user
-):
-
-    print("=" * 60)
-    print("🏪 AREA MANAGER FTD SALES")
-    print("=" * 60)
-
-    # -----------------------------------------------------
-    # USER STORE MAPPING
-    # -----------------------------------------------------
-
-    allowed_stores = user.get(
-        "stores",
-        []
-    )
-
-    if not isinstance(
-        allowed_stores,
-        list
-    ):
-
-        allowed_stores = [
-            allowed_stores
-        ]
-
-    allowed_stores = [
-
-        str(store)
-        .strip()
-
-        for store in allowed_stores
-
-        if str(store).strip()
-    ]
-
-    print(
-        "Sender:",
-        sender
-    )
-
-    print(
-        "Role:",
-        user.get("role")
-    )
-
-    print(
-        "Region:",
-        user.get("region")
-    )
-
-    print(
-        "Patch:",
-        user.get("patch")
-    )
-
-    print(
-        "Mapped Stores:",
-        allowed_stores
-    )
-
-    # -----------------------------------------------------
-    # CHECK SNAPSHOT
-    # -----------------------------------------------------
-
-    if not LIVE_SALES_DATA:
-
-        print(
-            "❌ LIVE_SALES_DATA is empty"
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Sales data is not "
-                "available right now."
-            )
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GET STORE SNAPSHOT
-    # -----------------------------------------------------
-
-    snapshot_stores = (
-        LIVE_SALES_DATA.get(
-            "stores",
-            {}
-        )
-    )
-
-    if not snapshot_stores:
-
-        print(
-            "❌ Store snapshot is empty"
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Store-level sales data "
-                "is not available right now."
-            )
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # NORMALIZED STORE LOOKUP
-    # -----------------------------------------------------
-
-    normalized_snapshot = {}
-
-    for store_name, store_data in (
-        snapshot_stores.items()
-    ):
-
-        normalized_name = (
-            str(store_name)
-            .strip()
-            .lower()
-        )
-
-        normalized_snapshot[
-            normalized_name
-        ] = {
-            "name":
-                store_name,
-
-            "data":
-                store_data
-        }
-
-    # -----------------------------------------------------
-    # MATCH USER STORES
-    # -----------------------------------------------------
-
-    matched_stores = {}
-
-    not_found_stores = []
-
-    for allowed_store in allowed_stores:
-
-        normalized_allowed = (
-            allowed_store
-            .strip()
-            .lower()
-        )
-
-        # ---------------------------------------------
-        # ALL ACCESS
-        # ---------------------------------------------
-
-        if normalized_allowed == "all":
-
-            matched_stores = (
-                snapshot_stores.copy()
-            )
-
-            not_found_stores = []
-
-            break
-
-        # ---------------------------------------------
-        # EXACT MATCH
-        # ---------------------------------------------
-
-        matched = (
-            normalized_snapshot.get(
-                normalized_allowed
-            )
-        )
-
-        if matched:
-
-            matched_stores[
-                matched["name"]
-            ] = matched["data"]
-
-        else:
-
-            not_found_stores.append(
-                allowed_store
-            )
-
-    # -----------------------------------------------------
-    # DEBUG MATCHING
-    # -----------------------------------------------------
-
-    print(
-        "Matched Stores:",
-        list(
-            matched_stores.keys()
-        )
-    )
-
-    if not_found_stores:
-
-        print(
-            "⚠️ Stores not found "
-            "in snapshot:",
-            not_found_stores
-        )
-
-    # -----------------------------------------------------
-    # NO MATCHED STORES
-    # -----------------------------------------------------
-
-    if not matched_stores:
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ No sales data found "
-                "for your mapped stores."
-            )
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # TOTAL AREA SALES
-    # -----------------------------------------------------
-
-    today_total = 0.0
-    lw_total = 0.0
-
-    for store_name, store_data in (
-        matched_stores.items()
-    ):
-
-        today_total += float(
-            store_data.get(
-                "today",
-                0
-            )
-            or 0
-        )
-
-        lw_total += float(
-            store_data.get(
-                "lw",
-                0
-            )
-            or 0
-        )
-
-    area_growth = (
-
-        (
-            today_total
-            -
-            lw_total
-        )
-        /
-        max(
-            lw_total,
-            1
-        )
-
-    ) * 100
-
-    # -----------------------------------------------------
-    # PERFORMANCE
-    # -----------------------------------------------------
-
-    if area_growth > 5:
-
-        performance = (
-            "🚀 Strong Growth"
-        )
-
-    elif area_growth > 0:
-
-        performance = (
-            "📈 Growth"
-        )
-
-    elif area_growth < -5:
-
-        performance = (
-            "🔻 Decline"
-        )
-
-    else:
-
-        performance = (
-            "➡️ Stable"
-        )
-
-    # -----------------------------------------------------
-    # DATE / TIME
-    # -----------------------------------------------------
-
-    report_date = (
-        LIVE_SALES_DATA.get(
-            "date",
-            ""
-        )
-    )
-
-    report_time = (
-        LIVE_SALES_DATA.get(
-            "report_time",
-            ""
-        )
-    )
-
-    # -----------------------------------------------------
-    # STORE BREAKDOWN
-    # -----------------------------------------------------
-
-    store_lines = []
-
-    # Sort by today's sales
-    sorted_stores = sorted(
-
-        matched_stores.items(),
-
-        key=lambda item:
-            float(
-                item[1].get(
-                    "today",
-                    0
-                )
-                or 0
-            ),
-
-        reverse=True
-    )
-
-    for store_name, store_data in (
-        sorted_stores
-    ):
-
-        today_sales = float(
-            store_data.get(
-                "today",
-                0
-            )
-            or 0
-        )
-
-        lw_sales = float(
-            store_data.get(
-                "lw",
-                0
-            )
-            or 0
-        )
-
-        growth = (
-
-            (
-                today_sales
-                -
-                lw_sales
-            )
-            /
-            max(
-                lw_sales,
-                1
-            )
-
-        ) * 100
-
-        store_lines.append(
-
-            f"• {store_name}: "
-            f"₹{today_sales / 1000:.1f}K "
-            f"({growth:+.1f}%)"
-        )
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
-    reply_parts = [
-
-        "🏪 *AI MIS | AREA SALES*",
-
-        f"{report_date}",
-
-        f"{report_time}",
-
-        "",
-
-        f"📍 *Patch:* "
-        f"{user.get('patch', '')}",
-
-        f"🏪 *Stores:* "
-        f"{len(matched_stores)}",
-
-        "",
-
-        "💰 *NET REVENUE*",
-
-        f"🟢 Today: "
-        f"₹{today_total / 100000:.2f}L",
-
-        f"🔵 Last Week: "
-        f"₹{lw_total / 100000:.2f}L",
-
-        f"📈 Growth: "
-        f"{area_growth:+.1f}%",
-
-        f"🧠 Performance: "
-        f"{performance}",
-
-        "",
-
-        "🏪 *STORE PERFORMANCE*",
-
-    ]
-
-    reply_parts.extend(
-        store_lines
-    )
-
-    reply = "\n".join(
-        reply_parts
-    )
-
-    # -----------------------------------------------------
-    # DEBUG
-    # -----------------------------------------------------
-
-    print(
-        "Area Today:",
-        today_total
-    )
-
-    print(
-        "Area LW:",
-        lw_total
-    )
-
-    print(
-        "Area Growth:",
-        area_growth
-    )
-
-    print(
-        "Area Manager Reply:"
-    )
-
-    print(reply)
-
-    print("=" * 60)
-
-    # -----------------------------------------------------
-    # SEND
-    # -----------------------------------------------------
-
-    send_whatsapp_message(
-        sender,
-        reply
-    )
 
 # =========================================================
-# 📊 FTD SALES RESPONSE
+# 🌍 FIND REGION SNAPSHOT KEY
 # =========================================================
 
-def send_role_based_ftd_sales(sender):
-
-    print("=" * 60)
-    print("📊 FTD SALES REQUEST")
-    print("=" * 60)
-
-    sales = get_ftd_sales()
-
-    if not sales:
-
-        send_whatsapp_message(
-
-            sender,
-
-            "⚠️ Sales data is not available right now."
-        )
-
-        return
-
-    net = sales["net"]
-    txn = sales["txn"]
-    aov = sales["aov"]
-    discount = sales["discount"]
-
-    date = sales["date"]
-
-# =========================================================
-# 📈 SALES VS LAST WEEK DATA
-# =========================================================
-
-def get_sales_vs_lw():
-
-    if not LIVE_SALES_DATA:
-
-        raise Exception(
-            "Live sales backend data is not available"
-        )
-
-    overall_data = LIVE_SALES_DATA.get(
-        "overall",
-        {}
-    )
-
-    return {
-
-        "today_net":
-            float(
-                overall_data.get(
-                    "net",
-                    0
-                ) or 0
-            ),
-
-        "lw_net":
-            float(
-                overall_data.get(
-                    "lw_net",
-                    0
-                ) or 0
-            ),
-
-        "growth":
-            float(
-                overall_data.get(
-                    "lw_growth",
-                    0
-                ) or 0
-            ),
-
-        "today_txn":
-            float(
-                overall_data.get(
-                    "txn",
-                    0
-                ) or 0
-            ),
-
-        "lw_txn": 0.0,
-
-        "today_aov":
-            float(
-                overall_data.get(
-                    "aov",
-                    0
-                ) or 0
-            ),
-
-        "lw_aov": 0.0,
-
-        "today_discount":
-            float(
-                overall_data.get(
-                    "discount",
-                    0
-                ) or 0
-            ),
-
-        "lw_discount": 0.0
-    }
-
-    # -----------------------------------------------------
-    # BRAND DATA
-    # -----------------------------------------------------
-
-    brands = get_brand_data()
-
-    # -----------------------------------------------------
-    # BUILD MESSAGE
-    # -----------------------------------------------------
-
-    reply = (
-
-        f"📊 *AI MIS | FTD SALES*\n"
-
-        f"{date}\n\n"
-
-        f"💰 Net Revenue: "
-        f"₹{net / 100000:.2f}L\n"
-
-        f"🧾 Transactions: "
-        f"{int(txn):,}\n"
-
-        f"🧺 AOV: "
-        f"₹{int(round(aov)):,}\n"
-
-        f"📉 Discount: "
-        f"{abs(discount):.1f}%"
-    )
-
-    # -----------------------------------------------------
-    # BRAND CONTRIBUTION
-    # -----------------------------------------------------
-
-    if brands:
-
-        reply += (
-            "\n\n🏪 *Brand Contribution*"
-        )
-
-        brand_values = {}
-
-        for brand_name, brand_data in brands.items():
-
-            today_value = float(
-                brand_data.get(
-                    "today",
-                    0
-                )
-            )
-
-            brand_values[
-                brand_name
-            ] = today_value
-
-        total_brand = sum(
-            brand_values.values()
-        )
-
-        for brand_name, value in brand_values.items():
-
-            contribution = (
-
-                value
-                /
-                max(total_brand, 1)
-                *
-                100
-
-            )
-
-            reply += (
-
-                f"\n• {brand_name}: "
-                f"{contribution:.0f}%"
-            )
-
-    # -----------------------------------------------------
-    # DEBUG
-    # -----------------------------------------------------
-
-    print(
-        "WhatsApp FTD Reply:"
-    )
-
-    print(reply)
-
-    print("=" * 60)
-
-    # -----------------------------------------------------
-    # SEND
-    # -----------------------------------------------------
-
-    send_whatsapp_message(
-        sender,
-        reply
-    )
-
-# =========================================================
-# 📊 FTD SALES — OVERALL / OPS LEADER
-# =========================================================
-
-def send_ftd_sales(sender):
-
-    print("=" * 60)
-    print("📊 FTD SALES REQUEST")
-    print("=" * 60)
-
-    try:
-
-        # -------------------------------------------------
-        # GET SNAPSHOT DATA
-        # -------------------------------------------------
-
-        if not LIVE_SALES_DATA:
-
-            print(
-                "❌ LIVE_SALES_DATA is empty"
-            )
-
-            send_whatsapp_message(
-                sender,
-                "⚠️ Sales data is not available right now."
-            )
-
-            return
-
-        overall = LIVE_SALES_DATA.get(
-            "overall",
-            {}
-        )
-
-        brands = LIVE_SALES_DATA.get(
-            "brands",
-            {}
-        )
-
-        # -------------------------------------------------
-        # OVERALL VALUES
-        # -------------------------------------------------
-
-        net = float(
-            overall.get(
-                "net",
-                0
-            )
-            or 0
-        )
-
-        txn = float(
-            overall.get(
-                "txn",
-                0
-            )
-            or 0
-        )
-
-        aov = float(
-            overall.get(
-                "aov",
-                0
-            )
-            or 0
-        )
-
-        discount = float(
-            overall.get(
-                "discount",
-                0
-            )
-            or 0
-        )
-
-        report_date = LIVE_SALES_DATA.get(
-            "date",
-            ""
-        )
-
-        report_time = LIVE_SALES_DATA.get(
-            "report_time",
-            ""
-        )
-
-        # -------------------------------------------------
-        # BRAND CONTRIBUTION
-        # -------------------------------------------------
-
-        brand_values = {}
-
-        for brand_name, brand_data in brands.items():
-
-            brand_values[
-                str(brand_name)
-            ] = float(
-                brand_data.get(
-                    "today",
-                    0
-                )
-                or 0
-            )
-
-        total_brand = sum(
-            brand_values.values()
-        )
-
-        # -------------------------------------------------
-        # RESPONSE
-        # -------------------------------------------------
-
-        reply_lines = [
-
-            "📊 *AI MIS | FTD SALES*",
-
-            f"{report_date}",
-
-            "",
-
-            f"💰 Net Revenue: "
-            f"₹{net / 100000:.2f}L",
-
-            f"🧾 Transactions: "
-            f"{int(round(txn)):,}",
-
-            f"🧺 AOV: "
-            f"₹{int(round(aov)):,}",
-
-            f"📉 Discount: "
-            f"{abs(discount):.1f}%"
-
-        ]
-
-        # -------------------------------------------------
-        # BRAND CONTRIBUTION
-        # -------------------------------------------------
-
-        if brand_values:
-
-            reply_lines.extend([
-                "",
-                "🏪 *Brand Contribution*"
-            ])
-
-            # Sort largest first
-            sorted_brands = sorted(
-                brand_values.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )
-
-            for brand_name, revenue in sorted_brands:
-
-                contribution = (
-                    revenue
-                    /
-                    max(
-                        total_brand,
-                        1
-                    )
-                ) * 100
-
-                reply_lines.append(
-                    f"• {brand_name}: "
-                    f"{contribution:.0f}%"
-                )
-
-        reply = "\n".join(
-            reply_lines
-        )
-
-        # -------------------------------------------------
-        # DEBUG
-        # -------------------------------------------------
-
-        print(
-            "Report Date:",
-            report_date
-        )
-
-        print(
-            "Report Time:",
-            report_time
-        )
-
-        print(
-            "Net:",
-            net
-        )
-
-        print(
-            "Transactions:",
-            txn
-        )
-
-        print(
-            "AOV:",
-            aov
-        )
-
-        print(
-            "Discount:",
-            discount
-        )
-
-        print(
-            "Brands:",
-            list(
-                brand_values.keys()
-            )
-        )
-
-        print(
-            "WhatsApp FTD Reply:"
-        )
-
-        print(reply)
-
-        print("=" * 60)
-
-        # -------------------------------------------------
-        # SEND
-        # -------------------------------------------------
-
-        send_whatsapp_message(
-            sender,
-            reply
-        )
-
-    except Exception as e:
-
-        print(
-            "❌ FTD SALES ERROR:",
-            str(e)
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "❌ Error while generating "
-                "FTD Sales report.\n\n"
-                f"Debug: {str(e)}"
-            )
-        )
-
-# =========================================================
-# 📈 SALES VS LAST WEEK DATA
-# =========================================================
-
-def get_sales_vs_lw():
-
-    if not LIVE_SALES_DATA:
-
-        raise Exception(
-            "Live sales backend data is not available"
-        )
-
-    overall_data = LIVE_SALES_DATA.get(
-        "overall",
-        {}
-    )
-
-    return {
-        "today_net": float(
-            overall_data.get(
-                "net",
-                0
-            ) or 0
-        ),
-
-        "lw_net": float(
-            overall_data.get(
-                "lw_net",
-                0
-            ) or 0
-        ),
-
-        "growth": float(
-            overall_data.get(
-                "lw_growth",
-                0
-            ) or 0
-        ),
-
-        "today_txn": float(
-            overall_data.get(
-                "txn",
-                0
-            ) or 0
-        ),
-
-        "lw_txn": 0.0,
-
-        "today_aov": float(
-            overall_data.get(
-                "aov",
-                0
-            ) or 0
-        ),
-
-        "lw_aov": 0.0,
-
-        "today_discount": float(
-            overall_data.get(
-                "discount",
-                0
-            ) or 0
-        ),
-
-        "lw_discount": 0.0
-    }
-    
-# =========================================================
-# 📊 SALES VS LAST WEEK
-# =========================================================
-
-def send_sales_vs_lw(sender):
-
-    print("=" * 60)
-    print("📊 SALES VS LAST WEEK")
-    print("=" * 60)
-
-    # =====================================================
-    # GET USER ACCESS
-    # =====================================================
-
-    user = get_user_access(
-        sender
-    )
-
-    if not user:
-
-        print(
-            "❌ User not mapped:",
-            sender
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "❌ Your mobile number is "
-                "not mapped for AI MIS access."
-            )
-        )
-
-        return
-
-    role = (
-        str(
-            user.get(
-                "role",
-                ""
-            )
-        )
-        .strip()
-        .lower()
-    )
-
-    print(
-        "Sender:",
-        sender
-    )
-
-    print(
-        "Role:",
-        user.get("role")
-    )
-
-    print(
-        "Region:",
-        user.get("region")
-    )
-
-    print(
-        "Patch:",
-        user.get("patch")
-    )
-
-    # =====================================================
-    # 👔 OPS LEADER
-    # =====================================================
-
-    if role == "ops leader":
-
-        print(
-            "👔 Ops Leader → Overall Sales vs LW"
-        )
-
-        sales = get_sales_vs_lw()
-
-        today_net = float(
-            sales.get(
-                "today_net",
-                0
-            )
-            or 0
-        )
-
-        lw_net = float(
-            sales.get(
-                "lw_net",
-                0
-            )
-            or 0
-        )
-
-        growth = float(
-            sales.get(
-                "growth",
-                0
-            )
-            or 0
-        )
-
-        if growth > 5:
-
-            performance = (
-                "🚀 Strong Growth"
-            )
-
-        elif growth > 0:
-
-            performance = (
-                "📈 Growth"
-            )
-
-        elif growth < -5:
-
-            performance = (
-                "🔻 Decline"
-            )
-
-        else:
-
-            performance = (
-                "➡️ Stable"
-            )
-
-        report_date = (
-            LIVE_SALES_DATA.get(
-                "date",
-                ""
-            )
-        )
-
-        reply = (
-
-            f"📊 *AI MIS | SALES vs LW*\n"
-            f"{report_date}\n\n"
-
-            f"💰 Today: "
-            f"₹{today_net / 100000:.2f}L\n"
-
-            f"📊 Last Week: "
-            f"₹{lw_net / 100000:.2f}L\n"
-
-            f"📈 Growth: "
-            f"{growth:+.1f}%\n\n"
-
-            f"🧠 Performance: "
-            f"{performance}"
-        )
-
-        print(reply)
-
-        send_whatsapp_message(
-            sender,
-            reply
-        )
-
-        return
-
-    # =====================================================
-    # 🌍 REGION MANAGER
-    # =====================================================
-
-    if role == "region manager":
-
-        region_name = (
-            str(
-                user.get(
-                    "region",
-                    ""
-                )
-            )
-            .strip()
-        )
-
-        print(
-            "🌍 Region Manager →",
-            region_name
-        )
-
-        # -------------------------------------------------
-        # CHECK SNAPSHOT
-        # -------------------------------------------------
-
-        if not LIVE_SALES_DATA:
-
-            print(
-                "❌ LIVE_SALES_DATA is empty"
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "⚠️ Sales data is not "
-                    "available right now."
-                )
-            )
-
-            return
-
-        # -------------------------------------------------
-        # FIND REGION
-        # -------------------------------------------------
-
-        snapshot_region = (
-            find_region_snapshot_key(
-                region_name
-            )
-        )
-
-        if not snapshot_region:
-
-            available_regions = (
-                ", ".join(
-                    LIVE_SALES_DATA.get(
-                        "regions",
-                        {}
-                    ).keys()
-                )
-            )
-
-            print(
-                "❌ Region not found:",
-                region_name
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "⚠️ Region data is not "
-                    "available for your mapped region.\n\n"
-                    f"Mapped Region: {region_name}\n"
-                    f"Available Regions: {available_regions}"
-                )
-            )
-
-            return
-
-        # -------------------------------------------------
-        # GET REGION DATA
-        # -------------------------------------------------
-
-        region_data = (
-            LIVE_SALES_DATA
-            .get(
-                "regions",
-                {}
-            )
-            .get(
-                snapshot_region,
-                {}
-            )
-        )
-
-        today_net = float(
-            region_data.get(
-                "today",
-                0
-            )
-            or 0
-        )
-
-        lw_net = float(
-            region_data.get(
-                "lw",
-                0
-            )
-            or 0
-        )
-
-        growth = float(
-            region_data.get(
-                "growth",
-                0
-            )
-            or 0
-        )
-
-        # -------------------------------------------------
-        # PERFORMANCE
-        # -------------------------------------------------
-
-        if growth > 5:
-
-            performance = (
-                "🚀 Strong Growth"
-            )
-
-        elif growth > 0:
-
-            performance = (
-                "📈 Growth"
-            )
-
-        elif growth < -5:
-
-            performance = (
-                "🔻 Decline"
-            )
-
-        else:
-
-            performance = (
-                "➡️ Stable"
-            )
-
-        if growth > 0:
-
-            growth_icon = "📈"
-
-        elif growth < 0:
-
-            growth_icon = "🔻"
-
-        else:
-
-            growth_icon = "➡️"
-
-        # -------------------------------------------------
-        # DATE / TIME
-        # -------------------------------------------------
-
-        report_date = (
-            LIVE_SALES_DATA.get(
-                "date",
-                ""
-            )
-        )
-
-        report_time = (
-            LIVE_SALES_DATA.get(
-                "report_time",
-                ""
-            )
-        )
-
-        # -------------------------------------------------
-        # RESPONSE
-        # -------------------------------------------------
-
-        reply = (
-
-            f"🌍 *AI MIS | REGION SALES vs LW*\n"
-            f"{report_date}\n"
-            f"{report_time}\n\n"
-
-            f"📍 *Region:* "
-            f"{snapshot_region}\n\n"
-
-            f"💰 *NET REVENUE*\n"
-
-            f"🟢 Today: "
-            f"₹{today_net / 100000:.2f}L\n"
-
-            f"🔵 Last Week: "
-            f"₹{lw_net / 100000:.2f}L\n"
-
-            f"{growth_icon} Growth: "
-            f"{growth:+.1f}%\n\n"
-
-            f"🧠 Performance: "
-            f"{performance}"
-        )
-
-        print(
-            "🌍 Region Snapshot:"
-        )
-
-        print(
-            "Region:",
-            snapshot_region
-        )
-
-        print(
-            "Today Net:",
-            today_net
-        )
-
-        print(
-            "LW Net:",
-            lw_net
-        )
-
-        print(
-            "Growth:",
-            growth
-        )
-
-        print(
-            "Region Manager Sales vs LW Reply:"
-        )
-
-        print(reply)
-
-        print("=" * 60)
-
-        send_whatsapp_message(
-            sender,
-            reply
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # AREA MANAGER
-    # -----------------------------------------------------
-    
-    if role == "area manager":
-    
-        print(
-            "🏪 Area Manager → "
-            "Patch Store Sales"
-        )
-    
-        try:
-    
-            send_area_manager_ftd_sales(
-                sender,
-                user
-            )
-    
-            print(
-                "✅ send_area_manager_ftd_sales() completed"
-            )
-    
-        except Exception as e:
-    
-            print(
-                "❌ send_area_manager_ftd_sales() ERROR:",
-                str(e)
-            )
-    
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "Area Manager Sales report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-    
-        return
-
-    # =====================================================
-    # ❌ UNKNOWN ROLE
-    # =====================================================
-
-    print(
-        "❌ Unknown role:",
-        user.get("role")
-    )
-
-    send_whatsapp_message(
-        sender,
-        "❌ Your AI MIS role is not configured."
-    )
-
-def get_sales_vs_lw():
-
-    if not LIVE_SALES_DATA:
-
-        raise Exception(
-            "Live sales backend data is not available"
-        )
-
-    overall_data = (
-        LIVE_SALES_DATA.get(
-            "overall",
-            {}
-        )
-    )
-
-    return {
-
-        "today_net":
-            float(
-                overall_data.get(
-                    "net",
-                    0
-                )
-                or 0
-            ),
-
-        "lw_net":
-            float(
-                overall_data.get(
-                    "lw_net",
-                    0
-                )
-                or 0
-            ),
-
-        "growth":
-            float(
-                overall_data.get(
-                    "lw_growth",
-                    0
-                )
-                or 0
-            ),
-
-        "today_txn":
-            float(
-                overall_data.get(
-                    "txn",
-                    0
-                )
-                or 0
-            ),
-
-        "lw_txn": 0.0,
-
-        "today_aov":
-            float(
-                overall_data.get(
-                    "aov",
-                    0
-                )
-                or 0
-            ),
-
-        "lw_aov": 0.0,
-
-        "today_discount":
-            float(
-                overall_data.get(
-                    "discount",
-                    0
-                )
-                or 0
-            ),
-
-        "lw_discount": 0.0
-    }
-
-# =========================================================
-# 🔐 DEBUG USER ACCESS
-# =========================================================
-
-def debug_user_access(sender):
-
-    print("=" * 60)
-    print("🔐 WHATSAPP ACCESS DEBUG")
-    print("=" * 60)
-
-    user = get_user_access(
-        sender
-    )
-
-    if not user:
-
-        print(
-            "❌ User not mapped:",
-            sender
-        )
-
-        print("=" * 60)
-
-        return None
-
-    print(
-        "Sender :",
-        sender
-    )
-
-    print(
-        "Role   :",
-        user.get("role")
-    )
-
-    print(
-        "Region :",
-        user.get("region")
-    )
-
-    print(
-        "Patch  :",
-        user.get("patch")
-    )
-
-    print(
-        "Stores :",
-        user.get("stores")
-    )
-
-    print("=" * 60)
-
-    return user
-
-
-# =========================================================
-# 🌍 FIND REGION IN WHATSAPP SNAPSHOT
-# =========================================================
-
-def find_region_snapshot_key(
-    requested_region
-):
-
-    regions = (
-        LIVE_SALES_DATA.get(
-            "regions",
-            {}
-        )
-    )
-
-    requested = (
-        str(
-            requested_region
-        )
-        .strip()
-        .lower()
-    )
-
-    # -----------------------------------------------------
-    # DIRECT MATCH
-    # -----------------------------------------------------
+def find_region_snapshot_key(requested_region):
+    regions = LIVE_SALES_DATA.get("regions", {})
+    requested = str(requested_region or "").strip().lower()
 
     for region_name in regions.keys():
-
-        normalized = (
-            str(
-                region_name
-            )
-            .strip()
-            .lower()
-        )
-
-        if normalized == requested:
-
+        if str(region_name).strip().lower() == requested:
             return region_name
 
-    # -----------------------------------------------------
-    # KERALA / KERELA
-    # -----------------------------------------------------
-
-    if requested in [
-        "kerala",
-        "kerela"
-    ]:
-
+    if requested in {"kerala", "kerela"}:
         for region_name in regions.keys():
-
-            normalized = (
-                str(
-                    region_name
-                )
-                .strip()
-                .lower()
-            )
-
-            if normalized in [
-                "kerala",
-                "kerela"
-            ]:
-
+            normalized = str(region_name).strip().lower()
+            if normalized in {"kerala", "kerela"}:
                 return region_name
 
     return None
 
 
 # =========================================================
-# 🌍 REGION MANAGER FTD SALES
+# 📊 GENERIC PERIOD METRICS
 # =========================================================
 
-def send_region_ftd_sales(
-    sender,
-    user
-):
+def _safe_float(value, default=0.0):
+    try:
+        if value is None or value == "":
+            return float(default)
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
 
-    print("=" * 60)
-    print("🌍 REGION MANAGER FTD SALES")
-    print("=" * 60)
 
-    region_name = (
-        str(
-            user.get(
-                "region",
-                ""
+def _growth(today, previous):
+    if previous == 0:
+        return 0.0 if today == 0 else 100.0
+    return ((today - previous) / previous) * 100
+
+
+def _period_ref_key(period):
+    return {
+        "lw": "lw",
+        "lm": "lm",
+        "ly": "ly",
+    }[period]
+
+
+def get_overall_period_metrics(period):
+    """Return overall Today / comparison-period sales and growth.
+    Prefers explicit overall fields and falls back to store aggregation.
+    """
+    overall = LIVE_SALES_DATA.get("overall", {})
+    today = _safe_float(overall.get("net"))
+
+    if period == "lw":
+        previous = _safe_float(overall.get("lw_net"))
+        growth = overall.get("lw_growth")
+        if previous == 0:
+            previous = sum(
+                _safe_float(v.get("lw"))
+                for v in LIVE_SALES_DATA.get("stores", {}).values()
             )
-        )
-        .strip()
-    )
-
-    print(
-        "Sender :",
-        sender
-    )
-
-    print(
-        "Role   :",
-        user.get("role")
-    )
-
-    print(
-        "Region requested:",
-        region_name
-    )
-
-    # -----------------------------------------------------
-    # CHECK SNAPSHOT
-    # -----------------------------------------------------
-
-    if not LIVE_SALES_DATA:
-
-        print(
-            "❌ LIVE_SALES_DATA is empty"
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Sales data is "
-                "not available right now."
-            )
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # FIND REGION
-    # -----------------------------------------------------
-
-    snapshot_region = (
-        find_region_snapshot_key(
-            region_name
-        )
-    )
-
-    if not snapshot_region:
-
-        available_regions = (
-            ", ".join(
-                LIVE_SALES_DATA.get(
-                    "regions",
-                    {}
-                ).keys()
-            )
-        )
-
-        print(
-            "❌ Region not found:",
-            region_name
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Region data is not "
-                "available for your mapped region.\n\n"
-                f"Mapped Region: {region_name}\n"
-                f"Available Regions: {available_regions}"
-            )
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # REGION DATA
-    # -----------------------------------------------------
-
-    region_data = (
-        LIVE_SALES_DATA
-        .get(
-            "regions",
-            {}
-        )
-        .get(
-            snapshot_region,
-            {}
-        )
-    )
-
-    today_net = float(
-        region_data.get(
-            "today",
-            0
-        )
-        or 0
-    )
-
-    lw_net = float(
-        region_data.get(
-            "lw",
-            0
-        )
-        or 0
-    )
-
-    growth = float(
-        region_data.get(
-            "growth",
-            0
-        )
-        or 0
-    )
-
-    # -----------------------------------------------------
-    # GROWTH ICON
-    # -----------------------------------------------------
-
-    if growth > 0:
-
-        growth_icon = "📈"
-
-    elif growth < 0:
-
-        growth_icon = "🔻"
-
     else:
+        field = f"{period}_net"
+        growth_field = f"{period}_growth"
+        previous = _safe_float(overall.get(field))
+        growth = overall.get(growth_field)
 
-        growth_icon = "➡️"
-
-    report_date = (
-        LIVE_SALES_DATA.get(
-            "date",
-            ""
-        )
-    )
-
-    report_time = (
-        LIVE_SALES_DATA.get(
-            "report_time",
-            ""
-        )
-    )
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
-
-    reply = (
-
-        f"🌍 *AI MIS | REGION SALES*\n"
-        f"{report_date}\n"
-        f"{report_time}\n\n"
-
-        f"📍 *Region:* "
-        f"{snapshot_region}\n\n"
-
-        f"💰 *NET REVENUE*\n"
-
-        f"🟢 Today: "
-        f"₹{today_net / 100000:.2f}L\n"
-
-        f"🔵 Last Week: "
-        f"₹{lw_net / 100000:.2f}L\n"
-
-        f"{growth_icon} Growth: "
-        f"{growth:+.1f}%"
-    )
-
-    print(
-        "🌍 Region Snapshot:"
-    )
-
-    print(
-        "Region:",
-        snapshot_region
-    )
-
-    print(
-        "Today Net:",
-        today_net
-    )
-
-    print(
-        "LW Net:",
-        lw_net
-    )
-
-    print(
-        "Growth:",
-        growth
-    )
-
-    print(
-        "Region Manager Reply:"
-    )
-
-    print(reply)
-
-    print("=" * 60)
-
-    send_whatsapp_message(
-        sender,
-        reply
-    )
-
-
-# =========================================================
-# 🔐 ROLE BASED FTD SALES
-# =========================================================
-
-def send_role_based_ftd_sales(
-    sender
-):
-
-    print("=" * 60)
-    print("🔐 ROLE BASED FTD SALES")
-    print("=" * 60)
-
-    user = get_user_access(
-        sender
-    )
-
-    if not user:
-
-        print(
-            "❌ User not mapped:",
-            sender
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                "❌ Your mobile number is "
-                "not mapped for AI MIS access."
-            )
-        )
-
-        return
-
-    role = (
-        str(
-            user.get(
-                "role",
-                ""
-            )
-        )
-        .strip()
-        .lower()
-    )
-
-    print(
-        "Sender:",
-        sender
-    )
-
-    print(
-        "Role:",
-        user.get("role")
-    )
-
-    print(
-        "Region:",
-        user.get("region")
-    )
-
-    print(
-        "Patch:",
-        user.get("patch")
-    )
-
-    print(
-        "Stores:",
-        user.get("stores")
-    )
-
-    # -----------------------------------------------------
-    # OPS LEADER
-    # -----------------------------------------------------
-
-    if role == "ops leader":
-
-        print(
-            "👔 Ops Leader → Overall Sales"
-        )
-
-        send_ftd_sales(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # REGION MANAGER
-    # -----------------------------------------------------
-
-    if role == "region manager":
-
-        print(
-            "🌍 Region Manager → Region Sales"
-        )
-
-        send_region_ftd_sales(
-            sender,
-            user
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # AREA MANAGER
-    # -----------------------------------------------------
-
-    if role == "area manager":
-
-        print(
-            "🏪 Area Manager → Assigned Store Sales"
-        )
-
-        try:
-
-            send_area_manager_ftd_sales(
-                sender,
-                user
+        if previous == 0:
+            previous = sum(
+                _safe_float(v.get(period))
+                for v in LIVE_SALES_DATA.get("stores", {}).values()
             )
 
-            print(
-                "✅ Area Manager FTD Sales completed"
-            )
+    growth = _safe_float(growth, _growth(today, previous))
 
-        except Exception as e:
-
-            print(
-                "❌ AREA MANAGER FTD SALES ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "Area Manager Sales report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-
-        return
-
-    # -----------------------------------------------------
-    # UNKNOWN ROLE
-    # -----------------------------------------------------
-
-    print(
-        "❌ Unknown role:",
-        role
-    )
-
-    send_whatsapp_message(
-        sender,
-        "❌ Your AI MIS role is not configured."
-    )
+    return today, previous, growth
 
 
-# =========================================================
-# 🏪 AREA MANAGER FTD SALES
-# =========================================================
+def aggregate_store_periods(store_names=None):
+    stores = LIVE_SALES_DATA.get("stores", {})
 
-def send_area_manager_ftd_sales(
-    sender,
-    user
-):
-
-    print("=" * 60)
-    print("🏪 AREA MANAGER FTD SALES")
-    print("=" * 60)
-
-    allowed_stores = user.get(
-        "stores",
-        []
-    )
-
-    if not isinstance(
-        allowed_stores,
-        list
-    ):
-
-        allowed_stores = [
-            allowed_stores
-        ]
-
-    allowed_stores = [
-        str(store).strip()
-        for store in allowed_stores
-        if str(store).strip()
-    ]
-
-    print(
-        "Mapped Stores:",
-        allowed_stores
-    )
-
-    if not LIVE_SALES_DATA:
-
-        send_whatsapp_message(
-            sender,
-            "⚠️ Sales data is not available right now."
-        )
-
-        return
-
-    snapshot_stores = (
-        LIVE_SALES_DATA.get(
-            "stores",
-            {}
-        )
-    )
-
-    if not snapshot_stores:
-
-        send_whatsapp_message(
-            sender,
-            "⚠️ Store sales data is not available right now."
-        )
-
-        return
-
-    normalized_snapshot = {}
-
-    for store_name, store_data in (
-        snapshot_stores.items()
-    ):
-
-        normalized_snapshot[
-            str(store_name).strip().lower()
-        ] = {
-            "name": store_name,
-            "data": store_data
+    if store_names is None:
+        selected = stores
+    else:
+        allowed = {str(x).strip().lower() for x in store_names}
+        selected = {
+            name: data
+            for name, data in stores.items()
+            if str(name).strip().lower() in allowed
         }
 
-    matched_stores = {}
+    totals = {
+        "today": 0.0,
+        "lw": 0.0,
+        "lm": 0.0,
+        "ly": 0.0,
+    }
 
-    for allowed_store in allowed_stores:
+    for data in selected.values():
+        for key in totals:
+            totals[key] += _safe_float(data.get(key))
 
-        if allowed_store.lower() == "all":
+    return totals, selected
 
-            matched_stores = (
-                snapshot_stores.copy()
-            )
 
-            break
+# =========================================================
+# 📊 FTD SALES RESPONSE
+# =========================================================
 
-        matched = normalized_snapshot.get(
-            allowed_store.lower()
-        )
+def send_ftd_sales(sender):
+    sales = get_ftd_sales()
 
-        if matched:
-
-            matched_stores[
-                matched["name"]
-            ] = matched["data"]
-
-    print(
-        "Matched Stores:",
-        list(
-            matched_stores.keys()
-        )
-    )
-
-    if not matched_stores:
-
-        send_whatsapp_message(
-            sender,
-            "⚠️ No sales data found for your mapped stores."
-        )
-
+    if not sales:
+        send_whatsapp_message(sender, "⚠️ Sales data is not available right now.")
         return
 
-    today_total = 0.0
-    lw_total = 0.0
-    lm_total = 0.0
-
-    for store_name, store_data in (
-        matched_stores.items()
-    ):
-
-        today_total += float(
-            store_data.get(
-                "today",
-                0
-            ) or 0
-        )
-
-        lw_total += float(
-            store_data.get(
-                "lw",
-                0
-            ) or 0
-        )
-
-        lm_total += float(
-            store_data.get(
-                "lm",
-                0
-            ) or 0
-        )
-
-    growth_lw = (
-        (
-            today_total
-            -
-            lw_total
-        )
-        /
-        max(
-            lw_total,
-            1
-        )
-    ) * 100
-
-    growth_lm = (
-        (
-            today_total
-            -
-            lm_total
-        )
-        /
-        max(
-            lm_total,
-            1
-        )
-    ) * 100
-
-    if growth_lw > 5:
-
-        performance = "🚀 Strong Growth"
-
-    elif growth_lw > 0:
-
-        performance = "📈 Growth"
-
-    elif growth_lw < -5:
-
-        performance = "🔻 Decline"
-
-    else:
-
-        performance = "➡️ Stable"
-
-    sorted_stores = sorted(
-        matched_stores.items(),
-        key=lambda item:
-            float(
-                item[1].get(
-                    "today",
-                    0
-                ) or 0
-            ),
-        reverse=True
-    )
-
-    store_lines = []
-
-    for store_name, store_data in (
-        sorted_stores
-    ):
-
-        today = float(
-            store_data.get(
-                "today",
-                0
-            ) or 0
-        )
-
-        lw = float(
-            store_data.get(
-                "lw",
-                0
-            ) or 0
-        )
-
-        growth = (
-            (
-                today
-                -
-                lw
-            )
-            /
-            max(
-                lw,
-                1
-            )
-        ) * 100
-
-        store_lines.append(
-            f"• {store_name}: "
-            f"₹{today / 1000:.1f}K "
-            f"({growth:+.1f}% vs LW)"
-        )
+    brands = get_brand_data()
 
     reply_lines = [
-
-        "🏪 *AI MIS | AREA SALES*",
-
-        LIVE_SALES_DATA.get(
-            "date",
-            ""
-        ),
-
-        LIVE_SALES_DATA.get(
-            "report_time",
-            ""
-        ),
-
+        "📊 *AI MIS | FTD SALES*",
+        sales["date"],
         "",
-
-        f"📍 *Patch:* "
-        f"{user.get('patch', '')}",
-
-        f"🏪 *Stores:* "
-        f"{len(matched_stores)}",
-
-        "",
-
-        "💰 *NET REVENUE*",
-
-        f"🟢 Today: "
-        f"₹{today_total / 100000:.2f}L",
-
-        f"🔵 Last Week: "
-        f"₹{lw_total / 100000:.2f}L",
-
-        f"🟣 Last Month: "
-        f"₹{lm_total / 100000:.2f}L",
-
-        f"📈 vs LW: "
-        f"{growth_lw:+.1f}%",
-
-        f"📊 vs LM: "
-        f"{growth_lm:+.1f}%",
-
-        f"🧠 Performance: "
-        f"{performance}",
-
-        "",
-
-        "🏪 *STORE PERFORMANCE*"
-
+        f"💰 Net Revenue: ₹{sales['net'] / 100000:.2f}L",
+        f"🧾 Transactions: {int(round(sales['txn'])):,}",
+        f"🧺 AOV: ₹{int(round(sales['aov'])):,}",
+        f"📉 Discount: {abs(sales['discount']):.1f}%",
     ]
 
-    reply_lines.extend(
-        store_lines
+    if brands:
+        values = {
+            str(name): _safe_float(data.get("today"))
+            for name, data in brands.items()
+        }
+        total = sum(values.values())
+
+        reply_lines += ["", "🏪 *Brand Contribution*"]
+        for name, value in sorted(values.items(), key=lambda x: x[1], reverse=True):
+            contribution = (value / max(total, 1.0)) * 100
+            reply_lines.append(f"• {name}: {contribution:.0f}%")
+
+    reply = "\n".join(reply_lines)
+    print(reply)
+    send_whatsapp_message(sender, reply)
+
+
+# =========================================================
+# 📈 PERIOD COMPARISON
+# =========================================================
+
+def _send_period_comparison(sender, period):
+    user = get_user_access(sender)
+    if not user:
+        send_whatsapp_message(sender, "❌ Your mobile number is not mapped for AI MIS access.")
+        return
+
+    role = str(user.get("role", "")).strip().lower()
+    period_labels = {"lw": "Last Week", "lm": "Last Month", "ly": "Last Year"}
+    label = period_labels[period]
+
+    if not LIVE_SALES_DATA:
+        send_whatsapp_message(sender, "⚠️ Sales data is not available right now.")
+        return
+
+    if role == "ops leader":
+        today, previous, growth = get_overall_period_metrics(period)
+        scope_line = "📍 Overall"
+
+    elif role == "region manager":
+        region_name = find_region_snapshot_key(user.get("region", ""))
+        region_data = LIVE_SALES_DATA.get("regions", {}).get(region_name, {}) if region_name else {}
+
+        if not region_name:
+            send_whatsapp_message(sender, "⚠️ Region data is not available for your mapped region.")
+            return
+
+        today = _safe_float(region_data.get("today"))
+        previous = _safe_float(region_data.get(period))
+
+        if previous == 0:
+            totals, selected = aggregate_store_periods()
+            selected = {
+                name: data for name, data in selected.items()
+                if str(data.get("region", "")).strip().lower() == str(region_name).strip().lower()
+            }
+            today = sum(_safe_float(v.get("today")) for v in selected.values())
+            previous = sum(_safe_float(v.get(period)) for v in selected.values())
+
+        growth = _safe_float(
+            region_data.get(f"{period}_growth"),
+            _growth(today, previous),
+        )
+        scope_line = f"📍 Region: {region_name}"
+
+    elif role == "area manager":
+        allowed_stores = user.get("stores", [])
+        if not isinstance(allowed_stores, list):
+            allowed_stores = [allowed_stores]
+
+        if any(str(x).strip().lower() == "all" for x in allowed_stores):
+            totals, _ = aggregate_store_periods()
+        else:
+            totals, _ = aggregate_store_periods(allowed_stores)
+
+        today = totals["today"]
+        previous = totals[period]
+        growth = _growth(today, previous)
+        scope_line = f"📍 Patch: {user.get('patch', '')}"
+
+    else:
+        send_whatsapp_message(sender, "❌ Your AI MIS role is not configured.")
+        return
+
+    performance = (
+        "🚀 Strong Growth" if growth > 5
+        else "📈 Growth" if growth > 0
+        else "🔻 Decline" if growth < -5
+        else "➡️ Stable"
     )
 
-    reply = "\n".join(
-        reply_lines
+    reply = (
+        f"📊 *AI MIS | SALES vs {label.upper()}*\n"
+        f"{LIVE_SALES_DATA.get('date', '')}\n"
+        f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
+        f"{scope_line}\n\n"
+        f"💰 *Today:* ₹{today / 100000:.2f}L\n"
+        f"📅 *{label}:* ₹{previous / 100000:.2f}L\n"
+        f"📈 *Growth:* {growth:+.1f}%\n"
+        f"🧠 *Performance:* {performance}"
     )
 
     print(reply)
+    send_whatsapp_message(sender, reply)
 
-    send_whatsapp_message(
-        sender,
-        reply
-    )
+
+def send_sales_vs_lw(sender):
+    _send_period_comparison(sender, "lw")
+
+
+def send_sales_vs_lm(sender):
+    _send_period_comparison(sender, "lm")
+
+
+def send_sales_vs_ly(sender):
+    _send_period_comparison(sender, "ly")
 
 
 # =========================================================
 # 🏪 STORE SALES QUERY
 # =========================================================
 
-def send_store_sales_query(
-    sender,
-    store_name
-):
-
-    print("=" * 60)
-    print("🏪 STORE SALES QUERY")
-    print("=" * 60)
-
-    user = get_user_access(
-        sender
-    )
+def send_store_sales_query(sender, store_name):
+    user = get_user_access(sender)
 
     if not user:
-
-        send_whatsapp_message(
-            sender,
-            (
-                "❌ Your mobile number is "
-                "not mapped for AI MIS access."
-            )
-        )
-
+        send_whatsapp_message(sender, "❌ Your mobile number is not mapped for AI MIS access.")
         return
 
-    role = (
-        str(
-            user.get(
-                "role",
-                ""
-            )
-        )
-        .strip()
-        .lower()
+    stores = LIVE_SALES_DATA.get("stores", {})
+    requested = str(store_name).strip().lower()
+
+    matched_store = next(
+        (
+            name for name in stores
+            if str(name).strip().lower() == requested
+        ),
+        None,
     )
-
-    stores = (
-        LIVE_SALES_DATA.get(
-            "stores",
-            {}
-        )
-    )
-
-    if not stores:
-
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Store sales data "
-                "is not available right now."
-            )
-        )
-
-        return
-
-    requested_store = (
-        store_name
-        .strip()
-        .lower()
-    )
-
-    matched_store = None
-
-    for actual_store in stores.keys():
-
-        if (
-            str(actual_store)
-            .strip()
-            .lower()
-            ==
-            requested_store
-        ):
-
-            matched_store = actual_store
-            break
 
     if not matched_store:
-
-        send_whatsapp_message(
-            sender,
-            (
-                f"❌ Store not found: "
-                f"{store_name}"
-            )
-        )
-
+        send_whatsapp_message(sender, f"❌ Store not found: {store_name}")
         return
 
-    store_data = stores[
-        matched_store
-    ]
-
-    # -----------------------------------------------------
-    # ACCESS CONTROL
-    # -----------------------------------------------------
+    data = stores[matched_store]
+    role = str(user.get("role", "")).strip().lower()
 
     allowed = False
 
-    # OPS LEADER
     if role == "ops leader":
-
         allowed = True
 
-    # REGION MANAGER
     elif role == "region manager":
-
-        manager_region = (
-            str(
-                user.get(
-                    "region",
-                    ""
-                )
-            )
-            .strip()
-            .lower()
-        )
-
-        store_region = (
-            str(
-                store_data.get(
-                    "region",
-                    ""
-                )
-            )
-            .strip()
-            .lower()
-        )
-
         allowed = (
-            manager_region
+            str(user.get("region", "")).strip().lower()
             ==
-            store_region
+            str(data.get("region", "")).strip().lower()
         )
 
-    # AREA MANAGER
     elif role == "area manager":
-
-        allowed_stores = user.get(
-            "stores",
-            []
-        )
-
-        if not isinstance(
-            allowed_stores,
-            list
-        ):
-
-            allowed_stores = [
-                allowed_stores
-            ]
-
-        allowed_stores = [
-            str(x)
-            .strip()
-            .lower()
-
-            for x in allowed_stores
-        ]
-
-        allowed = (
-            "all" in allowed_stores
-            or
-            matched_store
-            .strip()
-            .lower()
-            in allowed_stores
-        )
-
-    # -----------------------------------------------------
-    # ACCESS DENIED
-    # -----------------------------------------------------
+        allowed_stores = user.get("stores", [])
+        if not isinstance(allowed_stores, list):
+            allowed_stores = [allowed_stores]
+        allowed_names = {str(x).strip().lower() for x in allowed_stores}
+        allowed = "all" in allowed_names or matched_store.strip().lower() in allowed_names
 
     if not allowed:
-
-        print(
-            "❌ STORE ACCESS DENIED:",
-            matched_store
-        )
-
-        send_whatsapp_message(
-            sender,
-            (
-                f"❌ You don't have access "
-                f"to *{matched_store}*."
-            )
-        )
-
+        send_whatsapp_message(sender, f"❌ You don't have access to *{matched_store}*.")
         return
 
-    # -----------------------------------------------------
-    # STORE METRICS
-    # -----------------------------------------------------
+    today = _safe_float(data.get("today"))
+    lw = _safe_float(data.get("lw"))
+    lm = _safe_float(data.get("lm"))
+    ly = _safe_float(data.get("ly"))
 
-    today = float(
-        store_data.get(
-            "today",
-            0
-        ) or 0
-    )
-
-    lw = float(
-        store_data.get(
-            "lw",
-            0
-        ) or 0
-    )
-
-    lm = float(
-        store_data.get(
-            "lm",
-            0
-        ) or 0
-    )
-
-    growth_lw = float(
-        store_data.get(
-            "growth",
-            0
-        ) or 0
-    )
-
-    growth_lm = float(
-        store_data.get(
-            "lm_growth",
-            0
-        ) or 0
-    )
-
-    region = (
-        store_data.get(
-            "region",
-            "UNKNOWN"
-        )
-    )
+    growth_lw = _safe_float(data.get("growth"), _growth(today, lw))
+    growth_lm = _safe_float(data.get("lm_growth"), _growth(today, lm))
+    growth_ly = _safe_float(data.get("ly_growth"), _growth(today, ly))
 
     reply = (
-
         "🏪 *AI MIS | STORE SALES*\n"
-
         f"{LIVE_SALES_DATA.get('date', '')}\n"
-
         f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
-
         f"🏪 *{matched_store}*\n"
-
-        f"📍 Region: {region}\n\n"
-
-        f"💰 Today: "
-        f"₹{today / 1000:.1f}K\n"
-
-        f"📅 Last Week: "
-        f"₹{lw / 1000:.1f}K\n"
-
-        f"📆 Last Month: "
-        f"₹{lm / 1000:.1f}K\n\n"
-
-        f"📈 vs LW: "
-        f"{growth_lw:+.1f}%\n"
-
-        f"📊 vs LM: "
-        f"{growth_lm:+.1f}%"
+        f"📍 Region: {data.get('region', 'UNKNOWN')}\n\n"
+        f"💰 Today: ₹{today / 1000:.1f}K\n"
+        f"📅 Last Week: ₹{lw / 1000:.1f}K\n"
+        f"📆 Last Month: ₹{lm / 1000:.1f}K\n"
+        f"📆 Last Year: ₹{ly / 1000:.1f}K\n\n"
+        f"📈 vs LW: {growth_lw:+.1f}%\n"
+        f"📊 vs LM: {growth_lm:+.1f}%\n"
+        f"📊 vs LY: {growth_ly:+.1f}%"
     )
 
     print(reply)
-    print("=" * 60)
+    send_whatsapp_message(sender, reply)
 
-    send_whatsapp_message(
-        sender,
-        reply
+
+# =========================================================
+# 🌍 REGION SALES QUERY
+# =========================================================
+
+def send_region_sales_query(sender, region_name):
+    user = get_user_access(sender)
+
+    if not user:
+        send_whatsapp_message(sender, "❌ Your mobile number is not mapped for AI MIS access.")
+        return
+
+    role = str(user.get("role", "")).strip().lower()
+    requested_region = find_region_snapshot_key(region_name)
+
+    if not requested_region:
+        send_whatsapp_message(sender, f"❌ Region not found: {region_name}")
+        return
+
+    if role == "region manager":
+        user_region = find_region_snapshot_key(user.get("region", ""))
+        if user_region != requested_region:
+            send_whatsapp_message(sender, f"❌ You don't have access to *{requested_region}* region.")
+            return
+    elif role == "area manager":
+        send_whatsapp_message(sender, "❌ Area Managers have store-level access. Ask for a specific store.")
+        return
+    elif role != "ops leader":
+        send_whatsapp_message(sender, "❌ Your AI MIS role is not configured.")
+        return
+
+    region_data = LIVE_SALES_DATA.get("regions", {}).get(requested_region, {})
+    today = _safe_float(region_data.get("today"))
+    lw = _safe_float(region_data.get("lw"))
+    lm = _safe_float(region_data.get("lm"))
+    ly = _safe_float(region_data.get("ly"))
+
+    if today == 0 and lw == 0 and lm == 0 and ly == 0:
+        selected = {
+            name: data for name, data in LIVE_SALES_DATA.get("stores", {}).items()
+            if str(data.get("region", "")).strip().lower() == str(requested_region).strip().lower()
+        }
+        today = sum(_safe_float(v.get("today")) for v in selected.values())
+        lw = sum(_safe_float(v.get("lw")) for v in selected.values())
+        lm = sum(_safe_float(v.get("lm")) for v in selected.values())
+        ly = sum(_safe_float(v.get("ly")) for v in selected.values())
+
+    reply = (
+        "🌍 *AI MIS | REGION SALES*\n"
+        f"{LIVE_SALES_DATA.get('date', '')}\n"
+        f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
+        f"📍 *Region: {requested_region}*\n\n"
+        f"💰 Today: ₹{today / 100000:.2f}L\n"
+        f"📅 Last Week: ₹{lw / 100000:.2f}L\n"
+        f"📆 Last Month: ₹{lm / 100000:.2f}L\n"
+        f"📆 Last Year: ₹{ly / 100000:.2f}L\n\n"
+        f"📈 vs LW: {_growth(today, lw):+.1f}%\n"
+        f"📊 vs LM: {_growth(today, lm):+.1f}%\n"
+        f"📊 vs LY: {_growth(today, ly):+.1f}%"
     )
+
+    print(reply)
+    send_whatsapp_message(sender, reply)
+
+
+# =========================================================
+# 🔐 ROLE BASED FTD SALES
+# =========================================================
+
+def send_role_based_ftd_sales(sender):
+    user = get_user_access(sender)
+
+    if not user:
+        send_whatsapp_message(sender, "❌ Your mobile number is not mapped for AI MIS access.")
+        return
+
+    role = str(user.get("role", "")).strip().lower()
+
+    print("Sender:", sender)
+    print("Role:", user.get("role"))
+    print("Region:", user.get("region"))
+    print("Patch:", user.get("patch"))
+    print("Stores:", user.get("stores"))
+
+    if role == "ops leader":
+        print("👔 Ops Leader → Overall Sales")
+        send_ftd_sales(sender)
+        return
+
+    if role == "region manager":
+        print("🌍 Region Manager → Region Sales")
+        send_region_ftd_sales(sender, user)
+        return
+
+    if role == "area manager":
+        print("🏪 Area Manager → Assigned Store Sales")
+        send_area_manager_ftd_sales(sender, user)
+        return
+
+    send_whatsapp_message(sender, "❌ Your AI MIS role is not configured.")
+
+
+# =========================================================
+# 🏪 AREA MANAGER FTD SALES
+# =========================================================
+
+def send_area_manager_ftd_sales(sender, user):
+    allowed = user.get("stores", [])
+    if not isinstance(allowed, list):
+        allowed = [allowed]
+
+    if any(str(x).strip().lower() == "all" for x in allowed):
+        totals, selected = aggregate_store_periods()
+    else:
+        totals, selected = aggregate_store_periods(allowed)
+
+    if not selected:
+        send_whatsapp_message(sender, "⚠️ No sales data found for your mapped stores.")
+        return
+
+    today = totals["today"]
+    lw = totals["lw"]
+    lm = totals["lm"]
+    ly = totals["ly"]
+
+    store_lines = []
+    for name, data in sorted(selected.items(), key=lambda x: _safe_float(x[1].get("today")), reverse=True):
+        store_today = _safe_float(data.get("today"))
+        store_lw = _safe_float(data.get("lw"))
+        store_growth = _safe_float(data.get("growth"), _growth(store_today, store_lw))
+        store_lines.append(f"• {name}: ₹{store_today / 1000:.1f}K ({store_growth:+.1f}% vs LW)")
+
+    reply = (
+        "🏪 *AI MIS | AREA SALES*\n"
+        f"{LIVE_SALES_DATA.get('date', '')}\n"
+        f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
+        f"📍 Patch: {user.get('patch', '')}\n"
+        f"🏪 Stores: {len(selected)}\n\n"
+        f"💰 Today: ₹{today / 100000:.2f}L\n"
+        f"📅 Last Week: ₹{lw / 100000:.2f}L\n"
+        f"📆 Last Month: ₹{lm / 100000:.2f}L\n"
+        f"📆 Last Year: ₹{ly / 100000:.2f}L\n\n"
+        f"📈 vs LW: {_growth(today, lw):+.1f}%\n"
+        f"📊 vs LM: {_growth(today, lm):+.1f}%\n"
+        f"📊 vs LY: {_growth(today, ly):+.1f}%\n\n"
+        "🏪 *STORE PERFORMANCE*\n" + "\n".join(store_lines)
+    )
+
+    print(reply)
+    send_whatsapp_message(sender, reply)
 
 
 # =========================================================
 # 👋 PROCESS MESSAGE
 # =========================================================
 
-def process_message(
-    sender,
-    message_text
-):
-
+def process_message(sender, message_text):
     import re
 
-    message = " ".join(
-        message_text
-        .strip()
-        .lower()
-        .split()
-    )
+    message = " ".join(str(message_text).strip().lower().split())
+    message = re.sub(r"[’'`]", "", message)
+    message = re.sub(r"\s+", " ", message).strip()
 
-    # -----------------------------------------------------
-    # NORMALIZE APOSTROPHES
-    # -----------------------------------------------------
-
-    message = re.sub(
-        r"[’'`]",
-        "",
-        message
-    )
-
-    message = re.sub(
-        r"\s+",
-        " ",
-        message
-    ).strip()
-
-    # =====================================================
-    # 🔐 USER ACCESS DEBUG
-    # =====================================================
-
-    debug_user_access(
-        sender
-    )
+    debug_user_access(sender)
 
     print("=" * 60)
     print("🧠 PROCESSING MESSAGE")
@@ -3379,330 +1135,119 @@ def process_message(
     print("Normalized :", message)
     print("=" * 60)
 
-    # =====================================================
-    # 👋 GREETING
-    # =====================================================
-
-    if message in [
-
-        "hi",
-        "hello",
-        "hey",
-        "hii",
-        "hiii",
-        "good morning",
-        "good afternoon",
-        "good evening"
-
-    ]:
-
-        reply = (
-
-            "👋 Hi! Welcome to "
-            "AI MIS WhatsApp.\n\n"
-
-            "You can try:\n\n"
-
-            "📊 *sales*\n"
-
-            "📈 *sales vs lw*\n"
-
-            "🏪 *Byculla sales*\n"
-
-            "❓ *help*"
-        )
-
+    if message in {"hi", "hello", "hey", "hii", "hiii", "good morning", "good afternoon", "good evening"}:
         send_whatsapp_message(
             sender,
-            reply
+            "👋 *AI MIS WhatsApp*\n\n📊 sales\n📈 sales vs lw\n📈 sales vs lm\n📈 sales vs ly\n🏪 Store Name sales\n🌍 TN region\n❓ help"
         )
-
         return
-
-    # =====================================================
-    # ❓ HELP
-    # =====================================================
 
     if message == "help":
-
-        reply = (
-
-            "🤖 *AI MIS WhatsApp*\n\n"
-
-            "Available commands:\n\n"
-
-            "📊 *sales*\n"
-
-            "📊 *sales today*\n"
-
-            "📈 *sales vs lw*\n"
-
-            "🏪 *Store Name sales*\n\n"
-
-            "Examples:\n"
-
-            "• Byculla sales\n"
-
-            "• Tata Sherwood sales\n"
-
-            "• JP Nagar sales\n\n"
-
-            "❓ help"
-        )
-
         send_whatsapp_message(
             sender,
-            reply
+            "🤖 *AI MIS WhatsApp*\n\n"
+            "📊 *sales*\n"
+            "📈 *sales vs lw*\n"
+            "📈 *sales vs lm*\n"
+            "📈 *sales vs ly*\n"
+            "🏪 *Store Name sales*\n"
+            "🌍 *TN region*\n"
+            "🌍 *sales in TN region*\n\n"
+            "Examples:\n"
+            "• Byculla sales\n"
+            "• Tata Sherwood sales\n"
+            "• TN region\n"
+            "• sales in TN region"
         )
-
         return
 
-    # =====================================================
-    # 📊 SALES
-    # =====================================================
-
-    sales_keywords = [
-
-        "sales",
-        "sales today",
-        "today sales",
-        "today's sales",
-        "todays sales",
-        "ftd",
-        "ftd sales",
-        "sales for today",
-        "today's sale",
-        "todays sale",
-
-        "what is today's sales",
-        "what is todays sales",
-        "what are today's sales",
-        "what are todays sales",
-
-        "how was the sales today",
-        "how was sales today",
-        "how are sales today",
-        "how was the sale today",
-        "how are the sales today",
-        "how is the sales today"
-
-    ]
-
-    if message in sales_keywords:
-
-        print(
-            "📊 FTD SALES COMMAND DETECTED"
-        )
-
+    # Exact FTD first
+    if message in {
+        "sales", "sales today", "today sales", "today sales report",
+        "todays sales", "ftd", "ftd sales"
+    }:
         try:
-
-            send_role_based_ftd_sales(
-                sender
-            )
-
-            print(
-                "✅ send_role_based_ftd_sales() completed"
-            )
-
+            send_role_based_ftd_sales(sender)
         except Exception as e:
-
-            print(
-                "❌ send_role_based_ftd_sales() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "FTD Sales report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-
+            print("❌ FTD ERROR:", str(e))
+            send_whatsapp_message(sender, f"❌ Error while generating FTD Sales report.\n\nDebug: {e}")
         return
 
-    # =====================================================
-    # 📈 SALES VS LW
-    # =====================================================
-
-    sales_lw_keywords = [
-
-        "sales vs lw",
-        "sales vs last week",
-        "sales versus last week",
-        "today vs last week",
-        "today vs lw",
-        "last week sales",
-        "compare sales",
-        "sales comparison",
-        "compare sales last week",
-        "compare sales with last week",
-        "how are sales vs last week",
-        "how is sales vs last week",
-        "how was sales vs last week"
-
-    ]
-
-    if message in sales_lw_keywords:
-
-        print(
-            "📈 SALES VS LW COMMAND DETECTED"
-        )
-
+    # Period commands
+    if message in {"sales vs lw", "sales vs last week", "sales versus last week", "today vs lw", "today vs last week", "sales comparison"}:
         try:
-
-            send_sales_vs_lw(
-                sender
-            )
-
-            print(
-                "✅ send_sales_vs_lw() completed"
-            )
-
+            send_sales_vs_lw(sender)
         except Exception as e:
-
-            print(
-                "❌ send_sales_vs_lw() ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "Sales vs Last Week report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-
+            print("❌ SALES VS LW ERROR:", str(e))
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Week report.\n\nDebug: {e}")
         return
 
-    # =====================================================
-    # 📈 NATURAL SALES VS LW
-    # =====================================================
-
-    if (
-        "sales" in message
-        and (
-            "last week" in message
-            or "lw" in message
-        )
-    ):
-
-        print(
-            "📈 NATURAL SALES VS LW "
-            "QUESTION DETECTED"
-        )
-
+    if message in {"sales vs lm", "sales vs last month", "sales versus last month", "today vs lm", "today vs last month"}:
         try:
-
-            send_sales_vs_lw(
-                sender
-            )
-
-            print(
-                "✅ Natural Sales vs LW completed"
-            )
-
+            send_sales_vs_lm(sender)
         except Exception as e:
-
-            print(
-                "❌ NATURAL SALES VS LW ERROR:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "Sales vs Last Week report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-
+            print("❌ SALES VS LM ERROR:", str(e))
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Month report.\n\nDebug: {e}")
         return
 
-    # =====================================================
-    # 🏪 STORE SALES QUERY
-    # =====================================================
+    if message in {"sales vs ly", "sales vs last year", "sales versus last year", "today vs ly", "today vs last year"}:
+        try:
+            send_sales_vs_ly(sender)
+        except Exception as e:
+            print("❌ SALES VS LY ERROR:", str(e))
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Year report.\n\nDebug: {e}")
+        return
 
-    if (
-        "sales" in message
-        or "sale" in message
-    ):
+    # Natural comparisons
+    if "sales" in message and ("last week" in message or "lw" in message):
+        try:
+            send_sales_vs_lw(sender)
+        except Exception as e:
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Week report.\n\nDebug: {e}")
+        return
 
-        store_query = (
-            message
-            .replace(
-                "sales",
-                ""
-            )
-            .replace(
-                "sale",
-                ""
-            )
-            .strip()
-        )
+    if "sales" in message and ("last month" in message or "lm" in message):
+        try:
+            send_sales_vs_lm(sender)
+        except Exception as e:
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Month report.\n\nDebug: {e}")
+        return
 
+    if "sales" in message and ("last year" in message or "ly" in message):
+        try:
+            send_sales_vs_ly(sender)
+        except Exception as e:
+            send_whatsapp_message(sender, f"❌ Error while generating Sales vs Last Year report.\n\nDebug: {e}")
+        return
+
+    # Region queries. Supports: TN region, sales in TN region, TN sales
+    region_match = re.match(r"^(?:sales\s+in\s+)?([a-z]{2,10})\s+region$", message)
+    if region_match:
+        send_region_sales_query(sender, region_match.group(1))
+        return
+
+    region_match = re.match(r"^(?:sales\s+in\s+)?([a-z]{2,10})\s+sales$", message)
+    if region_match and find_region_snapshot_key(region_match.group(1)):
+        send_region_sales_query(sender, region_match.group(1))
+        return
+
+    # Store query: Byculla sales
+    if "sales" in message or "sale" in message:
+        store_query = message.replace("sales", "").replace("sale", "").strip()
         if store_query:
-
-            print(
-                "🏪 STORE SALES QUERY DETECTED:",
-                store_query
-            )
-
+            print("🏪 STORE SALES QUERY DETECTED:", store_query)
             try:
-
-                send_store_sales_query(
-                    sender,
-                    store_query
-                )
-
-                print(
-                    "✅ Store sales query completed"
-                )
-
+                send_store_sales_query(sender, store_query)
             except Exception as e:
-
-                print(
-                    "❌ STORE SALES QUERY ERROR:",
-                    str(e)
-                )
-
-                send_whatsapp_message(
-                    sender,
-                    (
-                        "❌ Error while generating "
-                        "store sales report.\n\n"
-                        f"Debug: {str(e)}"
-                    )
-                )
-
+                print("❌ STORE SALES QUERY ERROR:", str(e))
+                send_whatsapp_message(sender, f"❌ Error while generating store sales report.\n\nDebug: {e}")
             return
-
-    # =====================================================
-    # ❌ UNKNOWN MESSAGE
-    # =====================================================
-
-    print(
-        "❓ UNKNOWN MESSAGE:",
-        message
-    )
-
-    reply = (
-
-        "🤖 AI MIS received your message:\n\n"
-
-        f"\"{message_text}\"\n\n"
-
-        "Type *help* to see "
-        "available commands."
-    )
 
     send_whatsapp_message(
         sender,
-        reply
+        "🤖 AI MIS received your message:\n\n"
+        f"\"{message_text}\"\n\n"
+        "Type *help* to see available commands."
     )
 
 
@@ -3710,440 +1255,71 @@ def process_message(
 # 📩 META WEBHOOK RECEIVER
 # =========================================================
 
-@app.route(
-    "/webhook",
-    methods=["POST"]
-)
+@app.route("/webhook", methods=["POST"])
 def webhook():
-
-    data = request.get_json(
-        silent=True
-    )
+    data = request.get_json(silent=True)
 
     print("=" * 60)
     print("📩 WHATSAPP WEBHOOK RECEIVED")
     print("=" * 60)
-
-    print(
-        json.dumps(
-            data,
-            indent=2,
-            ensure_ascii=False
-        )
-    )
-
+    print(json.dumps(data, indent=2, ensure_ascii=False))
     print("=" * 60)
 
     if not data:
+        print("⚠️ Empty webhook payload")
+        return "EVENT_RECEIVED", 200
 
-        print(
-            "⚠️ Empty webhook payload"
-        )
+    if data.get("object") != "whatsapp_business_account":
+        print("⚠️ Not a WhatsApp Business Account event")
+        return "EVENT_RECEIVED", 200
 
-        return (
-            "EVENT_RECEIVED",
-            200
-        )
+    for entry in data.get("entry", []):
+        for change in entry.get("changes", []):
+            field = change.get("field")
+            value = change.get("value", {})
 
-    if (
-        data.get(
-            "object"
-        )
-        !=
-        "whatsapp_business_account"
-    ):
-
-        print(
-            "⚠️ Not WhatsApp Business Account"
-        )
-
-        return (
-            "EVENT_RECEIVED",
-            200
-        )
-
-    # =====================================================
-    # PROCESS ENTRIES
-    # =====================================================
-
-    for entry in data.get(
-        "entry",
-        []
-    ):
-
-        for change in entry.get(
-            "changes",
-            []
-        ):
-
-            field = change.get(
-                "field"
-            )
-
-            value = change.get(
-                "value",
-                {}
-            )
-
-            print(
-                "Webhook field:",
-                field
-            )
-
-            # =================================================
-            # ONLY PROCESS MESSAGE EVENTS
-            # =================================================
+            print("Webhook field:", field)
 
             if field != "messages":
-
-                print(
-                    "ℹ️ Other webhook event:",
-                    field
-                )
-
+                print("ℹ️ Other webhook event:", field)
                 continue
 
-            messages = value.get(
-                "messages",
-                []
-            )
-
-            print(
-                "Number of messages:",
-                len(messages)
-            )
-
-            # =================================================
-            # PROCESS EACH MESSAGE
-            # =================================================
+            messages = value.get("messages", [])
+            print("Number of messages:", len(messages))
 
             for incoming_message in messages:
+                message_type = incoming_message.get("type")
+                sender = incoming_message.get("from")
 
-                message_type = (
-                    incoming_message.get(
-                        "type"
-                    )
-                )
-
-                sender = (
-                    incoming_message.get(
-                        "from"
-                    )
-                )
-
-                print(
-                    "Message type:",
-                    message_type
-                )
-
-                print(
-                    "Sender:",
-                    sender
-                )
-
-                # =============================================
-                # TEXT MESSAGE
-                # =============================================
+                print("Message type:", message_type)
+                print("Sender:", sender)
 
                 if message_type == "text":
+                    text_data = incoming_message.get("text", {})
+                    message_text = text_data.get("body", "")
+                    print("💬 Incoming text:", message_text)
 
-                    text_data = (
-                        incoming_message.get(
-                            "text",
-                            {}
-                        )
-                    )
-
-                    message_text = (
-                        text_data.get(
-                            "body",
-                            ""
-                        )
-                    )
-
-                    print(
-                        "💬 Incoming text:",
-                        message_text
-                    )
-
-                    if (
-                        sender
-                        and message_text
-                    ):
-
+                    if sender and message_text:
                         try:
-
-                            process_message(
-                                sender,
-                                message_text
-                            )
-
-                            print(
-                                "✅ process_message "
-                                "completed"
-                            )
-
+                            process_message(sender, message_text)
+                            print("✅ process_message completed")
                         except Exception as e:
-
-                            print(
-                                "❌ process_message ERROR:",
-                                str(e)
-                            )
-
+                            print("❌ process_message ERROR:", str(e))
                             send_whatsapp_message(
                                 sender,
-                                (
-                                    "❌ AI MIS encountered "
-                                    "an error while processing "
-                                    "your request.\n\n"
-                                    f"Debug: {str(e)}"
-                                )
+                                "❌ AI MIS encountered an error while processing your request."
                             )
-
-                # =============================================
-                # NON-TEXT MESSAGE
-                # =============================================
 
                 else:
-
-                    print(
-                        "⚠️ Non-text message:",
-                        message_type
-                    )
-
+                    print("⚠️ Non-text message:", message_type)
                     if sender:
-
                         send_whatsapp_message(
                             sender,
-                            (
-                                "🤖 AI MIS currently "
-                                "supports text messages only."
-                            )
+                            "🤖 AI MIS currently supports text messages only."
                         )
 
-    return (
-        "EVENT_RECEIVED",
-        200
-    )
+    return "EVENT_RECEIVED", 200
 
-
-# =========================================================
-# 📩 META WEBHOOK RECEIVER
-# =========================================================
-
-@app.route(
-    "/webhook",
-    methods=["POST"]
-)
-def webhook():
-
-    data = request.get_json(
-        silent=True
-    )
-
-    print("=" * 60)
-    print("📩 WHATSAPP WEBHOOK RECEIVED")
-    print("=" * 60)
-
-    print(
-        json.dumps(
-            data,
-            indent=2,
-            ensure_ascii=False
-        )
-    )
-
-    print("=" * 60)
-
-    if not data:
-
-        print(
-            "⚠️ Empty webhook payload"
-        )
-
-        return (
-            "EVENT_RECEIVED",
-            200
-        )
-
-    if data.get(
-        "object"
-    ) != "whatsapp_business_account":
-
-        print(
-            "⚠️ Not a WhatsApp Business "
-            "Account event"
-        )
-
-        return (
-            "EVENT_RECEIVED",
-            200
-        )
-
-    for entry in data.get(
-        "entry",
-        []
-    ):
-
-        for change in entry.get(
-            "changes",
-            []
-        ):
-
-            field = change.get(
-                "field"
-            )
-
-            value = change.get(
-                "value",
-                {}
-            )
-
-            print(
-                "Webhook field:",
-                field
-            )
-
-            # =================================================
-            # MESSAGE EVENT
-            # =================================================
-
-            if field == "messages":
-
-                messages = value.get(
-                    "messages",
-                    []
-                )
-
-                print(
-                    "Number of messages:",
-                    len(messages)
-                )
-
-                for message_data in messages:
-
-                    message_type = (
-                        message_data.get(
-                            "type"
-                        )
-                    )
-
-                    sender = (
-                        message_data.get(
-                            "from"
-                        )
-                    )
-
-                    print(
-                        "Message type:",
-                        message_type
-                    )
-
-                    print(
-                        "Sender:",
-                        sender
-                    )
-
-                    # -----------------------------------------
-                    # TEXT
-                    # -----------------------------------------
-
-                    if message_type == "text":
-
-                        text_data = (
-                            message_data.get(
-                                "text",
-                                {}
-                            )
-                        )
-
-                        message_text = (
-                            text_data.get(
-                                "body",
-                                ""
-                            )
-                        )
-
-                        print(
-                            "💬 Incoming text:",
-                            message_text
-                        )
-
-                        if (
-                            sender
-                            and
-                            message_text
-                        ):
-
-                            try:
-
-                                process_message(
-                                    sender,
-                                    message_text
-                                )
-
-                                print(
-                                    "✅ process_message "
-                                    "completed"
-                                )
-
-                            except Exception as e:
-
-                                print(
-                                    "❌ process_message ERROR:",
-                                    str(e)
-                                )
-
-                                send_whatsapp_message(
-                                    sender,
-                                    (
-                                        "❌ AI MIS encountered "
-                                        "an error while processing "
-                                        "your request."
-                                    )
-                                )
-
-                    # -----------------------------------------
-                    # NON-TEXT
-                    # -----------------------------------------
-
-                    else:
-
-                        print(
-                            "⚠️ Non-text message:",
-                            message_type
-                        )
-
-                        if sender:
-
-                            send_whatsapp_message(
-
-                                sender,
-
-                                (
-                                    "🤖 AI MIS currently "
-                                    "supports text messages only."
-                                )
-                            )
-
-            # =================================================
-            # STATUS / OTHER EVENTS
-            # =================================================
-
-            else:
-
-                print(
-                    "ℹ️ Other webhook event:",
-                    field
-                )
-
-    return (
-        "EVENT_RECEIVED",
-        200
-    )
-
-
-# =========================================================
 # 👔 TEST SEND — OPS LEADERS ONLY
 # =========================================================
 
@@ -4397,4 +1573,3 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port
     )
-
