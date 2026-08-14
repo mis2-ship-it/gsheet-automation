@@ -653,6 +653,470 @@ def get_source_data():
 
     return sources
 
+# =========================================================
+# 🏪 AREA MANAGER FTD SALES
+# =========================================================
+
+def send_area_manager_ftd_sales(
+    sender,
+    user
+):
+
+    print("=" * 60)
+    print("🏪 AREA MANAGER FTD SALES")
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # USER STORE MAPPING
+    # -----------------------------------------------------
+
+    allowed_stores = user.get(
+        "stores",
+        []
+    )
+
+    if not isinstance(
+        allowed_stores,
+        list
+    ):
+
+        allowed_stores = [
+            allowed_stores
+        ]
+
+    allowed_stores = [
+
+        str(store)
+        .strip()
+
+        for store in allowed_stores
+
+        if str(store).strip()
+    ]
+
+    print(
+        "Sender:",
+        sender
+    )
+
+    print(
+        "Role:",
+        user.get("role")
+    )
+
+    print(
+        "Region:",
+        user.get("region")
+    )
+
+    print(
+        "Patch:",
+        user.get("patch")
+    )
+
+    print(
+        "Mapped Stores:",
+        allowed_stores
+    )
+
+    # -----------------------------------------------------
+    # CHECK SNAPSHOT
+    # -----------------------------------------------------
+
+    if not LIVE_SALES_DATA:
+
+        print(
+            "❌ LIVE_SALES_DATA is empty"
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "⚠️ Sales data is not "
+                "available right now."
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GET STORE SNAPSHOT
+    # -----------------------------------------------------
+
+    snapshot_stores = (
+        LIVE_SALES_DATA.get(
+            "stores",
+            {}
+        )
+    )
+
+    if not snapshot_stores:
+
+        print(
+            "❌ Store snapshot is empty"
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "⚠️ Store-level sales data "
+                "is not available right now."
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # NORMALIZED STORE LOOKUP
+    # -----------------------------------------------------
+
+    normalized_snapshot = {}
+
+    for store_name, store_data in (
+        snapshot_stores.items()
+    ):
+
+        normalized_name = (
+            str(store_name)
+            .strip()
+            .lower()
+        )
+
+        normalized_snapshot[
+            normalized_name
+        ] = {
+            "name":
+                store_name,
+
+            "data":
+                store_data
+        }
+
+    # -----------------------------------------------------
+    # MATCH USER STORES
+    # -----------------------------------------------------
+
+    matched_stores = {}
+
+    not_found_stores = []
+
+    for allowed_store in allowed_stores:
+
+        normalized_allowed = (
+            allowed_store
+            .strip()
+            .lower()
+        )
+
+        # ---------------------------------------------
+        # ALL ACCESS
+        # ---------------------------------------------
+
+        if normalized_allowed == "all":
+
+            matched_stores = (
+                snapshot_stores.copy()
+            )
+
+            not_found_stores = []
+
+            break
+
+        # ---------------------------------------------
+        # EXACT MATCH
+        # ---------------------------------------------
+
+        matched = (
+            normalized_snapshot.get(
+                normalized_allowed
+            )
+        )
+
+        if matched:
+
+            matched_stores[
+                matched["name"]
+            ] = matched["data"]
+
+        else:
+
+            not_found_stores.append(
+                allowed_store
+            )
+
+    # -----------------------------------------------------
+    # DEBUG MATCHING
+    # -----------------------------------------------------
+
+    print(
+        "Matched Stores:",
+        list(
+            matched_stores.keys()
+        )
+    )
+
+    if not_found_stores:
+
+        print(
+            "⚠️ Stores not found "
+            "in snapshot:",
+            not_found_stores
+        )
+
+    # -----------------------------------------------------
+    # NO MATCHED STORES
+    # -----------------------------------------------------
+
+    if not matched_stores:
+
+        send_whatsapp_message(
+            sender,
+            (
+                "⚠️ No sales data found "
+                "for your mapped stores."
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # TOTAL AREA SALES
+    # -----------------------------------------------------
+
+    today_total = 0.0
+    lw_total = 0.0
+
+    for store_name, store_data in (
+        matched_stores.items()
+    ):
+
+        today_total += float(
+            store_data.get(
+                "today",
+                0
+            )
+            or 0
+        )
+
+        lw_total += float(
+            store_data.get(
+                "lw",
+                0
+            )
+            or 0
+        )
+
+    area_growth = (
+
+        (
+            today_total
+            -
+            lw_total
+        )
+        /
+        max(
+            lw_total,
+            1
+        )
+
+    ) * 100
+
+    # -----------------------------------------------------
+    # PERFORMANCE
+    # -----------------------------------------------------
+
+    if area_growth > 5:
+
+        performance = (
+            "🚀 Strong Growth"
+        )
+
+    elif area_growth > 0:
+
+        performance = (
+            "📈 Growth"
+        )
+
+    elif area_growth < -5:
+
+        performance = (
+            "🔻 Decline"
+        )
+
+    else:
+
+        performance = (
+            "➡️ Stable"
+        )
+
+    # -----------------------------------------------------
+    # DATE / TIME
+    # -----------------------------------------------------
+
+    report_date = (
+        LIVE_SALES_DATA.get(
+            "date",
+            ""
+        )
+    )
+
+    report_time = (
+        LIVE_SALES_DATA.get(
+            "report_time",
+            ""
+        )
+    )
+
+    # -----------------------------------------------------
+    # STORE BREAKDOWN
+    # -----------------------------------------------------
+
+    store_lines = []
+
+    # Sort by today's sales
+    sorted_stores = sorted(
+
+        matched_stores.items(),
+
+        key=lambda item:
+            float(
+                item[1].get(
+                    "today",
+                    0
+                )
+                or 0
+            ),
+
+        reverse=True
+    )
+
+    for store_name, store_data in (
+        sorted_stores
+    ):
+
+        today_sales = float(
+            store_data.get(
+                "today",
+                0
+            )
+            or 0
+        )
+
+        lw_sales = float(
+            store_data.get(
+                "lw",
+                0
+            )
+            or 0
+        )
+
+        growth = (
+
+            (
+                today_sales
+                -
+                lw_sales
+            )
+            /
+            max(
+                lw_sales,
+                1
+            )
+
+        ) * 100
+
+        store_lines.append(
+
+            f"• {store_name}: "
+            f"₹{today_sales / 1000:.1f}K "
+            f"({growth:+.1f}%)"
+        )
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
+
+    reply_parts = [
+
+        "🏪 *AI MIS | AREA SALES*",
+
+        f"{report_date}",
+
+        f"{report_time}",
+
+        "",
+
+        f"📍 *Patch:* "
+        f"{user.get('patch', '')}",
+
+        f"🏪 *Stores:* "
+        f"{len(matched_stores)}",
+
+        "",
+
+        "💰 *NET REVENUE*",
+
+        f"🟢 Today: "
+        f"₹{today_total / 100000:.2f}L",
+
+        f"🔵 Last Week: "
+        f"₹{lw_total / 100000:.2f}L",
+
+        f"📈 Growth: "
+        f"{area_growth:+.1f}%",
+
+        f"🧠 Performance: "
+        f"{performance}",
+
+        "",
+
+        "🏪 *STORE PERFORMANCE*",
+
+    ]
+
+    reply_parts.extend(
+        store_lines
+    )
+
+    reply = "\n".join(
+        reply_parts
+    )
+
+    # -----------------------------------------------------
+    # DEBUG
+    # -----------------------------------------------------
+
+    print(
+        "Area Today:",
+        today_total
+    )
+
+    print(
+        "Area LW:",
+        lw_total
+    )
+
+    print(
+        "Area Growth:",
+        area_growth
+    )
+
+    print(
+        "Area Manager Reply:"
+    )
+
+    print(reply)
+
+    print("=" * 60)
+
+    # -----------------------------------------------------
+    # SEND
+    # -----------------------------------------------------
+
+    send_whatsapp_message(
+        sender,
+        reply
+    )
 
 # =========================================================
 # 📊 FTD SALES RESPONSE
@@ -1186,26 +1650,22 @@ def send_sales_vs_lw(sender):
 
         return
 
-    # =====================================================
-    # 🏪 AREA MANAGER
-    # =====================================================
-
+    # -----------------------------------------------------
+    # AREA MANAGER
+    # -----------------------------------------------------
+    
     if role == "area manager":
-
+    
         print(
             "🏪 Area Manager → "
-            "Store Sales vs LW not enabled yet"
+            "Assigned Store Sales"
         )
-
-        send_whatsapp_message(
+    
+        send_area_manager_ftd_sales(
             sender,
-            (
-                "⚠️ Area Manager store-level "
-                "Sales vs LW access is being "
-                "configured next."
-            )
+            user
         )
-
+    
         return
 
     # =====================================================
