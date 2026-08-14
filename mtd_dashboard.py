@@ -388,41 +388,6 @@ for col in TEXT_COLUMNS:
     )
 
 
-# ---------------------------------------------------------
-# Session standardization for dashboard
-# Breakfast > Lunch > Snacks > Dinner > Post Dinner
-# Late Night and Closing are treated as Post Dinner
-# ---------------------------------------------------------
-SESSION_MAP = {
-    "breakfast": "Breakfast",
-    "lunch": "Lunch",
-    "snacks": "Snacks",
-    "snack": "Snacks",
-    "dinner": "Dinner",
-    "late night": "Post Dinner",
-    "latenight": "Post Dinner",
-    "closing": "Post Dinner",
-    "post dinner": "Post Dinner",
-    "post-dinner": "Post Dinner",
-    "": "Post Dinner"
-}
-
-final_df["Session"] = (
-    final_df["Session"]
-    .str.lower()
-    .map(SESSION_MAP)
-    .fillna(final_df["Session"].str.title())
-)
-
-SESSION_ORDER = {
-    "Breakfast": 1,
-    "Lunch": 2,
-    "Snacks": 3,
-    "Dinner": 4,
-    "Post Dinner": 5
-}
-
-
 final_df["Store Type"] = (
     final_df["Store Type"]
     .str.upper()
@@ -440,6 +405,24 @@ if "__source_file" in final_df.columns:
         inplace=True
     )
 
+
+
+# =========================================================
+# SESSION NORMALIZATION
+# Breakfast > Lunch > Snacks > Dinner > Post Dinner
+# Late Night and Closing -> Post Dinner
+# =========================================================
+
+def normalize_session(value):
+    s = str(value).strip().lower()
+    if "breakfast" in s: return "Breakfast"
+    if "lunch" in s: return "Lunch"
+    if "snack" in s: return "Snacks"
+    if "late night" in s or "latenight" in s or "closing" in s or "post dinner" in s: return "Post Dinner"
+    if "dinner" in s: return "Dinner"
+    return str(value).strip() if str(value).strip() else "Others"
+
+final_df["Session"] = final_df["Session"].apply(normalize_session)
 
 # =========================================================
 # DATE RANGE
@@ -508,103 +491,25 @@ ftd_date = (
 # COMPARISON DATES
 # =========================================================
 
-# ---------------------------------------------------------
-# LAST WEEK - SAME WEEKDAY
-# ---------------------------------------------------------
-
+# Last Week - Same Day
 lw_date = (
     ftd_date
     - timedelta(days=7)
 )
 
 
-# ---------------------------------------------------------
-# LAST MONTH - SAME WEEKDAY
-# ---------------------------------------------------------
-
-def same_weekday_last_month(current_date):
-
-    current_date = pd.Timestamp(current_date)
-
-    target = (
-        current_date
-        - pd.DateOffset(months=1)
-    ).normalize()
-
-    candidates = []
-
-    for offset in range(-7, 8):
-
-        candidate = (
-            target
-            + pd.Timedelta(days=offset)
-        ).normalize()
-
-        if (
-            candidate.month == target.month
-            and candidate.weekday() == current_date.weekday()
-        ):
-            candidates.append(candidate)
-
-    if not candidates:
-        return target.date()
-
-    nearest = min(
-        candidates,
-        key=lambda d: abs((d - target).days)
-    )
-
-    return nearest.date()
+# Last Month - Same Day
+lm_date = (
+    pd.Timestamp(ftd_date)
+    - pd.DateOffset(months=1)
+).date()
 
 
-lm_date = same_weekday_last_month(
-    ftd_date
-)
-
-
-# ---------------------------------------------------------
-# LAST YEAR - SAME WEEKDAY
-# ---------------------------------------------------------
-
-def same_weekday_last_year(current_date):
-
-    current_date = pd.Timestamp(current_date)
-
-    target = (
-        current_date
-        - pd.DateOffset(years=1)
-    ).normalize()
-
-    candidates = []
-
-    for offset in range(-7, 8):
-
-        candidate = (
-            target
-            + pd.Timedelta(days=offset)
-        ).normalize()
-
-        if (
-            candidate.year == target.year
-            and candidate.month == target.month
-            and candidate.weekday() == current_date.weekday()
-        ):
-            candidates.append(candidate)
-
-    if not candidates:
-        return target.date()
-
-    nearest = min(
-        candidates,
-        key=lambda d: abs((d - target).days)
-    )
-
-    return nearest.date()
-
-
-ly_date = same_weekday_last_year(
-    ftd_date
-)
+# Last Year - Same Day
+ly_date = (
+    pd.Timestamp(ftd_date)
+    - pd.DateOffset(years=1)
+).date()
 
 
 print("=" * 80)
@@ -641,11 +546,7 @@ print(
 # MONTH START DATES
 # =========================================================
 
-# ---------------------------------------------------------
-# CURRENT MTD
-# 1st of current month → yesterday
-# ---------------------------------------------------------
-
+# Current MTD = 1st -> yesterday
 current_month_start = pd.Timestamp(
     year=ftd_date.year,
     month=ftd_date.month,
@@ -653,14 +554,22 @@ current_month_start = pd.Timestamp(
 ).date()
 
 
-# ---------------------------------------------------------
-# LAST MONTH MTD
-# 1st of last month → SAME CALENDAR DAY AS FTD
-#
-# Example:
-# Current : 01-Aug → 13-Aug
-# LM      : 01-Jul → 13-Jul
-# ---------------------------------------------------------
+def same_weekday_previous_month(current_date):
+    current_date = pd.Timestamp(current_date)
+    target = current_date - pd.DateOffset(months=1)
+    while target.weekday() != current_date.weekday():
+        target -= pd.Timedelta(days=1)
+    return target.date()
+
+
+# FTD LM = same weekday in previous month
+lm_date = same_weekday_previous_month(ftd_date)
+
+# FTD LY = same weekday last year
+ly_date = (
+    pd.Timestamp(ftd_date)
+    - pd.Timedelta(days=364)
+).date()
 
 lm_month_start = pd.Timestamp(
     year=lm_date.year,
@@ -668,108 +577,62 @@ lm_month_start = pd.Timestamp(
     day=1
 ).date()
 
-lm_mtd_end = pd.Timestamp(
-    year=lm_date.year,
-    month=lm_date.month,
-    day=ftd_date.day
-).date()
-
-
-# ---------------------------------------------------------
-# LAST YEAR MTD
-# 1st of last year month → SAME CALENDAR DAY AS FTD
-#
-# Example:
-# Current : 01-Aug-2026 → 13-Aug-2026
-# LY      : 01-Aug-2025 → 13-Aug-2025
-# ---------------------------------------------------------
-
 ly_month_start = pd.Timestamp(
     year=ly_date.year,
     month=ly_date.month,
     day=1
 ).date()
 
-ly_mtd_end = pd.Timestamp(
-    year=ly_date.year,
-    month=ly_date.month,
-    day=ftd_date.day
-).date()
+
+def safe_month_end(year, month, day):
+    first = pd.Timestamp(year=year, month=month, day=1)
+    next_month = first + pd.DateOffset(months=1)
+    last_day = (next_month - pd.Timedelta(days=1)).day
+    return pd.Timestamp(
+        year=year,
+        month=month,
+        day=min(day, last_day)
+    ).date()
 
 
-# =========================================================
-# MTD PERIODS
-# =========================================================
+lm_mtd_end = safe_month_end(
+    lm_date.year,
+    lm_date.month,
+    ftd_date.day
+)
+
+ly_mtd_end = safe_month_end(
+    ly_date.year,
+    ly_date.month,
+    ftd_date.day
+)
 
 print("=" * 80)
 print("MTD PERIODS")
 print("=" * 80)
+print("Current MTD:", current_month_start, "→", ftd_date)
+print("LM MTD     :", lm_month_start, "→", lm_mtd_end)
+print("LY MTD     :", ly_month_start, "→", ly_mtd_end)
 
-print(
-    "Current MTD:",
-    current_month_start,
-    "→",
-    ftd_date
-)
-
-print(
-    "LM MTD     :",
-    lm_month_start,
-    "→",
-    lm_mtd_end
-)
-
-print(
-    "LY MTD     :",
-    ly_month_start,
-    "→",
-    ly_mtd_end
-)
 
 # =========================================================
 # DATE FILTER HELPER
 # =========================================================
 
-def date_filter(
-    start_date,
-    end_date
-):
-
-    start = pd.Timestamp(
-        start_date
-    )
-
-    end = pd.Timestamp(
-        end_date
-    )
-
+def date_filter(start_date, end_date):
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
     return final_df.loc[
-        (
-            final_df["Date"]
-            .dt.normalize()
-            >= start
-        )
+        (final_df["Date"].dt.normalize() >= start)
         &
-        (
-            final_df["Date"]
-            .dt.normalize()
-            <= end
-        )
+        (final_df["Date"].dt.normalize() <= end)
     ].copy()
 
 
-def single_date_filter(
-    target_date
-):
-
-    target = pd.Timestamp(
-        target_date
-    )
-
+def single_date_filter(target_date):
+    target = pd.Timestamp(target_date)
     return final_df.loc[
-        final_df["Date"]
-        .dt.normalize()
-        .eq(target)
+        final_df["Date"].dt.normalize().eq(target)
     ].copy()
 
 
@@ -777,162 +640,63 @@ def single_date_filter(
 # FTD DATASETS
 # =========================================================
 
-ftd_df = single_date_filter(
-    ftd_date
-)
-
-
-lw_df = single_date_filter(
-    lw_date
-)
-
-
-lm_df = single_date_filter(
-    lm_date
-)
-
-
-ly_df = single_date_filter(
-    ly_date
-)
-
-print("=" * 80)
-print("FTD CHECK")
-print("=" * 80)
-
-print("FTD Date :", ftd_date)
-print("FTD Rows :", len(ftd_df))
-
-
-if not ftd_df.empty:
-    print(
-        "FTD Store Types:"
-    )
-    print(
-        ftd_df["Store Type"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .value_counts()
-    )
-
-# =========================================================
-# MTD DATASETS
-# =========================================================
-
-# ---------------------------------------------------------
-# CURRENT MTD
-# 1st → yesterday
-# ---------------------------------------------------------
-
-mtd_df = date_filter(
-    current_month_start,
-    ftd_date
-)
-
-
-# ---------------------------------------------------------
-# LAST MONTH MTD
-# 1st → same calendar day as current MTD
-# ---------------------------------------------------------
-
-lm_mtd_df = date_filter(
-    lm_month_start,
-    lm_mtd_end
-)
-
-
-# ---------------------------------------------------------
-# LAST YEAR MTD
-# 1st → same calendar day as current MTD
-# ---------------------------------------------------------
-
-ly_mtd_df = date_filter(
-    ly_month_start,
-    ly_mtd_end
-)
-# =========================================================
-# COCO DATA FILTERS
-# =========================================================
-
-ftd_coco_df = ftd_df[
-    ftd_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-lw_coco_df = lw_df[
-    lw_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-lm_coco_df = lm_df[
-    lm_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-ly_coco_df = ly_df[
-    ly_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-mtd_coco_df = mtd_df[
-    mtd_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-lm_mtd_coco_df = lm_mtd_df[
-    lm_mtd_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
-
-
-ly_mtd_coco_df = ly_mtd_df[
-    ly_mtd_df["Store Type"]
-    .astype(str)
-    .str.strip()
-    .str.upper()
-    == "COCO"
-].copy()
+ftd_df = single_date_filter(ftd_date)
+lw_df = single_date_filter(lw_date)
+lm_df = single_date_filter(lm_date)
+ly_df = single_date_filter(ly_date)
 
 
 # =========================================================
-# COCO FILTER CHECK
+# MTD DATASETS - 1ST TO YESTERDAY / SAME DAY
+# =========================================================
+
+mtd_df = date_filter(current_month_start, ftd_date)
+lm_mtd_df = date_filter(lm_month_start, lm_mtd_end)
+ly_mtd_df = date_filter(ly_month_start, ly_mtd_end)
+
+# =========================================================
+# DATA CHECK
 # =========================================================
 
 print("=" * 80)
-print("COCO FILTER CHECK")
+print("FILTER CHECK")
 print("=" * 80)
 
-print("FTD COCO       :", len(ftd_coco_df))
-print("LW COCO        :", len(lw_coco_df))
-print("LM COCO        :", len(lm_coco_df))
-print("LY COCO        :", len(ly_coco_df))
-print("MTD COCO       :", len(mtd_coco_df))
-print("LM MTD COCO    :", len(lm_mtd_coco_df))
-print("LY MTD COCO    :", len(ly_mtd_coco_df))
+print(
+    "FTD Rows    :",
+    f"{len(ftd_df):,}"
+)
+
+print(
+    "LW Rows     :",
+    f"{len(lw_df):,}"
+)
+
+print(
+    "LM Rows     :",
+    f"{len(lm_df):,}"
+)
+
+print(
+    "LY Rows     :",
+    f"{len(ly_df):,}"
+)
+
+print(
+    "MTD Rows    :",
+    f"{len(mtd_df):,}"
+)
+
+print(
+    "LM MTD Rows :",
+    f"{len(lm_mtd_df):,}"
+)
+
+print(
+    "LY MTD Rows :",
+    f"{len(ly_mtd_df):,}"
+)
+
 
 # =========================================================
 # VALIDATION
@@ -1133,10 +897,6 @@ def build_growth_kpi(
 
 
 # =========================================================
-# GROWTH KPI
-# =========================================================
-
-# =========================================================
 # FTD vs LW
 # =========================================================
 
@@ -1185,32 +945,32 @@ mtd_ly_growth = build_growth_kpi(
     ly_mtd_kpi
 )
 
-
 # =========================================================
-# STORE TYPE KPI HELPER
+# STORE TYPE KPI
 # =========================================================
 
-def store_type_kpi(df, store_type):
+def store_type_kpi(
+    df,
+    store_type
+):
 
     return get_kpi(
         df[
             df["Store Type"]
-            .astype(str)
-            .str.strip()
-            .str.upper()
-            == store_type.upper()
+            == store_type
         ].copy()
     )
 
 
 # =========================================================
-# FTD STORE TYPE KPI
+# FTD STORE TYPE
 # =========================================================
 
 ftd_coco_kpi = store_type_kpi(
     ftd_df,
     "COCO"
 )
+
 
 ftd_fofo_kpi = store_type_kpi(
     ftd_df,
@@ -1219,52 +979,7 @@ ftd_fofo_kpi = store_type_kpi(
 
 
 # =========================================================
-# LW STORE TYPE KPI
-# =========================================================
-
-lw_coco_kpi = store_type_kpi(
-    lw_df,
-    "COCO"
-)
-
-lw_fofo_kpi = store_type_kpi(
-    lw_df,
-    "FOFO"
-)
-
-
-# =========================================================
-# LM STORE TYPE KPI
-# =========================================================
-
-lm_coco_kpi = store_type_kpi(
-    lm_df,
-    "COCO"
-)
-
-lm_fofo_kpi = store_type_kpi(
-    lm_df,
-    "FOFO"
-)
-
-
-# =========================================================
-# LY STORE TYPE KPI
-# =========================================================
-
-ly_coco_kpi = store_type_kpi(
-    ly_df,
-    "COCO"
-)
-
-ly_fofo_kpi = store_type_kpi(
-    ly_df,
-    "FOFO"
-)
-
-
-# =========================================================
-# MTD STORE TYPE KPI
+# MTD STORE TYPE
 # =========================================================
 
 mtd_coco_kpi = store_type_kpi(
@@ -1272,70 +987,12 @@ mtd_coco_kpi = store_type_kpi(
     "COCO"
 )
 
+
 mtd_fofo_kpi = store_type_kpi(
     mtd_df,
     "FOFO"
 )
 
-
-# =========================================================
-# LM MTD STORE TYPE KPI
-# =========================================================
-
-lm_mtd_coco_kpi = store_type_kpi(
-    lm_mtd_df,
-    "COCO"
-)
-
-lm_mtd_fofo_kpi = store_type_kpi(
-    lm_mtd_df,
-    "FOFO"
-)
-
-
-# =========================================================
-# LY MTD STORE TYPE KPI
-# =========================================================
-
-ly_mtd_coco_kpi = store_type_kpi(
-    ly_mtd_df,
-    "COCO"
-)
-
-ly_mtd_fofo_kpi = store_type_kpi(
-    ly_mtd_df,
-    "FOFO"
-)
-
-
-# =========================================================
-# COCO GROWTH KPI
-# =========================================================
-
-ftd_coco_lw_growth = build_growth_kpi(
-    ftd_coco_kpi,
-    lw_coco_kpi
-)
-
-ftd_coco_lm_growth = build_growth_kpi(
-    ftd_coco_kpi,
-    lm_coco_kpi
-)
-
-ftd_coco_ly_growth = build_growth_kpi(
-    ftd_coco_kpi,
-    ly_coco_kpi
-)
-
-mtd_coco_lm_growth = build_growth_kpi(
-    mtd_coco_kpi,
-    lm_mtd_coco_kpi
-)
-
-mtd_coco_ly_growth = build_growth_kpi(
-    mtd_coco_kpi,
-    ly_mtd_coco_kpi
-)
 
 # =========================================================
 # SUMMARY BUILDER
@@ -1453,42 +1110,318 @@ def build_summary(
 # COCO DATA
 # =========================================================
 
-ftd_coco_df = ftd_df[
-    ftd_df["Store Type"]
-    == "COCO"
-].copy()
-
-mtd_coco_df = mtd_df[
-    mtd_df["Store Type"]
-    == "COCO"
-].copy()
-
-lw_coco_df = lw_df[
-    lw_df["Store Type"]
-    == "COCO"
-].copy()
-
-lm_coco_df = lm_df[
-    lm_df["Store Type"]
-    == "COCO"
-].copy()
-
-ly_coco_df = ly_df[
-    ly_df["Store Type"]
-    == "COCO"
-].copy()
-
-lm_mtd_coco_df = lm_mtd_df[
-    lm_mtd_df["Store Type"]
-    == "COCO"
-].copy()
-
-ly_mtd_coco_df = ly_mtd_df[
-    ly_mtd_df["Store Type"]
-    == "COCO"
-].copy()
+def filter_coco(df):
+    return df[
+        df["Store Type"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .eq("COCO")
+    ].copy()
 
 
+ftd_coco_df = filter_coco(ftd_df)
+lw_coco_df = filter_coco(lw_df)
+lm_coco_df = filter_coco(lm_df)
+ly_coco_df = filter_coco(ly_df)
+
+mtd_coco_df = filter_coco(mtd_df)
+lm_mtd_coco_df = filter_coco(lm_mtd_df)
+ly_mtd_coco_df = filter_coco(ly_mtd_df)
+
+# Full previous months for day-level comparisons
+lm_full_month_coco_df = filter_coco(
+    date_filter(lm_month_start, lm_date)
+)
+ly_full_month_coco_df = filter_coco(
+    date_filter(ly_month_start, ly_date)
+)
+
+print("=" * 80)
+print("COCO FILTER CHECK")
+print("=" * 80)
+print("FTD COCO       :", len(ftd_coco_df))
+print("LW COCO        :", len(lw_coco_df))
+print("LM COCO        :", len(lm_coco_df))
+print("LY COCO        :", len(ly_coco_df))
+print("MTD COCO       :", len(mtd_coco_df))
+print("LM MTD COCO    :", len(lm_mtd_coco_df))
+print("LY MTD COCO    :", len(ly_mtd_coco_df))
+
+
+# =========================================================
+# SESSION DISPLAY NORMALIZATION
+# Breakfast > Lunch > Snacks > Dinner > Post Dinner
+# Late Night and Closing -> Post Dinner
+# =========================================================
+
+def normalize_session(value):
+    s = str(value).strip().lower()
+    if "breakfast" in s:
+        return "Breakfast"
+    if "lunch" in s:
+        return "Lunch"
+    if "snack" in s:
+        return "Snacks"
+    if "late night" in s or "latenight" in s or "closing" in s or "post dinner" in s:
+        return "Post Dinner"
+    if "dinner" in s:
+        return "Dinner"
+    return str(value).strip() if str(value).strip() else "Others"
+
+final_df["Session"] = final_df["Session"].apply(normalize_session)
+
+
+# =========================================================
+# DAY-LEVEL COMPARISON
+# =========================================================
+
+def build_day_level_comparison(current_df, previous_df, days_back):
+
+    current = (
+        current_df
+        .groupby("Date")
+        .agg(
+            Gross=("Gross Sales", "sum"),
+            Net=("Net Sales", "sum"),
+            Orders=("Orders", "sum"),
+            Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    previous = (
+        previous_df
+        .groupby("Date")
+        .agg(
+            Prev_Gross=("Gross Sales", "sum"),
+            Prev_Net=("Net Sales", "sum"),
+            Prev_Orders=("Orders", "sum"),
+            Prev_Discount=("Discount", "sum")
+        )
+        .reset_index()
+    )
+
+    current["Date"] = pd.to_datetime(current["Date"]).dt.normalize()
+    previous["Date"] = pd.to_datetime(previous["Date"]).dt.normalize()
+
+    current["Prev Date"] = current["Date"] - pd.to_timedelta(days_back, unit="D")
+    previous = previous.rename(columns={"Date":"Prev Date"})
+
+    result = current.merge(previous, on="Prev Date", how="left")
+
+    for col in ["Prev_Gross","Prev_Net","Prev_Orders","Prev_Discount"]:
+        result[col] = pd.to_numeric(result[col], errors="coerce").fillna(0)
+
+    result["Gross Growth %"] = (
+        (result["Gross"] - result["Prev_Gross"])
+        / result["Prev_Gross"].replace(0, pd.NA)
+    ) * 100
+
+    result["Net Growth %"] = (
+        (result["Net"] - result["Prev_Net"])
+        / result["Prev_Net"].replace(0, pd.NA)
+    ) * 100
+
+    result["Orders Growth %"] = (
+        (result["Orders"] - result["Prev_Orders"])
+        / result["Prev_Orders"].replace(0, pd.NA)
+    ) * 100
+
+    result["Dis % Change"] = (
+        result["Discount"] / result["Gross"].replace(0, 1) * 100
+    ) - (
+        result["Prev_Discount"] / result["Prev_Gross"].replace(0, 1) * 100
+    )
+
+    result["AOV"] = result["Net"] / result["Orders"].replace(0, 1)
+
+    result = result[
+        [
+            "Date", "Gross", "Net", "Orders", "Discount", "Prev Date",
+            "Prev_Gross", "Prev_Net", "Prev_Orders",
+            "Gross Growth %", "Net Growth %", "Orders Growth %",
+            "Dis % Change", "AOV"
+        ]
+    ].rename(
+        columns={
+            "Prev_Gross":"Prev Gross",
+            "Prev_Net":"Prev Net",
+            "Prev_Orders":"Prev Orders"
+        }
+    )
+
+    result["Date"] = result["Date"].dt.strftime("%-d-%b")
+    result["Prev Date"] = result["Prev Date"].dt.strftime("%-d-%b")
+
+    return result.sort_values("Date", ascending=False).reset_index(drop=True)
+
+
+# FTD day-level
+day_level_ftd_lw = build_day_level_comparison(ftd_coco_df, lw_coco_df, 7)
+day_level_ftd_lm = build_day_level_comparison(ftd_coco_df, lm_full_month_coco_df, 28)
+day_level_ftd_ly = build_day_level_comparison(ftd_coco_df, ly_full_month_coco_df, 364)
+
+# MTD day-level
+day_level_mtd_lm = build_day_level_comparison(mtd_coco_df, lm_full_month_coco_df, 28)
+day_level_mtd_ly = build_day_level_comparison(mtd_coco_df, ly_full_month_coco_df, 364)
+
+
+# =========================================================
+# INSIGHTS
+# =========================================================
+
+def insight_block(title, df):
+    if df is None or df.empty or "Net Growth %" not in df.columns:
+        return ""
+
+    work = df.copy()
+    work["Net Growth %"] = pd.to_numeric(work["Net Growth %"], errors="coerce").fillna(0)
+
+    positive = work[work["Net Growth %"] > 0].sort_values("Net Growth %", ascending=False).head(2)
+    negative = work[work["Net Growth %"] < 0].sort_values("Net Growth %").head(2)
+
+    html = []
+    for _, row in positive.iterrows():
+        html.append(
+            f'<li>{title}: <span class="insight-good">{row[title]} +{row["Net Growth %"]:.1f}%</span> vs LW</li>'
+        )
+    for _, row in negative.iterrows():
+        html.append(
+            f'<li>{title}: <span class="insight-bad">{row[title]} {row["Net Growth %"]:.1f}%</span> vs LW - improvement needed</li>'
+        )
+    return "".join(html)
+
+
+def build_insights():
+    blocks = [
+        insight_block("Source", source_ftd_lw),
+        insight_block("Session", session_ftd_lw),
+        insight_block("Region", region_ftd_lw)
+    ]
+    blocks = [x for x in blocks if x]
+    if not blocks:
+        return "<p style='color:#777;'>No comparison data available for insights.</p>"
+    return '<ul class="insight-list">' + ''.join(blocks) + '</ul>'
+
+insights_html = build_insights()
+
+
+# =========================================================
+# CHART HELPERS
+# =========================================================
+
+def _safe_num(value):
+    try:
+        if pd.isna(value):
+            return 0.0
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _short_value(value):
+    value = _safe_num(value)
+    if abs(value) >= 10_000_000:
+        return f"₹{value/10_000_000:.1f}Cr"
+    if abs(value) >= 100_000:
+        return f"₹{value/100_000:.1f}L"
+    if abs(value) >= 1_000:
+        return f"₹{value/1_000:.1f}K"
+    return f"₹{value:,.0f}"
+
+
+def horizontal_bar_chart(df, category_col, value_col, title, max_rows=6):
+    if df is None or df.empty:
+        return ""
+    if category_col not in df.columns or value_col not in df.columns:
+        return ""
+
+    work = df[[category_col, value_col]].copy()
+    work[value_col] = pd.to_numeric(work[value_col], errors="coerce").fillna(0)
+    work = work.sort_values(value_col, ascending=False).head(max_rows)
+    maximum = max(work[value_col].max(), 1)
+
+    rows = []
+    for _, row in work.iterrows():
+        label = str(row[category_col])
+        value = _safe_num(row[value_col])
+        width = max(0, min(100, value / maximum * 100))
+        rows.append(
+            f'<div class="bar-row"><div class="bar-label">{label}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:{width:.1f}%"></div></div>'
+            f'<div class="bar-value">{_short_value(value)}</div></div>'
+        )
+
+    return (
+        f'<div class="chart-card"><div class="chart-title">{title}</div>'
+        f'<div class="chart-body">{"".join(rows)}</div></div>'
+    )
+
+
+def daily_mtd_chart(df, title="MTD Net Revenue Trend"):
+    if df is None or df.empty or "Date" not in df.columns or "Net Sales" not in df.columns:
+        return ""
+
+    work = df.copy()
+    work["Date"] = pd.to_datetime(work["Date"], errors="coerce")
+    work["Net Sales"] = pd.to_numeric(work["Net Sales"], errors="coerce").fillna(0)
+    work = (
+        work.dropna(subset=["Date"])
+        .groupby("Date", as_index=False)["Net Sales"]
+        .sum()
+        .sort_values("Date")
+        .tail(14)
+        .reset_index(drop=True)
+    )
+
+    if work.empty:
+        return ""
+
+    width, height = 640, 250
+    left, right, top, bottom = 40, 20, 30, 45
+    chart_width = width - left - right
+    chart_height = height - top - bottom
+    maximum = max(work["Net Sales"].max(), 1)
+
+    points = []
+    for i, row in work.iterrows():
+        x = left + (i / max(len(work) - 1, 1)) * chart_width
+        y = top + chart_height - (row["Net Sales"] / maximum) * chart_height
+        points.append((x, y, row["Date"]))
+
+    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in points)
+    circles = ''.join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#2E8B57" />'
+        for x, y, _ in points
+    )
+    labels = ''.join(
+        f'<text x="{x:.1f}" y="{height-16}" text-anchor="middle" font-size="10" fill="#666">{d.strftime("%-d-%b")}</text>'
+        for x, _, d in points
+    )
+
+    return (
+        f'<div class="chart-card chart-wide"><div class="chart-title">{title}</div>'
+        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}">'
+        f'<line x1="{left}" y1="{top}" x2="{width-right}" y2="{top}" stroke="#E5E7EB" />'
+        f'<line x1="{left}" y1="{top+chart_height/2}" x2="{width-right}" y2="{top+chart_height/2}" stroke="#E5E7EB" />'
+        f'<line x1="{left}" y1="{top+chart_height}" x2="{width-right}" y2="{top+chart_height}" stroke="#E5E7EB" />'
+        f'<polyline points="{polyline}" fill="none" stroke="#2E8B57" stroke-width="3" />'
+        f'{circles}{labels}</svg></div>'
+    )
+
+
+chart_mtd_daily = mtd_coco_df.copy()
+chart_source_mtd = mtd_coco_df.groupby("Source", as_index=False)["Net Sales"].sum()
+chart_brand_mtd = mtd_coco_df.groupby("Brand Name", as_index=False)["Net Sales"].sum()
+chart_region_mtd = mtd_coco_df.groupby("Region", as_index=False)["Net Sales"].sum()
+chart_session_mtd = mtd_coco_df.groupby("Session", as_index=False)["Net Sales"].sum()
+
+chart_daily_html = daily_mtd_chart(chart_mtd_daily, "MTD Net Revenue Trend")
+chart_source_html = horizontal_bar_chart(chart_source_mtd, "Source", "Net Sales", "MTD Revenue by Source", 6)
+chart_brand_html = horizontal_bar_chart(chart_brand_mtd, "Brand Name", "Net Sales", "MTD Revenue by Brand", 6)
+chart_region_html = horizontal_bar_chart(chart_region_mtd, "Region", "Net Sales", "MTD Revenue by Region", 6)
+chart_session_html = horizontal_bar_chart(chart_session_mtd, "Session", "Net Sales", "MTD Revenue by Session", 6)
 
 # =========================================================
 # GENERIC PERFORMANCE SUMMARY
@@ -1522,8 +1455,7 @@ def performance_summary(
             [
                 group_column,
                 "Net",
-                "Orders",
-                "Dis %"
+                "Orders"
             ]
         ]
         .rename(
@@ -1531,9 +1463,7 @@ def performance_summary(
                 "Net":
                     "Previous Net",
                 "Orders":
-                    "Previous Orders",
-                "Dis %":
-                    "Previous Dis %"
+                    "Previous Orders"
             }
         )
     )
@@ -1561,15 +1491,6 @@ def performance_summary(
     ] = (
         result[
             "Previous Orders"
-        ]
-        .fillna(0)
-    )
-
-    result[
-        "Previous Dis %"
-    ] = (
-        result[
-            "Previous Dis %"
         ]
         .fillna(0)
     )
@@ -1618,12 +1539,6 @@ def performance_summary(
     )
 
 
-    # Negative = discount reduced (good); positive = discount increased (bad).
-    result["Dis % Change"] = (
-        result["Dis %"] - result["Previous Dis %"]
-    ).round(1)
-
-
     result[
         "Orders Growth %"
     ] = (
@@ -1638,8 +1553,7 @@ def performance_summary(
     result.drop(
         columns=[
             "Previous Net",
-            "Previous Orders",
-            "Previous Dis %"
+            "Previous Orders"
         ],
         inplace=True
     )
@@ -1736,26 +1650,6 @@ session_ftd_ly = performance_summary(
 )
 
 
-
-# =========================================================
-# COCO DATA FILTERS
-# =========================================================
-
-def filter_coco(df):
-
-    if df.empty:
-        return df.copy()
-
-    return df[
-        df["Store Type"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .eq("COCO")
-    ].copy()
-
-
-
 # =========================================================
 # MTD PERFORMANCE TABLES
 # =========================================================
@@ -1766,11 +1660,13 @@ brand_mtd_lm = performance_summary(
     "Brand Name"
 )
 
+
 brand_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Brand Name"
 )
+
 
 source_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1778,11 +1674,13 @@ source_mtd_lm = performance_summary(
     "Source"
 )
 
+
 source_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Source"
 )
+
 
 region_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1790,11 +1688,13 @@ region_mtd_lm = performance_summary(
     "Region"
 )
 
+
 region_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Region"
 )
+
 
 session_mtd_lm = performance_summary(
     mtd_coco_df,
@@ -1802,11 +1702,13 @@ session_mtd_lm = performance_summary(
     "Session"
 )
 
+
 session_mtd_ly = performance_summary(
     mtd_coco_df,
     ly_mtd_coco_df,
     "Session"
 )
+
 
 # =========================================================
 # TOP 10 BRANCHES
@@ -1818,443 +1720,19 @@ top_branch_ftd_lw = performance_summary(
     "Branch"
 ).head(10)
 
+
 top_branch_ftd_lm = performance_summary(
     ftd_coco_df,
     lm_coco_df,
     "Branch"
 ).head(10)
 
+
 top_branch_mtd_lm = performance_summary(
     mtd_coco_df,
     lm_mtd_coco_df,
     "Branch"
 ).head(10)
-
-
-
-# =========================================================
-# DAY-LEVEL COCO METRICS
-# =========================================================
-
-day_coco_summary = (
-    mtd_coco_df
-    .groupby("Date")
-    .agg(
-        Gross=("Gross Sales", "sum"),
-        Net=("Net Sales", "sum"),
-        Discount=("Discount", "sum"),
-        Orders=("Orders", "sum")
-    )
-    .reset_index()
-)
-
-day_coco_summary["AOV"] = (
-    day_coco_summary["Net"]
-    /
-    day_coco_summary["Orders"].replace(0, 1)
-)
-
-day_coco_summary["Dis %"] = (
-    day_coco_summary["Discount"]
-    /
-    day_coco_summary["Gross"].replace(0, 1)
-) * 100
-
-day_coco_summary["Gross"] = day_coco_summary["Gross"].round(2)
-day_coco_summary["Net"] = day_coco_summary["Net"].round(2)
-day_coco_summary["Discount"] = day_coco_summary["Discount"].round(2)
-day_coco_summary["Orders"] = (
-    day_coco_summary["Orders"]
-    .round(0)
-    .astype(int)
-)
-
-day_coco_summary["AOV"] = (
-    day_coco_summary["AOV"]
-    .round(2)
-)
-
-day_coco_summary["Dis %"] = (
-    day_coco_summary["Dis %"]
-    .round(2)
-)
-
-day_coco_summary = (
-    day_coco_summary
-    .sort_values("Date", ascending=False)
-    .reset_index(drop=True)
-)
-
-# =========================================================
-# SAME WEEKDAY PREVIOUS MONTH
-# =========================================================
-
-def get_same_weekday_previous_month(current_date):
-
-    current_date = pd.Timestamp(current_date)
-
-    prev_month = (
-        current_date
-        - pd.DateOffset(months=1)
-    )
-
-    while prev_month.weekday() != current_date.weekday():
-
-        prev_month -= pd.Timedelta(days=1)
-
-    return prev_month.normalize()
-
-# =========================================================
-# FULL PREVIOUS MONTH COCO DATA
-# FOR DAY-LEVEL COMPARISON
-# =========================================================
-
-lm_full_month_coco_df = final_df[
-    (final_df["Date"] >= pd.Timestamp(
-        lm_date.year,
-        lm_date.month,
-        1
-    ))
-    &
-    (final_df["Date"] < (
-        pd.Timestamp(
-            lm_date.year,
-            lm_date.month,
-            1
-        )
-        + pd.DateOffset(months=1)
-    ))
-    &
-    (final_df["Store Type"] == "COCO")
-].copy()
-
-
-# =========================================================
-# FULL PREVIOUS YEAR MONTH COCO DATA
-# FOR DAY-LEVEL COMPARISON
-# =========================================================
-
-ly_full_month_coco_df = final_df[
-    (final_df["Date"] >= pd.Timestamp(
-        ly_date.year,
-        ly_date.month,
-        1
-    ))
-    &
-    (final_df["Date"] < (
-        pd.Timestamp(
-            ly_date.year,
-            ly_date.month,
-        1
-        )
-        + pd.DateOffset(months=1)
-    ))
-    &
-    (final_df["Store Type"] == "COCO")
-].copy()
-
-
-print("=" * 80)
-print("FULL MONTH COCO DATA FOR DAY-LEVEL COMPARISON")
-print("=" * 80)
-
-print(
-    "LM Full Month COCO:",
-    len(lm_full_month_coco_df)
-)
-
-print(
-    "LY Full Month COCO:",
-    len(ly_full_month_coco_df)
-)
-
-# =========================================================
-# GENERIC DAY-LEVEL COCO COMPARISON
-# =========================================================
-
-def build_day_level_comparison(
-    current_df,
-    previous_df,
-    comparison_days
-):
-
-    current = (
-        current_df
-        .groupby("Date")
-        .agg(
-            Gross=("Gross Sales", "sum"),
-            Net=("Net Sales", "sum"),
-            Orders=("Orders", "sum"),
-            Discount=("Discount", "sum")
-        )
-        .reset_index()
-    )
-
-    previous = (
-        previous_df
-        .groupby("Date")
-        .agg(
-            Prev_Gross=("Gross Sales", "sum"),
-            Prev_Net=("Net Sales", "sum"),
-            Prev_Orders=("Orders", "sum"),
-            Prev_Discount=("Discount", "sum")
-        )
-        .reset_index()
-    )
-
-    # =====================================================
-    # ENSURE DATE IS DATETIME
-    # =====================================================
-
-    current["Date"] = (
-        pd.to_datetime(current["Date"])
-        .dt.normalize()
-    )
-
-    previous["Date"] = (
-        pd.to_datetime(previous["Date"])
-        .dt.normalize()
-    )
-
-    # =====================================================
-    # PREVIOUS COMPARISON DATE
-    #
-    # LW = 7 days before
-    # LM = 28 days before
-    # LY = 364 days before
-    # =====================================================
-
-    current["Prev Date"] = (
-        current["Date"]
-        - pd.Timedelta(days=comparison_days)
-    )
-
-    previous = previous.rename(
-        columns={
-            "Date": "Prev Date"
-        }
-    )
-
-    # =====================================================
-    # MERGE CURRENT DATE WITH PREVIOUS DATE
-    # =====================================================
-
-    result = current.merge(
-        previous,
-        on="Prev Date",
-        how="left"
-    )
-
-    # =====================================================
-    # FILL MISSING PREVIOUS VALUES
-    # =====================================================
-
-    prev_columns = [
-        "Prev_Gross",
-        "Prev_Net",
-        "Prev_Orders",
-        "Prev_Discount"
-    ]
-
-    for col in prev_columns:
-
-        result[col] = (
-            pd.to_numeric(
-                result[col],
-                errors="coerce"
-            )
-            .fillna(0)
-        )
-
-    # =====================================================
-    # GROWTH %
-    # =====================================================
-
-    result["Gross Growth %"] = (
-        (
-            result["Gross"]
-            - result["Prev_Gross"]
-        )
-        /
-        result["Prev_Gross"].replace(0, 1)
-    ) * 100
-
-    result["Net Growth %"] = (
-        (
-            result["Net"]
-            - result["Prev_Net"]
-        )
-        /
-        result["Prev_Net"].replace(0, 1)
-    ) * 100
-
-    result["Orders Growth %"] = (
-        (
-            result["Orders"]
-            - result["Prev_Orders"]
-        )
-        /
-        result["Prev_Orders"].replace(0, 1)
-    ) * 100
-
-    # =====================================================
-    # AOV
-    # =====================================================
-
-    result["AOV"] = (
-        result["Net"]
-        /
-        result["Orders"].replace(0, 1)
-    )
-
-    # =====================================================
-    # FINAL COLUMNS
-    # =====================================================
-
-    result = result[
-        [
-            "Date",
-            "Gross",
-            "Net",
-            "Orders",
-            "Discount",
-
-            "Prev_Gross",
-            "Prev_Net",
-            "Prev_Orders",
-
-            "Gross Growth %",
-            "Net Growth %",
-            "Orders Growth %",
-
-            "AOV"
-        ]
-    ]
-
-    # =====================================================
-    # DISPLAY NAMES
-    # =====================================================
-
-    result = result.rename(
-        columns={
-            "Prev_Gross": "Prev Gross",
-            "Prev_Net": "Prev Net",
-            "Prev_Orders": "Prev Orders"
-        }
-    )
-
-    # =====================================================
-    # SORT LATEST DATE FIRST
-    # =====================================================
-
-    result = (
-        result
-        .sort_values(
-            "Date",
-            ascending=False
-        )
-        .reset_index(drop=True)
-    )
-
-    # =====================================================
-    # NUMERIC ROUNDING
-    # =====================================================
-
-    numeric_columns = [
-        "Gross",
-        "Net",
-        "Discount",
-        "Prev Gross",
-        "Prev Net",
-        "Prev Orders",
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %",
-        "AOV"
-    ]
-
-    result[numeric_columns] = (
-        result[numeric_columns]
-        .round(2)
-    )
-
-    # Orders as integer
-    result["Orders"] = (
-        result["Orders"]
-        .round(0)
-        .astype(int)
-    )
-
-    result["Prev Orders"] = (
-        result["Prev Orders"]
-        .round(0)
-        .astype(int)
-    )
-
-    return result
-
-# =========================================================
-# DAY-LEVEL FTD vs LW
-# 7 DAYS BEFORE
-# =========================================================
-
-day_level_ftd_lw = build_day_level_comparison(
-    ftd_coco_df,
-    lw_coco_df,
-    7
-)
-
-
-# =========================================================
-# DAY-LEVEL FTD vs LM
-# 28 DAYS BEFORE
-# FULL PREVIOUS MONTH
-# =========================================================
-
-day_level_ftd_lm = build_day_level_comparison(
-    ftd_coco_df,
-    lm_full_month_coco_df,
-    28
-)
-
-
-# =========================================================
-# DAY-LEVEL FTD vs LY
-# 364 DAYS BEFORE
-# FULL PREVIOUS YEAR MONTH
-# =========================================================
-
-day_level_ftd_ly = build_day_level_comparison(
-    ftd_coco_df,
-    ly_full_month_coco_df,
-    364
-)
-
-
-# =========================================================
-# DAY-LEVEL MTD vs LM MTD
-# 28 DAYS BEFORE
-# FULL PREVIOUS MONTH
-# =========================================================
-
-day_level_mtd_lm = build_day_level_comparison(
-    mtd_coco_df,
-    lm_full_month_coco_df,
-    28
-)
-
-
-# =========================================================
-# DAY-LEVEL MTD vs LY MTD
-# 364 DAYS BEFORE
-# FULL PREVIOUS YEAR MONTH
-# =========================================================
-
-day_level_mtd_ly = build_day_level_comparison(
-    mtd_coco_df,
-    ly_full_month_coco_df,
-    364
-)
 
 # =========================================================
 # KPI TABLE
@@ -2272,21 +1750,21 @@ kpi_table = pd.DataFrame({
     ],
 
     "FTD": [
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Discount"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["AOV"],
-        ftd_coco_kpi["Dis %"]
+        ftd_kpi["Gross"],
+        ftd_kpi["Net"],
+        ftd_kpi["Discount"],
+        ftd_kpi["Orders"],
+        ftd_kpi["AOV"],
+        ftd_kpi["Dis %"]
     ],
 
     "MTD": [
-        mtd_coco_kpi["Gross"],
-        mtd_coco_kpi["Net"],
-        mtd_coco_kpi["Discount"],
-        mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["AOV"],
-        mtd_coco_kpi["Dis %"]
+        mtd_kpi["Gross"],
+        mtd_kpi["Net"],
+        mtd_kpi["Discount"],
+        mtd_kpi["Orders"],
+        mtd_kpi["AOV"],
+        mtd_kpi["Dis %"]
     ]
 
 })
@@ -2355,57 +1833,49 @@ comparison_table = pd.DataFrame({
     "Metric": [
         "Gross Revenue",
         "Net Revenue",
-        "Orders",
-        "Discount %"
+        "Orders"
     ],
 
     "FTD": [
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["Dis %"]
+        ftd_kpi["Gross"],
+        ftd_kpi["Net"],
+        ftd_kpi["Orders"]
     ],
 
     "LW Same Day": [
-        store_type_kpi(lw_df, "COCO")["Gross"],
-        store_type_kpi(lw_df, "COCO")["Net"],
-        store_type_kpi(lw_df, "COCO")["Orders"],
-        store_type_kpi(lw_df, "COCO")["Dis %"]
+        lw_kpi["Gross"],
+        lw_kpi["Net"],
+        lw_kpi["Orders"]
     ],
 
     "FTD vs LW %": [
         ftd_lw_growth["Gross %"],
         ftd_lw_growth["Net %"],
-        ftd_lw_growth["Orders %"],
-        ftd_coco_kpi["Dis %"] - store_type_kpi(lw_df, "COCO")["Dis %"]
+        ftd_lw_growth["Orders %"]
     ],
 
     "LM Same Day": [
-        store_type_kpi(lm_df, "COCO")["Gross"],
-        store_type_kpi(lm_df, "COCO")["Net"],
-        store_type_kpi(lm_df, "COCO")["Orders"],
-        store_type_kpi(lm_df, "COCO")["Dis %"]
+        lm_kpi["Gross"],
+        lm_kpi["Net"],
+        lm_kpi["Orders"]
     ],
 
     "FTD vs LM %": [
         ftd_lm_growth["Gross %"],
         ftd_lm_growth["Net %"],
-        ftd_lm_growth["Orders %"],
-        ftd_coco_kpi["Dis %"] - store_type_kpi(lm_df, "COCO")["Dis %"]
+        ftd_lm_growth["Orders %"]
     ],
 
     "LY Same Day": [
-        store_type_kpi(ly_df, "COCO")["Gross"],
-        store_type_kpi(ly_df, "COCO")["Net"],
-        store_type_kpi(ly_df, "COCO")["Orders"],
-        store_type_kpi(ly_df, "COCO")["Dis %"]
+        ly_kpi["Gross"],
+        ly_kpi["Net"],
+        ly_kpi["Orders"]
     ],
 
     "FTD vs LY %": [
         ftd_ly_growth["Gross %"],
         ftd_ly_growth["Net %"],
-        ftd_ly_growth["Orders %"],
-        ftd_coco_kpi["Dis %"] - store_type_kpi(ly_df, "COCO")["Dis %"]
+        ftd_ly_growth["Orders %"]
     ]
 
 })
@@ -2415,34 +1885,46 @@ comparison_table = pd.DataFrame({
 # MTD COMPARISON TABLE
 # =========================================================
 
-mtd_comparison_table = pd.DataFrame(
-    [
-        {
-            "Metric": "Gross Revenue",
-            "Current MTD": mtd_kpi["Gross"],
-            "LM MTD": lm_mtd_kpi["Gross"],
-            "MTD vs LM %": mtd_lm_growth["Gross %"],
-            "LY MTD": ly_mtd_kpi["Gross"],
-            "MTD vs LY %": mtd_ly_growth["Gross %"]
-        },
-        {
-            "Metric": "Net Revenue",
-            "Current MTD": mtd_kpi["Net"],
-            "LM MTD": lm_mtd_kpi["Net"],
-            "MTD vs LM %": mtd_lm_growth["Net %"],
-            "LY MTD": ly_mtd_kpi["Net"],
-            "MTD vs LY %": mtd_ly_growth["Net %"]
-        },
-        {
-            "Metric": "Orders",
-            "Current MTD": mtd_kpi["Orders"],
-            "LM MTD": lm_mtd_kpi["Orders"],
-            "MTD vs LM %": mtd_lm_growth["Orders %"],
-            "LY MTD": ly_mtd_kpi["Orders"],
-            "MTD vs LY %": mtd_ly_growth["Orders %"]
-        }
+mtd_comparison_table = pd.DataFrame({
+
+    "Metric": [
+        "Gross Revenue",
+        "Net Revenue",
+        "Orders"
+    ],
+
+    "Current MTD": [
+        mtd_kpi["Gross"],
+        mtd_kpi["Net"],
+        mtd_kpi["Orders"]
+    ],
+
+    "LM MTD": [
+        lm_mtd_kpi["Gross"],
+        lm_mtd_kpi["Net"],
+        lm_mtd_kpi["Orders"]
+    ],
+
+    "MTD vs LM %": [
+        mtd_lm_growth["Gross %"],
+        mtd_lm_growth["Net %"],
+        mtd_lm_growth["Orders %"]
+    ],
+
+    "LY MTD": [
+        ly_mtd_kpi["Gross"],
+        ly_mtd_kpi["Net"],
+        ly_mtd_kpi["Orders"]
+    ],
+
+    "MTD vs LY %": [
+        mtd_ly_growth["Gross %"],
+        mtd_ly_growth["Net %"],
+        mtd_ly_growth["Orders %"]
     ]
-)
+
+})
+
 
 # =========================================================
 # HTML FORMATTERS
@@ -2471,556 +1953,58 @@ def html_table(
     percent_columns=None
 ):
 
-    # =====================================================
-    # EMPTY DATA CHECK
-    # =====================================================
-
     if df is None:
+
         return ""
+
 
     if df.empty:
-        return ""
 
-    # =====================================================
-    # COPY DATA
-    # =====================================================
+        return """
+        <p style="color:#777;">
+        No data available.
+        </p>
+        """
+
 
     work = df.copy()
 
-    percent_columns = list(
-        percent_columns or []
+
+    percent_columns = (
+        percent_columns
+        or []
     )
 
-    # =====================================================
-    # AUTOMATICALLY IDENTIFY PERCENTAGE COLUMNS
-    # =====================================================
 
     for col in work.columns:
 
-        col_lower = str(col).lower()
+        if col in percent_columns:
 
-        if (
-            col_lower in (
-                "dis %",
-                "discount %",
-                "dis % change"
+            work[col] = work[col].apply(
+                lambda x:
+                    f"{x:,.1f}%"
+                    if pd.notna(x)
+                    else ""
             )
-            and col not in percent_columns
+
+        elif pd.api.types.is_numeric_dtype(
+            work[col]
         ):
-            percent_columns.append(col)
 
-    # =====================================================
-    # HEADERS
-    # =====================================================
-
-    headers = list(
-        work.columns
-    )
-
-    html = [
-        '<table class="data-table">',
-        '<thead>',
-        '<tr>'
-    ]
-
-    for col in headers:
-
-        html.append(
-            f'<th>{col}</th>'
-        )
-
-    html.extend([
-        '</tr>',
-        '</thead>',
-        '<tbody>'
-    ])
-
-    # =====================================================
-    # TABLE ROWS
-    # =====================================================
-
-    for _, row in work.iterrows():
-
-        html.append(
-            '<tr>'
-        )
-
-        for col in headers:
-
-            # -------------------------------------------------
-            # IMPORTANT:
-            # Get value BEFORE using it
-            # -------------------------------------------------
-
-            value = row[col]
-
-            # -------------------------------------------------
-            # DATE FORMAT
-            #
-            # Example:
-            # 2026-08-01 -> 1-Aug
-            # 2026-08-12 -> 12-Aug
-            # -------------------------------------------------
-
-            if (
-                col == "Date"
-                and pd.notna(value)
-            ):
-
-                try:
-
-                    value = pd.to_datetime(
-                        value
-                    ).strftime("%-d-%b")
-
-                except Exception:
-
-                    value = str(
-                        value
-                    )
-
-            # -------------------------------------------------
-            # EMPTY / NaN
-            # -------------------------------------------------
-
-            if pd.isna(value):
-
-                display = ""
-
-            # -------------------------------------------------
-            # PERCENTAGE
-            # -------------------------------------------------
-
-            elif col in percent_columns:
-
-                try:
-
-                    display = (
-                        f"{float(value):,.1f}%"
-                    )
-
-                except Exception:
-
-                    display = str(
-                        value
-                    )
-
-            # -------------------------------------------------
-            # NUMERIC
-            # -------------------------------------------------
-
-            elif (
-                isinstance(
-                    value,
-                    (int, float)
-                )
-                or pd.api.types.is_number(
-                    value
-                )
-            ):
-
-                try:
-
-                    display = (
-                        f"{float(value):,.2f}"
-                    )
-
-                except Exception:
-
-                    display = str(
-                        value
-                    )
-
-            # -------------------------------------------------
-            # TEXT
-            # -------------------------------------------------
-
-            else:
-
-                display = str(
-                    value
-                )
-
-            # =================================================
-            # CELL HIGHLIGHTING
-            # =================================================
-
-            cell_style = ""
-
-            if (
-                col in percent_columns
-                and pd.notna(value)
-            ):
-
-                try:
-
-                    number = float(
-                        value
-                    )
-
-                    lower_col = (
-                        str(col)
-                        .lower()
-                    )
-
-                    # -----------------------------------------
-                    # GROWTH %
-                    #
-                    # Positive = GREEN
-                    # Negative = RED
-                    # -----------------------------------------
-
-                    if (
-                        "growth"
-                        in lower_col
-                        or "vs"
-                        in lower_col
-                    ):
-
-                        if number > 0:
-
-                            cell_style = (
-                                ' style="'
-                                'background:#E8F5E9;'
-                                'color:#2E7D32;'
-                                'font-weight:bold;'
-                                '"'
-                            )
-
-                        elif number < 0:
-
-                            cell_style = (
-                                ' style="'
-                                'background:#FFEBEE;'
-                                'color:#C62828;'
-                                'font-weight:bold;'
-                                '"'
-                            )
-
-                    # -----------------------------------------
-                    # DISCOUNT %
-                    #
-                    # Decrease = GREEN
-                    # Increase = RED
-                    # -----------------------------------------
-
-                    elif (
-                        "dis %"
-                        in lower_col
-                        or "discount %"
-                        in lower_col
-                    ):
-
-                        if number < 0:
-
-                            cell_style = (
-                                ' style="'
-                                'background:#E8F5E9;'
-                                'color:#2E7D32;'
-                                'font-weight:bold;'
-                                '"'
-                            )
-
-                        elif number > 0:
-
-                            cell_style = (
-                                ' style="'
-                                'background:#FFEBEE;'
-                                'color:#C62828;'
-                                'font-weight:bold;'
-                                '"'
-                            )
-
-                except Exception:
-
-                    cell_style = ""
-
-            # =================================================
-            # ADD CELL
-            # =================================================
-
-            html.append(
-                f'<td{cell_style}>'
-                f'{display}'
-                f'</td>'
+            work[col] = work[col].apply(
+                lambda x:
+                    f"{x:,.2f}"
+                    if pd.notna(x)
+                    else ""
             )
 
-        html.append(
-            '</tr>'
-        )
 
-    # =====================================================
-    # CLOSE TABLE
-    # =====================================================
-
-    html.extend([
-        '</tbody>',
-        '</table>'
-    ])
-
-    return ''.join(
-        html
+    return work.to_html(
+        index=False,
+        border=0,
+        classes="data-table",
+        justify="center"
     )
-
-# =========================================================
-# INSIGHT BLOCK
-# =========================================================
-
-def insight_block(title, df):
-    """
-    Build a simple insight section from a performance summary table.
-
-    Expected columns:
-        - Branch / Source / Session / Region
-        - Net Growth %
-        - Orders Growth %
-    """
-
-    if df is None or df.empty:
-        return ""
-
-    work = df.copy()
-
-    # -----------------------------------------------------
-    # Find growth columns safely
-    # -----------------------------------------------------
-
-    net_growth_col = None
-    orders_growth_col = None
-
-    for col in work.columns:
-
-        col_lower = str(col).lower()
-
-        if "net growth" in col_lower:
-            net_growth_col = col
-
-        elif "orders growth" in col_lower:
-            orders_growth_col = col
-
-    # -----------------------------------------------------
-    # If no growth columns are available
-    # -----------------------------------------------------
-
-    if net_growth_col is None:
-        return ""
-
-    # -----------------------------------------------------
-    # Convert growth columns to numeric
-    # -----------------------------------------------------
-
-    work[net_growth_col] = pd.to_numeric(
-        work[net_growth_col],
-        errors="coerce"
-    )
-
-    if orders_growth_col:
-        work[orders_growth_col] = pd.to_numeric(
-            work[orders_growth_col],
-            errors="coerce"
-        )
-
-    work = work.dropna(
-        subset=[net_growth_col]
-    )
-
-    if work.empty:
-        return ""
-
-    # -----------------------------------------------------
-    # Find name column
-    # -----------------------------------------------------
-
-    name_col = None
-
-    for candidate in [
-        title,
-        "Branch",
-        "Source",
-        "Session",
-        "Region",
-        "Brand Name"
-    ]:
-
-        if candidate in work.columns:
-            name_col = candidate
-            break
-
-    if name_col is None:
-        return ""
-
-    # -----------------------------------------------------
-    # Top growth
-    # -----------------------------------------------------
-
-    top_growth = (
-        work
-        .sort_values(
-            net_growth_col,
-            ascending=False
-        )
-        .head(3)
-    )
-
-    # -----------------------------------------------------
-    # Biggest drop
-    # -----------------------------------------------------
-
-    biggest_drop = (
-        work
-        .sort_values(
-            net_growth_col,
-            ascending=True
-        )
-        .head(3)
-    )
-
-    items = []
-
-    # =====================================================
-    # GROWTH
-    # =====================================================
-
-    for _, row in top_growth.iterrows():
-
-        name = str(
-            row[name_col]
-        )
-
-        growth = row[net_growth_col]
-
-        if pd.isna(growth):
-            continue
-
-        if growth > 0:
-
-            orders_text = ""
-
-            if orders_growth_col:
-                orders_growth = row[orders_growth_col]
-
-                if pd.notna(orders_growth):
-                    orders_text = (
-                        f", Orders {orders_growth:+.1f}%"
-                    )
-
-            items.append(
-                f"<li><b>{title}:</b> "
-                f"{name} grew "
-                f"<span class='growth-positive'>"
-                f"{growth:+.1f}%"
-                f"</span>"
-                f"{orders_text}.</li>"
-            )
-
-    # =====================================================
-    # IMPROVEMENT AREAS
-    # =====================================================
-
-    for _, row in biggest_drop.iterrows():
-
-        name = str(
-            row[name_col]
-        )
-
-        growth = row[net_growth_col]
-
-        if pd.isna(growth):
-            continue
-
-        if growth < 0:
-
-            orders_text = ""
-
-            if orders_growth_col:
-                orders_growth = row[orders_growth_col]
-
-                if pd.notna(orders_growth):
-                    orders_text = (
-                        f", Orders {orders_growth:+.1f}%"
-                    )
-
-            items.append(
-                f"<li><b>Needs improvement:</b> "
-                f"{name} declined "
-                f"<span class='growth-negative'>"
-                f"{growth:+.1f}%"
-                f"</span>"
-                f"{orders_text}.</li>"
-            )
-
-    if not items:
-        return ""
-
-    # -----------------------------------------------------
-    # Section heading
-    # -----------------------------------------------------
-
-    items.insert(
-        0,
-        f"<li class='insight-heading'>"
-        f"{title}"
-        f"</li>"
-    )
-
-    return "".join(items)
-
-
-# =========================================================
-# BUILD INSIGHTS
-# =========================================================
-
-def build_insights():
-
-    sections = []
-
-    sections.append(
-        insight_block(
-            "Source",
-            source_ftd_lw
-        )
-    )
-
-    sections.append(
-        insight_block(
-            "Session",
-            session_ftd_lw
-        )
-    )
-
-    sections.append(
-        insight_block(
-            "Region",
-            region_ftd_lw
-        )
-    )
-
-    content = "".join(
-        x
-        for x in sections
-        if x
-    )
-
-    if not content:
-
-        return (
-            "<p style='color:#777;'>"
-            "No comparison data available for insights."
-            "</p>"
-        )
-
-    return (
-        "<ul class='insight-list'>"
-        f"{content}"
-        "</ul>"
-    )
-
-
-# =========================================================
-# GENERATE INSIGHTS HTML
-# =========================================================
-
-insights_html = build_insights()
 
 
 # =========================================================
@@ -3065,456 +2049,155 @@ def kpi_card(
 
 
 # =========================================================
-# DASHBOARD CHART HELPERS
+# INSIGHTS
+# =========================================================
+
+def insight_block(title, df):
+    if df is None or df.empty or "Net Growth %" not in df.columns:
+        return ""
+
+    work = df.copy()
+    work["Net Growth %"] = pd.to_numeric(work["Net Growth %"], errors="coerce").fillna(0)
+    positive = work[work["Net Growth %"] > 0].sort_values("Net Growth %", ascending=False).head(2)
+    negative = work[work["Net Growth %"] < 0].sort_values("Net Growth %").head(2)
+
+    parts = []
+    for _, row in positive.iterrows():
+        parts.append(f'<li>{title}: <span class="insight-good">{row[title]} +{row["Net Growth %"]:.1f}%</span> vs LW</li>')
+    for _, row in negative.iterrows():
+        parts.append(f'<li>{title}: <span class="insight-bad">{row[title]} {row["Net Growth %"]:.1f}%</span> vs LW - improvement needed</li>')
+    return "".join(parts)
+
+
+def build_insights():
+    blocks = [
+        insight_block("Source", source_ftd_lw),
+        insight_block("Session", session_ftd_lw),
+        insight_block("Region", region_ftd_lw)
+    ]
+    blocks = [x for x in blocks if x]
+    if not blocks:
+        return "<p style='color:#777;'>No comparison data available for insights.</p>"
+    return '<ul class="insight-list">' + ''.join(blocks) + '</ul>'
+
+
+insights_html = build_insights()
+
+
+# =========================================================
+# CHART HELPERS
 # =========================================================
 
 def _safe_num(value):
-
     try:
         if pd.isna(value):
             return 0.0
-
         return float(value)
-
     except Exception:
         return 0.0
 
 
 def _short_value(value):
-
     value = _safe_num(value)
-
-    if abs(value) >= 10000000:
-        return f"₹{value / 10000000:.1f}Cr"
-
-    if abs(value) >= 100000:
-        return f"₹{value / 100000:.1f}L"
-
-    if abs(value) >= 1000:
-        return f"₹{value / 1000:.1f}K"
-
+    if abs(value) >= 10_000_000:
+        return f"₹{value/10_000_000:.1f}Cr"
+    if abs(value) >= 100_000:
+        return f"₹{value/100_000:.1f}L"
+    if abs(value) >= 1_000:
+        return f"₹{value/1_000:.1f}K"
     return f"₹{value:,.0f}"
 
 
-# =========================================================
-# HORIZONTAL BAR CHART
-# =========================================================
-
-def horizontal_bar_chart(
-    df,
-    category_col,
-    value_col,
-    title,
-    max_rows=6
-):
-
+def horizontal_bar_chart(df, category_col, value_col, title, max_rows=6):
     if df is None or df.empty:
-        return """
-        <div class="chart-card">
-            <div class="chart-title">
-                No data available
-            </div>
-        </div>
-        """
-
-    work = df.copy()
-
-    if category_col not in work.columns:
+        return ""
+    if category_col not in df.columns or value_col not in df.columns:
         return ""
 
-    if value_col not in work.columns:
-        return ""
-
-    work[value_col] = pd.to_numeric(
-        work[value_col],
-        errors="coerce"
-    ).fillna(0)
-
-    work = (
-        work[
-            [category_col, value_col]
-        ]
-        .sort_values(
-            value_col,
-            ascending=False
-        )
-        .head(max_rows)
-        .reset_index(drop=True)
-    )
-
-    if work.empty:
-        return ""
-
-    max_value = max(
-        work[value_col].max(),
-        1
-    )
+    work = df[[category_col, value_col]].copy()
+    work[value_col] = pd.to_numeric(work[value_col], errors="coerce").fillna(0)
+    work = work.sort_values(value_col, ascending=False).head(max_rows)
+    maximum = max(work[value_col].max(), 1)
 
     rows = []
-
     for _, row in work.iterrows():
-
-        name = str(
-            row[category_col]
-        )
-
-        value = _safe_num(
-            row[value_col]
-        )
-
-        width = (
-            value / max_value
-        ) * 100
-
+        label = str(row[category_col])
+        value = _safe_num(row[value_col])
+        width = max(0, min(100, value / maximum * 100))
         rows.append(
-            f"""
-            <div class="bar-row">
-
-                <div class="bar-label">
-                    {name}
-                </div>
-
-                <div class="bar-track">
-
-                    <div
-                        class="bar-fill"
-                        style="width:{width:.1f}%"
-                    ></div>
-
-                </div>
-
-                <div class="bar-value">
-                    {_short_value(value)}
-                </div>
-
-            </div>
-            """
+            f'<div class="bar-row"><div class="bar-label">{label}</div>'
+            f'<div class="bar-track"><div class="bar-fill" style="width:{width:.1f}%"></div></div>'
+            f'<div class="bar-value">{_short_value(value)}</div></div>'
         )
 
-    return f"""
-    <div class="chart-card">
-
-        <div class="chart-title">
-            {title}
-        </div>
-
-        <div class="chart-body">
-            {''.join(rows)}
-        </div>
-
-    </div>
-    """
+    return (
+        f'<div class="chart-card"><div class="chart-title">{title}</div>'
+        f'<div class="chart-body">{"".join(rows)}</div></div>'
+    )
 
 
-# =========================================================
-# DAILY MTD LINE CHART
-# =========================================================
-
-def daily_mtd_chart(
-    df,
-    title="MTD Net Revenue Trend"
-):
-
-    if df is None or df.empty:
-        return ""
-
-    required = [
-        "Date",
-        "Net Sales"
-    ]
-
-    if not all(
-        col in df.columns
-        for col in required
-    ):
+def daily_mtd_chart(df, title="MTD Net Revenue Trend"):
+    if df is None or df.empty or "Date" not in df.columns or "Net Sales" not in df.columns:
         return ""
 
     work = df.copy()
-
-    work["Date"] = pd.to_datetime(
-        work["Date"],
-        errors="coerce"
-    )
-
-    work["Net Sales"] = pd.to_numeric(
-        work["Net Sales"],
-        errors="coerce"
-    ).fillna(0)
-
+    work["Date"] = pd.to_datetime(work["Date"], errors="coerce")
+    work["Net Sales"] = pd.to_numeric(work["Net Sales"], errors="coerce").fillna(0)
     work = (
-        work
-        .dropna(subset=["Date"])
-        .groupby(
-            "Date",
-            as_index=False
-        )["Net Sales"]
+        work.dropna(subset=["Date"])
+        .groupby("Date", as_index=False)["Net Sales"]
         .sum()
         .sort_values("Date")
-    )
-
-    if work.empty:
-        return ""
-
-    # Latest 14 available days
-    work = (
-        work
         .tail(14)
         .reset_index(drop=True)
     )
+    if work.empty:
+        return ""
 
-    width = 620
-    height = 240
-
-    left = 50
-    right = 20
-    top = 30
-    bottom = 45
-
-    chart_width = (
-        width - left - right
-    )
-
-    chart_height = (
-        height - top - bottom
-    )
-
-    max_value = max(
-        work["Net Sales"].max(),
-        1
-    )
+    width, height = 640, 250
+    left, right, top, bottom = 40, 20, 30, 45
+    chart_width = width - left - right
+    chart_height = height - top - bottom
+    maximum = max(work["Net Sales"].max(), 1)
 
     points = []
-
     for i, row in work.iterrows():
+        x = left + (i / max(len(work)-1, 1)) * chart_width
+        y = top + chart_height - (row["Net Sales"] / maximum) * chart_height
+        points.append((x, y, row["Date"]))
 
-        if len(work) == 1:
-
-            x = (
-                left
-                +
-                chart_width / 2
-            )
-
-        else:
-
-            x = (
-                left
-                +
-                (
-                    i
-                    /
-                    (len(work) - 1)
-                )
-                *
-                chart_width
-            )
-
-        y = (
-            top
-            +
-            chart_height
-            -
-            (
-                row["Net Sales"]
-                /
-                max_value
-            )
-            *
-            chart_height
-        )
-
-        points.append(
-            (
-                x,
-                y,
-                row["Date"],
-                row["Net Sales"]
-            )
-        )
-
-    polyline = " ".join(
-        f"{x:.1f},{y:.1f}"
-        for x, y, _, _ in points
+    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in points)
+    circles = ''.join(
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#2E8B57" />'
+        for x, y, _ in points
+    )
+    labels = ''.join(
+        f'<text x="{x:.1f}" y="{height-16}" text-anchor="middle" font-size="10" fill="#666">{d.strftime("%-d-%b")}</text>'
+        for x, _, d in points
     )
 
-    circles = []
-    labels = []
-
-    for x, y, date, value in points:
-
-        circles.append(
-            f"""
-            <circle
-                cx="{x:.1f}"
-                cy="{y:.1f}"
-                r="4"
-                fill="#2E8B57"
-            />
-            """
-        )
-
-        labels.append(
-            f"""
-            <text
-                x="{x:.1f}"
-                y="{height - 18}"
-                text-anchor="middle"
-                font-size="10"
-                fill="#666"
-            >
-                {date.strftime("%d-%b")}
-            </text>
-            """
-        )
-
-    return f"""
-    <div class="chart-card chart-wide">
-
-        <div class="chart-title">
-            {title}
-        </div>
-
-        <svg
-            viewBox="0 0 {width} {height}"
-            width="80%"
-            height="{height}"
-        >
-
-            <line
-                x1="{left}"
-                y1="{top}"
-                x2="{width-right}"
-                y2="{top}"
-                stroke="#E5E7EB"
-            />
-
-            <line
-                x1="{left}"
-                y1="{top + chart_height/2}"
-                x2="{width-right}"
-                y2="{top + chart_height/2}"
-                stroke="#E5E7EB"
-            />
-
-            <line
-                x1="{left}"
-                y1="{top + chart_height}"
-                x2="{width-right}"
-                y2="{top + chart_height}"
-                stroke="#E5E7EB"
-            />
-
-            <polyline
-                points="{polyline}"
-                fill="none"
-                stroke="#2E8B57"
-                stroke-width="3"
-            />
-
-            {''.join(circles)}
-
-            {''.join(labels)}
-
-        </svg>
-
-    </div>
-    """
+    return (
+        f'<div class="chart-card chart-wide"><div class="chart-title">{title}</div>'
+        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}">'
+        f'<line x1="{left}" y1="{top}" x2="{width-right}" y2="{top}" stroke="#E5E7EB" />'
+        f'<line x1="{left}" y1="{top+chart_height/2}" x2="{width-right}" y2="{top+chart_height/2}" stroke="#E5E7EB" />'
+        f'<line x1="{left}" y1="{top+chart_height}" x2="{width-right}" y2="{top+chart_height}" stroke="#E5E7EB" />'
+        f'<polyline points="{polyline}" fill="none" stroke="#2E8B57" stroke-width="3" />'
+        f'{circles}{labels}</svg></div>'
+    )
 
 
-# =========================================================
-# PREPARE CHART DATA
-# =========================================================
+chart_mtd_daily = mtd_coco_df.copy()
+chart_source_mtd = mtd_coco_df.groupby("Source", as_index=False)["Net Sales"].sum()
+chart_brand_mtd = mtd_coco_df.groupby("Brand Name", as_index=False)["Net Sales"].sum()
+chart_region_mtd = mtd_coco_df.groupby("Region", as_index=False)["Net Sales"].sum()
+chart_session_mtd = mtd_coco_df.groupby("Session", as_index=False)["Net Sales"].sum()
 
-chart_mtd_daily = (
-    mtd_coco_df.copy()
-)
-
-
-chart_source_mtd = (
-    mtd_coco_df
-    .groupby(
-        "Source",
-        as_index=False
-    )["Net Sales"]
-    .sum()
-)
-
-
-chart_brand_mtd = (
-    mtd_coco_df
-    .groupby(
-        "Brand Name",
-        as_index=False
-    )["Net Sales"]
-    .sum()
-)
-
-
-chart_region_mtd = (
-    mtd_coco_df
-    .groupby(
-        "Region",
-        as_index=False
-    )["Net Sales"]
-    .sum()
-)
-
-
-chart_session_mtd = (
-    mtd_coco_df
-    .groupby(
-        "Session",
-        as_index=False
-    )["Net Sales"]
-    .sum()
-)
-
-
-# =========================================================
-# BUILD CHART HTML
-# =========================================================
-
-chart_daily_html = daily_mtd_chart(
-    chart_mtd_daily,
-    "MTD Net Revenue Trend"
-)
-
-
-chart_source_html = horizontal_bar_chart(
-    chart_source_mtd,
-    "Source",
-    "Net Sales",
-    "MTD Revenue by Source",
-    6
-)
-
-
-chart_brand_html = horizontal_bar_chart(
-    chart_brand_mtd,
-    "Brand Name",
-    "Net Sales",
-    "MTD Revenue by Brand",
-    6
-)
-
-
-chart_region_html = horizontal_bar_chart(
-    chart_region_mtd,
-    "Region",
-    "Net Sales",
-    "MTD Revenue by Region",
-    6
-)
-
-
-chart_session_html = horizontal_bar_chart(
-    chart_session_mtd,
-    "Session",
-    "Net Sales",
-    "MTD Revenue by Session",
-    6
-)
-
+chart_daily_html = daily_mtd_chart(chart_mtd_daily, "MTD Net Revenue Trend")
+chart_source_html = horizontal_bar_chart(chart_source_mtd, "Source", "Net Sales", "MTD Revenue by Source", 6)
+chart_brand_html = horizontal_bar_chart(chart_brand_mtd, "Brand Name", "Net Sales", "MTD Revenue by Brand", 6)
+chart_region_html = horizontal_bar_chart(chart_region_mtd, "Region", "Net Sales", "MTD Revenue by Region", 6)
+chart_session_html = horizontal_bar_chart(chart_session_mtd, "Session", "Net Sales", "MTD Revenue by Session", 6)
 
 # =========================================================
 # EMAIL HTML
@@ -3522,1308 +2205,149 @@ chart_session_html = horizontal_bar_chart(
 
 body = f"""
 <!DOCTYPE html>
-
 <html>
-
 <head>
-
 <meta charset="UTF-8">
-
 <style>
-
-body {{
-    font-family: Calibri, Arial, sans-serif;
-    background: #F4F6F8;
-    color: #222;
-    margin: 0;
-    padding: 20px;
+body {{ font-family: Calibri, Arial, sans-serif; background:#F4F6F8; color:#222; margin:0; padding:20px; }}
+.container {{ max-width:1400px; margin:auto; background:#fff; padding:20px; }}
+.header {{ background:#243447; color:#fff; padding:18px; border-radius:8px; margin-bottom:20px; }}
+.header-title {{ font-size:24px; font-weight:bold; }}
+.header-subtitle {{ margin-top:6px; font-size:14px; }}
+.section-title {{ background:#EAF2F8; color:#243447; padding:9px 12px; margin-top:22px; margin-bottom:10px; border-left:5px solid #243447; font-size:15px; font-weight:bold; }}
+.period-title {{ background:#F4F6F8; color:#243447; padding:8px 12px; margin-top:16px; margin-bottom:10px; border-left:4px solid #6C757D; font-weight:bold; }}
+.kpi-row {{ display:table; width:100%; table-layout:fixed; margin-bottom:18px; }}
+.kpi-card {{ display:table-cell; width:16.66%; background:#fff; border:1px solid #D9DEE3; padding:12px; text-align:center; box-sizing:border-box; }}
+.kpi-card + .kpi-card {{ border-left:8px solid #F4F6F8; }}
+.kpi-title {{ font-size:12px; font-weight:bold; color:#555; }}
+.period-label {{ font-size:10px; color:#777; margin-top:7px; }}
+.kpi-value {{ font-size:19px; font-weight:bold; color:#243447; margin-top:3px; }}
+.divider {{ border-top:1px solid #E5E7EB; margin:8px 0; }}
+.insights {{ background:#F8FAFC; border:1px solid #D9DEE3; border-left:5px solid #2E8B57; padding:12px 16px; margin-bottom:18px; }}
+.insight-list {{ margin:4px 0 0 18px; padding:0; }}
+.insight-list li {{ margin:6px 0; font-size:12px; }}
+.insight-good {{ color:#2E7D32; font-weight:bold; }}
+.insight-bad {{ color:#C62828; font-weight:bold; }}
+.note {{ font-size:11px; color:#666; margin-bottom:8px; }}
+.data-table {{ border-collapse:collapse; width:100%; margin-bottom:18px; font-size:11px; }}
+.data-table th {{ background:#243447; color:#fff; padding:7px; border:1px solid #243447; text-align:center; }}
+.data-table td {{ padding:6px; border:1px solid #D9DEE3; text-align:center; }}
+.data-table tr:nth-child(even) {{ background:#F7F8F9; }}
+.chart-grid {{ display:table; width:100%; table-layout:fixed; border-spacing:12px 0; margin:0 -12px 18px -12px; width:calc(100% + 24px); }}
+.chart-card {{ display:table-cell; width:50%; vertical-align:top; background:#fff; border:1px solid #D9DEE3; border-radius:10px; padding:16px; box-sizing:border-box; min-height:220px; }}
+.chart-grid .chart-card + .chart-card {{ border-left:8px solid #F4F6F8; }}
+.chart-wide {{ display:block; width:100%; }}
+.chart-title {{ font-size:14px; font-weight:bold; color:#243447; margin-bottom:12px; }}
+.chart-body {{ width:100%; }}
+.bar-row {{ display:flex; align-items:center; gap:8px; margin:12px 0; }}
+.bar-label {{ width:95px; min-width:95px; font-size:11px; color:#444; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.bar-track {{ flex:1; height:18px; background:#EEF1F3; border-radius:3px; overflow:hidden; }}
+.bar-fill {{ height:18px; background:#6CC9CE; border-radius:3px; }}
+.bar-value {{ width:65px; min-width:65px; font-size:11px; font-weight:bold; text-align:right; color:#333; }}
+.footer {{ margin-top:25px; padding-top:12px; border-top:1px solid #DDD; color:#777; font-size:10px; }}
+@media only screen and (max-width:900px) {{
+    .chart-grid {{ display:block; width:100%; margin:0 0 18px 0; }}
+    .chart-card {{ display:block; width:100%; margin-bottom:14px; }}
+    .chart-grid .chart-card + .chart-card {{ border-left:1px solid #D9DEE3; }}
 }}
-
-.container {{
-    max-width: 1400px;
-    margin: auto;
-    background: white;
-    padding: 20px;
-}}
-
-
-/* =====================================================
-   DASHBOARD TOP HEADER
-   ===================================================== */
-
-.dashboard-top {{
-    background: #243447;
-    color: white;
-    padding: 18px 20px;
-    border-radius: 8px;
-    margin-bottom: 18px;
-}}
-
-.dashboard-top-row {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}}
-
-.dashboard-brand {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}}
-
-.logo-box {{
-    width: 42px;
-    height: 42px;
-    background: #F1E97A;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-}}
-
-.dashboard-title {{
-    font-size: 22px;
-    font-weight: bold;
-}}
-
-.dashboard-subtitle {{
-    font-size: 12px;
-    margin-top: 5px;
-    opacity: 0.85;
-}}
-
-.dashboard-refresh {{
-    font-size: 11px;
-    text-align: right;
-    opacity: 0.85;
-}}
-
-.dashboard-refresh-icon {{
-    font-size: 18px;
-    margin-left: 5px;
-}}
-
-
-/* =====================================================
-   SECTION TITLE
-   ===================================================== */
-
-.section-title {{
-    background: #EAF2F8;
-    color: #243447;
-    padding: 9px 12px;
-    margin-top: 20px;
-    margin-bottom: 12px;
-    border-left: 5px solid #243447;
-    font-size: 14px;
-    font-weight: bold;
-}}
-
-
-/* =====================================================
-   PERIOD TITLE
-   ===================================================== */
-
-.period-title {{
-    background: #F4F6F8;
-    color: #243447;
-    padding: 8px 12px;
-    margin-top: 18px;
-    margin-bottom: 10px;
-    border-left: 4px solid #6C757D;
-    font-weight: bold;
-}}
-
-
-/* =====================================================
-   KPI ROW
-   ===================================================== */
-
-.kpi-row {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 20px;
-}}
-
-.kpi-card {{
-    flex: 1;
-    min-width: 145px;
-    background: #FFFFFF;
-    border: 1px solid #D9DEE3;
-    border-radius: 8px;
-    padding: 12px;
-    text-align: center;
-    box-sizing: border-box;
-}}
-
-.kpi-card:hover {{
-    border-color: #2E8B57;
-}}
-
-.kpi-title {{
-    font-size: 12px;
-    font-weight: bold;
-    color: #555;
-    margin-bottom: 8px;
-}}
-
-.period-label {{
-    font-size: 10px;
-    color: #777;
-    margin-top: 4px;
-}}
-
-.kpi-value {{
-    font-size: 18px;
-    font-weight: bold;
-    color: #243447;
-}}
-
-.divider {{
-    border-top: 1px solid #E5E7EB;
-    margin: 8px 0;
-}}
-
-
-/* =====================================================
-   INSIGHTS
-   ===================================================== */
-
-.top-insights {{
-    background: #F8FAFC;
-    border: 1px solid #D9DEE3;
-    border-left: 5px solid #2E8B57;
-    padding: 14px 16px;
-    margin-bottom: 20px;
-}}
-
-.top-insights-title {{
-    font-size: 15px;
-    font-weight: bold;
-    margin-bottom: 6px;
-}}
-
-.top-insights-note {{
-    font-size: 11px;
-    color: #666;
-    margin-bottom: 10px;
-}}
-
-.top-insights-content {{
-    font-size: 12px;
-}}
-
-.insights {{
-    background: #F8FAFC;
-    border: 1px solid #D9DEE3;
-    border-left: 5px solid #2E8B57;
-    padding: 12px 16px;
-    margin-bottom: 20px;
-}}
-
-.insight-list {{
-    margin: 6px 0 0 18px;
-    padding: 0;
-}}
-
-.insight-list li {{
-    margin: 7px 0;
-}}
-
-.insight-good {{
-    color: #2E7D32;
-    font-weight: bold;
-}}
-
-.insight-bad {{
-    color: #C62828;
-    font-weight: bold;
-}}
-
-.note {{
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 10px;
-}}
-
-
-/* =====================================================
-   DATA TABLE
-   ===================================================== */
-
-.data-table {{
-    border-collapse: collapse;
-    width: 80%;
-    margin-bottom: 20px;
-    font-size: 12px;
-}}
-
-.data-table th {{
-    background: #243447;
-    color: white;
-    padding: 7px;
-    border: 1px solid #243447;
-    text-align: center;
-}}
-
-.data-table td {{
-    padding: 6px;
-    border: 1px solid #D9DEE3;
-    text-align: center;
-}}
-
-.data-table tr:nth-child(even) {{
-    background: #F7F8F9;
-}}
-
-
-/* =====================================================
-   DASHBOARD CHARTS - STYLISH 2 COLUMN LAYOUT
-   ===================================================== */
-
-.chart-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
-    width: 80%;
-    margin: 0 0 18px 0;
-    box-sizing: border-box;
-}
-
-
-/* =====================================================
-   CHART CARD
-   ===================================================== */
-
-.chart-card {
-    background: #FFFFFF;
-    border: 1px solid #D9DEE3;
-    border-radius: 10px;
-    padding: 16px;
-    box-sizing: border-box;
-    width: 80%;
-    min-height: 250px;
-    overflow: hidden;
-}
-
-
-/* FULL WIDTH CHART */
-
-.chart-wide {
-    grid-column: 1 / -1;
-    width: 80%;
-    min-height: 270px;
-}
-
-
-/* =====================================================
-   CHART TITLE
-   ===================================================== */
-
-.chart-title {
-    font-size: 16px;
-    font-weight: 700;
-    color: #24364B;
-    margin-bottom: 14px;
-    line-height: 1.3;
-}
-
-
-/* =====================================================
-   CHART BODY
-   ===================================================== */
-
-.chart-body {
-    width: 80%;
-    box-sizing: border-box;
-}
-
-
-/* =====================================================
-   HORIZONTAL BAR CHART
-   ===================================================== */
-
-.bar-row {
-    display: flex;
-    align-items: center;
-    width: 80%;
-    margin: 14px 0;
-    gap: 9px;
-    box-sizing: border-box;
-}
-
-
-.bar-label {
-    width: 105px;
-    min-width: 105px;
-    font-size: 11px;
-    color: #3F4650;
-    text-align: left;
-
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-
-.bar-track {
-    flex: 1;
-    height: 19px;
-    background: #EEF1F4;
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-
-.bar-fill {
-    height: 19px;
-    background: #F1E97A;
-    border-radius: 2px;
-}
-
-
-.bar-value {
-    width: 70px;
-    min-width: 70px;
-    font-size: 11px;
-    font-weight: 700;
-    text-align: right;
-    color: #333333;
-}
-
-
-/* =====================================================
-   CONTRIBUTION CHART
-   ===================================================== */
-
-.contribution-row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    margin: 13px 0;
-    width: 80%;
-    box-sizing: border-box;
-}
-
-
-.contribution-name {
-    width: 105px;
-    min-width: 105px;
-    font-size: 11px;
-    color: #444444;
-
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-
-.contribution-track {
-    flex: 1;
-    height: 16px;
-    background: #EEF1F4;
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-
-.contribution-fill {
-    height: 16px;
-    background: #6CC9CE;
-}
-
-
-.contribution-percent {
-    width: 45px;
-    min-width: 45px;
-    font-size: 11px;
-    font-weight: 700;
-    text-align: right;
-}
-
-
-.contribution-value {
-    width: 65px;
-    min-width: 65px;
-    font-size: 11px;
-    text-align: right;
-    color: #555555;
-}
-
-
-/* =====================================================
-   DAILY LINE CHART
-   ===================================================== */
-
-.chart-wide svg {
-    display: block;
-    width: 80%;
-    height: auto;
-}
-
-
-/* =====================================================
-   SALES PERFORMANCE SECTION
-   ===================================================== */
-
-.sales-chart-section {
-    width: 80%;
-    margin-top: 10px;
-}
-
-
-.sales-chart-section .section-title {
-    margin-bottom: 14px;
-}
-
-
-/* =====================================================
-   EMAIL / TABLET
-   ===================================================== */
-
-@media only screen and (max-width: 900px) {{
-
-    .chart-grid {{
-        display: block;
-        width: 80%;
-    }}
-
-    .chart-grid .chart-card {{
-        display: block;
-        width: 80%;
-        margin-bottom: 14px;
-    }}
-
-    .chart-wide {{
-        display: block;
-        width: 80%;
-    }}
-
-}}
-
-
-/* =====================================================
-   SMALL MOBILE
-   ===================================================== */
-
-@media only screen and (max-width: 600px) {{
-
-    .chart-card {{
-        padding: 12px;
-        min-height: 220px;
-    }}
-
-    .bar-label {{
-        width: 85px;
-        min-width: 85px;
-    }}
-
-    .bar-value {{
-        width: 60px;
-        min-width: 60px;
-    }}
-
-    .contribution-name {{
-        width: 85px;
-        min-width: 85px;
-    }}
-
-    .contribution-value {{
-        width: 55px;
-        min-width: 55px;
-    }}
-
-}}
-
 </style>
-
 </head>
-
 <body>
-
 <div class="container">
 
-
-<!-- =====================================================
-     HEADER
-     ===================================================== -->
-
-<div class="dashboard-top">
-
-    <div class="dashboard-top-row">
-
-        <div class="dashboard-brand">
-
-            <div class="logo-box">
-                🧊
-            </div>
-
-            <div>
-
-                <div class="dashboard-title">
-                    Frozen Bottle DSR Dashboard
-                </div>
-
-                <div class="dashboard-subtitle">
-
-                    FTD:
-                    {ftd_date.strftime("%d-%b-%Y")}
-
-                    &nbsp;&nbsp;|&nbsp;&nbsp;
-
-                    MTD:
-                    {current_month_start.strftime("%d-%b-%Y")}
-
-                    →
-                    {ftd_date.strftime("%d-%b-%Y")}
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <div class="dashboard-refresh">
-
-            Data refreshed at
-            {india_today.strftime("%d-%b-%Y")}
-
-            <span class="dashboard-refresh-icon">
-                ⟳
-            </span>
-
-        </div>
-
+<div class="header">
+    <div class="header-title">🧊 Frozen Bottle DSR Dashboard</div>
+    <div class="header-subtitle">
+        FTD: {ftd_date.strftime("%d-%b-%Y")} &nbsp; | &nbsp;
+        MTD: {current_month_start.strftime("%d-%b-%Y")} → {ftd_date.strftime("%d-%b-%Y")}
     </div>
-
 </div>
 
-
-<!-- =====================================================
-     TOP INSIGHTS
-     ===================================================== -->
-
-<div class="top-insights">
-
-    <div class="top-insights-title">
-        💡 Yesterday COCO Sales Insights
-    </div>
-
-    <div class="top-insights-note">
-
-        Based on FTD
-        {ftd_date.strftime("%d-%b-%Y")}
-        vs LW same day.
-
-        Green = growth opportunity / positive movement.
-        Red = needs improvement.
-
-    </div>
-
-    <div class="top-insights-content">
-
-        {insights_html}
-
-    </div>
-
+<div class="section-title">💡 Yesterday COCO Sales Insights</div>
+<div class="insights">
+    <div class="note">Based on FTD {ftd_date.strftime("%d-%b-%Y")} vs LW same day.</div>
+    {insights_html}
 </div>
 
-
-<!-- =====================================================
-     KPI SECTION
-     ===================================================== -->
-
-<div class="section-title">
-    📌 FTD | MTD KPI
-</div>
-
-
+<div class="section-title">📌 FTD | MTD KPI</div>
 <div class="kpi-row">
-
-    {kpi_card(
-        "Gross Revenue",
-        ftd_coco_kpi["Gross"],
-        mtd_coco_kpi["Gross"],
-        "₹"
-    )}
-
-    {kpi_card(
-        "Net Revenue",
-        ftd_coco_kpi["Net"],
-        mtd_coco_kpi["Net"],
-        "₹"
-    )}
-
-    {kpi_card(
-        "Discount",
-        ftd_coco_kpi["Discount"],
-        mtd_coco_kpi["Discount"],
-        "₹"
-    )}
-
-    {kpi_card(
-        "Orders",
-        ftd_coco_kpi["Orders"],
-        mtd_coco_kpi["Orders"]
-    )}
-
-    {kpi_card(
-        "AOV",
-        ftd_coco_kpi["AOV"],
-        mtd_coco_kpi["AOV"],
-        "₹"
-    )}
-
-    {kpi_card(
-        "Discount %",
-        ftd_coco_kpi["Dis %"],
-        mtd_coco_kpi["Dis %"],
-        "",
-        "%"
-    )}
-
+    {kpi_card("Gross Revenue", ftd_coco_kpi["Gross"], mtd_coco_kpi["Gross"], "₹")}
+    {kpi_card("Net Revenue", ftd_coco_kpi["Net"], mtd_coco_kpi["Net"], "₹")}
+    {kpi_card("Discount", ftd_coco_kpi["Discount"], mtd_coco_kpi["Discount"], "₹")}
+    {kpi_card("Orders", ftd_coco_kpi["Orders"], mtd_coco_kpi["Orders"])}
+    {kpi_card("AOV", ftd_coco_kpi["AOV"], mtd_coco_kpi["AOV"], "₹")}
+    {kpi_card("Discount %", ftd_coco_kpi["Dis %"], mtd_coco_kpi["Dis %"], "", "%")}
 </div>
 
-<!-- =====================================================
-     DASHBOARD CHARTS
-     ===================================================== -->
+<div class="section-title">📊 Revenue Dashboard</div>
+<div class="chart-grid">{chart_daily_html}</div>
+<div class="chart-grid">{chart_source_html}{chart_brand_html}</div>
+<div class="chart-grid">{chart_region_html}{chart_session_html}</div>
 
-<div class="section-title">
-    📊 Revenue Dashboard
-</div>
+<div class="section-title">📊 KPI Summary</div>
+{html_table(kpi_table, percent_columns=["Discount %"])}
 
+<div class="section-title">🏢 COCO vs FOFO</div>
+{html_table(store_type_table, percent_columns=["Discount %"])}
 
-<!-- =====================================================
-     DAILY MTD TREND
-     FULL WIDTH
-     ===================================================== -->
+<div class="section-title">📅 FTD Comparison</div>
+<div class="note">FTD: {ftd_date.strftime("%d-%b-%Y")} | LW: {lw_date.strftime("%d-%b-%Y")} | LM: {lm_date.strftime("%d-%b-%Y")} | LY: {ly_date.strftime("%d-%b-%Y")}</div>
+{html_table(comparison_table, percent_columns=["FTD vs LW %", "FTD vs LM %", "FTD vs LY %"])}
 
-<div class="chart-grid">
-
-    {chart_daily_html}
-
-</div>
-
-
-<!-- =====================================================
-     SOURCE + BRAND
-     SIDE BY SIDE
-     ===================================================== -->
-
-<div class="chart-grid">
-
-    {chart_source_html}
-
-    {chart_brand_html}
-
-</div>
-
-
-<!-- =====================================================
-     REGION + SESSION
-     SIDE BY SIDE
-     ===================================================== -->
-
-<div class="chart-grid">
-
-    {chart_region_html}
-
-    {chart_session_html}
-
-</div>
-
-<!-- =====================================================
-     DASHBOARD CHARTS
-     ===================================================== -->
-
-<div class="section-title">
-    📊 Sales Performance
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_daily_html}
-
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_source_html}
-
-    {chart_brand_html}
-
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_region_html}
-
-    {chart_session_html}
-
-</div>
-
-
-<!-- =====================================================
-     KPI SUMMARY
-     ===================================================== -->
-
-<div class="section-title">
-    📊 KPI Summary
-</div>
-
-{html_table(
-    kpi_table
-)}
-
-
-<!-- =====================================================
-     STORE TYPE
-     ===================================================== -->
-
-<div class="section-title">
-    🏢 COCO vs FOFO
-</div>
-
-{html_table(
-    store_type_table
-)}
-
-
-<!-- =====================================================
-     FTD COMPARISON
-     ===================================================== -->
-
-<div class="section-title">
-    📅 FTD Comparison
-</div>
-
+<div class="section-title">📈 MTD Comparison</div>
 <div class="note">
+Current MTD: {current_month_start.strftime("%d-%b-%Y")} → {ftd_date.strftime("%d-%b-%Y")}<br>
+LM MTD: {lm_month_start.strftime("%d-%b-%Y")} → {lm_mtd_end.strftime("%d-%b-%Y")}<br>
+LY MTD: {ly_month_start.strftime("%d-%b-%Y")} → {ly_mtd_end.strftime("%d-%b-%Y")}
+</div>
+{html_table(mtd_comparison_table, percent_columns=["MTD vs LM %", "MTD vs LY %"])}
 
-    FTD:
-    {ftd_date.strftime("%d-%b-%Y")}
+<div class="section-title">🏷 Brand Performance</div>
+<div class="period-title">FTD vs LW</div>{html_table(brand_ftd_lw, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LM</div>{html_table(brand_ftd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LY</div>{html_table(brand_ftd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(brand_mtd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LY MTD</div>{html_table(brand_mtd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
 
-    &nbsp; | &nbsp;
+<div class="section-title">🛒 Source Performance</div>
+<div class="period-title">FTD vs LW</div>{html_table(source_ftd_lw, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LM</div>{html_table(source_ftd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LY</div>{html_table(source_ftd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(source_mtd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LY MTD</div>{html_table(source_mtd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
 
-    LW:
-    {lw_date.strftime("%d-%b-%Y")}
+<div class="section-title">🌎 Region Performance</div>
+<div class="period-title">FTD vs LW</div>{html_table(region_ftd_lw, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LM</div>{html_table(region_ftd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LY</div>{html_table(region_ftd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(region_mtd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LY MTD</div>{html_table(region_mtd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
 
-    &nbsp; | &nbsp;
+<div class="section-title">🕒 Session Performance</div>
+<div class="period-title">FTD vs LW</div>{html_table(session_ftd_lw, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LM</div>{html_table(session_ftd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LY</div>{html_table(session_ftd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(session_mtd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LY MTD</div>{html_table(session_mtd_ly, percent_columns=["Net Growth %", "Orders Growth %"])}
 
-    LM:
-    {lm_date.strftime("%d-%b-%Y")}
+<div class="section-title">🏪 Top 10 Branches</div>
+<div class="period-title">FTD vs LW</div>{html_table(top_branch_ftd_lw, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">FTD vs LM</div>{html_table(top_branch_ftd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(top_branch_mtd_lm, percent_columns=["Net Growth %", "Orders Growth %"])}
 
-    &nbsp; | &nbsp;
+<div class="section-title">📅 Day Level Performance</div>
+<div class="period-title">FTD vs LW</div>{html_table(day_level_ftd_lw, percent_columns=["Gross Growth %", "Net Growth %", "Orders Growth %", "Dis % Change"])}
+<div class="period-title">FTD vs LM</div>{html_table(day_level_ftd_lm, percent_columns=["Gross Growth %", "Net Growth %", "Orders Growth %", "Dis % Change"])}
+<div class="period-title">FTD vs LY</div>{html_table(day_level_ftd_ly, percent_columns=["Gross Growth %", "Net Growth %", "Orders Growth %", "Dis % Change"])}
+<div class="period-title">MTD vs LM MTD</div>{html_table(day_level_mtd_lm, percent_columns=["Gross Growth %", "Net Growth %", "Orders Growth %", "Dis % Change"])}
+<div class="period-title">MTD vs LY MTD</div>{html_table(day_level_mtd_ly, percent_columns=["Gross Growth %", "Net Growth %", "Orders Growth %", "Dis % Change"])}
 
-    LY:
-    {ly_date.strftime("%d-%b-%Y")}
+<div class="footer">Generated automatically from Rista monthly CSV data.<br>FTD: {ftd_date.strftime("%d-%b-%Y")} | MTD: {current_month_start.strftime("%d-%b-%Y")} → {ftd_date.strftime("%d-%b-%Y")}</div>
 
 </div>
-
-{html_table(
-    comparison_table,
-    percent_columns=[
-        "FTD vs LW %",
-        "FTD vs LM %",
-        "FTD vs LY %",
-        "Discount %"
-    ]
-)}
-
-
-<!-- =====================================================
-     MTD COMPARISON
-     ===================================================== -->
-
-<div class="section-title">
-    📈 MTD Comparison
-</div>
-
-<div class="note">
-
-    Current MTD:
-    {current_month_start.strftime("%d-%b-%Y")}
-    →
-    {ftd_date.strftime("%d-%b-%Y")}
-
-    <br>
-
-    LM MTD:
-    {lm_month_start.strftime("%d-%b-%Y")}
-    →
-    {lm_mtd_end.strftime("%d-%b-%Y")}
-
-    <br>
-
-    LY MTD:
-    {ly_month_start.strftime("%d-%b-%Y")}
-    →
-    {ly_mtd_end.strftime("%d-%b-%Y")}
-
-</div>
-
-{html_table(
-    mtd_comparison_table,
-    percent_columns=[
-        "MTD vs LM %",
-        "MTD vs LY %",
-        "Discount %"
-    ]
-)}
-
-
-<!-- =====================================================
-     BRAND
-     ===================================================== -->
-
-<div class="section-title">
-    🏷 Brand Performance
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    brand_ftd_lw,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    brand_ftd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LY
-</div>
-
-{html_table(
-    brand_ftd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    brand_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LY MTD
-</div>
-
-{html_table(
-    brand_mtd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-
-<!-- =====================================================
-     SOURCE
-     ===================================================== -->
-
-<div class="section-title">
-    🛒 Source Performance
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    source_ftd_lw,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    source_ftd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LY
-</div>
-
-{html_table(
-    source_ftd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    source_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LY MTD
-</div>
-
-{html_table(
-    source_mtd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-
-<!-- =====================================================
-     REGION
-     ===================================================== -->
-
-<div class="section-title">
-    🌎 Region Performance
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    region_ftd_lw,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    region_ftd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LY
-</div>
-
-{html_table(
-    region_ftd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    region_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LY MTD
-</div>
-
-{html_table(
-    region_mtd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-
-<!-- =====================================================
-     SESSION
-     ===================================================== -->
-
-<div class="section-title">
-    🕒 Session Performance
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    session_ftd_lw,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    session_ftd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LY
-</div>
-
-{html_table(
-    session_ftd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    session_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LY MTD
-</div>
-
-{html_table(
-    session_mtd_ly,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-
-<!-- =====================================================
-     TOP BRANCHES
-     ===================================================== -->
-
-<div class="section-title">
-    🏪 Top 10 Branches
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    top_branch_ftd_lw,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    top_branch_ftd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    top_branch_mtd_lm,
-    percent_columns=[
-        "Net Growth %",
-        "Orders Growth %",
-        "Dis % Change"
-    ]
-)}
-
-
-<!-- =====================================================
-     DAY LEVEL PERFORMANCE
-     ===================================================== -->
-
-<div class="section-title">
-    📅 Day Level Performance
-</div>
-
-<div class="period-title">
-    FTD vs LW
-</div>
-
-{html_table(
-    day_level_ftd_lw,
-    percent_columns=[
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LM
-</div>
-
-{html_table(
-    day_level_ftd_lm,
-    percent_columns=[
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-<div class="period-title">
-    FTD vs LY
-</div>
-
-{html_table(
-    day_level_ftd_ly,
-    percent_columns=[
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LM MTD
-</div>
-
-{html_table(
-    day_level_mtd_lm,
-    percent_columns=[
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-<div class="period-title">
-    MTD vs LY MTD
-</div>
-
-{html_table(
-    day_level_mtd_ly,
-    percent_columns=[
-        "Gross Growth %",
-        "Net Growth %",
-        "Orders Growth %"
-    ]
-)}
-
-
-<!-- =====================================================
-     FOOTER
-     ===================================================== -->
-
-<div class="footer">
-
-    Generated automatically from Rista monthly CSV data.
-
-    <br>
-
-    FTD Date:
-    {ftd_date.strftime("%d-%b-%Y")}
-
-    <br>
-
-    Data through:
-    {ftd_date.strftime("%d-%b-%Y")}
-
-</div>
-
-
-</div>
-
 </body>
-
 </html>
-
 """
-
 
 # =========================================================
 # SEND EMAIL
@@ -4838,18 +2362,23 @@ def send_mail(
         "alternative"
     )
 
+
     msg["From"] = EMAIL
 
     msg["To"] = ", ".join(
         TO
     )
 
+
     if CC:
+
         msg["Cc"] = ", ".join(
             CC
         )
 
+
     msg["Subject"] = subject
+
 
     msg.attach(
         MIMEText(
@@ -4859,9 +2388,11 @@ def send_mail(
         )
     )
 
+
     recipients = (
         TO + CC
     )
+
 
     print("=" * 80)
     print("SENDING EMAIL")
@@ -4872,10 +2403,6 @@ def send_mail(
         recipients
     )
 
-    print(
-        "Subject:",
-        subject
-    )
 
     with smtplib.SMTP(
         SMTP_SERVER,
@@ -4900,6 +2427,7 @@ def send_mail(
             msg.as_string()
         )
 
+
     print(
         "✅ Dashboard Mail Sent"
     )
@@ -4911,7 +2439,7 @@ def send_mail(
 
 subject = (
     "📊 DSR Dashboard | "
-    "FTD & MTD | "
+    f"FTD & MTD | "
     f"{ftd_date.strftime('%d-%b-%Y')}"
 )
 
@@ -4927,11 +2455,7 @@ send_mail(
 # =========================================================
 
 print("=" * 80)
-
-print(
-    "🏁 DSR DASHBOARD COMPLETED"
-)
-
+print("🏁 DSR DASHBOARD COMPLETED")
 print("=" * 80)
 
 print(
