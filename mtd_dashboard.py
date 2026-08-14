@@ -3065,676 +3065,455 @@ def kpi_card(
 
 
 # =========================================================
-# CHART HELPERS
-# EMAIL-SAFE HTML / CSS CHARTS
+# DASHBOARD CHART HELPERS
 # =========================================================
 
-def compact_value(value):
+def _safe_num(value):
 
     try:
-        value = float(value)
+        if pd.isna(value):
+            return 0.0
+
+        return float(value)
+
     except Exception:
-        return "0"
+        return 0.0
 
-    abs_value = abs(value)
 
-    if abs_value >= 10_000_000:
-        return f"₹{value / 10_000_000:.2f}Cr"
+def _short_value(value):
 
-    if abs_value >= 100_000:
-        return f"₹{value / 100_000:.2f}L"
+    value = _safe_num(value)
 
-    if abs_value >= 1_000:
-        return f"₹{value / 1_000:.1f}K"
+    if abs(value) >= 10000000:
+        return f"₹{value / 10000000:.1f}Cr"
+
+    if abs(value) >= 100000:
+        return f"₹{value / 100000:.1f}L"
+
+    if abs(value) >= 1000:
+        return f"₹{value / 1000:.1f}K"
 
     return f"₹{value:,.0f}"
 
 
-def chart_bar(
-    label,
-    value,
-    maximum,
-    css_class="chart-current"
+# =========================================================
+# HORIZONTAL BAR CHART
+# =========================================================
+
+def horizontal_bar_chart(
+    df,
+    category_col,
+    value_col,
+    title,
+    max_rows=6
 ):
 
-    try:
-        value = float(value)
-    except Exception:
-        value = 0
-
-    try:
-        maximum = float(maximum)
-    except Exception:
-        maximum = 0
-
-    if maximum <= 0:
-        width = 0
-    else:
-        width = (value / maximum) * 100
-
-    width = max(
-        0,
-        min(
-            width,
-            100
-        )
-    )
-
-    return f"""
-    <div class="chart-row">
-
-        <div class="chart-label">
-            {label}
-        </div>
-
-        <div class="chart-track">
-
-            <div
-                class="{css_class}"
-                style="width:{width:.1f}%;">
-            </div>
-
-        </div>
-
-        <div class="chart-value">
-            {compact_value(value)}
-        </div>
-
-    </div>
-    """
-
-
-def build_ftd_revenue_chart():
-
-    values = {
-        "FTD": ftd_coco_kpi["Net"],
-        "LW": lw_kpi["Net"],
-        "LM": lm_kpi["Net"],
-        "LY": ly_kpi["Net"]
-    }
-
-    maximum = max(
-        values.values()
-    ) if values else 0
-
-    html = """
-    <div class="chart-card">
-
-        <div class="chart-title">
-            💰 FTD Net Revenue Comparison
-        </div>
-
-        <div class="chart-subtitle">
-            FTD compared with same-day LW, LM and LY
-        </div>
-    """
-
-    classes = {
-        "FTD": "chart-current",
-        "LW": "chart-previous",
-        "LM": "chart-previous",
-        "LY": "chart-previous"
-    }
-
-    for label, value in values.items():
-
-        html += chart_bar(
-            label,
-            value,
-            maximum,
-            classes.get(
-                label,
-                "chart-previous"
-            )
-        )
-
-    html += """
-    </div>
-    """
-
-    return html
-
-
-def build_mtd_revenue_chart():
-
-    values = {
-        "Current MTD": mtd_kpi["Net"],
-        "LM MTD": lm_mtd_kpi["Net"],
-        "LY MTD": ly_mtd_kpi["Net"]
-    }
-
-    maximum = max(
-        values.values()
-    ) if values else 0
-
-    html = """
-    <div class="chart-card">
-
-        <div class="chart-title">
-            📈 MTD Net Revenue Comparison
-        </div>
-
-        <div class="chart-subtitle">
-            Current MTD vs 1st-to-same-day LM and LY
-        </div>
-    """
-
-    classes = {
-        "Current MTD": "chart-current",
-        "LM MTD": "chart-previous",
-        "LY MTD": "chart-previous"
-    }
-
-    for label, value in values.items():
-
-        html += chart_bar(
-            label,
-            value,
-            maximum,
-            classes.get(
-                label,
-                "chart-previous"
-            )
-        )
-
-    html += """
-    </div>
-    """
-
-    return html
-
-
-def find_name_column(df):
-
     if df is None or df.empty:
-        return None
-
-    for candidate in [
-        "Brand Name",
-        "Brand",
-        "Source",
-        "Region",
-        "Session",
-        "Branch"
-    ]:
-
-        if candidate in df.columns:
-            return candidate
-
-    return None
-
-
-def find_net_column(df):
-
-    if df is None or df.empty:
-        return None
-
-    for candidate in [
-        "Net",
-        "Current Net",
-        "Net Sales"
-    ]:
-
-        if candidate in df.columns:
-            return candidate
-
-    return None
-
-
-def find_previous_net_column(df):
-
-    if df is None or df.empty:
-        return None
-
-    for candidate in [
-        "Prev Net",
-        "Previous Net",
-        "LM Net"
-    ]:
-
-        if candidate in df.columns:
-            return candidate
-
-    return None
-
-
-def build_brand_chart():
-
-    if brand_mtd_lm is None or brand_mtd_lm.empty:
-        return ""
-
-    df = brand_mtd_lm.copy()
-
-    name_col = find_name_column(df)
-    current_col = find_net_column(df)
-    previous_col = find_previous_net_column(df)
-
-    if (
-        name_col is None
-        or current_col is None
-        or previous_col is None
-    ):
-        return ""
-
-    df[current_col] = pd.to_numeric(
-        df[current_col],
-        errors="coerce"
-    ).fillna(0)
-
-    df[previous_col] = pd.to_numeric(
-        df[previous_col],
-        errors="coerce"
-    ).fillna(0)
-
-    df = (
-        df
-        .sort_values(
-            current_col,
-            ascending=False
-        )
-        .head(5)
-    )
-
-    if df.empty:
-        return ""
-
-    maximum = max(
-        df[current_col].max(),
-        df[previous_col].max()
-    )
-
-    html = """
-    <div class="chart-card">
-
-        <div class="chart-title">
-            🏷 Top Brands - MTD Net Revenue
-        </div>
-
-        <div class="chart-subtitle">
-            Current MTD vs LM MTD
-        </div>
-    """
-
-    for _, row in df.iterrows():
-
-        name = str(
-            row[name_col]
-        )
-
-        current_value = float(
-            row[current_col]
-        )
-
-        previous_value = float(
-            row[previous_col]
-        )
-
-        html += f"""
-        <div class="brand-chart-block">
-
-            <div class="brand-chart-name">
-                {name}
+        return """
+        <div class="chart-card">
+            <div class="chart-title">
+                No data available
             </div>
-
-            <div class="brand-chart-line">
-
-                <div class="brand-chart-label">
-                    Current
-                </div>
-
-                <div class="chart-track">
-                    <div
-                        class="chart-current"
-                        style="width:{
-                            (
-                                current_value / maximum * 100
-                                if maximum
-                                else 0
-                            )
-                        }%;">
-                    </div>
-                </div>
-
-                <div class="chart-value">
-                    {compact_value(current_value)}
-                </div>
-
-            </div>
-
-            <div class="brand-chart-line">
-
-                <div class="brand-chart-label">
-                    LM
-                </div>
-
-                <div class="chart-track">
-                    <div
-                        class="chart-previous"
-                        style="width:{
-                            (
-                                previous_value / maximum * 100
-                                if maximum
-                                else 0
-                            )
-                        }%;">
-                    </div>
-                </div>
-
-                <div class="chart-value">
-                    {compact_value(previous_value)}
-                </div>
-
-            </div>
-
         </div>
         """
 
-    html += """
+    work = df.copy()
+
+    if category_col not in work.columns:
+        return ""
+
+    if value_col not in work.columns:
+        return ""
+
+    work[value_col] = pd.to_numeric(
+        work[value_col],
+        errors="coerce"
+    ).fillna(0)
+
+    work = (
+        work[
+            [category_col, value_col]
+        ]
+        .sort_values(
+            value_col,
+            ascending=False
+        )
+        .head(max_rows)
+        .reset_index(drop=True)
+    )
+
+    if work.empty:
+        return ""
+
+    max_value = max(
+        work[value_col].max(),
+        1
+    )
+
+    rows = []
+
+    for _, row in work.iterrows():
+
+        name = str(
+            row[category_col]
+        )
+
+        value = _safe_num(
+            row[value_col]
+        )
+
+        width = (
+            value / max_value
+        ) * 100
+
+        rows.append(
+            f"""
+            <div class="bar-row">
+
+                <div class="bar-label">
+                    {name}
+                </div>
+
+                <div class="bar-track">
+
+                    <div
+                        class="bar-fill"
+                        style="width:{width:.1f}%"
+                    ></div>
+
+                </div>
+
+                <div class="bar-value">
+                    {_short_value(value)}
+                </div>
+
+            </div>
+            """
+        )
+
+    return f"""
+    <div class="chart-card">
+
+        <div class="chart-title">
+            {title}
+        </div>
+
+        <div class="chart-body">
+            {''.join(rows)}
+        </div>
+
     </div>
     """
 
-    return html
-
 
 # =========================================================
-# BUILD CHARTS
+# DAILY MTD LINE CHART
 # =========================================================
 
-ftd_revenue_chart_html = build_ftd_revenue_chart()
+def daily_mtd_chart(
+    df,
+    title="MTD Net Revenue Trend"
+):
 
-mtd_revenue_chart_html = build_mtd_revenue_chart()
+    if df is None or df.empty:
+        return ""
 
-brand_chart_html = build_brand_chart()
-
-
-# =========================================================
-# KPI TABLE
-# =========================================================
-
-kpi_table = pd.DataFrame({
-
-    "Metric": [
-        "Gross Revenue",
-        "Net Revenue",
-        "Discount",
-        "Orders",
-        "AOV",
-        "Discount %"
-    ],
-
-    "FTD": [
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Discount"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["AOV"],
-        ftd_coco_kpi["Dis %"]
-    ],
-
-    "MTD": [
-        mtd_coco_kpi["Gross"],
-        mtd_coco_kpi["Net"],
-        mtd_coco_kpi["Discount"],
-        mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["AOV"],
-        mtd_coco_kpi["Dis %"]
+    required = [
+        "Date",
+        "Net Sales"
     ]
 
-})
+    if not all(
+        col in df.columns
+        for col in required
+    ):
+        return ""
 
+    work = df.copy()
 
-# =========================================================
-# STORE TYPE TABLE
-# =========================================================
+    work["Date"] = pd.to_datetime(
+        work["Date"],
+        errors="coerce"
+    )
 
-store_type_table = pd.DataFrame({
+    work["Net Sales"] = pd.to_numeric(
+        work["Net Sales"],
+        errors="coerce"
+    ).fillna(0)
 
-    "Metric": [
-        "Gross Revenue",
-        "Net Revenue",
-        "Discount",
-        "Orders",
-        "AOV",
-        "Discount %"
-    ],
+    work = (
+        work
+        .dropna(subset=["Date"])
+        .groupby(
+            "Date",
+            as_index=False
+        )["Net Sales"]
+        .sum()
+        .sort_values("Date")
+    )
 
-    "FTD COCO": [
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Discount"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["AOV"],
-        ftd_coco_kpi["Dis %"]
-    ],
+    if work.empty:
+        return ""
 
-    "MTD COCO": [
-        mtd_coco_kpi["Gross"],
-        mtd_coco_kpi["Net"],
-        mtd_coco_kpi["Discount"],
-        mtd_coco_kpi["Orders"],
-        mtd_coco_kpi["AOV"],
-        mtd_coco_kpi["Dis %"]
-    ],
+    # Latest 14 available days
+    work = (
+        work
+        .tail(14)
+        .reset_index(drop=True)
+    )
 
-    "FTD FOFO": [
-        ftd_fofo_kpi["Gross"],
-        ftd_fofo_kpi["Net"],
-        ftd_fofo_kpi["Discount"],
-        ftd_fofo_kpi["Orders"],
-        ftd_fofo_kpi["AOV"],
-        ftd_fofo_kpi["Dis %"]
-    ],
+    width = 620
+    height = 240
 
-    "MTD FOFO": [
-        mtd_fofo_kpi["Gross"],
-        mtd_fofo_kpi["Net"],
-        mtd_fofo_kpi["Discount"],
-        mtd_fofo_kpi["Orders"],
-        mtd_fofo_kpi["AOV"],
-        mtd_fofo_kpi["Dis %"]
-    ]
+    left = 50
+    right = 20
+    top = 30
+    bottom = 45
 
-})
+    chart_width = (
+        width - left - right
+    )
 
+    chart_height = (
+        height - top - bottom
+    )
 
-# =========================================================
-# COMPARISON KPI TABLE
-# =========================================================
+    max_value = max(
+        work["Net Sales"].max(),
+        1
+    )
 
-comparison_table = pd.DataFrame({
+    points = []
 
-    "Metric": [
-        "Gross Revenue",
-        "Net Revenue",
-        "Orders",
-        "Discount %"
-    ],
+    for i, row in work.iterrows():
 
-    "FTD": [
-        ftd_coco_kpi["Gross"],
-        ftd_coco_kpi["Net"],
-        ftd_coco_kpi["Orders"],
-        ftd_coco_kpi["Dis %"]
-    ],
+        if len(work) == 1:
 
-    "LW Same Day": [
-        store_type_kpi(
-            lw_df,
-            "COCO"
-        )["Gross"],
+            x = (
+                left
+                +
+                chart_width / 2
+            )
 
-        store_type_kpi(
-            lw_df,
-            "COCO"
-        )["Net"],
+        else:
 
-        store_type_kpi(
-            lw_df,
-            "COCO"
-        )["Orders"],
+            x = (
+                left
+                +
+                (
+                    i
+                    /
+                    (len(work) - 1)
+                )
+                *
+                chart_width
+            )
 
-        store_type_kpi(
-            lw_df,
-            "COCO"
-        )["Dis %"]
-    ],
-
-    "FTD vs LW %": [
-        ftd_lw_growth["Gross %"],
-        ftd_lw_growth["Net %"],
-        ftd_lw_growth["Orders %"],
-
-        (
-            ftd_coco_kpi["Dis %"]
+        y = (
+            top
+            +
+            chart_height
             -
-            store_type_kpi(
-                lw_df,
-                "COCO"
-            )["Dis %"]
+            (
+                row["Net Sales"]
+                /
+                max_value
+            )
+            *
+            chart_height
         )
-    ],
 
-    "LM Same Day": [
-        store_type_kpi(
-            lm_df,
-            "COCO"
-        )["Gross"],
-
-        store_type_kpi(
-            lm_df,
-            "COCO"
-        )["Net"],
-
-        store_type_kpi(
-            lm_df,
-            "COCO"
-        )["Orders"],
-
-        store_type_kpi(
-            lm_df,
-            "COCO"
-        )["Dis %"]
-    ],
-
-    "FTD vs LM %": [
-        ftd_lm_growth["Gross %"],
-        ftd_lm_growth["Net %"],
-        ftd_lm_growth["Orders %"],
-
-        (
-            ftd_coco_kpi["Dis %"]
-            -
-            store_type_kpi(
-                lm_df,
-                "COCO"
-            )["Dis %"]
+        points.append(
+            (
+                x,
+                y,
+                row["Date"],
+                row["Net Sales"]
+            )
         )
-    ],
 
-    "LY Same Day": [
-        store_type_kpi(
-            ly_df,
-            "COCO"
-        )["Gross"],
+    polyline = " ".join(
+        f"{x:.1f},{y:.1f}"
+        for x, y, _, _ in points
+    )
 
-        store_type_kpi(
-            ly_df,
-            "COCO"
-        )["Net"],
+    circles = []
+    labels = []
 
-        store_type_kpi(
-            ly_df,
-            "COCO"
-        )["Orders"],
+    for x, y, date, value in points:
 
-        store_type_kpi(
-            ly_df,
-            "COCO"
-        )["Dis %"]
-    ],
-
-    "FTD vs LY %": [
-        ftd_ly_growth["Gross %"],
-        ftd_ly_growth["Net %"],
-        ftd_ly_growth["Orders %"],
-
-        (
-            ftd_coco_kpi["Dis %"]
-            -
-            store_type_kpi(
-                ly_df,
-                "COCO"
-            )["Dis %"]
+        circles.append(
+            f"""
+            <circle
+                cx="{x:.1f}"
+                cy="{y:.1f}"
+                r="4"
+                fill="#2E8B57"
+            />
+            """
         )
-    ]
 
-})
+        labels.append(
+            f"""
+            <text
+                x="{x:.1f}"
+                y="{height - 18}"
+                text-anchor="middle"
+                font-size="10"
+                fill="#666"
+            >
+                {date.strftime("%d-%b")}
+            </text>
+            """
+        )
+
+    return f"""
+    <div class="chart-card chart-wide">
+
+        <div class="chart-title">
+            {title}
+        </div>
+
+        <svg
+            viewBox="0 0 {width} {height}"
+            width="100%"
+            height="{height}"
+        >
+
+            <line
+                x1="{left}"
+                y1="{top}"
+                x2="{width-right}"
+                y2="{top}"
+                stroke="#E5E7EB"
+            />
+
+            <line
+                x1="{left}"
+                y1="{top + chart_height/2}"
+                x2="{width-right}"
+                y2="{top + chart_height/2}"
+                stroke="#E5E7EB"
+            />
+
+            <line
+                x1="{left}"
+                y1="{top + chart_height}"
+                x2="{width-right}"
+                y2="{top + chart_height}"
+                stroke="#E5E7EB"
+            />
+
+            <polyline
+                points="{polyline}"
+                fill="none"
+                stroke="#2E8B57"
+                stroke-width="3"
+            />
+
+            {''.join(circles)}
+
+            {''.join(labels)}
+
+        </svg>
+
+    </div>
+    """
 
 
 # =========================================================
-# MTD COMPARISON TABLE
+# PREPARE CHART DATA
 # =========================================================
 
-mtd_comparison_table = pd.DataFrame([
+chart_mtd_daily = (
+    mtd_coco_df.copy()
+)
 
-    {
-        "Metric": "Gross Revenue",
 
-        "Current MTD":
-            mtd_kpi["Gross"],
+chart_source_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Source",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
 
-        "LM MTD":
-            lm_mtd_kpi["Gross"],
 
-        "MTD vs LM %":
-            mtd_lm_growth["Gross %"],
+chart_brand_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Brand Name",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
 
-        "LY MTD":
-            ly_mtd_kpi["Gross"],
 
-        "MTD vs LY %":
-            mtd_ly_growth["Gross %"]
-    },
+chart_region_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Region",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
 
-    {
-        "Metric": "Net Revenue",
 
-        "Current MTD":
-            mtd_kpi["Net"],
+chart_session_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Session",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
 
-        "LM MTD":
-            lm_mtd_kpi["Net"],
 
-        "MTD vs LM %":
-            mtd_lm_growth["Net %"],
+# =========================================================
+# BUILD CHART HTML
+# =========================================================
 
-        "LY MTD":
-            ly_mtd_kpi["Net"],
+chart_daily_html = daily_mtd_chart(
+    chart_mtd_daily,
+    "MTD Net Revenue Trend"
+)
 
-        "MTD vs LY %":
-            mtd_ly_growth["Net %"]
-    },
 
-    {
-        "Metric": "Orders",
+chart_source_html = horizontal_bar_chart(
+    chart_source_mtd,
+    "Source",
+    "Net Sales",
+    "MTD Revenue by Source",
+    6
+)
 
-        "Current MTD":
-            mtd_kpi["Orders"],
 
-        "LM MTD":
-            lm_mtd_kpi["Orders"],
+chart_brand_html = horizontal_bar_chart(
+    chart_brand_mtd,
+    "Brand Name",
+    "Net Sales",
+    "MTD Revenue by Brand",
+    6
+)
 
-        "MTD vs LM %":
-            mtd_lm_growth["Orders %"],
 
-        "LY MTD":
-            ly_mtd_kpi["Orders"],
+chart_region_html = horizontal_bar_chart(
+    chart_region_mtd,
+    "Region",
+    "Net Sales",
+    "MTD Revenue by Region",
+    6
+)
 
-        "MTD vs LY %":
-            mtd_ly_growth["Orders %"]
-    }
 
-])
+chart_session_html = horizontal_bar_chart(
+    chart_session_mtd,
+    "Session",
+    "Net Sales",
+    "MTD Revenue by Session",
+    6
+)
 
 
 # =========================================================
@@ -3752,10 +3531,6 @@ body = f"""
 
 <style>
 
-/* =====================================================
-   PAGE
-   ===================================================== */
-
 body {{
     font-family: Calibri, Arial, sans-serif;
     background: #F4F6F8;
@@ -3763,11 +3538,6 @@ body {{
     margin: 0;
     padding: 20px;
 }}
-
-
-/* =====================================================
-   MAIN CONTAINER
-   ===================================================== */
 
 .container {{
     max-width: 1400px;
@@ -3778,25 +3548,60 @@ body {{
 
 
 /* =====================================================
-   HEADER
+   DASHBOARD TOP HEADER
    ===================================================== */
 
-.header {{
+.dashboard-top {{
     background: #243447;
     color: white;
-    padding: 18px;
+    padding: 18px 20px;
     border-radius: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }}
 
-.header-title {{
-    font-size: 24px;
+.dashboard-top-row {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}}
+
+.dashboard-brand {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}}
+
+.logo-box {{
+    width: 42px;
+    height: 42px;
+    background: #F1E97A;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+}}
+
+.dashboard-title {{
+    font-size: 22px;
     font-weight: bold;
 }}
 
-.header-subtitle {{
-    margin-top: 6px;
-    font-size: 14px;
+.dashboard-subtitle {{
+    font-size: 12px;
+    margin-top: 5px;
+    opacity: 0.85;
+}}
+
+.dashboard-refresh {{
+    font-size: 11px;
+    text-align: right;
+    opacity: 0.85;
+}}
+
+.dashboard-refresh-icon {{
+    font-size: 18px;
+    margin-left: 5px;
 }}
 
 
@@ -3805,75 +3610,147 @@ body {{
    ===================================================== */
 
 .section-title {{
-    background: #2E8B57;
-    color: white;
+    background: #EAF2F8;
+    color: #243447;
     padding: 9px 12px;
-    margin-top: 25px;
-    margin-bottom: 10px;
-    border-radius: 4px;
-    font-size: 16px;
+    margin-top: 20px;
+    margin-bottom: 12px;
+    border-left: 5px solid #243447;
+    font-size: 14px;
     font-weight: bold;
 }}
 
 
+/* =====================================================
+   PERIOD TITLE
+   ===================================================== */
+
 .period-title {{
-    background: #EAF2F8;
+    background: #F4F6F8;
     color: #243447;
     padding: 8px 12px;
     margin-top: 18px;
     margin-bottom: 10px;
-    border-left: 5px solid #243447;
+    border-left: 4px solid #6C757D;
     font-weight: bold;
 }}
 
 
 /* =====================================================
-   KPI CARDS
+   KPI ROW
    ===================================================== */
 
 .kpi-row {{
     display: flex;
-    gap: 12px;
     flex-wrap: wrap;
+    gap: 12px;
     margin-bottom: 20px;
 }}
 
 .kpi-card {{
+    flex: 1;
+    min-width: 145px;
     background: #FFFFFF;
     border: 1px solid #D9DEE3;
     border-radius: 8px;
     padding: 12px;
-    width: 165px;
     text-align: center;
+    box-sizing: border-box;
+}}
+
+.kpi-card:hover {{
+    border-color: #2E8B57;
 }}
 
 .kpi-title {{
-    font-size: 14px;
+    font-size: 12px;
     font-weight: bold;
-    margin-bottom: 10px;
+    color: #555;
+    margin-bottom: 8px;
 }}
 
 .period-label {{
-    font-size: 11px;
+    font-size: 10px;
     color: #777;
-    text-transform: uppercase;
+    margin-top: 4px;
 }}
 
 .kpi-value {{
-    font-size: 21px;
+    font-size: 18px;
     font-weight: bold;
-    color: #0A7D32;
-    margin-top: 3px;
+    color: #243447;
 }}
 
 .divider {{
-    border-top: 1px solid #DDD;
-    margin: 9px 0;
+    border-top: 1px solid #E5E7EB;
+    margin: 8px 0;
 }}
 
 
 /* =====================================================
-   TABLE
+   INSIGHTS
+   ===================================================== */
+
+.top-insights {{
+    background: #F8FAFC;
+    border: 1px solid #D9DEE3;
+    border-left: 5px solid #2E8B57;
+    padding: 14px 16px;
+    margin-bottom: 20px;
+}}
+
+.top-insights-title {{
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 6px;
+}}
+
+.top-insights-note {{
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 10px;
+}}
+
+.top-insights-content {{
+    font-size: 12px;
+}}
+
+.insights {{
+    background: #F8FAFC;
+    border: 1px solid #D9DEE3;
+    border-left: 5px solid #2E8B57;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+}}
+
+.insight-list {{
+    margin: 6px 0 0 18px;
+    padding: 0;
+}}
+
+.insight-list li {{
+    margin: 7px 0;
+}}
+
+.insight-good {{
+    color: #2E7D32;
+    font-weight: bold;
+}}
+
+.insight-bad {{
+    color: #C62828;
+    font-weight: bold;
+}}
+
+.note {{
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 10px;
+}}
+
+
+/* =====================================================
+   DATA TABLE
    ===================================================== */
 
 .data-table {{
@@ -3903,173 +3780,258 @@ body {{
 
 
 /* =====================================================
-   INSIGHTS
+   DASHBOARD CHARTS - STYLISH 2 COLUMN LAYOUT
    ===================================================== */
 
-.insights {{
-    background: #F8FAFC;
-    border: 1px solid #D9DEE3;
-    border-left: 5px solid #2E8B57;
-    padding: 12px 16px;
-    margin-bottom: 20px;
-}}
-
-.insight-list {{
-    margin: 6px 0 0 18px;
-    padding: 0;
-}}
-
-.insight-list li {{
-    margin: 7px 0;
-}}
-
-.insight-heading {{
-    list-style: none;
-    margin-left: -18px !important;
-    font-weight: bold;
-    color: #243447;
-    font-size: 14px;
-}}
-
-.growth-positive {{
-    color: #2E7D32;
-    font-weight: bold;
-}}
-
-.growth-negative {{
-    color: #C62828;
-    font-weight: bold;
-}}
-
-.note {{
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 10px;
-}}
+.chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    width: 100%;
+    margin: 0 0 18px 0;
+    box-sizing: border-box;
+}
 
 
 /* =====================================================
-   CHART CARDS
+   CHART CARD
    ===================================================== */
 
-.chart-grid {{
-    width: 100%;
-    margin-bottom: 20px;
-}}
-
-.chart-card {{
-    border: 1px solid #D9DEE3;
-    border-radius: 8px;
+.chart-card {
     background: #FFFFFF;
+    border: 1px solid #D9DEE3;
+    border-radius: 10px;
     padding: 16px;
-    margin-bottom: 15px;
-}}
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 250px;
+    overflow: hidden;
+}
 
-.chart-title {{
+
+/* FULL WIDTH CHART */
+
+.chart-wide {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 270px;
+}
+
+
+/* =====================================================
+   CHART TITLE
+   ===================================================== */
+
+.chart-title {
     font-size: 16px;
-    font-weight: bold;
-    color: #243447;
-    margin-bottom: 4px;
-}}
-
-.chart-subtitle {{
-    font-size: 11px;
-    color: #777;
+    font-weight: 700;
+    color: #24364B;
     margin-bottom: 14px;
-}}
+    line-height: 1.3;
+}
 
-.chart-row {{
+
+/* =====================================================
+   CHART BODY
+   ===================================================== */
+
+.chart-body {
     width: 100%;
-    margin-bottom: 10px;
-    display: table;
-    table-layout: fixed;
-}}
+    box-sizing: border-box;
+}
 
-.chart-label {{
-    display: table-cell;
-    width: 90px;
-    font-size: 12px;
-    font-weight: bold;
-    vertical-align: middle;
-}}
 
-.chart-track {{
-    display: table-cell;
-    width: auto;
-    background: #EEF1F4;
-    height: 18px;
-    vertical-align: middle;
-}}
+/* =====================================================
+   HORIZONTAL BAR CHART
+   ===================================================== */
 
-.chart-current {{
-    background: #2E8B57;
-    height: 18px;
-}}
+.bar-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin: 14px 0;
+    gap: 9px;
+    box-sizing: border-box;
+}
 
-.chart-previous {{
-    background: #8FA3B8;
-    height: 18px;
-}}
 
-.chart-value {{
-    display: table-cell;
-    width: 85px;
-    text-align: right;
-    padding-left: 8px;
+.bar-label {
+    width: 105px;
+    min-width: 105px;
     font-size: 11px;
-    font-weight: bold;
-    vertical-align: middle;
+    color: #3F4650;
+    text-align: left;
+
     white-space: nowrap;
-}}
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 
-/* =====================================================
-   BRAND CHART
-   ===================================================== */
-
-.brand-chart-block {{
-    margin-bottom: 15px;
-}}
-
-.brand-chart-name {{
-    font-weight: bold;
-    font-size: 12px;
-    color: #243447;
-    margin-bottom: 5px;
-}}
-
-.brand-chart-line {{
-    display: table;
-    width: 100%;
-    table-layout: fixed;
-    margin-bottom: 4px;
-}}
-
-.brand-chart-label {{
-    display: table-cell;
-    width: 60px;
-    font-size: 10px;
-    color: #666;
-    vertical-align: middle;
-}}
+.bar-track {
+    flex: 1;
+    height: 19px;
+    background: #EEF1F4;
+    border-radius: 2px;
+    overflow: hidden;
+}
 
 
-/* =====================================================
-   FOOTER
-   ===================================================== */
+.bar-fill {
+    height: 19px;
+    background: #F1E97A;
+    border-radius: 2px;
+}
 
-.footer {{
-    margin-top: 30px;
-    padding-top: 12px;
-    border-top: 1px solid #DDD;
-    color: #777;
+
+.bar-value {
+    width: 70px;
+    min-width: 70px;
     font-size: 11px;
-}}
+    font-weight: 700;
+    text-align: right;
+    color: #333333;
+}
+
+
+/* =====================================================
+   CONTRIBUTION CHART
+   ===================================================== */
+
+.contribution-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 13px 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+
+.contribution-name {
+    width: 105px;
+    min-width: 105px;
+    font-size: 11px;
+    color: #444444;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+
+.contribution-track {
+    flex: 1;
+    height: 16px;
+    background: #EEF1F4;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+
+.contribution-fill {
+    height: 16px;
+    background: #6CC9CE;
+}
+
+
+.contribution-percent {
+    width: 45px;
+    min-width: 45px;
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+}
+
+
+.contribution-value {
+    width: 65px;
+    min-width: 65px;
+    font-size: 11px;
+    text-align: right;
+    color: #555555;
+}
+
+
+/* =====================================================
+   DAILY LINE CHART
+   ===================================================== */
+
+.chart-wide svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+
+/* =====================================================
+   SALES PERFORMANCE SECTION
+   ===================================================== */
+
+.sales-chart-section {
+    width: 100%;
+    margin-top: 10px;
+}
+
+
+.sales-chart-section .section-title {
+    margin-bottom: 14px;
+}
+
+
+/* =====================================================
+   EMAIL / DESKTOP
+   ===================================================== */
+
+@media only screen and (max-width: 900px) {
+
+    .chart-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .chart-wide {
+        grid-column: auto;
+    }
+
+}
+
+
+/* =====================================================
+   SMALL MOBILE
+   ===================================================== */
+
+@media only screen and (max-width: 600px) {
+
+    .chart-card {
+        padding: 12px;
+        min-height: 220px;
+    }
+
+    .bar-label {
+        width: 85px;
+        min-width: 85px;
+    }
+
+    .bar-value {
+        width: 60px;
+        min-width: 60px;
+    }
+
+    .contribution-name {
+        width: 85px;
+        min-width: 85px;
+    }
+
+    .contribution-value {
+        width: 55px;
+        min-width: 55px;
+    }
+
+}
 
 </style>
 
 </head>
-
 
 <body>
 
@@ -4080,24 +4042,52 @@ body {{
      HEADER
      ===================================================== -->
 
-<div class="header">
+<div class="dashboard-top">
 
-    <div class="header-title">
-        📊 Frozen Bottle DSR Dashboard
-    </div>
+    <div class="dashboard-top-row">
 
-    <div class="header-subtitle">
+        <div class="dashboard-brand">
 
-        FTD:
-        {ftd_date.strftime("%d-%b-%Y")}
+            <div class="logo-box">
+                🧊
+            </div>
 
-        &nbsp; | &nbsp;
+            <div>
 
-        MTD:
-        {current_month_start.strftime("%d-%b-%Y")}
+                <div class="dashboard-title">
+                    Frozen Bottle DSR Dashboard
+                </div>
 
-        →
-        {ftd_date.strftime("%d-%b-%Y")}
+                <div class="dashboard-subtitle">
+
+                    FTD:
+                    {ftd_date.strftime("%d-%b-%Y")}
+
+                    &nbsp;&nbsp;|&nbsp;&nbsp;
+
+                    MTD:
+                    {current_month_start.strftime("%d-%b-%Y")}
+
+                    →
+                    {ftd_date.strftime("%d-%b-%Y")}
+
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="dashboard-refresh">
+
+            Data refreshed at
+            {india_today.strftime("%d-%b-%Y")}
+
+            <span class="dashboard-refresh-icon">
+                ⟳
+            </span>
+
+        </div>
 
     </div>
 
@@ -4105,53 +4095,37 @@ body {{
 
 
 <!-- =====================================================
-     CHART DASHBOARD
+     TOP INSIGHTS
      ===================================================== -->
 
-<div class="section-title">
-    📊 Revenue Dashboard
-</div>
+<div class="top-insights">
 
+    <div class="top-insights-title">
+        💡 Yesterday COCO Sales Insights
+    </div>
 
-<div class="chart-grid">
-
-    {ftd_revenue_chart_html}
-
-    {mtd_revenue_chart_html}
-
-    {brand_chart_html}
-
-</div>
-
-
-<!-- =====================================================
-     YESTERDAY / FTD INSIGHTS
-     ===================================================== -->
-
-<div class="section-title">
-    💡 Yesterday COCO Sales Insights
-</div>
-
-<div class="insights">
-
-    <div class="note">
+    <div class="top-insights-note">
 
         Based on FTD
         {ftd_date.strftime("%d-%b-%Y")}
         vs LW same day.
 
-        Green = positive movement.
+        Green = growth opportunity / positive movement.
         Red = needs improvement.
 
     </div>
 
-    {insights_html}
+    <div class="top-insights-content">
+
+        {insights_html}
+
+    </div>
 
 </div>
 
 
 <!-- =====================================================
-     KPI CARDS
+     KPI SECTION
      ===================================================== -->
 
 <div class="section-title">
@@ -4205,6 +4179,87 @@ body {{
 
 </div>
 
+<!-- =====================================================
+     DASHBOARD CHARTS
+     ===================================================== -->
+
+<div class="section-title">
+    📊 Revenue Dashboard
+</div>
+
+
+<!-- =====================================================
+     DAILY MTD TREND
+     FULL WIDTH
+     ===================================================== -->
+
+<div class="chart-grid">
+
+    {chart_daily_html}
+
+</div>
+
+
+<!-- =====================================================
+     SOURCE + BRAND
+     SIDE BY SIDE
+     ===================================================== -->
+
+<div class="chart-grid">
+
+    {chart_source_html}
+
+    {chart_brand_html}
+
+</div>
+
+
+<!-- =====================================================
+     REGION + SESSION
+     SIDE BY SIDE
+     ===================================================== -->
+
+<div class="chart-grid">
+
+    {chart_region_html}
+
+    {chart_session_html}
+
+</div>
+
+<!-- =====================================================
+     DASHBOARD CHARTS
+     ===================================================== -->
+
+<div class="section-title">
+    📊 Sales Performance
+</div>
+
+
+<div class="chart-grid">
+
+    {chart_daily_html}
+
+</div>
+
+
+<div class="chart-grid">
+
+    {chart_source_html}
+
+    {chart_brand_html}
+
+</div>
+
+
+<div class="chart-grid">
+
+    {chart_region_html}
+
+    {chart_session_html}
+
+</div>
+
 
 <!-- =====================================================
      KPI SUMMARY
@@ -4215,10 +4270,7 @@ body {{
 </div>
 
 {html_table(
-    kpi_table,
-    percent_columns=[
-        "Discount %"
-    ]
+    kpi_table
 )}
 
 
@@ -4231,10 +4283,7 @@ body {{
 </div>
 
 {html_table(
-    store_type_table,
-    percent_columns=[
-        "Discount %"
-    ]
+    store_type_table
 )}
 
 
@@ -4328,7 +4377,6 @@ body {{
     🏷 Brand Performance
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4341,7 +4389,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     FTD vs LM
@@ -4356,7 +4403,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LY
 </div>
@@ -4370,7 +4416,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     MTD vs LM MTD
 </div>
@@ -4383,7 +4428,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LY MTD
@@ -4407,7 +4451,6 @@ body {{
     🛒 Source Performance
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4420,7 +4463,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     FTD vs LM
@@ -4435,7 +4477,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LY
 </div>
@@ -4449,7 +4490,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     MTD vs LM MTD
 </div>
@@ -4462,7 +4502,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LY MTD
@@ -4486,7 +4525,6 @@ body {{
     🌎 Region Performance
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4499,7 +4537,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     FTD vs LM
@@ -4514,7 +4551,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LY
 </div>
@@ -4528,7 +4564,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     MTD vs LM MTD
 </div>
@@ -4541,7 +4576,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LY MTD
@@ -4565,7 +4599,6 @@ body {{
     🕒 Session Performance
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4578,7 +4611,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     FTD vs LM
@@ -4593,7 +4625,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LY
 </div>
@@ -4607,7 +4638,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     MTD vs LM MTD
 </div>
@@ -4620,7 +4650,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LY MTD
@@ -4644,7 +4673,6 @@ body {{
     🏪 Top 10 Branches
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4658,7 +4686,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LM
 </div>
@@ -4671,7 +4698,6 @@ body {{
         "Dis % Change"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LM MTD
@@ -4695,7 +4721,6 @@ body {{
     📅 Day Level Performance
 </div>
 
-
 <div class="period-title">
     FTD vs LW
 </div>
@@ -4708,7 +4733,6 @@ body {{
         "Orders Growth %"
     ]
 )}
-
 
 <div class="period-title">
     FTD vs LM
@@ -4723,7 +4747,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     FTD vs LY
 </div>
@@ -4737,7 +4760,6 @@ body {{
     ]
 )}
 
-
 <div class="period-title">
     MTD vs LM MTD
 </div>
@@ -4750,7 +4772,6 @@ body {{
         "Orders Growth %"
     ]
 )}
-
 
 <div class="period-title">
     MTD vs LY MTD
@@ -4774,32 +4795,15 @@ body {{
 
     Generated automatically from Rista monthly CSV data.
 
-    <br><br>
+    <br>
 
     FTD Date:
     {ftd_date.strftime("%d-%b-%Y")}
 
     <br>
 
-    MTD:
-    {current_month_start.strftime("%d-%b-%Y")}
-    →
+    Data through:
     {ftd_date.strftime("%d-%b-%Y")}
-
-    <br>
-
-    LW:
-    {lw_date.strftime("%d-%b-%Y")}
-
-    <br>
-
-    LM:
-    {lm_date.strftime("%d-%b-%Y")}
-
-    <br>
-
-    LY:
-    {ly_date.strftime("%d-%b-%Y")}
 
 </div>
 
@@ -4809,6 +4813,7 @@ body {{
 </body>
 
 </html>
+
 """
 
 
@@ -4832,7 +4837,6 @@ def send_mail(
     )
 
     if CC:
-
         msg["Cc"] = ", ".join(
             CC
         )
@@ -4858,6 +4862,11 @@ def send_mail(
     print(
         "To:",
         recipients
+    )
+
+    print(
+        "Subject:",
+        subject
     )
 
     with smtplib.SMTP(
@@ -4910,7 +4919,11 @@ send_mail(
 # =========================================================
 
 print("=" * 80)
-print("🏁 DSR DASHBOARD COMPLETED")
+
+print(
+    "🏁 DSR DASHBOARD COMPLETED"
+)
+
 print("=" * 80)
 
 print(
