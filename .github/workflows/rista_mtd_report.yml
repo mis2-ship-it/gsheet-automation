@@ -3,6 +3,10 @@ name: Rista MTD Update
 on:
   workflow_dispatch:
 
+concurrency:
+  group: mtd-update
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -33,13 +37,20 @@ jobs:
           echo "Running MTD Update..."
           python rista_mtd_report.py
 
-      - name: Commit Monthly CSV
+      - name: Commit and Push
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-
+      
           git add monthly_data/
-
-          git diff --cached --quiet || git commit -m "Auto update monthly MTD CSV"
-
-          git push
+      
+          git commit -m "Auto update monthly MTD CSV" || echo "No changes"
+      
+          # Refresh remote main before pushing
+          git fetch origin main
+      
+          # Re-apply this workflow's commit on top of latest remote main
+          git rebase origin/main
+      
+          # Push updated branch
+          git push origin HEAD:main
