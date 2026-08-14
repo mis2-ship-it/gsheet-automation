@@ -2450,12 +2450,27 @@ def process_message(
     message_text
 ):
 
+    import re
+
     message = " ".join(
         message_text
         .strip()
         .lower()
         .split()
     )
+    
+    # Normalize apostrophes / punctuation
+    message = re.sub(
+        r"[’'`]",
+        "",
+        message
+    )
+    
+    message = re.sub(
+        r"\s+",
+        " ",
+        message
+    ).strip()
 
     # =====================================================
     # 🔐 USER ACCESS DEBUG
