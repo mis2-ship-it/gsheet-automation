@@ -642,8 +642,8 @@ print(
 # =========================================================
 
 # ---------------------------------------------------------
-# Current MTD
-# 1st of current month → FTD (yesterday)
+# CURRENT MTD
+# 1st of current month → yesterday
 # ---------------------------------------------------------
 
 current_month_start = pd.Timestamp(
@@ -654,8 +654,12 @@ current_month_start = pd.Timestamp(
 
 
 # ---------------------------------------------------------
-# Last Month MTD
-# 1st of last month → same calendar day as FTD
+# LAST MONTH MTD
+# 1st of last month → SAME CALENDAR DAY AS FTD
+#
+# Example:
+# Current : 01-Aug → 13-Aug
+# LM      : 01-Jul → 13-Jul
 # ---------------------------------------------------------
 
 lm_month_start = pd.Timestamp(
@@ -672,8 +676,12 @@ lm_mtd_end = pd.Timestamp(
 
 
 # ---------------------------------------------------------
-# Last Year MTD
-# 1st of last year → same calendar day as FTD
+# LAST YEAR MTD
+# 1st of last year month → SAME CALENDAR DAY AS FTD
+#
+# Example:
+# Current : 01-Aug-2026 → 13-Aug-2026
+# LY      : 01-Aug-2025 → 13-Aug-2025
 # ---------------------------------------------------------
 
 ly_month_start = pd.Timestamp(
@@ -812,11 +820,21 @@ if not ftd_df.empty:
 # MTD DATASETS
 # =========================================================
 
+# ---------------------------------------------------------
+# CURRENT MTD
+# 1st → yesterday
+# ---------------------------------------------------------
+
 mtd_df = date_filter(
     current_month_start,
     ftd_date
 )
 
+
+# ---------------------------------------------------------
+# LAST MONTH MTD
+# 1st → same calendar day as current MTD
+# ---------------------------------------------------------
 
 lm_mtd_df = date_filter(
     lm_month_start,
@@ -824,11 +842,15 @@ lm_mtd_df = date_filter(
 )
 
 
+# ---------------------------------------------------------
+# LAST YEAR MTD
+# 1st → same calendar day as current MTD
+# ---------------------------------------------------------
+
 ly_mtd_df = date_filter(
     ly_month_start,
     ly_mtd_end
 )
-
 # =========================================================
 # COCO DATA FILTERS
 # =========================================================
