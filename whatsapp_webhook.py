@@ -2303,37 +2303,42 @@ def process_message(
 
     ]
 
+    # =====================================================
+    # 📊 SALES
+    # =====================================================
+    
     if message in sales_keywords:
-
+    
         print(
             "📊 FTD SALES COMMAND DETECTED"
         )
-
+    
         try:
-
+    
             send_role_based_ftd_sales(
                 sender
             )
-
+    
             print(
                 "✅ send_role_based_ftd_sales() completed"
             )
-
+    
         except Exception as e:
-
+    
             print(
                 "❌ send_role_based_ftd_sales() ERROR:",
                 str(e)
             )
-
+    
             send_whatsapp_message(
                 sender,
                 (
                     "❌ Error while generating "
-                    "FTD Sales report."
+                    "FTD Sales report.\n\n"
+                    f"Debug: {str(e)}"
                 )
             )
-
+    
         return
 
     # =====================================================
@@ -2363,38 +2368,39 @@ def process_message(
         print(
             "📈 SALES VS LW COMMAND DETECTED"
         )
-
+    
         try:
-
+    
             send_sales_vs_lw(
                 sender
             )
-
+    
             print(
                 "✅ send_sales_vs_lw() completed"
             )
-
+    
         except Exception as e:
-
+    
             print(
                 "❌ send_sales_vs_lw() ERROR:",
                 str(e)
             )
-
+    
             send_whatsapp_message(
                 sender,
                 (
                     "❌ Error while generating "
-                    "Sales vs Last Week report."
+                    "Sales vs Last Week report.\n\n"
+                    f"Debug: {str(e)}"
                 )
             )
-
+    
         return
 
     # =====================================================
     # 📈 NATURAL SALES VS LW
     # =====================================================
-
+    
     if (
         "sales" in message
         and (
@@ -2402,29 +2408,29 @@ def process_message(
             or "lw" in message
         )
     ):
-
+    
         print(
             "📈 NATURAL SALES VS LW "
             "QUESTION DETECTED"
         )
-
+    
         try:
-
+    
             send_sales_vs_lw(
                 sender
             )
-
+    
             print(
                 "✅ Natural Sales vs LW completed"
             )
-
+    
         except Exception as e:
-
+    
             print(
                 "❌ Natural Sales vs LW ERROR:",
                 str(e)
             )
-
+    
             send_whatsapp_message(
                 sender,
                 (
@@ -2432,7 +2438,7 @@ def process_message(
                     "Sales vs Last Week report."
                 )
             )
-
+    
         return
 
     # =====================================================
