@@ -3022,6 +3022,7 @@ def build_insights():
 
 insights_html = build_insights()
 
+
 # =========================================================
 # KPI CARD
 # =========================================================
@@ -3062,547 +3063,6 @@ def kpi_card(
     </div>
     """
 
-# =========================================================
-# DASHBOARD CHART HELPERS
-# =========================================================
-
-def _safe_num(value):
-    try:
-        if pd.isna(value):
-            return 0.0
-        return float(value)
-    except Exception:
-        return 0.0
-
-
-def _short_value(value):
-    value = _safe_num(value)
-
-    if abs(value) >= 10000000:
-        return f"₹{value / 10000000:.1f}Cr"
-
-    if abs(value) >= 100000:
-        return f"₹{value / 100000:.1f}L"
-
-    if abs(value) >= 1000:
-        return f"₹{value / 1000:.1f}K"
-
-    return f"₹{value:,.0f}"
-
-
-# =========================================================
-# HORIZONTAL BAR CHART
-# =========================================================
-
-def horizontal_bar_chart(
-    df,
-    category_col,
-    value_col,
-    title,
-    max_rows=6
-):
-
-    if df is None or df.empty:
-        return """
-        <div class="chart-card">
-            <div class="chart-title">No data available</div>
-        </div>
-        """
-
-    work = df.copy()
-
-    if category_col not in work.columns:
-        return ""
-
-    if value_col not in work.columns:
-        return ""
-
-    work[value_col] = pd.to_numeric(
-        work[value_col],
-        errors="coerce"
-    ).fillna(0)
-
-    work = (
-        work[
-            [category_col, value_col]
-        ]
-        .sort_values(
-            value_col,
-            ascending=False
-        )
-        .head(max_rows)
-        .reset_index(drop=True)
-    )
-
-    if work.empty:
-        return ""
-
-    max_value = max(
-        work[value_col].max(),
-        1
-    )
-
-    rows = []
-
-    for _, row in work.iterrows():
-
-        name = str(
-            row[category_col]
-        )
-
-        value = _safe_num(
-            row[value_col]
-        )
-
-        width = (
-            value / max_value
-        ) * 100
-
-        rows.append(
-            f"""
-            <div class="bar-row">
-
-                <div class="bar-label">
-                    {name}
-                </div>
-
-                <div class="bar-track">
-                    <div
-                        class="bar-fill"
-                        style="width:{width:.1f}%"
-                    ></div>
-                </div>
-
-                <div class="bar-value">
-                    {_short_value(value)}
-                </div>
-
-            </div>
-            """
-        )
-
-    return f"""
-    <div class="chart-card">
-
-        <div class="chart-title">
-            {title}
-        </div>
-
-        <div class="chart-body">
-            {''.join(rows)}
-        </div>
-
-    </div>
-    """
-
-
-# =========================================================
-# DONUT / CONTRIBUTION CHART
-# =========================================================
-
-def contribution_chart(
-    df,
-    category_col,
-    value_col,
-    title
-):
-
-    if df is None or df.empty:
-        return ""
-
-    if category_col not in df.columns:
-        return ""
-
-    if value_col not in df.columns:
-        return ""
-
-    work = df.copy()
-
-    work[value_col] = pd.to_numeric(
-        work[value_col],
-        errors="coerce"
-    ).fillna(0)
-
-    work = (
-        work[
-            [category_col, value_col]
-        ]
-        .groupby(
-            category_col,
-            as_index=False
-        )[value_col]
-        .sum()
-        .sort_values(
-            value_col,
-            ascending=False
-        )
-        .head(6)
-        .reset_index(drop=True)
-    )
-
-    total = work[value_col].sum()
-
-    if total <= 0:
-        return ""
-
-    rows = []
-
-    for _, row in work.iterrows():
-
-        name = str(
-            row[category_col]
-        )
-
-        value = _safe_num(
-            row[value_col]
-        )
-
-        percentage = (
-            value / total
-        ) * 100
-
-        rows.append(
-            f"""
-            <div class="contribution-row">
-
-                <div class="contribution-name">
-                    {name}
-                </div>
-
-                <div class="contribution-track">
-
-                    <div
-                        class="contribution-fill"
-                        style="width:{percentage:.1f}%"
-                    ></div>
-
-                </div>
-
-                <div class="contribution-percent">
-                    {percentage:.1f}%
-                </div>
-
-                <div class="contribution-value">
-                    {_short_value(value)}
-                </div>
-
-            </div>
-            """
-        )
-
-    return f"""
-    <div class="chart-card">
-
-        <div class="chart-title">
-            {title}
-        </div>
-
-        <div class="chart-body">
-            {''.join(rows)}
-        </div>
-
-    </div>
-    """
-
-
-# =========================================================
-# DAILY MTD LINE CHART
-# =========================================================
-
-def daily_mtd_chart(
-    df,
-    title="MTD Net Revenue Trend"
-):
-
-    if df is None or df.empty:
-        return ""
-
-    required = [
-        "Date",
-        "Net Sales"
-    ]
-
-    if not all(
-        col in df.columns
-        for col in required
-    ):
-        return ""
-
-    work = df.copy()
-
-    work["Date"] = pd.to_datetime(
-        work["Date"],
-        errors="coerce"
-    )
-
-    work["Net Sales"] = pd.to_numeric(
-        work["Net Sales"],
-        errors="coerce"
-    ).fillna(0)
-
-    work = (
-        work
-        .dropna(subset=["Date"])
-        .groupby("Date", as_index=False)
-        ["Net Sales"]
-        .sum()
-        .sort_values("Date")
-    )
-
-    if work.empty:
-        return ""
-
-    # Keep the latest 14 available days
-    work = work.tail(14).reset_index(
-        drop=True
-    )
-
-    width = 620
-    height = 240
-
-    left = 50
-    right = 20
-    top = 30
-    bottom = 45
-
-    chart_width = (
-        width - left - right
-    )
-
-    chart_height = (
-        height - top - bottom
-    )
-
-    max_value = max(
-        work["Net Sales"].max(),
-        1
-    )
-
-    points = []
-
-    for i, row in work.iterrows():
-
-        if len(work) == 1:
-            x = left + chart_width / 2
-        else:
-            x = (
-                left
-                +
-                (
-                    i
-                    /
-                    (len(work) - 1)
-                )
-                * chart_width
-            )
-
-        y = (
-            top
-            +
-            chart_height
-            -
-            (
-                row["Net Sales"]
-                /
-                max_value
-            )
-            * chart_height
-        )
-
-        points.append(
-            (
-                x,
-                y,
-                row["Date"],
-                row["Net Sales"]
-            )
-        )
-
-    polyline = " ".join(
-        f"{x:.1f},{y:.1f}"
-        for x, y, _, _ in points
-    )
-
-    circles = []
-
-    labels = []
-
-    for x, y, date, value in points:
-
-        circles.append(
-            f"""
-            <circle
-                cx="{x:.1f}"
-                cy="{y:.1f}"
-                r="4"
-                fill="#2E8B57"
-            />
-            """
-        )
-
-        labels.append(
-            f"""
-            <text
-                x="{x:.1f}"
-                y="{height - 18}"
-                text-anchor="middle"
-                font-size="10"
-                fill="#666"
-            >
-                {date.strftime("%d-%b")}
-            </text>
-            """
-        )
-
-    return f"""
-    <div class="chart-card chart-wide">
-
-        <div class="chart-title">
-            {title}
-        </div>
-
-        <svg
-            viewBox="0 0 {width} {height}"
-            width="100%"
-            height="{height}"
-        >
-
-            <!-- GRID -->
-
-            <line
-                x1="{left}"
-                y1="{top}"
-                x2="{width-right}"
-                y2="{top}"
-                stroke="#E5E7EB"
-            />
-
-            <line
-                x1="{left}"
-                y1="{top + chart_height/2}"
-                x2="{width-right}"
-                y2="{top + chart_height/2}"
-                stroke="#E5E7EB"
-            />
-
-            <line
-                x1="{left}"
-                y1="{top + chart_height}"
-                x2="{width-right}"
-                y2="{top + chart_height}"
-                stroke="#E5E7EB"
-            />
-
-            <!-- LINE -->
-
-            <polyline
-                points="{polyline}"
-                fill="none"
-                stroke="#2E8B57"
-                stroke-width="3"
-            />
-
-            {''.join(circles)}
-
-            {''.join(labels)}
-
-        </svg>
-
-    </div>
-    """
-
-
-# =========================================================
-# PREPARE CHART DATA
-# =========================================================
-
-# MTD DAILY TREND
-chart_mtd_daily = (
-    mtd_coco_df.copy()
-)
-
-
-# SOURCE
-chart_source_mtd = (
-    mtd_coco_df
-    .groupby("Source", as_index=False)
-    ["Net Sales"]
-    .sum()
-)
-
-
-# BRAND
-chart_brand_mtd = (
-    mtd_coco_df
-    .groupby("Brand Name", as_index=False)
-    ["Net Sales"]
-    .sum()
-)
-
-
-# REGION
-chart_region_mtd = (
-    mtd_coco_df
-    .groupby("Region", as_index=False)
-    ["Net Sales"]
-    .sum()
-)
-
-
-# SESSION
-chart_session_mtd = (
-    mtd_coco_df
-    .groupby("Session", as_index=False)
-    ["Net Sales"]
-    .sum()
-)
-
-
-# =========================================================
-# BUILD CHART HTML
-# =========================================================
-
-chart_daily_html = daily_mtd_chart(
-    chart_mtd_daily,
-    "MTD Net Revenue Trend"
-)
-
-
-chart_source_html = horizontal_bar_chart(
-    chart_source_mtd,
-    "Source",
-    "Net Sales",
-    "MTD Revenue by Source",
-    6
-)
-
-
-chart_brand_html = horizontal_bar_chart(
-    chart_brand_mtd,
-    "Brand Name",
-    "Net Sales",
-    "MTD Revenue by Brand",
-    6
-)
-
-
-chart_region_html = horizontal_bar_chart(
-    chart_region_mtd,
-    "Region",
-    "Net Sales",
-    "MTD Revenue by Region",
-    6
-)
-
-
-chart_session_html = horizontal_bar_chart(
-    chart_session_mtd,
-    "Session",
-    "Net Sales",
-    "MTD Revenue by Session",
-    6
-)
-
 
 # =========================================================
 # EMAIL HTML
@@ -3627,6 +3087,11 @@ body {{
     padding: 20px;
 }}
 
+
+/* =====================================================
+   MAIN CONTAINER
+   ===================================================== */
+
 .container {{
     max-width: 1400px;
     margin: auto;
@@ -3635,167 +3100,50 @@ body {{
 }}
 
 
-<!-- =====================================================
-     DASHBOARD TOP HEADER
-     ===================================================== -->
+/* =====================================================
+   HEADER
+   ===================================================== */
 
-<div class="dashboard-top">
+.header {{
+    background: #243447;
+    color: white;
+    padding: 18px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}}
 
-    <div class="dashboard-top-row">
+.header-title {{
+    font-size: 24px;
+    font-weight: bold;
+}}
 
-        <div class="dashboard-brand">
-
-            <div class="logo-box">
-                🧊
-            </div>
-
-            <div>
-
-                <div class="dashboard-title">
-                    Frozen Bottle DSR Dashboard
-                </div>
-
-                <div class="dashboard-subtitle">
-
-                    FTD:
-                    {ftd_date.strftime("%d-%b-%Y")}
-
-                    &nbsp;&nbsp;|&nbsp;&nbsp;
-
-                    MTD:
-                    {current_month_start.strftime("%d-%b-%Y")}
-
-                    →
-                    {ftd_date.strftime("%d-%b-%Y")}
-
-                </div>
-
-            </div>
-
-        </div>
+.header-subtitle {{
+    margin-top: 6px;
+    font-size: 14px;
+}}
 
 
-        <div class="dashboard-refresh">
+/* =====================================================
+   SECTION TITLE
+   ===================================================== */
 
-            Data refreshed at
-            {india_today.strftime("%d-%b-%Y")}
-
-            <span class="dashboard-refresh-icon">
-                ⟳
-            </span>
-
-        </div>
-
-    </div>
-
-</div>
-
-
-<!-- =====================================================
-     TOP INSIGHTS
-     ===================================================== -->
-
-<div class="top-insights">
-
-    <div class="top-insights-title">
-        💡 Yesterday COCO Sales Insights
-    </div>
-
-    <div class="top-insights-note">
-
-        Based on FTD
-        {ftd_date.strftime("%d-%b-%Y")}
-        vs LW same day.
-
-        Green = growth opportunity / positive movement.
-        Red = needs improvement.
-
-    </div>
-
-    <div class="top-insights-content">
-
-        {insights_html}
-
-    </div>
-
-</div>
+.section-title {{
+    background: #2E8B57;
+    color: white;
+    padding: 9px 12px;
+    margin-top: 25px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+}}
 
 
-<!-- =====================================================
-     KPI SECTION
-     ===================================================== -->
-
-<div class="section-title">
-    📌 FTD | MTD KPI
-</div>
-
-
-<div class="kpi-row">
-
-
-    {kpi_card(
-        "Gross Revenue",
-        ftd_coco_kpi["Gross"],
-        mtd_coco_kpi["Gross"],
-        "₹"
-    )}
-
-
-    {kpi_card(
-        "Net Revenue",
-        ftd_coco_kpi["Net"],
-        mtd_coco_kpi["Net"],
-        "₹"
-    )}
-
-
-    {kpi_card(
-        "Discount",
-        ftd_coco_kpi["Discount"],
-        mtd_coco_kpi["Discount"],
-        "₹"
-    )}
-
-
-    {kpi_card(
-        "Orders",
-        ftd_coco_kpi["Orders"],
-        mtd_coco_kpi["Orders"]
-    )}
-
-
-    {kpi_card(
-        "AOV",
-        ftd_coco_kpi["AOV"],
-        mtd_coco_kpi["AOV"],
-        "₹"
-    )}
-
-
-    {kpi_card(
-        "Discount %",
-        ftd_coco_kpi["Dis %"],
-        mtd_coco_kpi["Dis %"],
-        "",
-        "%"
-    )}
-
-</div>
-
-
-/* =========================================================
-   KPI HIGHLIGHT
-   ========================================================= */
-
-.kpi-card:hover {
-    border-color: #2E8B57;
-}
-
-/* =========================================================
+/* =====================================================
    PERIOD TITLE
-   ========================================================= */
+   ===================================================== */
 
-.period-title {
+.period-title {{
     background: #EAF2F8;
     color: #243447;
     padding: 8px 12px;
@@ -3803,113 +3151,81 @@ body {{
     margin-bottom: 10px;
     border-left: 5px solid #243447;
     font-weight: bold;
-}
+}}
 
-/* =========================================================
-   TABLE
-   ========================================================= */
 
-.data-table {
-    border-collapse: collapse;
-    width: 100%;
+/* =====================================================
+   KPI ROW
+   ===================================================== */
+
+.kpi-row {{
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
     margin-bottom: 20px;
-    font-size: 12px;
-}
+}}
 
-.data-table th {
-    background: #243447;
-    color: white;
-    padding: 7px;
-    border: 1px solid #243447;
-    text-align: center;
-}
 
-.data-table td {
-    padding: 6px;
+/* =====================================================
+   KPI CARD
+   ===================================================== */
+
+.kpi-card {{
+    background: #FFFFFF;
     border: 1px solid #D9DEE3;
+    border-radius: 8px;
+    padding: 12px;
+    width: 165px;
     text-align: center;
-}
+}}
 
-.data-table tr:nth-child(even) {
-    background: #F7F8F9;
-}
-
-/* =========================================================
-   EXISTING INSIGHTS
-   ========================================================= */
-
-.insights {
-    background: #F8FAFC;
-    border: 1px solid #D9DEE3;
-    border-left: 5px solid #2E8B57;
-    padding: 12px 16px;
-    margin-bottom: 20px;
-}
-
-.insight-list {
-    margin: 6px 0 0 18px;
-    padding: 0;
-}
-
-.insight-list li {
-    margin: 7px 0;
-}
-
-.insight-good {
-    color: #2E7D32;
+.kpi-title {{
+    font-size: 14px;
     font-weight: bold;
-}
-
-.insight-bad {
-    color: #C62828;
-    font-weight: bold;
-}
-
-.note {
-    font-size: 12px;
-    color: #666;
     margin-bottom: 10px;
-}
+}}
 
-.footer {
-    margin-top: 30px;
-    padding-top: 12px;
-    border-top: 1px solid #DDD;
-    color: #777;
+.period-label {{
     font-size: 11px;
-}
+    color: #777;
+    text-transform: uppercase;
+}}
 
-/* =========================================================
+.kpi-value {{
+    font-size: 21px;
+    font-weight: bold;
+    color: #0A7D32;
+    margin-top: 3px;
+}}
+
+.divider {{
+    border-top: 1px solid #DDD;
+    margin: 9px 0;
+}}
+
+
+/* =====================================================
    DATA TABLE
-   ========================================================= */
+   ===================================================== */
 
 .data-table {{
     border-collapse: collapse;
-
     width: 100%;
-
     margin-bottom: 20px;
-
     font-size: 12px;
 }}
 
 .data-table th {{
     background: #243447;
-
     color: white;
-
     padding: 7px;
-
     border: 1px solid #243447;
-
     text-align: center;
 }}
 
 .data-table td {{
     padding: 6px;
-
     border: 1px solid #D9DEE3;
-
     text-align: center;
 }}
 
@@ -3918,19 +3234,15 @@ body {{
 }}
 
 
-/* =========================================================
+/* =====================================================
    INSIGHTS
-   ========================================================= */
+   ===================================================== */
 
 .insights {{
     background: #F8FAFC;
-
     border: 1px solid #D9DEE3;
-
     border-left: 5px solid #2E8B57;
-
     padding: 12px 16px;
-
     margin-bottom: 20px;
 }}
 
@@ -3943,20 +3255,21 @@ body {{
     margin: 7px 0;
 }}
 
-.insight-good {{
+.insight-heading {{
+    font-weight: bold;
+    color: #243447;
+    margin-top: 10px;
+}}
+
+.growth-positive {{
     color: #2E7D32;
     font-weight: bold;
 }}
 
-.insight-bad {{
+.growth-negative {{
     color: #C62828;
     font-weight: bold;
 }}
-
-
-/* =========================================================
-   NOTE
-   ========================================================= */
 
 .note {{
     font-size: 12px;
@@ -3965,150 +3278,38 @@ body {{
 }}
 
 
-/* =========================================================
+/* =====================================================
    FOOTER
-   ========================================================= */
+   ===================================================== */
 
 .footer {{
     margin-top: 30px;
-
     padding-top: 12px;
-
     border-top: 1px solid #DDD;
-
     color: #777;
-
     font-size: 11px;
 }}
 
-/* =====================================================
-   DASHBOARD CHARTS
-   ===================================================== */
-
-.chart-grid {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    margin-bottom: 20px;
-}
-
-.chart-card {
-    background: #FFFFFF;
-    border: 1px solid #D9DEE3;
-    border-radius: 8px;
-    padding: 14px;
-    box-sizing: border-box;
-    width: calc(50% - 7px);
-    min-height: 220px;
-}
-
-.chart-wide {
-    width: 100%;
-}
-
-.chart-title {
-    font-size: 14px;
-    font-weight: bold;
-    color: #222;
-    margin-bottom: 12px;
-}
-
-.chart-body {
-    width: 100%;
-}
-
-.bar-row {
-    display: flex;
-    align-items: center;
-    margin: 13px 0;
-    gap: 8px;
-}
-
-.bar-label {
-    width: 110px;
-    font-size: 11px;
-    color: #444;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.bar-track {
-    flex: 1;
-    height: 18px;
-    background: #EEF1F3;
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.bar-fill {
-    height: 18px;
-    background: #F1E97A;
-    border-radius: 3px;
-}
-
-.bar-value {
-    width: 70px;
-    font-size: 11px;
-    font-weight: bold;
-    text-align: right;
-    color: #333;
-}
-
-.contribution-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 12px 0;
-}
-
-.contribution-name {
-    width: 105px;
-    font-size: 11px;
-}
-
-.contribution-track {
-    flex: 1;
-    height: 16px;
-    background: #EEF1F3;
-}
-
-.contribution-fill {
-    height: 16px;
-    background: #6CC9CE;
-}
-
-.contribution-percent {
-    width: 45px;
-    font-size: 11px;
-    font-weight: bold;
-    text-align: right;
-}
-
-.contribution-value {
-    width: 65px;
-    font-size: 11px;
-    text-align: right;
-    color: #555;
-}
-
 
 /* =====================================================
-   MOBILE / EMAIL WIDTH
+   MOBILE
    ===================================================== */
 
-@media only screen and (max-width: 700px) {
+@media only screen and (max-width: 700px) {{
 
-    .chart-card {
+    .container {{
+        padding: 10px;
+    }}
+
+    .kpi-card {{
         width: 100%;
-    }
+    }}
 
-    .bar-label {
-        width: 85px;
-    }
+    .data-table {{
+        font-size: 10px;
+    }}
 
-}
+}}
 
 </style>
 
@@ -4127,19 +3328,8 @@ body {{
 <div class="header">
 
     <div class="header-title">
-
-        <img
-            src="https://x.com/frozen_bottle"
-            alt="Frozen Bottle"
-            class="frozen-bottle-logo"
-        >
-
-        <span>
-            Frozen Bottle DSR Dashboard
-        </span>
-
+        📊 Frozen Bottle DSR Dashboard
     </div>
-
 
     <div class="header-subtitle">
 
@@ -4249,38 +3439,6 @@ body {{
         "%"
     )}
 
-</div>
-
-<!-- =====================================================
-     DASHBOARD CHARTS
-     ===================================================== -->
-
-<div class="section-title">
-    📊 Sales Performance
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_daily_html}
-
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_source_html}
-
-    {chart_brand_html}
-
-</div>
-
-
-<div class="chart-grid">
-
-    {chart_region_html}
-
-    {chart_session_html}
 
 </div>
 
@@ -4384,13 +3542,15 @@ body {{
 
     LM MTD:
     {lm_month_start.strftime("%d-%b-%Y")}
-    → {lm_mtd_end.strftime("%d-%b-%Y")}
+    →
+    {lm_mtd_end.strftime("%d-%b-%Y")}
 
     <br>
 
     LY MTD:
     {ly_month_start.strftime("%d-%b-%Y")}
-    → {ly_mtd_end.strftime("%d-%b-%Y")}
+    →
+    {ly_mtd_end.strftime("%d-%b-%Y")}
 
 </div>
 
@@ -4969,13 +4129,11 @@ def send_mail(
         "alternative"
     )
 
-
     msg["From"] = EMAIL
 
     msg["To"] = ", ".join(
         TO
     )
-
 
     if CC:
 
@@ -4983,9 +4141,7 @@ def send_mail(
             CC
         )
 
-
     msg["Subject"] = subject
-
 
     msg.attach(
         MIMEText(
@@ -4995,11 +4151,9 @@ def send_mail(
         )
     )
 
-
     recipients = (
         TO + CC
     )
-
 
     print("=" * 80)
     print("SENDING EMAIL")
@@ -5009,7 +4163,6 @@ def send_mail(
         "To:",
         recipients
     )
-
 
     with smtplib.SMTP(
         SMTP_SERVER,
@@ -5034,14 +4187,13 @@ def send_mail(
             msg.as_string()
         )
 
-
     print(
         "✅ Dashboard Mail Sent"
     )
 
 
 # =========================================================
-# SEND
+# SEND DASHBOARD
 # =========================================================
 
 subject = (
