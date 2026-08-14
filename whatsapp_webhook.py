@@ -486,7 +486,7 @@ def sales_data():
 
 
 # =========================================================
-# 📊 GET CURRENT FTD SALES
+# 📊 FTD SALES DATA
 # =========================================================
 
 def get_ftd_sales():
@@ -1147,6 +1147,88 @@ def send_role_based_ftd_sales(sender):
     discount = sales["discount"]
 
     date = sales["date"]
+
+# =========================================================
+# 📈 SALES VS LAST WEEK DATA
+# =========================================================
+
+def get_sales_vs_lw():
+
+    if not LIVE_SALES_DATA:
+
+        raise Exception(
+            "Live sales backend data is not available"
+        )
+
+    overall_data = (
+        LIVE_SALES_DATA.get(
+            "overall",
+            {}
+        )
+    )
+
+    return {
+
+        "today_net":
+            float(
+                overall_data.get(
+                    "net",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_net":
+            float(
+                overall_data.get(
+                    "lw_net",
+                    0
+                )
+                or 0
+            ),
+
+        "growth":
+            float(
+                overall_data.get(
+                    "lw_growth",
+                    0
+                )
+                or 0
+            ),
+
+        "today_txn":
+            float(
+                overall_data.get(
+                    "txn",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_txn": 0.0,
+
+        "today_aov":
+            float(
+                overall_data.get(
+                    "aov",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_aov": 0.0,
+
+        "today_discount":
+            float(
+                overall_data.get(
+                    "discount",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_discount": 0.0
+    }
 
     # -----------------------------------------------------
     # BRAND DATA
@@ -1948,6 +2030,83 @@ def send_sales_vs_lw(sender):
         "❌ Your AI MIS role is not configured."
     )
 
+def get_sales_vs_lw():
+
+    if not LIVE_SALES_DATA:
+
+        raise Exception(
+            "Live sales backend data is not available"
+        )
+
+    overall_data = (
+        LIVE_SALES_DATA.get(
+            "overall",
+            {}
+        )
+    )
+
+    return {
+
+        "today_net":
+            float(
+                overall_data.get(
+                    "net",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_net":
+            float(
+                overall_data.get(
+                    "lw_net",
+                    0
+                )
+                or 0
+            ),
+
+        "growth":
+            float(
+                overall_data.get(
+                    "lw_growth",
+                    0
+                )
+                or 0
+            ),
+
+        "today_txn":
+            float(
+                overall_data.get(
+                    "txn",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_txn": 0.0,
+
+        "today_aov":
+            float(
+                overall_data.get(
+                    "aov",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_aov": 0.0,
+
+        "today_discount":
+            float(
+                overall_data.get(
+                    "discount",
+                    0
+                )
+                or 0
+            ),
+
+        "lw_discount": 0.0
+    }
 
 # =========================================================
 # 🔐 DEBUG USER ACCESS
