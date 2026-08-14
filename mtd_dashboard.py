@@ -794,7 +794,7 @@ print("=" * 80)
 
 print("FTD Date :", ftd_date)
 print("FTD Rows :", len(ftd_df))
-print("FTD COCO :", len(ftd_coco_df))
+
 
 if not ftd_df.empty:
     print(
