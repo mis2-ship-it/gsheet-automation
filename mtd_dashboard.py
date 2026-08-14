@@ -3562,15 +3562,13 @@ body {{
 
     LM MTD:
     {lm_month_start.strftime("%d-%b-%Y")}
-    →
-    {lm_mtd_end.strftime("%d-%b-%Y")}
+    → {lm_mtd_end.strftime("%d-%b-%Y")}
 
     <br>
 
     LY MTD:
     {ly_month_start.strftime("%d-%b-%Y")}
-    →
-    {ly_mtd_end.strftime("%d-%b-%Y")}
+    → {ly_mtd_end.strftime("%d-%b-%Y")}
 
 </div>
 
