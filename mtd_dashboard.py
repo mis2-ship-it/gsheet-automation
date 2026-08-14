@@ -829,49 +829,71 @@ ly_mtd_df = date_filter(
     ly_mtd_end
 )
 
+# =========================================================
+# COCO DATASETS
+# =========================================================
+
+ftd_coco_df = filter_coco(
+    ftd_df
+)
+
+lw_coco_df = filter_coco(
+    lw_df
+)
+
+lm_coco_df = filter_coco(
+    lm_df
+)
+
+ly_coco_df = filter_coco(
+    ly_df
+)
+
+mtd_coco_df = filter_coco(
+    mtd_df
+)
+
+lm_mtd_coco_df = filter_coco(
+    lm_mtd_df
+)
+
+ly_mtd_coco_df = filter_coco(
+    ly_mtd_df
+)
+
 
 # =========================================================
-# DATA CHECK
+# FILTER CHECK
 # =========================================================
 
 print("=" * 80)
 print("FILTER CHECK")
 print("=" * 80)
 
-print(
-    "FTD Rows    :",
-    f"{len(ftd_df):,}"
-)
+print("FTD Rows    :", f"{len(ftd_df):,}")
+print("LW Rows     :", f"{len(lw_df):,}")
+print("LM Rows     :", f"{len(lm_df):,}")
+print("LY Rows     :", f"{len(ly_df):,}")
+print("MTD Rows    :", f"{len(mtd_df):,}")
+print("LM MTD Rows :", f"{len(lm_mtd_df):,}")
+print("LY MTD Rows :", f"{len(ly_mtd_df):,}")
 
-print(
-    "LW Rows     :",
-    f"{len(lw_df):,}"
-)
 
-print(
-    "LM Rows     :",
-    f"{len(lm_df):,}"
-)
+# =========================================================
+# COCO FILTER CHECK
+# =========================================================
 
-print(
-    "LY Rows     :",
-    f"{len(ly_df):,}"
-)
+print("=" * 80)
+print("COCO FILTER CHECK")
+print("=" * 80)
 
-print(
-    "MTD Rows    :",
-    f"{len(mtd_df):,}"
-)
-
-print(
-    "LM MTD Rows :",
-    f"{len(lm_mtd_df):,}"
-)
-
-print(
-    "LY MTD Rows :",
-    f"{len(ly_mtd_df):,}"
-)
+print("FTD COCO       :", f"{len(ftd_coco_df):,}")
+print("LW COCO        :", f"{len(lw_coco_df):,}")
+print("LM COCO        :", f"{len(lm_coco_df):,}")
+print("LY COCO        :", f"{len(ly_coco_df):,}")
+print("MTD COCO       :", f"{len(mtd_coco_df):,}")
+print("LM MTD COCO    :", f"{len(lm_mtd_coco_df):,}")
+print("LY MTD COCO    :", f"{len(ly_mtd_coco_df):,}")
 
 
 # =========================================================
@@ -1695,81 +1717,6 @@ def filter_coco(df):
     ].copy()
 
 
-# =========================================================
-# COCO DATASETS
-# =========================================================
-
-ftd_coco_df = filter_coco(
-    ftd_df
-)
-
-lw_coco_df = filter_coco(
-    lw_df
-)
-
-lm_coco_df = filter_coco(
-    lm_df
-)
-
-ly_coco_df = filter_coco(
-    ly_df
-)
-
-mtd_coco_df = filter_coco(
-    mtd_df
-)
-
-lm_mtd_coco_df = filter_coco(
-    lm_mtd_df
-)
-
-ly_mtd_coco_df = filter_coco(
-    ly_mtd_df
-)
-
-
-# =========================================================
-# COCO FILTER CHECK
-# =========================================================
-
-print("=" * 80)
-print("COCO FILTER CHECK")
-print("=" * 80)
-
-print(
-    "FTD COCO       :",
-    len(ftd_coco_df)
-)
-
-print(
-    "LW COCO        :",
-    len(lw_coco_df)
-)
-
-print(
-    "LM COCO        :",
-    len(lm_coco_df)
-)
-
-print(
-    "LY COCO        :",
-    len(ly_coco_df)
-)
-
-print(
-    "MTD COCO       :",
-    len(mtd_coco_df)
-)
-
-print(
-    "LM MTD COCO    :",
-    len(lm_mtd_coco_df)
-)
-
-print(
-    "LY MTD COCO    :",
-    len(ly_mtd_coco_df)
-)
 
 # =========================================================
 # MTD PERFORMANCE TABLES
