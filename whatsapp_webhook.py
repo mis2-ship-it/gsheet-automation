@@ -2440,6 +2440,255 @@ def send_role_based_ftd_sales(
         "❌ Your AI MIS role is not configured."
     )
 
+# =========================================================
+# 🏪 STORE SALES QUERY
+# =========================================================
+
+def send_store_sales_query(
+    sender,
+    store_name
+):
+
+    print("=" * 60)
+    print("🏪 STORE SALES QUERY")
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+
+        send_whatsapp_message(
+            sender,
+            "❌ Your mobile number is not mapped for AI MIS access."
+        )
+
+        return
+
+    role = str(
+        user.get(
+            "role",
+            ""
+        )
+    ).strip().lower()
+
+    stores = LIVE_SALES_DATA.get(
+        "stores",
+        {}
+    )
+
+    if not stores:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Store sales data is not available right now."
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # FIND STORE
+    # -----------------------------------------------------
+
+    requested = (
+        store_name
+        .strip()
+        .lower()
+    )
+
+    matched_store = None
+
+    for actual_store in stores.keys():
+
+        if (
+            actual_store
+            .strip()
+            .lower()
+            ==
+            requested
+        ):
+
+            matched_store = actual_store
+            break
+
+    if not matched_store:
+
+        send_whatsapp_message(
+            sender,
+            (
+                f"❌ Store not found:\n"
+                f"{store_name}"
+            )
+        )
+
+        return
+
+    store_data = stores[
+        matched_store
+    ]
+
+    # -----------------------------------------------------
+    # ACCESS CONTROL
+    # -----------------------------------------------------
+
+    allowed = False
+
+    # OPS LEADER
+    if role == "ops leader":
+
+        allowed = True
+
+    # REGION MANAGER
+    elif role == "region manager":
+
+        user_region = str(
+            user.get(
+                "region",
+                ""
+            )
+        ).strip().lower()
+
+        store_region = str(
+            store_data.get(
+                "region",
+                ""
+            )
+        ).strip().lower()
+
+        allowed = (
+            user_region
+            ==
+            store_region
+        )
+
+    # AREA MANAGER
+    elif role == "area manager":
+
+        user_stores = user.get(
+            "stores",
+            []
+        )
+
+        user_stores = [
+            str(x).strip().lower()
+            for x in user_stores
+        ]
+
+        allowed = (
+            "all" in user_stores
+            or
+            matched_store.lower()
+            in user_stores
+        )
+
+    # -----------------------------------------------------
+    # ACCESS DENIED
+    # -----------------------------------------------------
+
+    if not allowed:
+
+        print(
+            "❌ Store access denied:",
+            matched_store
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                f"❌ You don't have access to "
+                f"*{matched_store}*."
+            )
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # SALES VALUES
+    # -----------------------------------------------------
+
+    today_sales = float(
+        store_data.get(
+            "today",
+            0
+        ) or 0
+    )
+
+    lw_sales = float(
+        store_data.get(
+            "lw",
+            0
+        ) or 0
+    )
+
+    lm_sales = float(
+        store_data.get(
+            "lm",
+            0
+        ) or 0
+    )
+
+    lw_growth = float(
+        store_data.get(
+            "growth",
+            0
+        ) or 0
+    )
+
+    lm_growth = float(
+        store_data.get(
+            "lm_growth",
+            0
+        ) or 0
+    )
+
+    report_date = LIVE_SALES_DATA.get(
+        "date",
+        ""
+    )
+
+    report_time = LIVE_SALES_DATA.get(
+        "report_time",
+        ""
+    )
+
+    # -----------------------------------------------------
+    # RESPONSE
+    # -----------------------------------------------------
+
+    reply = (
+
+        "🏪 *AI MIS | STORE SALES*\n"
+        f"{report_date}\n"
+        f"{report_time}\n\n"
+
+        f"🏪 *{matched_store}*\n"
+        f"📍 Region: "
+        f"{store_data.get('region', 'UNKNOWN')}\n\n"
+
+        f"💰 *Today:* "
+        f"₹{today_sales / 1000:.1f}K\n"
+
+        f"📅 *Last Week:* "
+        f"₹{lw_sales / 1000:.1f}K\n"
+
+        f"📆 *Last Month:* "
+        f"₹{lm_sales / 1000:.1f}K\n\n"
+
+        f"📈 vs LW: "
+        f"{lw_growth:+.1f}%\n"
+
+        f"📊 vs LM: "
+        f"{lm_growth:+.1f}%"
+    )
+
+    print(reply)
+    print("=" * 60)
+
+    send_whatsapp_message(
+        sender,
+        reply
+    )
 
 # =========================================================
 # 👋 PROCESS MESSAGE
@@ -2741,6 +2990,56 @@ def process_message(
         reply
     )
 
+# =====================================================
+# 🏪 STORE SALES QUERY
+# =====================================================
+
+if "sales" in message:
+
+    store_query = (
+        message
+        .replace(
+            "sales",
+            ""
+        )
+        .replace(
+            "sale",
+            ""
+        )
+        .strip()
+    )
+
+    if store_query:
+
+        print(
+            "🏪 STORE SALES QUERY DETECTED:",
+            store_query
+        )
+
+        try:
+
+            send_store_sales_query(
+                sender,
+                store_query
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ STORE SALES QUERY ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while generating "
+                    "store sales report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+        return
 
 # =========================================================
 # 📩 META WEBHOOK RECEIVER
