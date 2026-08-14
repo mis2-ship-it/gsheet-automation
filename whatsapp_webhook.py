@@ -1902,13 +1902,35 @@ def send_sales_vs_lw(sender):
     
         print(
             "🏪 Area Manager → "
-            "Assigned Store Sales"
+            "Patch Store Sales"
         )
     
-        send_area_manager_ftd_sales(
-            sender,
-            user
-        )
+        try:
+    
+            send_area_manager_ftd_sales(
+                sender,
+                user
+            )
+    
+            print(
+                "✅ send_area_manager_ftd_sales() completed"
+            )
+    
+        except Exception as e:
+    
+            print(
+                "❌ send_area_manager_ftd_sales() ERROR:",
+                str(e)
+            )
+    
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while generating "
+                    "Area Manager Sales report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
     
         return
 
