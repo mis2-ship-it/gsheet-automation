@@ -2117,6 +2117,25 @@ def build_whatsapp_snapshot():
             )
         )
 
+        # ---------------------------------------------------------
+        # LAST MONTH COCO STORES
+        # ---------------------------------------------------------
+        
+        lm_store_df = (
+            month_on_month_cut
+            .groupby("branchName")["Net Sales"]
+            .sum()
+            .reset_index()
+        )
+        
+        lm_store_df.rename(
+            columns={
+                "branchName": "Store Name",
+                "Net Sales": "LM_Sales"
+            },
+            inplace=True
+        )
+
         store_df = (
             today_store_df
             .merge(
@@ -2158,24 +2177,45 @@ def build_whatsapp_snapshot():
                 continue
 
             stores[store_name] = {
+                "region": str(
+                    region_map.get(
+                        store_name,
+                        "UNKNOWN"
+                    )
+                ).strip(),
+            
                 "today": round(
-                    _safe_float(row["Today_Sales"]),
+                    float(
+                        row["Today_Sales"] or 0
+                    ),
                     2
                 ),
+            
                 "lw": round(
-                    _safe_float(row["LW_Sales"]),
+                    float(
+                        row["LW_Sales"] or 0
+                    ),
                     2
                 ),
+            
                 "lm": round(
-                    _safe_float(row["LM_Sales"]),
+                    float(
+                        row["LM_Sales"] or 0
+                    ),
                     2
                 ),
+            
                 "growth": round(
-                    _safe_float(row["Growth %"]),
+                    float(
+                        row["Growth %"] or 0
+                    ),
                     2
                 ),
+            
                 "lm_growth": round(
-                    _safe_float(row["LM Growth %"]),
+                    float(
+                        row["LM Growth %"] or 0
+                    ),
                     2
                 )
             }
@@ -2188,6 +2228,19 @@ def build_whatsapp_snapshot():
         )
 
         stores = {}
+
+        print("Store sample:")
+        
+        if stores:
+        
+            first_store = next(
+                iter(stores)
+            )
+        
+            print(
+                first_store,
+                stores[first_store]
+            )
 
     # =========================================================
     # 🌍 REGION LM ENRICHMENT
