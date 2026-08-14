@@ -1160,11 +1160,9 @@ def get_sales_vs_lw():
             "Live sales backend data is not available"
         )
 
-    overall_data = (
-        LIVE_SALES_DATA.get(
-            "overall",
-            {}
-        )
+    overall_data = LIVE_SALES_DATA.get(
+        "overall",
+        {}
     )
 
     return {
@@ -1174,8 +1172,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "net",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "lw_net":
@@ -1183,8 +1180,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "lw_net",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "growth":
@@ -1192,8 +1188,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "lw_growth",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "today_txn":
@@ -1201,8 +1196,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "txn",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "lw_txn": 0.0,
@@ -1212,8 +1206,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "aov",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "lw_aov": 0.0,
@@ -1223,8 +1216,7 @@ def get_sales_vs_lw():
                 overall_data.get(
                     "discount",
                     0
-                )
-                or 0
+                ) or 0
             ),
 
         "lw_discount": 0.0
@@ -2571,17 +2563,35 @@ def send_role_based_ftd_sales(
     if role == "area manager":
 
         print(
-            "🏪 Area Manager → "
-            "Store filtering not enabled yet"
+            "🏪 Area Manager → Assigned Store Sales"
         )
 
-        send_whatsapp_message(
-            sender,
-            (
-                "⚠️ Area Manager store-level "
-                "sales access is being configured next."
+        try:
+
+            send_area_manager_ftd_sales(
+                sender,
+                user
             )
-        )
+
+            print(
+                "✅ Area Manager FTD Sales completed"
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ AREA MANAGER FTD SALES ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while generating "
+                    "Area Manager Sales report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
 
         return
 
@@ -2598,6 +2608,309 @@ def send_role_based_ftd_sales(
         sender,
         "❌ Your AI MIS role is not configured."
     )
+
+
+# =========================================================
+# 🏪 AREA MANAGER FTD SALES
+# =========================================================
+
+def send_area_manager_ftd_sales(
+    sender,
+    user
+):
+
+    print("=" * 60)
+    print("🏪 AREA MANAGER FTD SALES")
+    print("=" * 60)
+
+    allowed_stores = user.get(
+        "stores",
+        []
+    )
+
+    if not isinstance(
+        allowed_stores,
+        list
+    ):
+
+        allowed_stores = [
+            allowed_stores
+        ]
+
+    allowed_stores = [
+        str(store).strip()
+        for store in allowed_stores
+        if str(store).strip()
+    ]
+
+    print(
+        "Mapped Stores:",
+        allowed_stores
+    )
+
+    if not LIVE_SALES_DATA:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Sales data is not available right now."
+        )
+
+        return
+
+    snapshot_stores = (
+        LIVE_SALES_DATA.get(
+            "stores",
+            {}
+        )
+    )
+
+    if not snapshot_stores:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Store sales data is not available right now."
+        )
+
+        return
+
+    normalized_snapshot = {}
+
+    for store_name, store_data in (
+        snapshot_stores.items()
+    ):
+
+        normalized_snapshot[
+            str(store_name).strip().lower()
+        ] = {
+            "name": store_name,
+            "data": store_data
+        }
+
+    matched_stores = {}
+
+    for allowed_store in allowed_stores:
+
+        if allowed_store.lower() == "all":
+
+            matched_stores = (
+                snapshot_stores.copy()
+            )
+
+            break
+
+        matched = normalized_snapshot.get(
+            allowed_store.lower()
+        )
+
+        if matched:
+
+            matched_stores[
+                matched["name"]
+            ] = matched["data"]
+
+    print(
+        "Matched Stores:",
+        list(
+            matched_stores.keys()
+        )
+    )
+
+    if not matched_stores:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ No sales data found for your mapped stores."
+        )
+
+        return
+
+    today_total = 0.0
+    lw_total = 0.0
+    lm_total = 0.0
+
+    for store_name, store_data in (
+        matched_stores.items()
+    ):
+
+        today_total += float(
+            store_data.get(
+                "today",
+                0
+            ) or 0
+        )
+
+        lw_total += float(
+            store_data.get(
+                "lw",
+                0
+            ) or 0
+        )
+
+        lm_total += float(
+            store_data.get(
+                "lm",
+                0
+            ) or 0
+        )
+
+    growth_lw = (
+        (
+            today_total
+            -
+            lw_total
+        )
+        /
+        max(
+            lw_total,
+            1
+        )
+    ) * 100
+
+    growth_lm = (
+        (
+            today_total
+            -
+            lm_total
+        )
+        /
+        max(
+            lm_total,
+            1
+        )
+    ) * 100
+
+    if growth_lw > 5:
+
+        performance = "🚀 Strong Growth"
+
+    elif growth_lw > 0:
+
+        performance = "📈 Growth"
+
+    elif growth_lw < -5:
+
+        performance = "🔻 Decline"
+
+    else:
+
+        performance = "➡️ Stable"
+
+    sorted_stores = sorted(
+        matched_stores.items(),
+        key=lambda item:
+            float(
+                item[1].get(
+                    "today",
+                    0
+                ) or 0
+            ),
+        reverse=True
+    )
+
+    store_lines = []
+
+    for store_name, store_data in (
+        sorted_stores
+    ):
+
+        today = float(
+            store_data.get(
+                "today",
+                0
+            ) or 0
+        )
+
+        lw = float(
+            store_data.get(
+                "lw",
+                0
+            ) or 0
+        )
+
+        growth = (
+            (
+                today
+                -
+                lw
+            )
+            /
+            max(
+                lw,
+                1
+            )
+        ) * 100
+
+        store_lines.append(
+            f"• {store_name}: "
+            f"₹{today / 1000:.1f}K "
+            f"({growth:+.1f}% vs LW)"
+        )
+
+    reply_lines = [
+
+        "🏪 *AI MIS | AREA SALES*",
+
+        LIVE_SALES_DATA.get(
+            "date",
+            ""
+        ),
+
+        LIVE_SALES_DATA.get(
+            "report_time",
+            ""
+        ),
+
+        "",
+
+        f"📍 *Patch:* "
+        f"{user.get('patch', '')}",
+
+        f"🏪 *Stores:* "
+        f"{len(matched_stores)}",
+
+        "",
+
+        "💰 *NET REVENUE*",
+
+        f"🟢 Today: "
+        f"₹{today_total / 100000:.2f}L",
+
+        f"🔵 Last Week: "
+        f"₹{lw_total / 100000:.2f}L",
+
+        f"🟣 Last Month: "
+        f"₹{lm_total / 100000:.2f}L",
+
+        f"📈 vs LW: "
+        f"{growth_lw:+.1f}%",
+
+        f"📊 vs LM: "
+        f"{growth_lm:+.1f}%",
+
+        f"🧠 Performance: "
+        f"{performance}",
+
+        "",
+
+        "🏪 *STORE PERFORMANCE*"
+
+    ]
+
+    reply_lines.extend(
+        store_lines
+    )
+
+    reply = "\n".join(
+        reply_lines
+    )
+
+    print(reply)
+
+    send_whatsapp_message(
+        sender,
+        reply
+    )
+
 
 # =========================================================
 # 🏪 STORE SALES QUERY
@@ -2620,37 +2933,45 @@ def send_store_sales_query(
 
         send_whatsapp_message(
             sender,
-            "❌ Your mobile number is not mapped for AI MIS access."
+            (
+                "❌ Your mobile number is "
+                "not mapped for AI MIS access."
+            )
         )
 
         return
 
-    role = str(
-        user.get(
-            "role",
-            ""
+    role = (
+        str(
+            user.get(
+                "role",
+                ""
+            )
         )
-    ).strip().lower()
+        .strip()
+        .lower()
+    )
 
-    stores = LIVE_SALES_DATA.get(
-        "stores",
-        {}
+    stores = (
+        LIVE_SALES_DATA.get(
+            "stores",
+            {}
+        )
     )
 
     if not stores:
 
         send_whatsapp_message(
             sender,
-            "⚠️ Store sales data is not available right now."
+            (
+                "⚠️ Store sales data "
+                "is not available right now."
+            )
         )
 
         return
 
-    # -----------------------------------------------------
-    # FIND STORE
-    # -----------------------------------------------------
-
-    requested = (
+    requested_store = (
         store_name
         .strip()
         .lower()
@@ -2661,11 +2982,11 @@ def send_store_sales_query(
     for actual_store in stores.keys():
 
         if (
-            actual_store
+            str(actual_store)
             .strip()
             .lower()
             ==
-            requested
+            requested_store
         ):
 
             matched_store = actual_store
@@ -2676,7 +2997,7 @@ def send_store_sales_query(
         send_whatsapp_message(
             sender,
             (
-                f"❌ Store not found:\n"
+                f"❌ Store not found: "
                 f"{store_name}"
             )
         )
@@ -2701,22 +3022,30 @@ def send_store_sales_query(
     # REGION MANAGER
     elif role == "region manager":
 
-        user_region = str(
-            user.get(
-                "region",
-                ""
+        manager_region = (
+            str(
+                user.get(
+                    "region",
+                    ""
+                )
             )
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
 
-        store_region = str(
-            store_data.get(
-                "region",
-                ""
+        store_region = (
+            str(
+                store_data.get(
+                    "region",
+                    ""
+                )
             )
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
 
         allowed = (
-            user_region
+            manager_region
             ==
             store_region
         )
@@ -2724,21 +3053,35 @@ def send_store_sales_query(
     # AREA MANAGER
     elif role == "area manager":
 
-        user_stores = user.get(
+        allowed_stores = user.get(
             "stores",
             []
         )
 
-        user_stores = [
-            str(x).strip().lower()
-            for x in user_stores
+        if not isinstance(
+            allowed_stores,
+            list
+        ):
+
+            allowed_stores = [
+                allowed_stores
+            ]
+
+        allowed_stores = [
+            str(x)
+            .strip()
+            .lower()
+
+            for x in allowed_stores
         ]
 
         allowed = (
-            "all" in user_stores
+            "all" in allowed_stores
             or
-            matched_store.lower()
-            in user_stores
+            matched_store
+            .strip()
+            .lower()
+            in allowed_stores
         )
 
     # -----------------------------------------------------
@@ -2748,97 +3091,92 @@ def send_store_sales_query(
     if not allowed:
 
         print(
-            "❌ Store access denied:",
+            "❌ STORE ACCESS DENIED:",
             matched_store
         )
 
         send_whatsapp_message(
             sender,
             (
-                f"❌ You don't have access to "
-                f"*{matched_store}*."
+                f"❌ You don't have access "
+                f"to *{matched_store}*."
             )
         )
 
         return
 
     # -----------------------------------------------------
-    # SALES VALUES
+    # STORE METRICS
     # -----------------------------------------------------
 
-    today_sales = float(
+    today = float(
         store_data.get(
             "today",
             0
         ) or 0
     )
 
-    lw_sales = float(
+    lw = float(
         store_data.get(
             "lw",
             0
         ) or 0
     )
 
-    lm_sales = float(
+    lm = float(
         store_data.get(
             "lm",
             0
         ) or 0
     )
 
-    lw_growth = float(
+    growth_lw = float(
         store_data.get(
             "growth",
             0
         ) or 0
     )
 
-    lm_growth = float(
+    growth_lm = float(
         store_data.get(
             "lm_growth",
             0
         ) or 0
     )
 
-    report_date = LIVE_SALES_DATA.get(
-        "date",
-        ""
+    region = (
+        store_data.get(
+            "region",
+            "UNKNOWN"
+        )
     )
-
-    report_time = LIVE_SALES_DATA.get(
-        "report_time",
-        ""
-    )
-
-    # -----------------------------------------------------
-    # RESPONSE
-    # -----------------------------------------------------
 
     reply = (
 
         "🏪 *AI MIS | STORE SALES*\n"
-        f"{report_date}\n"
-        f"{report_time}\n\n"
+
+        f"{LIVE_SALES_DATA.get('date', '')}\n"
+
+        f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
 
         f"🏪 *{matched_store}*\n"
-        f"📍 Region: "
-        f"{store_data.get('region', 'UNKNOWN')}\n\n"
 
-        f"💰 *Today:* "
-        f"₹{today_sales / 1000:.1f}K\n"
+        f"📍 Region: {region}\n\n"
 
-        f"📅 *Last Week:* "
-        f"₹{lw_sales / 1000:.1f}K\n"
+        f"💰 Today: "
+        f"₹{today / 1000:.1f}K\n"
 
-        f"📆 *Last Month:* "
-        f"₹{lm_sales / 1000:.1f}K\n\n"
+        f"📅 Last Week: "
+        f"₹{lw / 1000:.1f}K\n"
+
+        f"📆 Last Month: "
+        f"₹{lm / 1000:.1f}K\n\n"
 
         f"📈 vs LW: "
-        f"{lw_growth:+.1f}%\n"
+        f"{growth_lw:+.1f}%\n"
 
         f"📊 vs LM: "
-        f"{lm_growth:+.1f}%"
+        f"{growth_lm:+.1f}%"
     )
 
     print(reply)
@@ -2848,6 +3186,7 @@ def send_store_sales_query(
         sender,
         reply
     )
+
 
 # =========================================================
 # 👋 PROCESS MESSAGE
@@ -2866,14 +3205,17 @@ def process_message(
         .lower()
         .split()
     )
-    
-    # Normalize apostrophes / punctuation
+
+    # -----------------------------------------------------
+    # NORMALIZE APOSTROPHES
+    # -----------------------------------------------------
+
     message = re.sub(
         r"[’'`]",
         "",
         message
     )
-    
+
     message = re.sub(
         r"\s+",
         " ",
@@ -2923,6 +3265,8 @@ def process_message(
 
             "📈 *sales vs lw*\n"
 
+            "🏪 *Byculla sales*\n"
+
             "❓ *help*"
         )
 
@@ -2951,7 +3295,17 @@ def process_message(
 
             "📈 *sales vs lw*\n"
 
-            "❓ *help*"
+            "🏪 *Store Name sales*\n\n"
+
+            "Examples:\n"
+
+            "• Byculla sales\n"
+
+            "• Tata Sherwood sales\n"
+
+            "• JP Nagar sales\n\n"
+
+            "❓ help"
         )
 
         send_whatsapp_message(
@@ -2992,33 +3346,29 @@ def process_message(
 
     ]
 
-    # =====================================================
-    # 📊 SALES
-    # =====================================================
-    
     if message in sales_keywords:
-    
+
         print(
             "📊 FTD SALES COMMAND DETECTED"
         )
-    
+
         try:
-    
+
             send_role_based_ftd_sales(
                 sender
             )
-    
+
             print(
                 "✅ send_role_based_ftd_sales() completed"
             )
-    
+
         except Exception as e:
-    
+
             print(
                 "❌ send_role_based_ftd_sales() ERROR:",
                 str(e)
             )
-    
+
             send_whatsapp_message(
                 sender,
                 (
@@ -3027,7 +3377,7 @@ def process_message(
                     f"Debug: {str(e)}"
                 )
             )
-    
+
         return
 
     # =====================================================
@@ -3057,24 +3407,24 @@ def process_message(
         print(
             "📈 SALES VS LW COMMAND DETECTED"
         )
-    
+
         try:
-    
+
             send_sales_vs_lw(
                 sender
             )
-    
+
             print(
                 "✅ send_sales_vs_lw() completed"
             )
-    
+
         except Exception as e:
-    
+
             print(
                 "❌ send_sales_vs_lw() ERROR:",
                 str(e)
             )
-    
+
             send_whatsapp_message(
                 sender,
                 (
@@ -3083,13 +3433,13 @@ def process_message(
                     f"Debug: {str(e)}"
                 )
             )
-    
+
         return
 
     # =====================================================
     # 📈 NATURAL SALES VS LW
     # =====================================================
-    
+
     if (
         "sales" in message
         and (
@@ -3097,42 +3447,106 @@ def process_message(
             or "lw" in message
         )
     ):
-    
+
         print(
             "📈 NATURAL SALES VS LW "
             "QUESTION DETECTED"
         )
-    
+
         try:
-    
+
             send_sales_vs_lw(
                 sender
             )
-    
+
             print(
                 "✅ Natural Sales vs LW completed"
             )
-    
+
         except Exception as e:
-    
+
             print(
-                "❌ Natural Sales vs LW ERROR:",
+                "❌ NATURAL SALES VS LW ERROR:",
                 str(e)
             )
-    
+
             send_whatsapp_message(
                 sender,
                 (
                     "❌ Error while generating "
-                    "Sales vs Last Week report."
+                    "Sales vs Last Week report.\n\n"
+                    f"Debug: {str(e)}"
                 )
             )
-    
+
         return
+
+    # =====================================================
+    # 🏪 STORE SALES QUERY
+    # =====================================================
+
+    if (
+        "sales" in message
+        or "sale" in message
+    ):
+
+        store_query = (
+            message
+            .replace(
+                "sales",
+                ""
+            )
+            .replace(
+                "sale",
+                ""
+            )
+            .strip()
+        )
+
+        if store_query:
+
+            print(
+                "🏪 STORE SALES QUERY DETECTED:",
+                store_query
+            )
+
+            try:
+
+                send_store_sales_query(
+                    sender,
+                    store_query
+                )
+
+                print(
+                    "✅ Store sales query completed"
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ STORE SALES QUERY ERROR:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Error while generating "
+                        "store sales report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
 
     # =====================================================
     # ❌ UNKNOWN MESSAGE
     # =====================================================
+
+    print(
+        "❓ UNKNOWN MESSAGE:",
+        message
+    )
 
     reply = (
 
@@ -3149,56 +3563,227 @@ def process_message(
         reply
     )
 
-# =====================================================
-# 🏪 STORE SALES QUERY
-# =====================================================
 
-if "sales" in message:
+# =========================================================
+# 📩 META WEBHOOK RECEIVER
+# =========================================================
 
-    store_query = (
-        message
-        .replace(
-            "sales",
-            ""
-        )
-        .replace(
-            "sale",
-            ""
-        )
-        .strip()
+@app.route(
+    "/webhook",
+    methods=["POST"]
+)
+def webhook():
+
+    data = request.get_json(
+        silent=True
     )
 
-    if store_query:
+    print("=" * 60)
+    print("📩 WHATSAPP WEBHOOK RECEIVED")
+    print("=" * 60)
+
+    print(
+        json.dumps(
+            data,
+            indent=2,
+            ensure_ascii=False
+        )
+    )
+
+    print("=" * 60)
+
+    if not data:
 
         print(
-            "🏪 STORE SALES QUERY DETECTED:",
-            store_query
+            "⚠️ Empty webhook payload"
         )
 
-        try:
+        return (
+            "EVENT_RECEIVED",
+            200
+        )
 
-            send_store_sales_query(
-                sender,
-                store_query
+    if (
+        data.get(
+            "object"
+        )
+        !=
+        "whatsapp_business_account"
+    ):
+
+        print(
+            "⚠️ Not WhatsApp Business Account"
+        )
+
+        return (
+            "EVENT_RECEIVED",
+            200
+        )
+
+    # =====================================================
+    # PROCESS ENTRIES
+    # =====================================================
+
+    for entry in data.get(
+        "entry",
+        []
+    ):
+
+        for change in entry.get(
+            "changes",
+            []
+        ):
+
+            field = change.get(
+                "field"
             )
 
-        except Exception as e:
+            value = change.get(
+                "value",
+                {}
+            )
 
             print(
-                "❌ STORE SALES QUERY ERROR:",
-                str(e)
+                "Webhook field:",
+                field
             )
 
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "store sales report.\n\n"
-                    f"Debug: {str(e)}"
+            # =================================================
+            # ONLY PROCESS MESSAGE EVENTS
+            # =================================================
+
+            if field != "messages":
+
+                print(
+                    "ℹ️ Other webhook event:",
+                    field
                 )
+
+                continue
+
+            messages = value.get(
+                "messages",
+                []
             )
 
-        return
+            print(
+                "Number of messages:",
+                len(messages)
+            )
+
+            # =================================================
+            # PROCESS EACH MESSAGE
+            # =================================================
+
+            for incoming_message in messages:
+
+                message_type = (
+                    incoming_message.get(
+                        "type"
+                    )
+                )
+
+                sender = (
+                    incoming_message.get(
+                        "from"
+                    )
+                )
+
+                print(
+                    "Message type:",
+                    message_type
+                )
+
+                print(
+                    "Sender:",
+                    sender
+                )
+
+                # =============================================
+                # TEXT MESSAGE
+                # =============================================
+
+                if message_type == "text":
+
+                    text_data = (
+                        incoming_message.get(
+                            "text",
+                            {}
+                        )
+                    )
+
+                    message_text = (
+                        text_data.get(
+                            "body",
+                            ""
+                        )
+                    )
+
+                    print(
+                        "💬 Incoming text:",
+                        message_text
+                    )
+
+                    if (
+                        sender
+                        and message_text
+                    ):
+
+                        try:
+
+                            process_message(
+                                sender,
+                                message_text
+                            )
+
+                            print(
+                                "✅ process_message "
+                                "completed"
+                            )
+
+                        except Exception as e:
+
+                            print(
+                                "❌ process_message ERROR:",
+                                str(e)
+                            )
+
+                            send_whatsapp_message(
+                                sender,
+                                (
+                                    "❌ AI MIS encountered "
+                                    "an error while processing "
+                                    "your request.\n\n"
+                                    f"Debug: {str(e)}"
+                                )
+                            )
+
+                # =============================================
+                # NON-TEXT MESSAGE
+                # =============================================
+
+                else:
+
+                    print(
+                        "⚠️ Non-text message:",
+                        message_type
+                    )
+
+                    if sender:
+
+                        send_whatsapp_message(
+                            sender,
+                            (
+                                "🤖 AI MIS currently "
+                                "supports text messages only."
+                            )
+                        )
+
+    return (
+        "EVENT_RECEIVED",
+        200
+    )
+
 
 # =========================================================
 # 📩 META WEBHOOK RECEIVER
