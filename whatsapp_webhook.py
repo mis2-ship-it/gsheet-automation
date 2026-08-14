@@ -1245,6 +1245,250 @@ def send_role_based_ftd_sales(sender):
         reply
     )
 
+# =========================================================
+# 📊 FTD SALES — OVERALL / OPS LEADER
+# =========================================================
+
+def send_ftd_sales(sender):
+
+    print("=" * 60)
+    print("📊 FTD SALES REQUEST")
+    print("=" * 60)
+
+    try:
+
+        # -------------------------------------------------
+        # GET SNAPSHOT DATA
+        # -------------------------------------------------
+
+        if not LIVE_SALES_DATA:
+
+            print(
+                "❌ LIVE_SALES_DATA is empty"
+            )
+
+            send_whatsapp_message(
+                sender,
+                "⚠️ Sales data is not available right now."
+            )
+
+            return
+
+        overall = LIVE_SALES_DATA.get(
+            "overall",
+            {}
+        )
+
+        brands = LIVE_SALES_DATA.get(
+            "brands",
+            {}
+        )
+
+        # -------------------------------------------------
+        # OVERALL VALUES
+        # -------------------------------------------------
+
+        net = float(
+            overall.get(
+                "net",
+                0
+            )
+            or 0
+        )
+
+        txn = float(
+            overall.get(
+                "txn",
+                0
+            )
+            or 0
+        )
+
+        aov = float(
+            overall.get(
+                "aov",
+                0
+            )
+            or 0
+        )
+
+        discount = float(
+            overall.get(
+                "discount",
+                0
+            )
+            or 0
+        )
+
+        report_date = LIVE_SALES_DATA.get(
+            "date",
+            ""
+        )
+
+        report_time = LIVE_SALES_DATA.get(
+            "report_time",
+            ""
+        )
+
+        # -------------------------------------------------
+        # BRAND CONTRIBUTION
+        # -------------------------------------------------
+
+        brand_values = {}
+
+        for brand_name, brand_data in brands.items():
+
+            brand_values[
+                str(brand_name)
+            ] = float(
+                brand_data.get(
+                    "today",
+                    0
+                )
+                or 0
+            )
+
+        total_brand = sum(
+            brand_values.values()
+        )
+
+        # -------------------------------------------------
+        # RESPONSE
+        # -------------------------------------------------
+
+        reply_lines = [
+
+            "📊 *AI MIS | FTD SALES*",
+
+            f"{report_date}",
+
+            "",
+
+            f"💰 Net Revenue: "
+            f"₹{net / 100000:.2f}L",
+
+            f"🧾 Transactions: "
+            f"{int(round(txn)):,}",
+
+            f"🧺 AOV: "
+            f"₹{int(round(aov)):,}",
+
+            f"📉 Discount: "
+            f"{abs(discount):.1f}%"
+
+        ]
+
+        # -------------------------------------------------
+        # BRAND CONTRIBUTION
+        # -------------------------------------------------
+
+        if brand_values:
+
+            reply_lines.extend([
+                "",
+                "🏪 *Brand Contribution*"
+            ])
+
+            # Sort largest first
+            sorted_brands = sorted(
+                brand_values.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            for brand_name, revenue in sorted_brands:
+
+                contribution = (
+                    revenue
+                    /
+                    max(
+                        total_brand,
+                        1
+                    )
+                ) * 100
+
+                reply_lines.append(
+                    f"• {brand_name}: "
+                    f"{contribution:.0f}%"
+                )
+
+        reply = "\n".join(
+            reply_lines
+        )
+
+        # -------------------------------------------------
+        # DEBUG
+        # -------------------------------------------------
+
+        print(
+            "Report Date:",
+            report_date
+        )
+
+        print(
+            "Report Time:",
+            report_time
+        )
+
+        print(
+            "Net:",
+            net
+        )
+
+        print(
+            "Transactions:",
+            txn
+        )
+
+        print(
+            "AOV:",
+            aov
+        )
+
+        print(
+            "Discount:",
+            discount
+        )
+
+        print(
+            "Brands:",
+            list(
+                brand_values.keys()
+            )
+        )
+
+        print(
+            "WhatsApp FTD Reply:"
+        )
+
+        print(reply)
+
+        print("=" * 60)
+
+        # -------------------------------------------------
+        # SEND
+        # -------------------------------------------------
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ FTD SALES ERROR:",
+            str(e)
+        )
+
+        send_whatsapp_message(
+            sender,
+            (
+                "❌ Error while generating "
+                "FTD Sales report.\n\n"
+                f"Debug: {str(e)}"
+            )
+        )
 
 # =========================================================
 # 📊 SALES VS LAST WEEK
