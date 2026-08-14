@@ -788,6 +788,25 @@ ly_df = single_date_filter(
     ly_date
 )
 
+print("=" * 80)
+print("FTD CHECK")
+print("=" * 80)
+
+print("FTD Date :", ftd_date)
+print("FTD Rows :", len(ftd_df))
+print("FTD COCO :", len(ftd_coco_df))
+
+if not ftd_df.empty:
+    print(
+        "FTD Store Types:"
+    )
+    print(
+        ftd_df["Store Type"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .value_counts()
+    )
 
 # =========================================================
 # MTD DATASETS
@@ -1379,36 +1398,30 @@ ftd_coco_df = ftd_df[
     == "COCO"
 ].copy()
 
-
 mtd_coco_df = mtd_df[
     mtd_df["Store Type"]
     == "COCO"
 ].copy()
-
 
 lw_coco_df = lw_df[
     lw_df["Store Type"]
     == "COCO"
 ].copy()
 
-
 lm_coco_df = lm_df[
     lm_df["Store Type"]
     == "COCO"
 ].copy()
-
 
 ly_coco_df = ly_df[
     ly_df["Store Type"]
     == "COCO"
 ].copy()
 
-
 lm_mtd_coco_df = lm_mtd_df[
     lm_mtd_df["Store Type"]
     == "COCO"
 ].copy()
-
 
 ly_mtd_coco_df = ly_mtd_df[
     ly_mtd_df["Store Type"]
@@ -1668,46 +1681,95 @@ session_ftd_ly = performance_summary(
 # COCO DATA FILTERS
 # =========================================================
 
-ftd_coco_df = ftd_df[
-    ftd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+def filter_coco(df):
 
-lw_coco_df = lw_df[
-    lw_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+    if df.empty:
+        return df.copy()
 
-lm_coco_df = lm_df[
-    lm_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+    return df[
+        df["Store Type"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        .eq("COCO")
+    ].copy()
 
-ly_coco_df = ly_df[
-    ly_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
 
-mtd_coco_df = mtd_df[
-    mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+# =========================================================
+# COCO DATASETS
+# =========================================================
 
-lm_mtd_coco_df = lm_mtd_df[
-    lm_mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+ftd_coco_df = filter_coco(
+    ftd_df
+)
 
-ly_mtd_coco_df = ly_mtd_df[
-    ly_mtd_df["Store Type"].astype(str).str.strip().str.upper() == "COCO"
-].copy()
+lw_coco_df = filter_coco(
+    lw_df
+)
 
+lm_coco_df = filter_coco(
+    lm_df
+)
+
+ly_coco_df = filter_coco(
+    ly_df
+)
+
+mtd_coco_df = filter_coco(
+    mtd_df
+)
+
+lm_mtd_coco_df = filter_coco(
+    lm_mtd_df
+)
+
+ly_mtd_coco_df = filter_coco(
+    ly_mtd_df
+)
+
+
+# =========================================================
+# COCO FILTER CHECK
+# =========================================================
 
 print("=" * 80)
 print("COCO FILTER CHECK")
 print("=" * 80)
 
-print("FTD COCO       :", len(ftd_coco_df))
-print("LW COCO        :", len(lw_coco_df))
-print("LM COCO        :", len(lm_coco_df))
-print("LY COCO        :", len(ly_coco_df))
-print("MTD COCO       :", len(mtd_coco_df))
-print("LM MTD COCO    :", len(lm_mtd_coco_df))
-print("LY MTD COCO    :", len(ly_mtd_coco_df))
+print(
+    "FTD COCO       :",
+    len(ftd_coco_df)
+)
+
+print(
+    "LW COCO        :",
+    len(lw_coco_df)
+)
+
+print(
+    "LM COCO        :",
+    len(lm_coco_df)
+)
+
+print(
+    "LY COCO        :",
+    len(ly_coco_df)
+)
+
+print(
+    "MTD COCO       :",
+    len(mtd_coco_df)
+)
+
+print(
+    "LM MTD COCO    :",
+    len(lm_mtd_coco_df)
+)
+
+print(
+    "LY MTD COCO    :",
+    len(ly_mtd_coco_df)
+)
 
 # =========================================================
 # MTD PERFORMANCE TABLES
@@ -3046,6 +3108,11 @@ body {{
     padding: 20px;
 }}
 
+
+/* =========================================================
+   HEADER
+   ========================================================= */
+
 .header {{
     background: #243447;
     color: white;
@@ -3055,35 +3122,72 @@ body {{
 }}
 
 .header-title {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
     font-size: 24px;
     font-weight: bold;
 }}
 
+.frozen-bottle-logo {{
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+
+    background: white;
+    border-radius: 6px;
+    padding: 3px;
+}}
+
 .header-subtitle {{
-    margin-top: 6px;
+    margin-top: 8px;
     font-size: 14px;
 }}
+
+
+/* =========================================================
+   SECTION TITLE
+   ========================================================= */
 
 .section-title {{
     background: #2E8B57;
     color: white;
+
     padding: 9px 12px;
+
     margin-top: 25px;
     margin-bottom: 10px;
+
     border-radius: 4px;
+
     font-size: 16px;
     font-weight: bold;
 }}
 
+
+/* =========================================================
+   PERIOD TITLE
+   ========================================================= */
+
 .period-title {{
     background: #EAF2F8;
     color: #243447;
+
     padding: 8px 12px;
+
     margin-top: 18px;
     margin-bottom: 10px;
+
     border-left: 5px solid #243447;
+
     font-weight: bold;
 }}
+
+
+/* =========================================================
+   KPI CARDS
+   ========================================================= */
 
 .kpi-row {{
     display: flex;
@@ -3094,10 +3198,14 @@ body {{
 
 .kpi-card {{
     background: #FFFFFF;
+
     border: 1px solid #D9DEE3;
     border-radius: 8px;
+
     padding: 12px;
+
     width: 165px;
+
     text-align: center;
 }}
 
@@ -3108,16 +3216,16 @@ body {{
 }}
 
 .period-label {{
-    font-size: 11px;
+    font-size: 12px;
     color: #777;
-    text-transform: uppercase;
+    margin-top: 6px;
 }}
 
 .kpi-value {{
-    font-size: 21px;
+    font-size: 22px;
+    color: #008A3E;
     font-weight: bold;
-    color: #0A7D32;
-    margin-top: 3px;
+    margin-top: 6px;
 }}
 
 .divider {{
@@ -3125,24 +3233,38 @@ body {{
     margin: 9px 0;
 }}
 
+
+/* =========================================================
+   DATA TABLE
+   ========================================================= */
+
 .data-table {{
     border-collapse: collapse;
+
     width: 100%;
+
     margin-bottom: 20px;
+
     font-size: 12px;
 }}
 
 .data-table th {{
     background: #243447;
+
     color: white;
+
     padding: 7px;
+
     border: 1px solid #243447;
+
     text-align: center;
 }}
 
 .data-table td {{
     padding: 6px;
+
     border: 1px solid #D9DEE3;
+
     text-align: center;
 }}
 
@@ -3150,11 +3272,20 @@ body {{
     background: #F7F8F9;
 }}
 
+
+/* =========================================================
+   INSIGHTS
+   ========================================================= */
+
 .insights {{
     background: #F8FAFC;
+
     border: 1px solid #D9DEE3;
+
     border-left: 5px solid #2E8B57;
+
     padding: 12px 16px;
+
     margin-bottom: 20px;
 }}
 
@@ -3167,8 +3298,20 @@ body {{
     margin: 7px 0;
 }}
 
-.insight-good {{ color: #2E7D32; font-weight: bold; }}
-.insight-bad {{ color: #C62828; font-weight: bold; }}
+.insight-good {{
+    color: #2E7D32;
+    font-weight: bold;
+}}
+
+.insight-bad {{
+    color: #C62828;
+    font-weight: bold;
+}}
+
+
+/* =========================================================
+   NOTE
+   ========================================================= */
 
 .note {{
     font-size: 12px;
@@ -3176,11 +3319,20 @@ body {{
     margin-bottom: 10px;
 }}
 
+
+/* =========================================================
+   FOOTER
+   ========================================================= */
+
 .footer {{
     margin-top: 30px;
+
     padding-top: 12px;
+
     border-top: 1px solid #DDD;
+
     color: #777;
+
     font-size: 11px;
 }}
 
@@ -3194,17 +3346,40 @@ body {{
 <div class="container">
 
 
+<!-- =====================================================
+     HEADER
+     ===================================================== -->
+
 <div class="header">
 
     <div class="header-title">
-        📊 Frozen Bottle DSR Dashboard
+
+        <img
+            src="https://x.com/frozen_bottle"
+            alt="Frozen Bottle"
+            class="frozen-bottle-logo"
+        >
+
+        <span>
+            Frozen Bottle DSR Dashboard
+        </span>
+
     </div>
 
+
     <div class="header-subtitle">
-        FTD: {ftd_date.strftime("%d-%b-%Y")}
+
+        FTD:
+        {ftd_date.strftime("%d-%b-%Y")}
+
         &nbsp; | &nbsp;
-        MTD: {current_month_start.strftime("%d-%b-%Y")}
-        → {ftd_date.strftime("%d-%b-%Y")}
+
+        MTD:
+        {current_month_start.strftime("%d-%b-%Y")}
+
+        →
+        {ftd_date.strftime("%d-%b-%Y")}
+
     </div>
 
 </div>
@@ -3215,27 +3390,43 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     💡 Yesterday COCO Sales Insights
+
 </div>
 
+
 <div class="insights">
+
     <div class="note">
-        Based on FTD {ftd_date.strftime("%d-%b-%Y")} vs LW same day.
-        Green = growth opportunity / positive movement. Red = needs improvement.
+
+        Based on FTD
+        {ftd_date.strftime("%d-%b-%Y")}
+        vs LW same day.
+
+        Green = growth opportunity / positive movement.
+        Red = needs improvement.
+
     </div>
+
     {insights_html}
+
 </div>
+
 
 <!-- =====================================================
      KPI CARDS
      ===================================================== -->
 
 <div class="section-title">
+
     📌 FTD | MTD KPI
+
 </div>
 
 
 <div class="kpi-row">
+
 
     {kpi_card(
         "Gross Revenue",
@@ -3244,12 +3435,14 @@ body {{
         "₹"
     )}
 
+
     {kpi_card(
         "Net Revenue",
         ftd_coco_kpi["Net"],
         mtd_coco_kpi["Net"],
         "₹"
     )}
+
 
     {kpi_card(
         "Discount",
@@ -3258,11 +3451,13 @@ body {{
         "₹"
     )}
 
+
     {kpi_card(
         "Orders",
         ftd_coco_kpi["Orders"],
         mtd_coco_kpi["Orders"]
     )}
+
 
     {kpi_card(
         "AOV",
@@ -3270,6 +3465,7 @@ body {{
         mtd_coco_kpi["AOV"],
         "₹"
     )}
+
 
     {kpi_card(
         "Discount %",
@@ -3287,8 +3483,11 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     📊 KPI Summary
+
 </div>
+
 
 {html_table(
     kpi_table
@@ -3300,8 +3499,11 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🏢 COCO vs FOFO
+
 </div>
+
 
 {html_table(
     store_type_table
@@ -3313,18 +3515,34 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     📅 FTD Comparison
+
 </div>
 
+
 <div class="note">
-    FTD: {ftd_date.strftime("%d-%b-%Y")}
+
+    FTD:
+    {ftd_date.strftime("%d-%b-%Y")}
+
     &nbsp; | &nbsp;
-    LW: {lw_date.strftime("%d-%b-%Y")}
+
+    LW:
+    {lw_date.strftime("%d-%b-%Y")}
+
     &nbsp; | &nbsp;
-    LM: {lm_date.strftime("%d-%b-%Y")}
+
+    LM:
+    {lm_date.strftime("%d-%b-%Y")}
+
     &nbsp; | &nbsp;
-    LY: {ly_date.strftime("%d-%b-%Y")}
+
+    LY:
+    {ly_date.strftime("%d-%b-%Y")}
+
 </div>
+
 
 {html_table(
     comparison_table,
@@ -3342,27 +3560,35 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     📈 MTD Comparison
+
 </div>
 
+
 <div class="note">
+
     Current MTD:
     {current_month_start.strftime("%d-%b-%Y")}
     →
     {ftd_date.strftime("%d-%b-%Y")}
+
     <br>
 
     LM MTD:
     {lm_month_start.strftime("%d-%b-%Y")}
     →
     {lm_mtd_end.strftime("%d-%b-%Y")}
+
     <br>
 
     LY MTD:
     {ly_month_start.strftime("%d-%b-%Y")}
     →
     {ly_mtd_end.strftime("%d-%b-%Y")}
+
 </div>
+
 
 {html_table(
     mtd_comparison_table,
@@ -3379,8 +3605,11 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🏷 Brand Performance - FTD vs LW
+
 </div>
+
 
 {html_table(
     brand_ftd_lw,
@@ -3393,8 +3622,11 @@ body {{
 
 
 <div class="period-title">
+
     Brand - FTD vs LM
+
 </div>
+
 
 {html_table(
     brand_ftd_lm,
@@ -3407,8 +3639,11 @@ body {{
 
 
 <div class="period-title">
+
     Brand - FTD vs LY
+
 </div>
+
 
 {html_table(
     brand_ftd_ly,
@@ -3421,8 +3656,11 @@ body {{
 
 
 <div class="period-title">
+
     Brand - MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     brand_mtd_lm,
@@ -3435,8 +3673,11 @@ body {{
 
 
 <div class="period-title">
+
     Brand - MTD vs LY MTD
+
 </div>
+
 
 {html_table(
     brand_mtd_ly,
@@ -3453,13 +3694,18 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🛒 Source Performance
+
 </div>
 
 
 <div class="period-title">
+
     FTD vs LW
+
 </div>
+
 
 {html_table(
     source_ftd_lw,
@@ -3472,8 +3718,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LM
+
 </div>
+
 
 {html_table(
     source_ftd_lm,
@@ -3486,8 +3735,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LY
+
 </div>
+
 
 {html_table(
     source_ftd_ly,
@@ -3500,8 +3752,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     source_mtd_lm,
@@ -3514,8 +3769,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LY MTD
+
 </div>
+
 
 {html_table(
     source_mtd_ly,
@@ -3532,13 +3790,18 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🌎 Region Performance
+
 </div>
 
 
 <div class="period-title">
+
     FTD vs LW
+
 </div>
+
 
 {html_table(
     region_ftd_lw,
@@ -3551,8 +3814,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LM
+
 </div>
+
 
 {html_table(
     region_ftd_lm,
@@ -3565,8 +3831,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LY
+
 </div>
+
 
 {html_table(
     region_ftd_ly,
@@ -3579,8 +3848,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     region_mtd_lm,
@@ -3593,8 +3865,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LY MTD
+
 </div>
+
 
 {html_table(
     region_mtd_ly,
@@ -3611,13 +3886,18 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🕒 Session Performance
+
 </div>
 
 
 <div class="period-title">
+
     FTD vs LW
+
 </div>
+
 
 {html_table(
     session_ftd_lw,
@@ -3630,8 +3910,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LM
+
 </div>
+
 
 {html_table(
     session_ftd_lm,
@@ -3644,8 +3927,11 @@ body {{
 
 
 <div class="period-title">
+
     FTD vs LY
+
 </div>
+
 
 {html_table(
     session_ftd_ly,
@@ -3658,8 +3944,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     session_mtd_lm,
@@ -3672,8 +3961,11 @@ body {{
 
 
 <div class="period-title">
+
     MTD vs LY MTD
+
 </div>
+
 
 {html_table(
     session_mtd_ly,
@@ -3690,8 +3982,11 @@ body {{
      ===================================================== -->
 
 <div class="section-title">
+
     🏪 Top 10 Branches - FTD vs LW
+
 </div>
+
 
 {html_table(
     top_branch_ftd_lw,
@@ -3704,8 +3999,11 @@ body {{
 
 
 <div class="period-title">
+
     Top 10 Branches - FTD vs LM
+
 </div>
+
 
 {html_table(
     top_branch_ftd_lm,
@@ -3718,8 +4016,11 @@ body {{
 
 
 <div class="period-title">
+
     Top 10 Branches - MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     top_branch_mtd_lm,
@@ -3730,13 +4031,17 @@ body {{
     ]
 )}
 
+
 <!-- =====================================================
      DAY LEVEL PERFORMANCE
      ===================================================== -->
 
 <div class="section-title">
+
     📅 Day Level Performance - FTD vs LW
+
 </div>
+
 
 {html_table(
     day_level_ftd_lw,
@@ -3749,8 +4054,11 @@ body {{
 
 
 <div class="period-title">
+
     Day Level Performance - FTD vs LM
+
 </div>
+
 
 {html_table(
     day_level_ftd_lm,
@@ -3763,8 +4071,11 @@ body {{
 
 
 <div class="period-title">
+
     Day Level Performance - FTD vs LY
+
 </div>
+
 
 {html_table(
     day_level_ftd_ly,
@@ -3777,8 +4088,11 @@ body {{
 
 
 <div class="period-title">
+
     Day Level Performance - MTD vs LM MTD
+
 </div>
+
 
 {html_table(
     day_level_mtd_lm,
@@ -3791,8 +4105,11 @@ body {{
 
 
 <div class="period-title">
+
     Day Level Performance - MTD vs LY MTD
+
 </div>
+
 
 {html_table(
     day_level_mtd_ly,
@@ -3802,6 +4119,7 @@ body {{
         "Orders Growth %"
     ]
 )}
+
 
 <!-- =====================================================
      FOOTER
@@ -3829,6 +4147,7 @@ body {{
 </body>
 
 </html>
+
 """
 
 
