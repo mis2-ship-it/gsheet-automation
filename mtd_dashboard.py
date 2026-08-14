@@ -3376,7 +3376,7 @@ def daily_mtd_chart(
 
         <svg
             viewBox="0 0 {width} {height}"
-            width="100%"
+            width="80%"
             height="{height}"
         >
 
@@ -3755,7 +3755,7 @@ body {{
 
 .data-table {{
     border-collapse: collapse;
-    width: 100%;
+    width: 80%;
     margin-bottom: 20px;
     font-size: 12px;
 }}
@@ -3787,7 +3787,7 @@ body {{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
-    width: 100%;
+    width: 80%;
     margin: 0 0 18px 0;
     box-sizing: border-box;
 }
@@ -3803,7 +3803,7 @@ body {{
     border-radius: 10px;
     padding: 16px;
     box-sizing: border-box;
-    width: 100%;
+    width: 80%;
     min-height: 250px;
     overflow: hidden;
 }
@@ -3813,7 +3813,7 @@ body {{
 
 .chart-wide {
     grid-column: 1 / -1;
-    width: 100%;
+    width: 80%;
     min-height: 270px;
 }
 
@@ -3836,7 +3836,7 @@ body {{
    ===================================================== */
 
 .chart-body {
-    width: 100%;
+    width: 80%;
     box-sizing: border-box;
 }
 
@@ -3848,7 +3848,7 @@ body {{
 .bar-row {
     display: flex;
     align-items: center;
-    width: 100%;
+    width: 80%;
     margin: 14px 0;
     gap: 9px;
     box-sizing: border-box;
@@ -3903,7 +3903,7 @@ body {{
     align-items: center;
     gap: 9px;
     margin: 13px 0;
-    width: 100%;
+    width: 80%;
     box-sizing: border-box;
 }
 
@@ -3959,7 +3959,7 @@ body {{
 
 .chart-wide svg {
     display: block;
-    width: 100%;
+    width: 80%;
     height: auto;
 }
 
@@ -3969,7 +3969,7 @@ body {{
    ===================================================== */
 
 .sales-chart-section {
-    width: 100%;
+    width: 80%;
     margin-top: 10px;
 }
 
@@ -3980,54 +3980,62 @@ body {{
 
 
 /* =====================================================
-   EMAIL / DESKTOP
+   EMAIL / TABLET
    ===================================================== */
 
-@media only screen and (max-width: 900px) {
+@media only screen and (max-width: 900px) {{
 
-    .chart-grid {
-        grid-template-columns: 1fr;
-    }
+    .chart-grid {{
+        display: block;
+        width: 80%;
+    }}
 
-    .chart-wide {
-        grid-column: auto;
-    }
+    .chart-grid .chart-card {{
+        display: block;
+        width: 80%;
+        margin-bottom: 14px;
+    }}
 
-}
+    .chart-wide {{
+        display: block;
+        width: 80%;
+    }}
+
+}}
 
 
 /* =====================================================
    SMALL MOBILE
    ===================================================== */
 
-@media only screen and (max-width: 600px) {
+@media only screen and (max-width: 600px) {{
 
-    .chart-card {
+    .chart-card {{
         padding: 12px;
         min-height: 220px;
-    }
+    }}
 
-    .bar-label {
+    .bar-label {{
         width: 85px;
         min-width: 85px;
-    }
+    }}
 
-    .bar-value {
+    .bar-value {{
         width: 60px;
         min-width: 60px;
-    }
+    }}
 
-    .contribution-name {
+    .contribution-name {{
         width: 85px;
         min-width: 85px;
-    }
+    }}
 
-    .contribution-value {
+    .contribution-value {{
         width: 55px;
         min-width: 55px;
-    }
+    }}
 
-}
+}}
 
 </style>
 
