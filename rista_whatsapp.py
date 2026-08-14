@@ -1,4 +1,3 @@
-
 # =========================================================
 # 📱 RISTA LIVE → WHATSAPP AUTOMATION
 # =========================================================
@@ -227,6 +226,45 @@ print(
     bool(
         WHATSAPP_DATA_SECRET
     )
+)
+
+# =========================================================
+# 📲 WHATSAPP HOURLY ROLE-BASED BROADCAST CONFIGURATION
+# =========================================================
+
+WHATSAPP_PHONE_NUMBER_ID = (
+    os.environ.get("PHONE_NUMBER_ID")
+    or os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
+)
+
+WHATSAPP_ACCESS_TOKEN = (
+    os.environ.get("ACCESS_TOKEN")
+    or os.environ.get("WHATSAPP_ACCESS_TOKEN")
+)
+
+WHATSAPP_HOURLY_BROADCAST = (
+    os.environ.get(
+        "WHATSAPP_HOURLY_BROADCAST",
+        "true"
+    )
+    .strip()
+    .lower()
+    in {"1", "true", "yes", "y", "on"}
+)
+
+print(
+    "WhatsApp Phone Number ID:",
+    bool(WHATSAPP_PHONE_NUMBER_ID)
+)
+
+print(
+    "WhatsApp Access Token   :",
+    bool(WHATSAPP_ACCESS_TOKEN)
+)
+
+print(
+    "Hourly Broadcast        :",
+    WHATSAPP_HOURLY_BROADCAST
 )
 # =========================================================
 # 📱 INITIAL WHATSAPP CONFIGURATION CHECK
@@ -1887,7 +1925,11 @@ def _get_kpi(df, parameter, column="Today"):
         return 0.0
 
 
-def _build_analysis_dict(df, key_column):
+def _build_analysis_dict(
+    df,
+    key_column,
+    lm_df=None
+):
     result = {}
 
     if df is None or df.empty:
@@ -1923,6 +1965,34 @@ def _build_analysis_dict(df, key_column):
         .str.lower()
     )
 
+    # Optional Last Month lookup.
+    lm_lookup = {}
+    if lm_df is not None and not lm_df.empty:
+        if key_column in lm_df.columns:
+            lm_work = lm_df.copy()
+            lm_work[key_column] = (
+                lm_work[key_column]
+                .astype(str)
+                .str.strip()
+            )
+            lm_work["Parameters"] = (
+                lm_work["Parameters"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+            )
+
+            lm_rows = lm_work[
+                lm_work["Parameters"] == "net"
+            ]
+
+            if not lm_rows.empty:
+                lm_lookup = {
+                    str(row[key_column]).strip():
+                    _safe_float(row.get("Today", 0))
+                    for _, row in lm_rows.iterrows()
+                }
+
     for name in work[key_column].dropna().unique():
         if not name or name.lower() == "nan":
             continue
@@ -1937,13 +2007,24 @@ def _build_analysis_dict(df, key_column):
 
         row = rows.iloc[0]
 
+        today_value = _safe_float(row.get("Today", 0))
+        lw_value = _safe_float(row.get("Last Week", 0))
+        lm_value = _safe_float(lm_lookup.get(name, 0))
+
         result[name] = {
-            "today": _safe_float(row.get("Today", 0)),
-            "lw": _safe_float(row.get("Last Week", 0)),
-            "growth": _safe_float(row.get("Growth %", 0))
+            "today": today_value,
+            "lw": lw_value,
+            "growth": _safe_float(row.get("Growth %", 0)),
+            "lm": lm_value,
+            "lm_growth": (
+                ((today_value - lm_value) / max(lm_value, 1)) * 100
+                if lm_value != 0
+                else 0.0
+            )
         }
 
     return result
+
 
 
 def _build_store_dict(df):
@@ -1987,198 +2068,293 @@ def build_whatsapp_snapshot():
     print("=" * 60)
 
     # =========================================================
-    # 🏪 ALL STORE SALES
+    # 🏪 ALL STORE SALES — TODAY / LW / LM
     # =========================================================
-    
+
     stores = {}
-    
+
     try:
-    
-        # Today's COCO stores
+
+        # Today
         today_store_df = (
             today_cut
             .groupby("branchName")["Net Sales"]
             .sum()
             .reset_index()
+            .rename(
+                columns={
+                    "branchName": "Store Name",
+                    "Net Sales": "Today_Sales"
+                }
+            )
         )
-    
-        today_store_df.rename(
-            columns={
-                "branchName": "Store Name",
-                "Net Sales": "Today_Sales"
-            },
-            inplace=True
-        )
-    
-        # Last Week COCO stores
+
+        # Last Week
         lw_store_df = (
             lastweek_cut
             .groupby("branchName")["Net Sales"]
             .sum()
             .reset_index()
+            .rename(
+                columns={
+                    "branchName": "Store Name",
+                    "Net Sales": "LW_Sales"
+                }
+            )
         )
-    
-        lw_store_df.rename(
-            columns={
-                "branchName": "Store Name",
-                "Net Sales": "LW_Sales"
-            },
-            inplace=True
+
+        # Last Month — preserve your existing 28-day Last Month logic
+        lm_store_df = (
+            month_on_month_cut
+            .groupby("branchName")["Net Sales"]
+            .sum()
+            .reset_index()
+            .rename(
+                columns={
+                    "branchName": "Store Name",
+                    "Net Sales": "LM_Sales"
+                }
+            )
         )
-    
-        # Merge
-        store_df = today_store_df.merge(
-            lw_store_df,
-            on="Store Name",
-            how="outer"
-        ).fillna(0)
-    
-        # Growth
+
+        store_df = (
+            today_store_df
+            .merge(
+                lw_store_df,
+                on="Store Name",
+                how="outer"
+            )
+            .merge(
+                lm_store_df,
+                on="Store Name",
+                how="outer"
+            )
+            .fillna(0)
+        )
+
         store_df["Growth %"] = (
             (
                 store_df["Today_Sales"]
-                -
-                store_df["LW_Sales"]
+                - store_df["LW_Sales"]
             )
-            /
-            store_df["LW_Sales"].replace(
-                0,
-                1
-            )
+            / store_df["LW_Sales"].replace(0, 1)
         ) * 100
-    
-        # Build JSON
+
+        store_df["LM Growth %"] = (
+            (
+                store_df["Today_Sales"]
+                - store_df["LM_Sales"]
+            )
+            / store_df["LM_Sales"].replace(0, 1)
+        ) * 100
+
         for _, row in store_df.iterrows():
-    
+
             store_name = str(
                 row["Store Name"]
             ).strip()
-    
+
             if not store_name:
                 continue
-    
+
             stores[store_name] = {
-    
-                "today":
-                    round(
-                        float(
-                            row["Today_Sales"]
-                            or 0
-                        ),
-                        2
-                    ),
-    
-                "lw":
-                    round(
-                        float(
-                            row["LW_Sales"]
-                            or 0
-                        ),
-                        2
-                    ),
-    
-                "growth":
-                    round(
-                        float(
-                            row["Growth %"]
-                            or 0
-                        ),
-                        2
-                    )
+                "today": round(
+                    _safe_float(row["Today_Sales"]),
+                    2
+                ),
+                "lw": round(
+                    _safe_float(row["LW_Sales"]),
+                    2
+                ),
+                "lm": round(
+                    _safe_float(row["LM_Sales"]),
+                    2
+                ),
+                "growth": round(
+                    _safe_float(row["Growth %"]),
+                    2
+                ),
+                "lm_growth": round(
+                    _safe_float(row["LM Growth %"]),
+                    2
+                )
             }
-    
+
     except Exception as e:
-    
+
         print(
             "❌ Store snapshot build error:",
-            str(e)
+            repr(e)
         )
-    
-        stores = {}
-    
-    snapshot = {
-        "date": business_day.strftime("%d-%b-%y"),
 
-        "report_time":
-            now.strftime("%I:%M %p"),
+        stores = {}
+
+    # =========================================================
+    # 🌍 REGION LM ENRICHMENT
+    # =========================================================
+
+    try:
+
+        region_lm_analysis = (
+            safe_kpi_builder(
+                month_on_month_cut,
+                month_on_month_cut,
+                "Region",
+                "Region"
+            )
+        )
+
+        # The helper above compares LM to itself, but the Today field
+        # is exactly the Last Month value we need.
+        region_lm_map = {}
+
+        if (
+            region_lm_analysis is not None
+            and not region_lm_analysis.empty
+        ):
+            for _, row in region_lm_analysis.iterrows():
+                name = str(
+                    row.get("Region", "")
+                ).strip()
+                parameter = str(
+                    row.get("Parameters", "")
+                ).strip().lower()
+
+                if (
+                    name
+                    and parameter == "net"
+                ):
+                    region_lm_map[name] = _safe_float(
+                        row.get("Today", 0)
+                    )
+
+        regions = _build_analysis_dict(
+            region_analysis,
+            "Region"
+        )
+
+        for region_name, region_data in regions.items():
+            lm_value = _safe_float(
+                region_lm_map.get(
+                    region_name,
+                    0
+                )
+            )
+
+            region_data["lm"] = lm_value
+            region_data["lm_growth"] = (
+                (
+                    (region_data["today"] - lm_value)
+                    / max(lm_value, 1)
+                ) * 100
+                if lm_value != 0
+                else 0.0
+            )
+
+    except Exception as e:
+
+        print(
+            "⚠️ Region LM enrichment failed:",
+            repr(e)
+        )
+
+        regions = _build_analysis_dict(
+            region_analysis,
+            "Region"
+        )
+
+    # =========================================================
+    # 📊 OVERALL LM VALUES
+    # =========================================================
+
+    overall_lm_net = _get_kpi(
+        overall,
+        "Net",
+        "Last Month"
+    )
+
+    overall_lm_growth = _get_kpi(
+        overall,
+        "Net",
+        "MoM Growth %"
+    )
+
+    snapshot = {
+
+        "date": business_day.strftime(
+            "%d-%b-%y"
+        ),
+
+        "report_time": now.strftime(
+            "%I:%M %p"
+        ),
 
         "overall": {
 
-            "gross":
-                _get_kpi(
-                    overall,
-                    "Gross"
-                ),
+            "gross": _get_kpi(
+                overall,
+                "Gross"
+            ),
 
-            "net":
-                _get_kpi(
-                    overall,
-                    "Net"
-                ),
+            "net": _get_kpi(
+                overall,
+                "Net"
+            ),
 
-            "txn":
-                _get_kpi(
-                    overall,
-                    "Txn"
-                ),
+            "txn": _get_kpi(
+                overall,
+                "Txn"
+            ),
 
-            "aov":
-                _get_kpi(
-                    overall,
-                    "AOV"
-                ),
+            "aov": _get_kpi(
+                overall,
+                "AOV"
+            ),
 
-            "discount":
-                _get_kpi(
-                    overall,
-                    "Discount %"
-                ),
+            "discount": _get_kpi(
+                overall,
+                "Discount %"
+            ),
 
-            "lw_net":
-                _get_kpi(
-                    overall,
-                    "Net",
-                    "Last Week"
-                ),
+            "lw_net": _get_kpi(
+                overall,
+                "Net",
+                "Last Week"
+            ),
 
-            "lw_growth":
-                _get_kpi(
-                    overall,
-                    "Net",
-                    "LW Growth %"
-                ),
+            "lw_growth": _get_kpi(
+                overall,
+                "Net",
+                "LW Growth %"
+            ),
 
-            "eod_projection":
-                _safe_float(eod)
+            "lm_net": overall_lm_net,
+
+            "lm_growth": overall_lm_growth,
+
+            "eod_projection": _safe_float(eod)
         },
 
-        "brands":
-            _build_analysis_dict(
-                brand_analysis,
-                "Brand"
-            ),
+        "brands": _build_analysis_dict(
+            brand_analysis,
+            "Brand"
+        ),
 
-        "sources":
-            _build_analysis_dict(
-                source_analysis,
-                "Source Group"
-            ),
+        "sources": _build_analysis_dict(
+            source_analysis,
+            "Source Group"
+        ),
 
-        "regions":
-            _build_analysis_dict(
-                region_analysis,
-                "Region"
-            ),
+        "regions": regions,
 
-        # ✅ IMPORTANT
-        "stores":
-            stores
+        "stores": stores
     }
 
     print("📅 Date:", snapshot["date"])
     print("🕒 Time:", snapshot["report_time"])
     print("💰 Net:", snapshot["overall"]["net"])
     print("🧾 Txn:", snapshot["overall"]["txn"])
+    print("📅 LM Net:", snapshot["overall"]["lm_net"])
     print("🏷 Brands:", len(snapshot["brands"]))
     print("📦 Sources:", len(snapshot["sources"]))
     print("🌍 Regions:", len(snapshot["regions"]))
@@ -2189,31 +2365,26 @@ def build_whatsapp_snapshot():
     print("=" * 60)
     print("📱 WHATSAPP STORE SNAPSHOT DEBUG")
     print("=" * 60)
-    
-    print(
-        "Total stores in snapshot:",
-        len(stores)
-    )
-    
-    print(
-        "Store names:",
-        list(stores.keys())
-    )
-    
+    print("Total stores in snapshot:", len(stores))
+    print("Store names:", list(stores.keys()))
+
+    if stores:
+        sample_name = next(iter(stores))
+        print(
+            "Store sample:",
+            sample_name,
+            stores[sample_name]
+        )
+
     print(
         "Snapshot sections:",
         list(snapshot.keys())
     )
-    
+
     print("=" * 60)
-    
+
     return snapshot
 
-
-
-# =========================================================
-# 📱 SEND SNAPSHOT TO WHATSAPP BACKEND
-# =========================================================
 
 def send_whatsapp_backend_data():
     print("=" * 60)
@@ -2232,13 +2403,13 @@ def send_whatsapp_backend_data():
         print(
             "❌ WHATSAPP_WEBHOOK_DATA_URL not configured"
         )
-        return False
+        return False, None
 
     if not data_secret:
         print(
             "❌ WHATSAPP_DATA_SECRET not configured"
         )
-        return False
+        return False, None
 
     print("Webhook URL:", webhook_url)
     print("Data Secret configured:", bool(data_secret))
@@ -2250,14 +2421,17 @@ def send_whatsapp_backend_data():
             "❌ Failed to build WhatsApp snapshot:",
             repr(e)
         )
-        return False
+        return False, None
 
     headers = {
         "Content-Type": "application/json",
         "X-WhatsApp-Data-Secret": data_secret
     }
 
-    print("📤 Sending sections:", list(payload.keys()))
+    print(
+        "📤 Sending sections:",
+        list(payload.keys())
+    )
 
     try:
         response = requests.post(
@@ -2283,17 +2457,414 @@ def send_whatsapp_backend_data():
             print(
                 "✅ WhatsApp backend snapshot updated successfully"
             )
-            return True
+            return True, payload
 
-        print("❌ WhatsApp backend update failed")
-        return False
+        print(
+            "❌ WhatsApp backend update failed"
+        )
+        return False, payload
 
     except Exception as e:
         print(
             "❌ WhatsApp backend request error:",
             repr(e)
         )
+        return False, payload
+
+
+# =========================================================
+# 📲 ROLE-BASED HOURLY WHATSAPP BROADCAST
+# =========================================================
+
+def _normalize_phone(value):
+    return (
+        str(value)
+        .replace("+", "")
+        .replace(" ", "")
+        .replace("-", "")
+        .strip()
+    )
+
+
+def _match_region_name(
+    requested_region,
+    regions
+):
+    requested = (
+        str(requested_region or "")
+        .strip()
+        .lower()
+    )
+
+    for name in regions.keys():
+        if (
+            str(name).strip().lower()
+            == requested
+        ):
+            return name
+
+    if requested in {"kerala", "kerela"}:
+        for name in regions.keys():
+            if str(name).strip().lower() in {
+                "kerala",
+                "kerela"
+            }:
+                return name
+
+    return None
+
+
+def _aggregate_store_access(
+    stores,
+    allowed_stores
+):
+    if not isinstance(allowed_stores, list):
+        allowed_stores = [allowed_stores]
+
+    clean_allowed = [
+        str(x).strip()
+        for x in allowed_stores
+        if str(x).strip()
+    ]
+
+    if any(
+        x.lower() == "all"
+        for x in clean_allowed
+    ):
+        selected = dict(stores)
+    else:
+        lookup = {
+            str(k).strip().lower(): k
+            for k in stores.keys()
+        }
+        selected = {}
+
+        for store in clean_allowed:
+            actual = lookup.get(
+                store.lower()
+            )
+            if actual:
+                selected[actual] = stores[actual]
+
+    today = sum(
+        _safe_float(v.get("today", 0))
+        for v in selected.values()
+    )
+
+    lw = sum(
+        _safe_float(v.get("lw", 0))
+        for v in selected.values()
+    )
+
+    lm = sum(
+        _safe_float(v.get("lm", 0))
+        for v in selected.values()
+    )
+
+    growth_lw = (
+        ((today - lw) / max(lw, 1)) * 100
+        if lw != 0
+        else 0.0
+    )
+
+    growth_lm = (
+        ((today - lm) / max(lm, 1)) * 100
+        if lm != 0
+        else 0.0
+    )
+
+    return selected, today, lw, lm, growth_lw, growth_lm
+
+
+def _role_based_hourly_message(
+    sender,
+    user,
+    snapshot
+):
+    role = str(
+        user.get("role", "")
+    ).strip().lower()
+
+    date_text = snapshot.get(
+        "date", ""
+    )
+
+    time_text = snapshot.get(
+        "report_time", ""
+    )
+
+    if role == "ops leader":
+
+        overall_data = snapshot.get(
+            "overall", {}
+        )
+
+        today = _safe_float(
+            overall_data.get("net", 0)
+        )
+        lw = _safe_float(
+            overall_data.get("lw_net", 0)
+        )
+        lm = _safe_float(
+            overall_data.get("lm_net", 0)
+        )
+
+        lw_growth = _safe_float(
+            overall_data.get("lw_growth", 0)
+        )
+
+        lm_growth = _safe_float(
+            overall_data.get("lm_growth", 0)
+        )
+
+        return "\n".join([
+            "📊 *AI MIS | HOURLY SALES*",
+            f"{date_text} | {time_text}",
+            "",
+            "👔 *Ops Leader | Overall*",
+            "",
+            f"💰 Today: ₹{today/100000:.2f}L",
+            f"📅 vs LW: {lw_growth:+.1f}%",
+            f"📆 vs LM: {lm_growth:+.1f}%",
+            f"🔵 LW: ₹{lw/100000:.2f}L",
+            f"🟣 LM: ₹{lm/100000:.2f}L",
+        ])
+
+    if role == "region manager":
+
+        regions = snapshot.get(
+            "regions", {}
+        )
+
+        requested = user.get(
+            "region", ""
+        )
+
+        actual = _match_region_name(
+            requested,
+            regions
+        )
+
+        if not actual:
+            return None
+
+        data = regions.get(
+            actual, {}
+        )
+
+        today = _safe_float(
+            data.get("today", 0)
+        )
+        lw = _safe_float(
+            data.get("lw", 0)
+        )
+        lm = _safe_float(
+            data.get("lm", 0)
+        )
+
+        lw_growth = _safe_float(
+            data.get("growth", 0)
+        )
+
+        lm_growth = _safe_float(
+            data.get("lm_growth", 0)
+        )
+
+        return "\n".join([
+            "🌍 *AI MIS | HOURLY SALES*",
+            f"{date_text} | {time_text}",
+            "",
+            f"🌍 *Region: {actual}*",
+            "",
+            f"💰 Today: ₹{today/100000:.2f}L",
+            f"📅 vs LW: {lw_growth:+.1f}%",
+            f"📆 vs LM: {lm_growth:+.1f}%",
+            f"🔵 LW: ₹{lw/100000:.2f}L",
+            f"🟣 LM: ₹{lm/100000:.2f}L",
+        ])
+
+    if role == "area manager":
+
+        stores = snapshot.get(
+            "stores", {}
+        )
+
+        (
+            selected,
+            today,
+            lw,
+            lm,
+            growth_lw,
+            growth_lm
+        ) = _aggregate_store_access(
+            stores,
+            user.get("stores", [])
+        )
+
+        if not selected:
+            return None
+
+        store_lines = []
+
+        for name, data in sorted(
+            selected.items(),
+            key=lambda item: _safe_float(
+                item[1].get("today", 0)
+            ),
+            reverse=True
+        )[:5]:
+            store_lines.append(
+                f"• {name}: ₹{_safe_float(data.get('today', 0))/1000:.1f}K"
+            )
+
+        return "\n".join([
+            "🏪 *AI MIS | HOURLY SALES*",
+            f"{date_text} | {time_text}",
+            "",
+            f"🏪 *Patch: {user.get('patch', '')}*",
+            f"Stores: {len(selected)}",
+            "",
+            f"💰 Today: ₹{today/100000:.2f}L",
+            f"📅 vs LW: {growth_lw:+.1f}%",
+            f"📆 vs LM: {growth_lm:+.1f}%",
+            f"🔵 LW: ₹{lw/100000:.2f}L",
+            f"🟣 LM: ₹{lm/100000:.2f}L",
+            "",
+            "🏪 *Top Stores*",
+            *store_lines
+        ])
+
+    return None
+
+
+def send_hourly_role_based_whatsapp(
+    snapshot
+):
+    print("=" * 60)
+    print("📲 ROLE-BASED HOURLY WHATSAPP")
+    print("=" * 60)
+
+    if not WHATSAPP_HOURLY_BROADCAST:
+        print(
+            "ℹ️ Hourly WhatsApp broadcast disabled"
+        )
         return False
+
+    if not WHATSAPP_PHONE_NUMBER_ID:
+        print(
+            "⚠️ PHONE_NUMBER_ID / WHATSAPP_PHONE_NUMBER_ID is missing"
+        )
+        return False
+
+    if not WHATSAPP_ACCESS_TOKEN:
+        print(
+            "⚠️ ACCESS_TOKEN / WHATSAPP_ACCESS_TOKEN is missing"
+        )
+        return False
+
+    url = (
+        "https://graph.facebook.com/v23.0/"
+        f"{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+
+    success_count = 0
+    failed_count = 0
+    skipped_count = 0
+
+    for mobile in WHATSAPP_USERS.keys():
+
+        recipient = _normalize_phone(
+            mobile
+        )
+
+        if not recipient:
+            skipped_count += 1
+            continue
+
+        try:
+            user = get_user_access(
+                recipient
+            )
+        except Exception as e:
+            print(
+                f"⚠️ Access lookup failed | {recipient} | {e}"
+            )
+            failed_count += 1
+            continue
+
+        if not user:
+            print(
+                f"⚠️ Recipient not mapped | {recipient}"
+            )
+            skipped_count += 1
+            continue
+
+        message = _role_based_hourly_message(
+            recipient,
+            user,
+            snapshot
+        )
+
+        if not message:
+            print(
+                f"⚠️ No role-based message generated | {recipient}"
+            )
+            skipped_count += 1
+            continue
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": recipient,
+            "type": "text",
+            "text": {
+                "preview_url": False,
+                "body": message
+            }
+        }
+
+        try:
+            response = requests.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            print(
+                f"WhatsApp hourly → {recipient} | "
+                f"Role: {user.get('role')} | "
+                f"Status: {response.status_code}"
+            )
+
+            print(
+                "Response:",
+                response.text
+            )
+
+            if response.ok:
+                success_count += 1
+            else:
+                failed_count += 1
+
+        except Exception as e:
+            failed_count += 1
+            print(
+                f"❌ WhatsApp hourly error → {recipient}: {e}"
+            )
+
+    print("=" * 60)
+    print("Hourly WhatsApp Success:", success_count)
+    print("Hourly WhatsApp Failed :", failed_count)
+    print("Hourly WhatsApp Skipped:", skipped_count)
+    print("=" * 60)
+
+    return failed_count == 0
 
 
 # =========================================================
@@ -2304,12 +2875,35 @@ print("=" * 60)
 print("🚀 WHATSAPP LIVE SALES PROCESS STARTED")
 print("=" * 60)
 
-whatsapp_backend_updated = send_whatsapp_backend_data()
+whatsapp_backend_updated, whatsapp_snapshot = (
+    send_whatsapp_backend_data()
+)
 
 if whatsapp_backend_updated:
-    print("✅ WhatsApp backend data is ready")
+    print(
+        "✅ WhatsApp backend data is ready"
+    )
+
+    # IMPORTANT: proactive role-based hourly broadcast
+    # uses the exact same snapshot just pushed to Render.
+    if whatsapp_snapshot:
+        hourly_broadcast_success = (
+            send_hourly_role_based_whatsapp(
+                whatsapp_snapshot
+            )
+        )
+        if hourly_broadcast_success:
+            print(
+                "✅ Role-based hourly WhatsApp broadcast completed"
+            )
+        else:
+            print(
+                "⚠️ Role-based hourly WhatsApp broadcast completed with warnings"
+            )
 else:
-    print("⚠️ WhatsApp backend data was NOT updated")
+    print(
+        "⚠️ WhatsApp backend data was NOT updated"
+    )
 
 print("=" * 60)
 print("🏁 WHATSAPP LIVE SALES PROCESS COMPLETED")
@@ -2319,9 +2913,39 @@ print("=" * 60)
 print("📱 WHATSAPP SCRIPT TEST")
 print("=" * 60)
 
-print("API configured      :", bool(API_KEY))
-print("Google connected    :", bool(spreadsheet))
-print("WhatsApp URL        :", bool(WHATSAPP_WEBHOOK_DATA_URL))
-print("WhatsApp secret     :", bool(WHATSAPP_DATA_SECRET))
+print(
+    "API configured      :",
+    bool(API_KEY)
+)
+
+print(
+    "Google connected    :",
+    bool(spreadsheet)
+)
+
+print(
+    "WhatsApp URL        :",
+    bool(WHATSAPP_WEBHOOK_DATA_URL)
+)
+
+print(
+    "WhatsApp secret     :",
+    bool(WHATSAPP_DATA_SECRET)
+)
+
+print(
+    "Phone Number ID     :",
+    bool(WHATSAPP_PHONE_NUMBER_ID)
+)
+
+print(
+    "Access Token        :",
+    bool(WHATSAPP_ACCESS_TOKEN)
+)
+
+print(
+    "Hourly Broadcast    :",
+    WHATSAPP_HOURLY_BROADCAST
+)
 
 print("=" * 60)
