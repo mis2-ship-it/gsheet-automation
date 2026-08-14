@@ -86,124 +86,68 @@ print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
-# DATE RANGE - AUTO CATCH-UP MISSING DAYS
+# DATE RANGE - REFRESH LAST 7 COMPLETED DAYS
 # =========================================================
 
 today = datetime.now().date()
 
-# Yesterday is the latest completed business calendar date
+# Yesterday = latest completed business date
 end_date = today - timedelta(days=1)
 
+# ---------------------------------------------------------
 # Current monthly CSV
+# ---------------------------------------------------------
+
 current_month_file = (
     Path("monthly_data")
     / str(today.year)
     / today.strftime("MTD_%b_%y.csv")
 )
 
+# ---------------------------------------------------------
+# Always refresh recent days
+#
+# This protects against:
+# - Missing branch data
+# - Partial API response
+# - Late Rista updates
+# - Previous workflow failure
+# ---------------------------------------------------------
+
+REFRESH_DAYS = 7
+
+start_date = end_date - timedelta(
+    days=REFRESH_DAYS - 1
+)
+
+# ---------------------------------------------------------
+# Do not go before current month
+# ---------------------------------------------------------
+
+month_start = today.replace(day=1)
+
+if start_date < month_start:
+    start_date = month_start
+
 print("=" * 60)
 print("DATE RANGE CHECK")
 print("=" * 60)
 
-if current_month_file.exists():
+print("📂 Existing CSV:")
+print("   ", current_month_file)
 
-    print("📂 Existing CSV Found:")
-    print("   ", current_month_file)
-
-    try:
-
-        existing_df = pd.read_csv(
-            current_month_file,
-            low_memory=False
-        )
-
-        if "Date" not in existing_df.columns:
-
-            raise RuntimeError(
-                "❌ Existing CSV does not contain Date column"
-            )
-
-        existing_df["Date"] = pd.to_datetime(
-            existing_df["Date"],
-            errors="coerce"
-        )
-
-        last_existing_date = (
-            existing_df["Date"]
-            .dropna()
-            .max()
-            .date()
-        )
-
-        start_date = (
-            last_existing_date
-            + timedelta(days=1)
-        )
-
-        print(
-            "📅 Last CSV Date :",
-            last_existing_date
-        )
-
-        print(
-            "📥 Fetch From    :",
-            start_date
-        )
-
-        print(
-            "📥 Fetch Until   :",
-            end_date
-        )
-
-    except Exception as e:
-
-        print(
-            "⚠️ Existing CSV could not be read:"
-        )
-
-        print(str(e))
-
-        # Safe fallback
-        start_date = (
-            today - timedelta(days=2)
-        )
-
-else:
-
-    print("🆕 No current month CSV found")
-
-    # First run of the month
-    start_date = (
-        today.replace(day=1)
-    )
-
-    print(
-        "📥 Fetching from month start:",
-        start_date
-    )
-
-# ---------------------------------------------------------
-# Nothing missing
-# ---------------------------------------------------------
-
-if start_date > end_date:
-
-    print("=" * 60)
-    print("✅ CSV IS ALREADY UP TO DATE")
-    print("=" * 60)
-
-    print(
-        "Latest available date:",
-        start_date - timedelta(days=1)
-    )
-
-    raise SystemExit(0)
+print("📅 Today        :", today)
+print("📅 Fetch From   :", start_date)
+print("📅 Fetch Until  :", end_date)
+print("🔄 Refresh Days :", REFRESH_DAYS)
 
 print("=" * 60)
+
 print(
     f"📅 Fetch Date Range: "
     f"{start_date} → {end_date}"
 )
+
 print("=" * 60)
 
 
@@ -885,9 +829,11 @@ if csv_path.exists():
     )
 
     # Refresh starts from the earliest date in current pull
-    refresh_from = mtd_summary["Date"].min()
-
+    # Refresh the complete requested date window
+    refresh_from = pd.Timestamp(start_date)
+    
     print("Refreshing From :", refresh_from.date())
+    print("Refreshing Until:", end_date)
 
     # Keep older records
     keep_df = old_df[
