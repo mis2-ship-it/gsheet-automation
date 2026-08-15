@@ -36,6 +36,99 @@ SNAPSHOT_FILE = os.environ.get(
 
 LIVE_SALES_DATA = {}
 
+SNAPSHOT_FILE = "whatsapp_sales_snapshot.json"
+
+
+# =========================================================
+# 💾 SALES SNAPSHOT PERSISTENCE
+# =========================================================
+
+def save_sales_snapshot(data):
+
+    global LIVE_SALES_DATA
+
+    LIVE_SALES_DATA = data
+
+    try:
+
+        with open(
+            SNAPSHOT_FILE,
+            "w",
+            encoding="utf-8"
+        ) as f:
+
+            json.dump(
+                data,
+                f,
+                ensure_ascii=False
+            )
+
+        print(
+            "✅ Sales snapshot saved locally"
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ Failed to save sales snapshot:",
+            str(e)
+        )
+
+
+def load_sales_snapshot():
+
+    global LIVE_SALES_DATA
+
+    try:
+
+        if not os.path.exists(
+            SNAPSHOT_FILE
+        ):
+
+            print(
+                "⚠️ No saved sales snapshot found"
+            )
+
+            return
+
+        with open(
+            SNAPSHOT_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            LIVE_SALES_DATA = json.load(f)
+
+        print("=" * 60)
+        print("✅ SAVED SALES SNAPSHOT LOADED")
+        print(
+            "Date:",
+            LIVE_SALES_DATA.get("date")
+        )
+        print(
+            "Time:",
+            LIVE_SALES_DATA.get("report_time")
+        )
+        print(
+            "Stores:",
+            len(
+                LIVE_SALES_DATA.get(
+                    "stores",
+                    {}
+                )
+            )
+        )
+        print("=" * 60)
+
+    except Exception as e:
+
+        print(
+            "❌ Failed to load saved sales snapshot:",
+            str(e)
+        )
+
+        LIVE_SALES_DATA = {}
+
 
 # =========================================================
 # 🚀 STARTUP CHECK
@@ -532,6 +625,7 @@ def send_whatsapp_message(recipient, message):
 
 @app.route("/update-sales-data", methods=["POST"])
 def update_sales_data():
+
     print("=" * 60)
     print("📥 RISTA LIVE SALES DATA RECEIVED")
     print("=" * 60)
@@ -544,48 +638,80 @@ def update_sales_data():
         "Data Secret configured:",
         bool(WHATSAPP_DATA_SECRET)
     )
+
     print(
         "Incoming Secret received:",
         bool(incoming_secret)
     )
 
     if not WHATSAPP_DATA_SECRET:
+
         return jsonify({
             "success": False,
-            "error": "Server secret not configured",
+            "error":
+                "Server secret not configured",
         }), 500
 
     if incoming_secret != WHATSAPP_DATA_SECRET:
-        print("❌ Invalid WhatsApp data secret")
+
+        print(
+            "❌ Invalid WhatsApp data secret"
+        )
+
         return jsonify({
             "success": False,
-            "error": "Unauthorized",
+            "error":
+                "Unauthorized",
         }), 401
 
-    data = request.get_json(silent=True)
+    data = request.get_json(
+        silent=True
+    )
 
     if not data:
+
         return jsonify({
             "success": False,
-            "error": "Empty JSON payload",
+            "error":
+                "Empty JSON payload",
         }), 400
 
-    print("Received data keys:", list(data.keys()))
-    print("Report Date:", data.get("date"))
-    print("Report Time:", data.get("report_time"))
-    print("Sections:", list(data.keys()))
+    print(
+        "Received data keys:",
+        list(data.keys())
+    )
 
+    print(
+        "Report Date:",
+        data.get("date")
+    )
+
+    print(
+        "Report Time:",
+        data.get("report_time")
+    )
+
+    print(
+        "Sections:",
+        list(data.keys())
+    )
+
+    # ✅ THIS IS CORRECT
     save_sales_snapshot(data)
 
     print(
         "LIVE_SALES_DATA keys:",
-        list(LIVE_SALES_DATA.keys())
+        list(
+            LIVE_SALES_DATA.keys()
+        )
     )
+
     print("=" * 60)
 
     return jsonify({
         "success": True,
-        "message": "Sales data updated successfully",
+        "message":
+            "Sales data updated successfully",
     }), 200
 
 
