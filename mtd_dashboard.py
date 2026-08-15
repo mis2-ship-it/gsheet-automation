@@ -1304,8 +1304,6 @@ def build_insights():
         return "<p style='color:#777;'>No comparison data available for insights.</p>"
     return '<ul class="insight-list">' + ''.join(blocks) + '</ul>'
 
-insights_html = build_insights()
-
 
 # =========================================================
 # CHART HELPERS
@@ -1708,6 +1706,221 @@ session_mtd_ly = performance_summary(
     ly_mtd_coco_df,
     "Session"
 )
+
+# =========================================================
+# INSIGHT BLOCK
+# =========================================================
+
+def insight_block(
+    title,
+    df
+):
+
+    if df is None or df.empty:
+        return ""
+
+    work = df.copy()
+
+    if "Net Growth %" not in work.columns:
+        return ""
+
+    # -----------------------------------------------------
+    # Sort by growth
+    # -----------------------------------------------------
+
+    work["Net Growth %"] = pd.to_numeric(
+        work["Net Growth %"],
+        errors="coerce"
+    ).fillna(0)
+
+    # -----------------------------------------------------
+    # Best performers
+    # -----------------------------------------------------
+
+    best = (
+        work
+        .sort_values(
+            "Net Growth %",
+            ascending=False
+        )
+        .head(3)
+    )
+
+    # -----------------------------------------------------
+    # Areas needing improvement
+    # -----------------------------------------------------
+
+    weak = (
+        work
+        .sort_values(
+            "Net Growth %",
+            ascending=True
+        )
+        .head(3)
+    )
+
+    html = []
+
+    html.append(
+        f"""
+        <li class="insight-heading">
+            {title}
+        </li>
+        """
+    )
+
+    # -----------------------------------------------------
+    # Growth
+    # -----------------------------------------------------
+
+    for _, row in best.iterrows():
+
+        growth = float(
+            row["Net Growth %"]
+        )
+
+        if growth <= 0:
+            continue
+
+        # Determine dimension name
+        dimension = ""
+
+        for col in [
+            "Source",
+            "Session",
+            "Region",
+            "Brand Name",
+            "Branch"
+        ]:
+
+            if col in work.columns:
+                dimension = str(
+                    row[col]
+                )
+                break
+
+        html.append(
+            f"""
+            <li>
+                <span class="insight-good">
+                    ✅ {dimension}
+                </span>
+
+                grew
+                <strong>
+                    {growth:+.1f}%
+                </strong>
+                vs LW.
+            </li>
+            """
+        )
+
+    # -----------------------------------------------------
+    # Improvement
+    # -----------------------------------------------------
+
+    for _, row in weak.iterrows():
+
+        growth = float(
+            row["Net Growth %"]
+        )
+
+        if growth >= 0:
+            continue
+
+        dimension = ""
+
+        for col in [
+            "Source",
+            "Session",
+            "Region",
+            "Brand Name",
+            "Branch"
+        ]:
+
+            if col in work.columns:
+                dimension = str(
+                    row[col]
+                )
+                break
+
+        html.append(
+            f"""
+            <li>
+                <span class="insight-bad">
+                    ⚠️ {dimension}
+                </span>
+
+                declined
+                <strong>
+                    {growth:+.1f}%
+                </strong>
+                vs LW —
+                improvement required.
+            </li>
+            """
+        )
+
+    return "".join(
+        html
+    )
+
+
+# =========================================================
+# BUILD INSIGHTS
+# =========================================================
+
+def build_insights():
+
+    sections = []
+
+    sections.append(
+        insight_block(
+            "Source",
+            source_ftd_lw
+        )
+    )
+
+    sections.append(
+        insight_block(
+            "Session",
+            session_ftd_lw
+        )
+    )
+
+    sections.append(
+        insight_block(
+            "Region",
+            region_ftd_lw
+        )
+    )
+
+    content = "".join(
+        x
+        for x in sections
+        if x
+    )
+
+    if not content:
+
+        return """
+        <p style="color:#777;">
+            No comparison data available for insights.
+        </p>
+        """
+
+    return (
+        "<ul class='insight-list'>"
+        f"{content}"
+        "</ul>"
+    )
+
+
+# =========================================================
+# GENERATE INSIGHTS HTML
+# =========================================================
+
+insights_html = build_insights()
 
 
 # =========================================================
