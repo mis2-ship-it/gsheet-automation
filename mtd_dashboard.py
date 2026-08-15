@@ -1129,12 +1129,33 @@ mtd_coco_df = filter_coco(mtd_df)
 lm_mtd_coco_df = filter_coco(lm_mtd_df)
 ly_mtd_coco_df = filter_coco(ly_mtd_df)
 
-# Full previous months for day-level comparisons
+# =========================================================
+# FULL PREVIOUS MONTHS FOR DAY-LEVEL COMPARISONS
+# =========================================================
+
 lm_full_month_coco_df = filter_coco(
-    date_filter(lm_month_start, lm_date)
+    date_filter(
+        lm_month_start,
+        (
+            pd.Timestamp(
+                lm_month_start
+            )
+            + pd.offsets.MonthEnd(1)
+        ).date()
+    )
 )
+
+
 ly_full_month_coco_df = filter_coco(
-    date_filter(ly_month_start, ly_date)
+    date_filter(
+        ly_month_start,
+        (
+            pd.Timestamp(
+                ly_month_start
+            )
+            + pd.offsets.MonthEnd(1)
+        ).date()
+    )
 )
 
 print("=" * 80)
@@ -1170,6 +1191,8 @@ def normalize_session(value):
     return str(value).strip() if str(value).strip() else "Others"
 
 final_df["Session"] = final_df["Session"].apply(normalize_session)
+
+
 
 
 # =========================================================
@@ -1306,67 +1329,333 @@ def build_insights():
 
 
 # =========================================================
-# CHART HELPERS
+# DASHBOARD CHART HELPERS
+# EMAIL-SAFE VERSION
 # =========================================================
 
 def _safe_num(value):
+
     try:
+
         if pd.isna(value):
             return 0.0
+
         return float(value)
+
     except Exception:
+
         return 0.0
 
 
 def _short_value(value):
+
     value = _safe_num(value)
-    if abs(value) >= 10_000_000:
-        return f"₹{value/10_000_000:.1f}Cr"
-    if abs(value) >= 100_000:
-        return f"₹{value/100_000:.1f}L"
-    if abs(value) >= 1_000:
-        return f"₹{value/1_000:.1f}K"
+
+    if abs(value) >= 10000000:
+        return f"₹{value / 10000000:.1f}Cr"
+
+    if abs(value) >= 100000:
+        return f"₹{value / 100000:.1f}L"
+
+    if abs(value) >= 1000:
+        return f"₹{value / 1000:.1f}K"
+
     return f"₹{value:,.0f}"
 
 
-def horizontal_bar_chart(df, category_col, value_col, title, max_rows=6):
+# =========================================================
+# EMAIL-SAFE HORIZONTAL BAR CHART
+# =========================================================
+
+def horizontal_bar_chart(
+    df,
+    category_col,
+    value_col,
+    title,
+    max_rows=6
+):
+
     if df is None or df.empty:
         return ""
-    if category_col not in df.columns or value_col not in df.columns:
+
+    if category_col not in df.columns:
         return ""
 
-    work = df[[category_col, value_col]].copy()
-    work[value_col] = pd.to_numeric(work[value_col], errors="coerce").fillna(0)
-    work = work.sort_values(value_col, ascending=False).head(max_rows)
-    maximum = max(work[value_col].max(), 1)
-
-    rows = []
-    for _, row in work.iterrows():
-        label = str(row[category_col])
-        value = _safe_num(row[value_col])
-        width = max(0, min(100, value / maximum * 100))
-        rows.append(
-            f'<div class="bar-row"><div class="bar-label">{label}</div>'
-            f'<div class="bar-track"><div class="bar-fill" style="width:{width:.1f}%"></div></div>'
-            f'<div class="bar-value">{_short_value(value)}</div></div>'
-        )
-
-    return (
-        f'<div class="chart-card"><div class="chart-title">{title}</div>'
-        f'<div class="chart-body">{"".join(rows)}</div></div>'
-    )
-
-
-def daily_mtd_chart(df, title="MTD Net Revenue Trend"):
-    if df is None or df.empty or "Date" not in df.columns or "Net Sales" not in df.columns:
+    if value_col not in df.columns:
         return ""
 
     work = df.copy()
-    work["Date"] = pd.to_datetime(work["Date"], errors="coerce")
-    work["Net Sales"] = pd.to_numeric(work["Net Sales"], errors="coerce").fillna(0)
+
+    work[value_col] = pd.to_numeric(
+        work[value_col],
+        errors="coerce"
+    ).fillna(0)
+
     work = (
-        work.dropna(subset=["Date"])
-        .groupby("Date", as_index=False)["Net Sales"]
+        work[
+            [category_col, value_col]
+        ]
+        .groupby(
+            category_col,
+            as_index=False
+        )[value_col]
+        .sum()
+        .sort_values(
+            value_col,
+            ascending=False
+        )
+        .head(max_rows)
+        .reset_index(drop=True)
+    )
+
+    if work.empty:
+        return ""
+
+    maximum = max(
+        float(work[value_col].max()),
+        1
+    )
+
+    rows = []
+
+    for _, row in work.iterrows():
+
+        name = str(
+            row[category_col]
+        )
+
+        value = _safe_num(
+            row[value_col]
+        )
+
+        percentage = (
+            value / maximum
+        ) * 100
+
+        percentage = max(
+            0,
+            min(
+                percentage,
+                100
+            )
+        )
+
+        # -------------------------------------------------
+        # EMAIL-SAFE BAR
+        # -------------------------------------------------
+
+        rows.append(
+            f"""
+            <tr>
+
+                <td
+                    width="105"
+                    style="
+                        width:105px;
+                        padding:7px 8px 7px 0;
+                        font-family:Arial, sans-serif;
+                        font-size:11px;
+                        color:#3f4650;
+                        white-space:nowrap;
+                    "
+                >
+                    {name}
+                </td>
+
+                <td
+                    style="
+                        padding:7px 5px;
+                    "
+                >
+
+                    <table
+                        role="presentation"
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        style="
+                            width:100%;
+                        "
+                    >
+
+                        <tr>
+
+                            <td
+                                style="
+                                    background:#EEF1F4;
+                                    height:18px;
+                                    padding:0;
+                                    font-size:0;
+                                    line-height:0;
+                                "
+                            >
+
+                                <table
+                                    role="presentation"
+                                    width="{percentage:.0f}%"
+                                    cellpadding="0"
+                                    cellspacing="0"
+                                    border="0"
+                                    style="
+                                        width:{percentage:.0f}%;
+                                    "
+                                >
+
+                                    <tr>
+
+                                        <td
+                                            style="
+                                                background:#2E8B57;
+                                                height:18px;
+                                                padding:0;
+                                                font-size:0;
+                                                line-height:0;
+                                            "
+                                        >
+                                            &nbsp;
+                                        </td>
+
+                                    </tr>
+
+                                </table>
+
+                            </td>
+
+                        </tr>
+
+                    </table>
+
+                </td>
+
+                <td
+                    width="70"
+                    style="
+                        width:70px;
+                        padding:7px 0 7px 8px;
+                        font-family:Arial, sans-serif;
+                        font-size:11px;
+                        font-weight:bold;
+                        color:#333333;
+                        text-align:right;
+                        white-space:nowrap;
+                    "
+                >
+                    {_short_value(value)}
+                </td>
+
+            </tr>
+            """
+        )
+
+    return f"""
+    <table
+        role="presentation"
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            background:#FFFFFF;
+            border:1px solid #D9DEE3;
+            border-radius:8px;
+        "
+    >
+
+        <tr>
+
+            <td
+                style="
+                    padding:16px;
+                "
+            >
+
+                <div
+                    style="
+                        font-family:Arial,sans-serif;
+                        font-size:15px;
+                        font-weight:bold;
+                        color:#243447;
+                        margin-bottom:5px;
+                    "
+                >
+                    {title}
+                </div>
+
+                <div
+                    style="
+                        font-family:Arial,sans-serif;
+                        font-size:11px;
+                        color:#777777;
+                        padding-bottom:10px;
+                    "
+                >
+                    Net Revenue
+                </div>
+
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    style="
+                        width:100%;
+                    "
+                >
+
+                    {''.join(rows)}
+
+                </table>
+
+            </td>
+
+        </tr>
+
+    </table>
+    """
+
+
+# =========================================================
+# EMAIL-SAFE DAILY MTD BAR CHART
+# =========================================================
+
+def daily_mtd_chart(
+    df,
+    title="MTD Net Revenue Trend"
+):
+
+    if df is None or df.empty:
+        return ""
+
+    if "Date" not in df.columns:
+        return ""
+
+    if "Net Sales" not in df.columns:
+        return ""
+
+    work = df.copy()
+
+    work["Date"] = pd.to_datetime(
+        work["Date"],
+        errors="coerce"
+    )
+
+    work["Net Sales"] = pd.to_numeric(
+        work["Net Sales"],
+        errors="coerce"
+    ).fillna(0)
+
+    work = (
+        work
+        .dropna(
+            subset=["Date"]
+        )
+        .groupby(
+            "Date",
+            as_index=False
+        )["Net Sales"]
         .sum()
         .sort_values("Date")
         .tail(14)
@@ -1376,50 +1665,320 @@ def daily_mtd_chart(df, title="MTD Net Revenue Trend"):
     if work.empty:
         return ""
 
-    width, height = 640, 250
-    left, right, top, bottom = 40, 20, 30, 45
-    chart_width = width - left - right
-    chart_height = height - top - bottom
-    maximum = max(work["Net Sales"].max(), 1)
-
-    points = []
-    for i, row in work.iterrows():
-        x = left + (i / max(len(work) - 1, 1)) * chart_width
-        y = top + chart_height - (row["Net Sales"] / maximum) * chart_height
-        points.append((x, y, row["Date"]))
-
-    polyline = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in points)
-    circles = ''.join(
-        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#2E8B57" />'
-        for x, y, _ in points
-    )
-    labels = ''.join(
-        f'<text x="{x:.1f}" y="{height-16}" text-anchor="middle" font-size="10" fill="#666">{d.strftime("%-d-%b")}</text>'
-        for x, _, d in points
+    maximum = max(
+        float(
+            work["Net Sales"].max()
+        ),
+        1
     )
 
-    return (
-        f'<div class="chart-card chart-wide"><div class="chart-title">{title}</div>'
-        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}">'
-        f'<line x1="{left}" y1="{top}" x2="{width-right}" y2="{top}" stroke="#E5E7EB" />'
-        f'<line x1="{left}" y1="{top+chart_height/2}" x2="{width-right}" y2="{top+chart_height/2}" stroke="#E5E7EB" />'
-        f'<line x1="{left}" y1="{top+chart_height}" x2="{width-right}" y2="{top+chart_height}" stroke="#E5E7EB" />'
-        f'<polyline points="{polyline}" fill="none" stroke="#2E8B57" stroke-width="3" />'
-        f'{circles}{labels}</svg></div>'
-    )
+    columns = []
+
+    for _, row in work.iterrows():
+
+        value = _safe_num(
+            row["Net Sales"]
+        )
+
+        percentage = (
+            value / maximum
+        ) * 100
+
+        percentage = max(
+            3,
+            min(
+                percentage,
+                100
+            )
+        )
+
+        date_label = row[
+            "Date"
+        ].strftime(
+            "%-d-%b"
+        )
+
+        # -------------------------------------------------
+        # EMAIL-SAFE VERTICAL BAR
+        # -------------------------------------------------
+
+        columns.append(
+            f"""
+            <td
+                width="7%"
+                valign="bottom"
+                align="center"
+                style="
+                    width:7%;
+                    padding:0 2px;
+                    vertical-align:bottom;
+                "
+            >
+
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    style="
+                        width:100%;
+                    "
+                >
+
+                    <tr>
+
+                        <td
+                            valign="bottom"
+                            align="center"
+                            height="125"
+                            style="
+                                height:125px;
+                                vertical-align:bottom;
+                                padding:0;
+                            "
+                        >
+
+                            <table
+                                role="presentation"
+                                width="100%"
+                                cellpadding="0"
+                                cellspacing="0"
+                                border="0"
+                                style="
+                                    width:100%;
+                                "
+                            >
+
+                                <tr>
+
+                                    <td
+                                        height="{max(int(115 * percentage / 100), 5)}"
+                                        style="
+                                            height:{max(int(115 * percentage / 100), 5)}px;
+                                            background:#6CC9CE;
+                                            font-size:0;
+                                            line-height:0;
+                                            border-radius:3px 3px 0 0;
+                                        "
+                                    >
+                                        &nbsp;
+                                    </td>
+
+                                </tr>
+
+                            </table>
+
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td
+                            style="
+                                padding-top:5px;
+                                font-family:Arial,sans-serif;
+                                font-size:9px;
+                                color:#666666;
+                                text-align:center;
+                                white-space:nowrap;
+                            "
+                        >
+                            {date_label}
+                        </td>
+
+                    </tr>
+
+                    <tr>
+
+                        <td
+                            style="
+                                padding-top:3px;
+                                font-family:Arial,sans-serif;
+                                font-size:8px;
+                                color:#444444;
+                                text-align:center;
+                                white-space:nowrap;
+                            "
+                        >
+                            {_short_value(value)}
+                        </td>
+
+                    </tr>
+
+                </table>
+
+            </td>
+            """
+        )
+
+    return f"""
+    <table
+        role="presentation"
+        width="100%"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            width:100%;
+            background:#FFFFFF;
+            border:1px solid #D9DEE3;
+            border-radius:8px;
+        "
+    >
+
+        <tr>
+
+            <td
+                style="
+                    padding:16px;
+                "
+            >
+
+                <div
+                    style="
+                        font-family:Arial,sans-serif;
+                        font-size:15px;
+                        font-weight:bold;
+                        color:#243447;
+                        padding-bottom:5px;
+                    "
+                >
+                    {title}
+                </div>
+
+                <div
+                    style="
+                        font-family:Arial,sans-serif;
+                        font-size:11px;
+                        color:#777777;
+                        padding-bottom:12px;
+                    "
+                >
+                    Daily Net Revenue
+                </div>
+
+                <table
+                    role="presentation"
+                    width="100%"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    style="
+                        width:100%;
+                    "
+                >
+
+                    <tr>
+
+                        {''.join(columns)}
+
+                    </tr>
+
+                </table>
+
+            </td>
+
+        </tr>
+
+    </table>
+    """
 
 
-chart_mtd_daily = mtd_coco_df.copy()
-chart_source_mtd = mtd_coco_df.groupby("Source", as_index=False)["Net Sales"].sum()
-chart_brand_mtd = mtd_coco_df.groupby("Brand Name", as_index=False)["Net Sales"].sum()
-chart_region_mtd = mtd_coco_df.groupby("Region", as_index=False)["Net Sales"].sum()
-chart_session_mtd = mtd_coco_df.groupby("Session", as_index=False)["Net Sales"].sum()
+# =========================================================
+# PREPARE CHART DATA
+# =========================================================
 
-chart_daily_html = daily_mtd_chart(chart_mtd_daily, "MTD Net Revenue Trend")
-chart_source_html = horizontal_bar_chart(chart_source_mtd, "Source", "Net Sales", "MTD Revenue by Source", 6)
-chart_brand_html = horizontal_bar_chart(chart_brand_mtd, "Brand Name", "Net Sales", "MTD Revenue by Brand", 6)
-chart_region_html = horizontal_bar_chart(chart_region_mtd, "Region", "Net Sales", "MTD Revenue by Region", 6)
-chart_session_html = horizontal_bar_chart(chart_session_mtd, "Session", "Net Sales", "MTD Revenue by Session", 6)
+chart_mtd_daily = (
+    mtd_coco_df.copy()
+)
+
+
+chart_source_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Source",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
+
+
+chart_brand_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Brand Name",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
+
+
+chart_region_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Region",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
+
+
+chart_session_mtd = (
+    mtd_coco_df
+    .groupby(
+        "Session",
+        as_index=False
+    )["Net Sales"]
+    .sum()
+)
+
+
+# =========================================================
+# BUILD CHART HTML
+# =========================================================
+
+chart_daily_html = daily_mtd_chart(
+    chart_mtd_daily,
+    "MTD Net Revenue Trend"
+)
+
+
+chart_source_html = horizontal_bar_chart(
+    chart_source_mtd,
+    "Source",
+    "Net Sales",
+    "MTD Revenue by Source",
+    6
+)
+
+
+chart_brand_html = horizontal_bar_chart(
+    chart_brand_mtd,
+    "Brand Name",
+    "Net Sales",
+    "MTD Revenue by Brand",
+    6
+)
+
+
+chart_region_html = horizontal_bar_chart(
+    chart_region_mtd,
+    "Region",
+    "Net Sales",
+    "MTD Revenue by Region",
+    6
+)
+
+
+chart_session_html = horizontal_bar_chart(
+    chart_session_mtd,
+    "Session",
+    "Net Sales",
+    "MTD Revenue by Session",
+    6
+)
 
 # =========================================================
 # GENERIC PERFORMANCE SUMMARY
@@ -2167,58 +2726,189 @@ def html_table(
 ):
 
     if df is None:
-
         return ""
 
-
     if df.empty:
-
-        return """
-        <p style="color:#777;">
-        No data available.
-        </p>
-        """
-
-
-    work = df.copy()
-
+        return ""
 
     percent_columns = (
-        percent_columns
-        or []
+        percent_columns or []
     )
 
+    headers = list(df.columns)
 
-    for col in work.columns:
+    html = [
+        '<table class="data-table">',
+        '<thead><tr>'
+    ]
 
-        if col in percent_columns:
+    for col in headers:
+        html.append(
+            f"<th>{col}</th>"
+        )
 
-            work[col] = work[col].apply(
-                lambda x:
-                    f"{x:,.1f}%"
-                    if pd.notna(x)
-                    else ""
-            )
-
-        elif pd.api.types.is_numeric_dtype(
-            work[col]
-        ):
-
-            work[col] = work[col].apply(
-                lambda x:
-                    f"{x:,.2f}"
-                    if pd.notna(x)
-                    else ""
-            )
-
-
-    return work.to_html(
-        index=False,
-        border=0,
-        classes="data-table",
-        justify="center"
+    html.append(
+        "</tr></thead><tbody>"
     )
 
+    for _, row in df.iterrows():
+
+        html.append("<tr>")
+
+        for col in headers:
+
+            value = row[col]
+
+            # -------------------------------------------------
+            # DATE
+            # -------------------------------------------------
+
+            if col == "Date":
+
+                try:
+                    display = pd.to_datetime(
+                        value
+                    ).strftime("%-d-%b")
+
+                except Exception:
+                    display = str(value)
+
+                html.append(
+                    f"<td>{display}</td>"
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # EMPTY
+            # -------------------------------------------------
+
+            if pd.isna(value):
+
+                html.append(
+                    "<td></td>"
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # PERCENT
+            # -------------------------------------------------
+
+            if col in percent_columns:
+
+                number = _safe_num(value)
+
+                display = (
+                    f"{number:,.1f}%"
+                )
+
+                lower_col = (
+                    col.lower()
+                )
+
+                style = ""
+
+                # -------------------------------------------------
+                # GROWTH %
+                # Positive = Green
+                # Negative = Red
+                # -------------------------------------------------
+
+                if (
+                    "growth" in lower_col
+                ):
+
+                    if number > 0:
+
+                        style = (
+                            ' style="'
+                            'background:#E8F5E9;'
+                            'color:#2E7D32;'
+                            'font-weight:bold;'
+                            '"'
+                        )
+
+                    elif number < 0:
+
+                        style = (
+                            ' style="'
+                            'background:#FFEBEE;'
+                            'color:#C62828;'
+                            'font-weight:bold;'
+                            '"'
+                        )
+
+                # -------------------------------------------------
+                # DISCOUNT CHANGE
+                # Lower discount = Green
+                # Higher discount = Red
+                # -------------------------------------------------
+
+                elif (
+                    "dis %" in lower_col
+                    or
+                    "discount" in lower_col
+                ):
+
+                    if number < 0:
+
+                        style = (
+                            ' style="'
+                            'background:#E8F5E9;'
+                            'color:#2E7D32;'
+                            'font-weight:bold;'
+                            '"'
+                        )
+
+                    elif number > 0:
+
+                        style = (
+                            ' style="'
+                            'background:#FFEBEE;'
+                            'color:#C62828;'
+                            'font-weight:bold;'
+                            '"'
+                        )
+
+                html.append(
+                    f"<td{style}>{display}</td>"
+                )
+
+                continue
+
+            # -------------------------------------------------
+            # NUMERIC
+            # -------------------------------------------------
+
+            if (
+                isinstance(
+                    value,
+                    (int, float)
+                )
+                or
+                pd.api.types.is_number(value)
+            ):
+
+                display = (
+                    f"{float(value):,.2f}"
+                )
+
+            else:
+
+                display = str(value)
+
+            html.append(
+                f"<td>{display}</td>"
+            )
+
+        html.append("</tr>")
+
+    html.append(
+        "</tbody></table>"
+    )
+
+    return "".join(html)
 
 # =========================================================
 # KPI CARD
@@ -2492,10 +3182,127 @@ body {{ font-family: Calibri, Arial, sans-serif; background:#F4F6F8; color:#222;
     {kpi_card("Discount %", ftd_coco_kpi["Dis %"], mtd_coco_kpi["Dis %"], "", "%")}
 </div>
 
-<div class="section-title">📊 Revenue Dashboard</div>
-<div class="chart-grid">{chart_daily_html}</div>
-<div class="chart-grid">{chart_source_html}{chart_brand_html}</div>
-<div class="chart-grid">{chart_region_html}{chart_session_html}</div>
+<!-- =====================================================
+     REVENUE DASHBOARD
+     ===================================================== -->
+
+<div class="section-title">
+    📊 Revenue Dashboard
+</div>
+
+
+<!-- DAILY MTD TREND -->
+
+<table
+    role="presentation"
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+>
+
+    <tr>
+
+        <td
+            style="padding-bottom:14px;"
+        >
+
+            {chart_daily_html}
+
+        </td>
+
+    </tr>
+
+</table>
+
+
+<!-- SOURCE + BRAND -->
+
+<table
+    role="presentation"
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+>
+
+    <tr>
+
+        <td
+            width="50%"
+            valign="top"
+            style="
+                width:50%;
+                padding:0 6px 14px 0;
+            "
+        >
+
+            {chart_source_html}
+
+        </td>
+
+
+        <td
+            width="50%"
+            valign="top"
+            style="
+                width:50%;
+                padding:0 0 14px 6px;
+            "
+        >
+
+            {chart_brand_html}
+
+        </td>
+
+    </tr>
+
+</table>
+
+
+<!-- REGION + SESSION -->
+
+<table
+    role="presentation"
+    width="100%"
+    cellpadding="0"
+    cellspacing="0"
+    border="0"
+>
+
+    <tr>
+
+        <td
+            width="50%"
+            valign="top"
+            style="
+                width:50%;
+                padding:0 6px 14px 0;
+            "
+        >
+
+            {chart_region_html}
+
+        </td>
+
+
+        <td
+            width="50%"
+            valign="top"
+            style="
+                width:50%;
+                padding:0 0 14px 6px;
+            "
+        >
+
+            {chart_session_html}
+
+        </td>
+
+    </tr>
+
+</table>
+
 
 <div class="section-title">📊 KPI Summary</div>
 {html_table(kpi_table, percent_columns=["Discount %"])}
