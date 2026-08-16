@@ -203,6 +203,34 @@ WHATSAPP_DATA_SECRET = (
         "WHATSAPP_DATA_SECRET"
     )
 )
+
+# =========================================================
+# 📲 HOURLY ROLE-BASED WHATSAPP BROADCAST CONFIG
+# =========================================================
+
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get(
+    "WHATSAPP_PHONE_NUMBER_ID"
+)
+
+WHATSAPP_ACCESS_TOKEN = os.environ.get(
+    "WHATSAPP_ACCESS_TOKEN"
+)
+
+WHATSAPP_HOURLY_BROADCAST = (
+    str(os.environ.get("WHATSAPP_HOURLY_BROADCAST", "true"))
+    .strip()
+    .lower() == "true"
+)
+
+WHATSAPP_HOURLY_TEMPLATE = os.environ.get(
+    "WHATSAPP_HOURLY_TEMPLATE",
+    "ai_mis_live_sales"
+)
+
+WHATSAPP_HOURLY_LANGUAGE = os.environ.get(
+    "WHATSAPP_HOURLY_LANGUAGE",
+    "en_US"
+)
 if not WHATSAPP_WEBHOOK_DATA_URL:
 
     raise Exception(
@@ -226,45 +254,6 @@ print(
     bool(
         WHATSAPP_DATA_SECRET
     )
-)
-
-# =========================================================
-# 📲 WHATSAPP HOURLY ROLE-BASED BROADCAST CONFIGURATION
-# =========================================================
-
-WHATSAPP_PHONE_NUMBER_ID = (
-    os.environ.get("PHONE_NUMBER_ID")
-    or os.environ.get("WHATSAPP_PHONE_NUMBER_ID")
-)
-
-WHATSAPP_ACCESS_TOKEN = (
-    os.environ.get("ACCESS_TOKEN")
-    or os.environ.get("WHATSAPP_ACCESS_TOKEN")
-)
-
-WHATSAPP_HOURLY_BROADCAST = (
-    os.environ.get(
-        "WHATSAPP_HOURLY_BROADCAST",
-        "true"
-    )
-    .strip()
-    .lower()
-    in {"1", "true", "yes", "y", "on"}
-)
-
-print(
-    "WhatsApp Phone Number ID:",
-    bool(WHATSAPP_PHONE_NUMBER_ID)
-)
-
-print(
-    "WhatsApp Access Token   :",
-    bool(WHATSAPP_ACCESS_TOKEN)
-)
-
-print(
-    "Hourly Broadcast        :",
-    WHATSAPP_HOURLY_BROADCAST
 )
 # =========================================================
 # 📱 INITIAL WHATSAPP CONFIGURATION CHECK
@@ -1925,11 +1914,7 @@ def _get_kpi(df, parameter, column="Today"):
         return 0.0
 
 
-def _build_analysis_dict(
-    df,
-    key_column,
-    lm_df=None
-):
+def _build_analysis_dict(df, key_column):
     result = {}
 
     if df is None or df.empty:
@@ -1965,34 +1950,6 @@ def _build_analysis_dict(
         .str.lower()
     )
 
-    # Optional Last Month lookup.
-    lm_lookup = {}
-    if lm_df is not None and not lm_df.empty:
-        if key_column in lm_df.columns:
-            lm_work = lm_df.copy()
-            lm_work[key_column] = (
-                lm_work[key_column]
-                .astype(str)
-                .str.strip()
-            )
-            lm_work["Parameters"] = (
-                lm_work["Parameters"]
-                .astype(str)
-                .str.strip()
-                .str.lower()
-            )
-
-            lm_rows = lm_work[
-                lm_work["Parameters"] == "net"
-            ]
-
-            if not lm_rows.empty:
-                lm_lookup = {
-                    str(row[key_column]).strip():
-                    _safe_float(row.get("Today", 0))
-                    for _, row in lm_rows.iterrows()
-                }
-
     for name in work[key_column].dropna().unique():
         if not name or name.lower() == "nan":
             continue
@@ -2007,24 +1964,13 @@ def _build_analysis_dict(
 
         row = rows.iloc[0]
 
-        today_value = _safe_float(row.get("Today", 0))
-        lw_value = _safe_float(row.get("Last Week", 0))
-        lm_value = _safe_float(lm_lookup.get(name, 0))
-
         result[name] = {
-            "today": today_value,
-            "lw": lw_value,
-            "growth": _safe_float(row.get("Growth %", 0)),
-            "lm": lm_value,
-            "lm_growth": (
-                ((today_value - lm_value) / max(lm_value, 1)) * 100
-                if lm_value != 0
-                else 0.0
-            )
+            "today": _safe_float(row.get("Today", 0)),
+            "lw": _safe_float(row.get("Last Week", 0)),
+            "growth": _safe_float(row.get("Growth %", 0))
         }
 
     return result
-
 
 
 def _build_store_dict(df):
@@ -2068,346 +2014,198 @@ def build_whatsapp_snapshot():
     print("=" * 60)
 
     # =========================================================
-    # 🏪 ALL STORE SALES — TODAY / LW / LM
+    # 🏪 ALL STORE SALES
     # =========================================================
-
+    
     stores = {}
-
+    
     try:
-
-        # Today
+    
+        # Today's COCO stores
         today_store_df = (
             today_cut
             .groupby("branchName")["Net Sales"]
             .sum()
             .reset_index()
-            .rename(
-                columns={
-                    "branchName": "Store Name",
-                    "Net Sales": "Today_Sales"
-                }
-            )
         )
-
-        # Last Week
+    
+        today_store_df.rename(
+            columns={
+                "branchName": "Store Name",
+                "Net Sales": "Today_Sales"
+            },
+            inplace=True
+        )
+    
+        # Last Week COCO stores
         lw_store_df = (
             lastweek_cut
             .groupby("branchName")["Net Sales"]
             .sum()
             .reset_index()
-            .rename(
-                columns={
-                    "branchName": "Store Name",
-                    "Net Sales": "LW_Sales"
-                }
-            )
         )
-
-        # Last Month — preserve your existing 28-day Last Month logic
-        lm_store_df = (
-            month_on_month_cut
-            .groupby("branchName")["Net Sales"]
-            .sum()
-            .reset_index()
-            .rename(
-                columns={
-                    "branchName": "Store Name",
-                    "Net Sales": "LM_Sales"
-                }
-            )
-        )
-
-        # ---------------------------------------------------------
-        # LAST MONTH COCO STORES
-        # ---------------------------------------------------------
-        
-        lm_store_df = (
-            month_on_month_cut
-            .groupby("branchName")["Net Sales"]
-            .sum()
-            .reset_index()
-        )
-        
-        lm_store_df.rename(
+    
+        lw_store_df.rename(
             columns={
                 "branchName": "Store Name",
-                "Net Sales": "LM_Sales"
+                "Net Sales": "LW_Sales"
             },
             inplace=True
         )
-
-        store_df = (
-            today_store_df
-            .merge(
-                lw_store_df,
-                on="Store Name",
-                how="outer"
-            )
-            .merge(
-                lm_store_df,
-                on="Store Name",
-                how="outer"
-            )
-            .fillna(0)
-        )
-
+    
+        # Merge
+        store_df = today_store_df.merge(
+            lw_store_df,
+            on="Store Name",
+            how="outer"
+        ).fillna(0)
+    
+        # Growth
         store_df["Growth %"] = (
             (
                 store_df["Today_Sales"]
-                - store_df["LW_Sales"]
+                -
+                store_df["LW_Sales"]
             )
-            / store_df["LW_Sales"].replace(0, 1)
-        ) * 100
-
-        store_df["LM Growth %"] = (
-            (
-                store_df["Today_Sales"]
-                - store_df["LM_Sales"]
+            /
+            store_df["LW_Sales"].replace(
+                0,
+                1
             )
-            / store_df["LM_Sales"].replace(0, 1)
         ) * 100
-
+    
+        # Build JSON
         for _, row in store_df.iterrows():
-
+    
             store_name = str(
                 row["Store Name"]
             ).strip()
-
+    
             if not store_name:
                 continue
-
+    
             stores[store_name] = {
-                "region": str(
-                    region_map.get(
-                        store_name,
-                        "UNKNOWN"
+    
+                "today":
+                    round(
+                        float(
+                            row["Today_Sales"]
+                            or 0
+                        ),
+                        2
+                    ),
+    
+                "lw":
+                    round(
+                        float(
+                            row["LW_Sales"]
+                            or 0
+                        ),
+                        2
+                    ),
+    
+                "growth":
+                    round(
+                        float(
+                            row["Growth %"]
+                            or 0
+                        ),
+                        2
                     )
-                ).strip(),
-            
-                "today": round(
-                    float(
-                        row["Today_Sales"] or 0
-                    ),
-                    2
-                ),
-            
-                "lw": round(
-                    float(
-                        row["LW_Sales"] or 0
-                    ),
-                    2
-                ),
-            
-                "lm": round(
-                    float(
-                        row["LM_Sales"] or 0
-                    ),
-                    2
-                ),
-            
-                "growth": round(
-                    float(
-                        row["Growth %"] or 0
-                    ),
-                    2
-                ),
-            
-                "lm_growth": round(
-                    float(
-                        row["LM Growth %"] or 0
-                    ),
-                    2
-                )
             }
-
+    
     except Exception as e:
-
+    
         print(
             "❌ Store snapshot build error:",
-            repr(e)
+            str(e)
         )
-
+    
         stores = {}
-
-        print("Store sample:")
-        
-        if stores:
-        
-            first_store = next(
-                iter(stores)
-            )
-        
-            print(
-                first_store,
-                stores[first_store]
-            )
-
-    # =========================================================
-    # 🌍 REGION LM ENRICHMENT
-    # =========================================================
-
-    try:
-
-        region_lm_analysis = (
-            safe_kpi_builder(
-                month_on_month_cut,
-                month_on_month_cut,
-                "Region",
-                "Region"
-            )
-        )
-
-        # The helper above compares LM to itself, but the Today field
-        # is exactly the Last Month value we need.
-        region_lm_map = {}
-
-        if (
-            region_lm_analysis is not None
-            and not region_lm_analysis.empty
-        ):
-            for _, row in region_lm_analysis.iterrows():
-                name = str(
-                    row.get("Region", "")
-                ).strip()
-                parameter = str(
-                    row.get("Parameters", "")
-                ).strip().lower()
-
-                if (
-                    name
-                    and parameter == "net"
-                ):
-                    region_lm_map[name] = _safe_float(
-                        row.get("Today", 0)
-                    )
-
-        regions = _build_analysis_dict(
-            region_analysis,
-            "Region"
-        )
-
-        for region_name, region_data in regions.items():
-            lm_value = _safe_float(
-                region_lm_map.get(
-                    region_name,
-                    0
-                )
-            )
-
-            region_data["lm"] = lm_value
-            region_data["lm_growth"] = (
-                (
-                    (region_data["today"] - lm_value)
-                    / max(lm_value, 1)
-                ) * 100
-                if lm_value != 0
-                else 0.0
-            )
-
-    except Exception as e:
-
-        print(
-            "⚠️ Region LM enrichment failed:",
-            repr(e)
-        )
-
-        regions = _build_analysis_dict(
-            region_analysis,
-            "Region"
-        )
-
-    # =========================================================
-    # 📊 OVERALL LM VALUES
-    # =========================================================
-
-    overall_lm_net = _get_kpi(
-        overall,
-        "Net",
-        "Last Month"
-    )
-
-    overall_lm_growth = _get_kpi(
-        overall,
-        "Net",
-        "MoM Growth %"
-    )
-
+    
     snapshot = {
+        "date": business_day.strftime("%d-%b-%y"),
 
-        "date": business_day.strftime(
-            "%d-%b-%y"
-        ),
-
-        "report_time": now.strftime(
-            "%I:%M %p"
-        ),
+        "report_time":
+            now.strftime("%I:%M %p"),
 
         "overall": {
 
-            "gross": _get_kpi(
-                overall,
-                "Gross"
-            ),
+            "gross":
+                _get_kpi(
+                    overall,
+                    "Gross"
+                ),
 
-            "net": _get_kpi(
-                overall,
-                "Net"
-            ),
+            "net":
+                _get_kpi(
+                    overall,
+                    "Net"
+                ),
 
-            "txn": _get_kpi(
-                overall,
-                "Txn"
-            ),
+            "txn":
+                _get_kpi(
+                    overall,
+                    "Txn"
+                ),
 
-            "aov": _get_kpi(
-                overall,
-                "AOV"
-            ),
+            "aov":
+                _get_kpi(
+                    overall,
+                    "AOV"
+                ),
 
-            "discount": _get_kpi(
-                overall,
-                "Discount %"
-            ),
+            "discount":
+                _get_kpi(
+                    overall,
+                    "Discount %"
+                ),
 
-            "lw_net": _get_kpi(
-                overall,
-                "Net",
-                "Last Week"
-            ),
+            "lw_net":
+                _get_kpi(
+                    overall,
+                    "Net",
+                    "Last Week"
+                ),
 
-            "lw_growth": _get_kpi(
-                overall,
-                "Net",
-                "LW Growth %"
-            ),
+            "lw_growth":
+                _get_kpi(
+                    overall,
+                    "Net",
+                    "LW Growth %"
+                ),
 
-            "lm_net": overall_lm_net,
-
-            "lm_growth": overall_lm_growth,
-
-            "eod_projection": _safe_float(eod)
+            "eod_projection":
+                _safe_float(eod)
         },
 
-        "brands": _build_analysis_dict(
-            brand_analysis,
-            "Brand"
-        ),
+        "brands":
+            _build_analysis_dict(
+                brand_analysis,
+                "Brand"
+            ),
 
-        "sources": _build_analysis_dict(
-            source_analysis,
-            "Source Group"
-        ),
+        "sources":
+            _build_analysis_dict(
+                source_analysis,
+                "Source Group"
+            ),
 
-        "regions": regions,
+        "regions":
+            _build_analysis_dict(
+                region_analysis,
+                "Region"
+            ),
 
-        "stores": stores
+        # ✅ IMPORTANT
+        "stores":
+            stores
     }
 
     print("📅 Date:", snapshot["date"])
     print("🕒 Time:", snapshot["report_time"])
     print("💰 Net:", snapshot["overall"]["net"])
     print("🧾 Txn:", snapshot["overall"]["txn"])
-    print("📅 LM Net:", snapshot["overall"]["lm_net"])
     print("🏷 Brands:", len(snapshot["brands"]))
     print("📦 Sources:", len(snapshot["sources"]))
     print("🌍 Regions:", len(snapshot["regions"]))
@@ -2418,26 +2216,31 @@ def build_whatsapp_snapshot():
     print("=" * 60)
     print("📱 WHATSAPP STORE SNAPSHOT DEBUG")
     print("=" * 60)
-    print("Total stores in snapshot:", len(stores))
-    print("Store names:", list(stores.keys()))
-
-    if stores:
-        sample_name = next(iter(stores))
-        print(
-            "Store sample:",
-            sample_name,
-            stores[sample_name]
-        )
-
+    
+    print(
+        "Total stores in snapshot:",
+        len(stores)
+    )
+    
+    print(
+        "Store names:",
+        list(stores.keys())
+    )
+    
     print(
         "Snapshot sections:",
         list(snapshot.keys())
     )
-
+    
     print("=" * 60)
-
+    
     return snapshot
 
+
+
+# =========================================================
+# 📱 SEND SNAPSHOT TO WHATSAPP BACKEND
+# =========================================================
 
 def send_whatsapp_backend_data():
     print("=" * 60)
@@ -2456,13 +2259,13 @@ def send_whatsapp_backend_data():
         print(
             "❌ WHATSAPP_WEBHOOK_DATA_URL not configured"
         )
-        return False, None
+        return False
 
     if not data_secret:
         print(
             "❌ WHATSAPP_DATA_SECRET not configured"
         )
-        return False, None
+        return False
 
     print("Webhook URL:", webhook_url)
     print("Data Secret configured:", bool(data_secret))
@@ -2474,17 +2277,14 @@ def send_whatsapp_backend_data():
             "❌ Failed to build WhatsApp snapshot:",
             repr(e)
         )
-        return False, None
+        return False
 
     headers = {
         "Content-Type": "application/json",
         "X-WhatsApp-Data-Secret": data_secret
     }
 
-    print(
-        "📤 Sending sections:",
-        list(payload.keys())
-    )
+    print("📤 Sending sections:", list(payload.keys()))
 
     try:
         response = requests.post(
@@ -2510,28 +2310,27 @@ def send_whatsapp_backend_data():
             print(
                 "✅ WhatsApp backend snapshot updated successfully"
             )
-            return True, payload
+            return True
 
-        print(
-            "❌ WhatsApp backend update failed"
-        )
-        return False, payload
+        print("❌ WhatsApp backend update failed")
+        return False
 
     except Exception as e:
         print(
             "❌ WhatsApp backend request error:",
             repr(e)
         )
-        return False, payload
+        return False
+
 
 
 # =========================================================
-# 📲 ROLE-BASED HOURLY WHATSAPP BROADCAST
+# 📲 HOURLY ROLE-BASED WHATSAPP REPORT
 # =========================================================
 
-def _normalize_phone(value):
+def _normalize_mobile(value):
     return (
-        str(value)
+        str(value or "")
         .replace("+", "")
         .replace(" ", "")
         .replace("-", "")
@@ -2539,386 +2338,343 @@ def _normalize_phone(value):
     )
 
 
-def _match_region_name(
-    requested_region,
-    regions
-):
-    requested = (
-        str(requested_region or "")
-        .strip()
-        .lower()
+def _fmt_lakh(value):
+    return f"₹{float(value or 0) / 100000:.2f}L"
+
+
+def _fmt_aov(value):
+    return f"₹{int(round(float(value or 0))):,}"
+
+
+def _growth(today_value, compare_value):
+    today_value = float(today_value or 0)
+    compare_value = float(compare_value or 0)
+    if compare_value == 0:
+        return 100.0 if today_value > 0 else 0.0
+    return ((today_value - compare_value) / compare_value) * 100
+
+
+def _performance(growth):
+    if growth > 5:
+        return "🚀 strong growth"
+    if growth > 0:
+        return "📈 growth"
+    if growth < -5:
+        return "🔻 decline"
+    return "➡️ stable"
+
+
+def _period_metrics(df_today, df_lw, df_lm, df_ly):
+    def calc(df):
+        if df is None or df.empty:
+            return {"gross":0.0,"net":0.0,"txn":0.0,"discount":0.0}
+        gross = float(df["grossAmount"].sum() or 0)
+        net = float(df["Net Sales"].sum() or 0)
+        txn = float(len(df))
+        discount = (float(df["discountAmount"].sum() or 0) / max(gross,1)) * 100
+        return {"gross":gross,"net":net,"txn":txn,"discount":discount}
+    t=calc(df_today); w=calc(df_lw); m=calc(df_lm); y=calc(df_ly)
+    t["aov"] = t["net"] / max(t["txn"],1)
+    return {
+        "today": t,
+        "lw": w,
+        "lm": m,
+        "ly": y,
+        "lw_growth": _growth(t["net"], w["net"]),
+        "lm_growth": _growth(t["net"], m["net"]),
+        "ly_growth": _growth(t["net"], y["net"]),
+    }
+
+
+def _role_filtered_frames(user):
+    role = str(user.get("role", "")).strip().lower()
+    stores = user.get("stores", [])
+    if not isinstance(stores, list):
+        stores=[stores]
+    stores={str(x).strip() for x in stores if str(x).strip()}
+    region = str(user.get("region", "")).strip()
+
+    def apply(df):
+        if df is None or df.empty:
+            return df.copy()
+        out=df.copy()
+        if role == "ops leader":
+            return out
+        if role == "region manager":
+            if "Region" not in out.columns:
+                return out.iloc[0:0].copy()
+            return out[out["Region"].astype(str).str.strip().str.lower() == region.lower()].copy()
+        if role == "area manager":
+            return out[out["branchName"].astype(str).str.strip().isin(stores)].copy()
+        return out.iloc[0:0].copy()
+
+    return apply(today_cut), apply(lastweek_cut), apply(month_on_month_cut), apply(lastyear_cut)
+
+
+def _role_label(user):
+    role = str(user.get("role", "")).strip().lower()
+    if role == "ops leader":
+        return "Overall"
+    if role == "region manager":
+        return str(user.get("region", "Overall")).strip()
+    if role == "area manager":
+        return str(user.get("patch", "Area")).strip()
+    return "Overall"
+
+
+def _build_role_hourly_message(user):
+    t_df, lw_df, lm_df, ly_df = _role_filtered_frames(user)
+    m = _period_metrics(t_df, lw_df, lm_df, ly_df)
+
+    # ---------------------------------------------------------
+    # BRAND CONTRIBUTION
+    # ---------------------------------------------------------
+    brand_parts=[]
+    if not t_df.empty and "Brand" in t_df.columns:
+        brand_total=t_df["Net Sales"].sum()
+        for brand, g in t_df.groupby("Brand"):
+            value=float(g["Net Sales"].sum() or 0)
+            if value <= 0:
+                continue
+            pct=(value/max(float(brand_total),1))*100
+            brand_parts.append((brand,value,pct))
+    brand_parts.sort(key=lambda x:x[1], reverse=True)
+
+    # ---------------------------------------------------------
+    # SOURCE CONTRIBUTION
+    # ---------------------------------------------------------
+    source_parts=[]
+    if not t_df.empty and "Source Group" in t_df.columns:
+        for source, g in t_df.groupby("Source Group"):
+            value=float(g["Net Sales"].sum() or 0)
+            if value <= 0:
+                continue
+            source_parts.append((source,value))
+    source_parts.sort(key=lambda x:x[1], reverse=True)
+
+    # ---------------------------------------------------------
+    # HOURLY PERFORMANCE
+    # ---------------------------------------------------------
+    current_hour = int(now.hour)
+    t_hour = 0.0
+    lw_hour = 0.0
+    if not t_df.empty and "BusinessHour" in t_df.columns:
+        t_hour=float(t_df[t_df["BusinessHour"] == current_hour]["Net Sales"].sum() or 0)
+    if not lw_df.empty and "BusinessHour" in lw_df.columns:
+        lw_hour=float(lw_df[lw_df["BusinessHour"] == current_hour]["Net Sales"].sum() or 0)
+    hour_growth=_growth(t_hour,lw_hour)
+
+    # ---------------------------------------------------------
+    # INSIGHT
+    # ---------------------------------------------------------
+    # L2W is available from the live dataframe even though the public
+    # snapshot is mainly used by command queries.
+    l2w_net = 0.0
+    try:
+        # derive L2W from the current full-period dataframe using the
+        # same role filter pattern
+        def _filter_l2w(df):
+            if df is None or df.empty:
+                return df.copy()
+            role = str(user.get("role", "")).strip().lower()
+            if role == "ops leader":
+                return df.copy()
+            if role == "region manager":
+                region = str(user.get("region", "")).strip().lower()
+                return df[df["Region"].astype(str).str.strip().str.lower() == region].copy()
+            stores = user.get("stores", [])
+            if not isinstance(stores, list):
+                stores=[stores]
+            stores={str(x).strip() for x in stores}
+            return df[df["branchName"].astype(str).str.strip().isin(stores)].copy()
+        l2w_role = _filter_l2w(last2week_cut)
+        l2w_net = float(l2w_role["Net Sales"].sum() or 0)
+    except Exception:
+        l2w_net = 0.0
+    l2w_growth = _growth(m["today"]["net"], l2w_net)
+
+    insight = (
+        f"{m['lw_growth']:+.1f}% vs LW, "
+        f"{l2w_growth:+.1f}% vs L2W, "
+        f"{m['lm_growth']:+.1f}% vs MoM, "
+        f"{m['ly_growth']:+.1f}% vs LY"
+        f" → {_performance(m['lw_growth'])}"
     )
 
-    for name in regions.keys():
-        if (
-            str(name).strip().lower()
-            == requested
-        ):
-            return name
+    # ---------------------------------------------------------
+    # EOD PROJECTION — same principle used by current script
+    # ---------------------------------------------------------
+    if not lw_df.empty:
+        lw_full = float(lw_df["Net Sales"].sum() or 0)
+        eod_projection = lw_full * (1 + m["lw_growth"] / 100)
+    else:
+        eod_projection = m["today"]["net"]
 
-    if requested in {"kerala", "kerela"}:
-        for name in regions.keys():
-            if str(name).strip().lower() in {
-                "kerala",
-                "kerela"
-            }:
-                return name
+    # ---------------------------------------------------------
+    # TARGET — exact total target for Ops Leader.
+    # For RM/AM, allocate the overall target by current-day sales share.
+    # ---------------------------------------------------------
+    total_target = float(globals().get("total_target", 0) or 0)
+    overall_today = float(today_cut["Net Sales"].sum() or 0)
+    role_today = m["today"]["net"]
+    if str(user.get("role", "")).strip().lower() == "ops leader":
+        role_target = total_target
+    else:
+        role_target = total_target * (role_today / max(overall_today,1)) if total_target > 0 else 0.0
+    achievement = (eod_projection / max(role_target,1)) * 100 if role_target > 0 else 0.0
 
-    return None
-
-
-def _aggregate_store_access(
-    stores,
-    allowed_stores
-):
-    if not isinstance(allowed_stores, list):
-        allowed_stores = [allowed_stores]
-
-    clean_allowed = [
-        str(x).strip()
-        for x in allowed_stores
-        if str(x).strip()
+    lines=[]
+    lines += [
+        f"📊 LIVE SALES | {business_day.strftime('%d-%b-%Y')} {now.strftime('%I:%M %p')}",
+        "",
+        "💰 BUSINESS OVERVIEW",
+        "",
+        f"💵 Gross Sales: {_fmt_lakh(m['today']['gross'])}",
+        f"💵 Net Revenue: {_fmt_lakh(m['today']['net'])}",
+        f"🧾 Transactions: {int(m['today']['txn']):,}",
+        f"🧺 AOV: {_fmt_aov(m['today']['aov'])}",
+        f"📉 Discount: {m['today']['discount']:.1f}%",
+        "",
+        "🏪 BRAND CONTRIBUTION",
+        ""
     ]
 
-    if any(
-        x.lower() == "all"
-        for x in clean_allowed
-    ):
-        selected = dict(stores)
+    for brand,value,pct in brand_parts:
+        lines.append(f"🍶 {brand}: {_fmt_lakh(value)} ({pct:.0f}%)")
+
+    lines += ["", "📍 SOURCE CONTRIBUTION", ""]
+    for source,value in source_parts:
+        lines.append(f"📍 {source}: {_fmt_lakh(value)}")
+
+    lines += [
+        "",
+        "⏰ HOURLY PERFORMANCE",
+        "",
+        f"⏰ Current Hour: {_fmt_lakh(t_hour)}",
+        f"📊 Same Hour LW: {_fmt_lakh(lw_hour)}",
+        f"📈 Growth: {hour_growth:+.1f}%",
+        "",
+        "🎯 TARGET vs PROJECTION",
+        ""
+    ]
+
+    if role_target > 0:
+        lines += [
+            f"🎯 Target: {_fmt_lakh(role_target)}",
+            f"🔮 EOD Projection: {_fmt_lakh(eod_projection)}",
+            f"📊 Achievement: {achievement:.1f}%",
+        ]
     else:
-        lookup = {
-            str(k).strip().lower(): k
-            for k in stores.keys()
-        }
-        selected = {}
+        lines += [
+            "🎯 Target: Not configured",
+            f"🔮 EOD Projection: {_fmt_lakh(eod_projection)}",
+            "📊 Achievement: N/A",
+        ]
 
-        for store in clean_allowed:
-            actual = lookup.get(
-                store.lower()
-            )
-            if actual:
-                selected[actual] = stores[actual]
+    lines += [
+        "",
+        "🧠 INSIGHT",
+        "",
+        insight,
+        "",
+        "🤖 AI MIS Automation",
+    ]
 
-    today = sum(
-        _safe_float(v.get("today", 0))
-        for v in selected.values()
-    )
-
-    lw = sum(
-        _safe_float(v.get("lw", 0))
-        for v in selected.values()
-    )
-
-    lm = sum(
-        _safe_float(v.get("lm", 0))
-        for v in selected.values()
-    )
-
-    growth_lw = (
-        ((today - lw) / max(lw, 1)) * 100
-        if lw != 0
-        else 0.0
-    )
-
-    growth_lm = (
-        ((today - lm) / max(lm, 1)) * 100
-        if lm != 0
-        else 0.0
-    )
-
-    return selected, today, lw, lm, growth_lw, growth_lm
+    return "\n".join(lines)
 
 
-def _role_based_hourly_message(
-    sender,
-    user,
-    snapshot
-):
-    role = str(
-        user.get("role", "")
-    ).strip().lower()
-
-    date_text = snapshot.get(
-        "date", ""
-    )
-
-    time_text = snapshot.get(
-        "report_time", ""
-    )
-
-    if role == "ops leader":
-
-        overall_data = snapshot.get(
-            "overall", {}
-        )
-
-        today = _safe_float(
-            overall_data.get("net", 0)
-        )
-        lw = _safe_float(
-            overall_data.get("lw_net", 0)
-        )
-        lm = _safe_float(
-            overall_data.get("lm_net", 0)
-        )
-
-        lw_growth = _safe_float(
-            overall_data.get("lw_growth", 0)
-        )
-
-        lm_growth = _safe_float(
-            overall_data.get("lm_growth", 0)
-        )
-
-        return "\n".join([
-            "📊 *AI MIS | HOURLY SALES*",
-            f"{date_text} | {time_text}",
-            "",
-            "👔 *Ops Leader | Overall*",
-            "",
-            f"💰 Today: ₹{today/100000:.2f}L",
-            f"📅 vs LW: {lw_growth:+.1f}%",
-            f"📆 vs LM: {lm_growth:+.1f}%",
-            f"🔵 LW: ₹{lw/100000:.2f}L",
-            f"🟣 LM: ₹{lm/100000:.2f}L",
-        ])
-
-    if role == "region manager":
-
-        regions = snapshot.get(
-            "regions", {}
-        )
-
-        requested = user.get(
-            "region", ""
-        )
-
-        actual = _match_region_name(
-            requested,
-            regions
-        )
-
-        if not actual:
-            return None
-
-        data = regions.get(
-            actual, {}
-        )
-
-        today = _safe_float(
-            data.get("today", 0)
-        )
-        lw = _safe_float(
-            data.get("lw", 0)
-        )
-        lm = _safe_float(
-            data.get("lm", 0)
-        )
-
-        lw_growth = _safe_float(
-            data.get("growth", 0)
-        )
-
-        lm_growth = _safe_float(
-            data.get("lm_growth", 0)
-        )
-
-        return "\n".join([
-            "🌍 *AI MIS | HOURLY SALES*",
-            f"{date_text} | {time_text}",
-            "",
-            f"🌍 *Region: {actual}*",
-            "",
-            f"💰 Today: ₹{today/100000:.2f}L",
-            f"📅 vs LW: {lw_growth:+.1f}%",
-            f"📆 vs LM: {lm_growth:+.1f}%",
-            f"🔵 LW: ₹{lw/100000:.2f}L",
-            f"🟣 LM: ₹{lm/100000:.2f}L",
-        ])
-
-    if role == "area manager":
-
-        stores = snapshot.get(
-            "stores", {}
-        )
-
-        (
-            selected,
-            today,
-            lw,
-            lm,
-            growth_lw,
-            growth_lm
-        ) = _aggregate_store_access(
-            stores,
-            user.get("stores", [])
-        )
-
-        if not selected:
-            return None
-
-        store_lines = []
-
-        for name, data in sorted(
-            selected.items(),
-            key=lambda item: _safe_float(
-                item[1].get("today", 0)
-            ),
-            reverse=True
-        )[:5]:
-            store_lines.append(
-                f"• {name}: ₹{_safe_float(data.get('today', 0))/1000:.1f}K"
-            )
-
-        return "\n".join([
-            "🏪 *AI MIS | HOURLY SALES*",
-            f"{date_text} | {time_text}",
-            "",
-            f"🏪 *Patch: {user.get('patch', '')}*",
-            f"Stores: {len(selected)}",
-            "",
-            f"💰 Today: ₹{today/100000:.2f}L",
-            f"📅 vs LW: {growth_lw:+.1f}%",
-            f"📆 vs LM: {growth_lm:+.1f}%",
-            f"🔵 LW: ₹{lw/100000:.2f}L",
-            f"🟣 LM: ₹{lm/100000:.2f}L",
-            "",
-            "🏪 *Top Stores*",
-            *store_lines
-        ])
-
-    return None
-
-
-def send_hourly_role_based_whatsapp(
-    snapshot
-):
-    print("=" * 60)
-    print("📲 ROLE-BASED HOURLY WHATSAPP")
-    print("=" * 60)
-
-    if not WHATSAPP_HOURLY_BROADCAST:
-        print(
-            "ℹ️ Hourly WhatsApp broadcast disabled"
-        )
-        return False
-
-    if not WHATSAPP_PHONE_NUMBER_ID:
-        print(
-            "⚠️ PHONE_NUMBER_ID / WHATSAPP_PHONE_NUMBER_ID is missing"
-        )
-        return False
-
-    if not WHATSAPP_ACCESS_TOKEN:
-        print(
-            "⚠️ ACCESS_TOKEN / WHATSAPP_ACCESS_TOKEN is missing"
-        )
+def send_whatsapp_template_message(recipient, message):
+    """Send proactive hourly message using an approved WhatsApp template."""
+    if not WHATSAPP_PHONE_NUMBER_ID or not WHATSAPP_ACCESS_TOKEN:
+        print("❌ WhatsApp Cloud API credentials missing for hourly broadcast")
         return False
 
     url = (
-        "https://graph.facebook.com/v23.0/"
+        f"https://graph.facebook.com/v23.0/"
         f"{WHATSAPP_PHONE_NUMBER_ID}/messages"
     )
-
     headers = {
         "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": _normalize_mobile(recipient),
+        "type": "template",
+        "template": {
+            "name": WHATSAPP_HOURLY_TEMPLATE,
+            "language": {"code": WHATSAPP_HOURLY_LANGUAGE},
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {"type": "text", "text": message}
+                    ],
+                }
+            ],
+        },
     }
 
-    success_count = 0
-    failed_count = 0
-    skipped_count = 0
-
-    for mobile in WHATSAPP_USERS.keys():
-
-        recipient = _normalize_phone(
-            mobile
+    try:
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30,
         )
+        print("📲 Hourly Meta Status:", response.status_code)
+        print("📲 Hourly Meta Response:", response.text)
+        return response.ok
+    except Exception as e:
+        print("❌ Hourly WhatsApp API error:", repr(e))
+        return False
 
-        if not recipient:
-            skipped_count += 1
+
+def broadcast_role_based_hourly_sales():
+    if not WHATSAPP_HOURLY_BROADCAST:
+        print("ℹ️ Hourly broadcast disabled")
+        return
+
+    if not WHATSAPP_PHONE_NUMBER_ID or not WHATSAPP_ACCESS_TOKEN:
+        print("⚠️ Hourly broadcast skipped: WhatsApp Cloud API credentials missing")
+        return
+
+    print("=" * 60)
+    print("📲 ROLE-BASED HOURLY WHATSAPP BROADCAST")
+    print("=" * 60)
+
+    sent=0
+    skipped=0
+    failed=0
+
+    seen=set()
+
+    for mobile,user in WHATSAPP_USERS.items():
+        role=str(user.get("role","")).strip().lower()
+        if role not in {"ops leader","region manager","area manager"}:
             continue
+
+        recipient=_normalize_mobile(mobile)
+        if not recipient or recipient in seen:
+            continue
+        seen.add(recipient)
 
         try:
-            user = get_user_access(
-                recipient
-            )
-        except Exception as e:
-            print(
-                f"⚠️ Access lookup failed | {recipient} | {e}"
-            )
-            failed_count += 1
-            continue
-
-        if not user:
-            print(
-                f"⚠️ Recipient not mapped | {recipient}"
-            )
-            skipped_count += 1
-            continue
-
-        message = _role_based_hourly_message(
-            recipient,
-            user,
-            snapshot
-        )
-
-        if not message:
-            print(
-                f"⚠️ No role-based message generated | {recipient}"
-            )
-            skipped_count += 1
-            continue
-
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": recipient,
-            "type": "text",
-            "text": {
-                "preview_url": False,
-                "body": message
-            }
-        }
-
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-
-            print(
-                f"WhatsApp hourly → {recipient} | "
-                f"Role: {user.get('role')} | "
-                f"Status: {response.status_code}"
-            )
-
-            print(
-                "Response:",
-                response.text
-            )
-
-            if response.ok:
-                success_count += 1
+            message=_build_role_hourly_message(user)
+            label=_role_label(user)
+            print(f"📲 Sending hourly report → {recipient} | {role} | {label}")
+            if send_whatsapp_template_message(recipient, message):
+                sent += 1
             else:
-                failed_count += 1
-
+                failed += 1
         except Exception as e:
-            failed_count += 1
-            print(
-                f"❌ WhatsApp hourly error → {recipient}: {e}"
-            )
+            failed += 1
+            print(f"❌ Hourly report error → {recipient}: {e}")
 
+    print(
+        f"📊 Hourly broadcast result | sent={sent} skipped={skipped} failed={failed}"
+    )
     print("=" * 60)
-    print("Hourly WhatsApp Success:", success_count)
-    print("Hourly WhatsApp Failed :", failed_count)
-    print("Hourly WhatsApp Skipped:", skipped_count)
-    print("=" * 60)
-
-    return failed_count == 0
-
 
 # =========================================================
 # 🚀 FINAL EXECUTION — WHATSAPP ONLY
@@ -2928,35 +2684,13 @@ print("=" * 60)
 print("🚀 WHATSAPP LIVE SALES PROCESS STARTED")
 print("=" * 60)
 
-whatsapp_backend_updated, whatsapp_snapshot = (
-    send_whatsapp_backend_data()
-)
+whatsapp_backend_updated = send_whatsapp_backend_data()
 
 if whatsapp_backend_updated:
-    print(
-        "✅ WhatsApp backend data is ready"
-    )
-
-    # IMPORTANT: proactive role-based hourly broadcast
-    # uses the exact same snapshot just pushed to Render.
-    if whatsapp_snapshot:
-        hourly_broadcast_success = (
-            send_hourly_role_based_whatsapp(
-                whatsapp_snapshot
-            )
-        )
-        if hourly_broadcast_success:
-            print(
-                "✅ Role-based hourly WhatsApp broadcast completed"
-            )
-        else:
-            print(
-                "⚠️ Role-based hourly WhatsApp broadcast completed with warnings"
-            )
+    print("✅ WhatsApp backend data is ready")
+    broadcast_role_based_hourly_sales()
 else:
-    print(
-        "⚠️ WhatsApp backend data was NOT updated"
-    )
+    print("⚠️ WhatsApp backend data was NOT updated")
 
 print("=" * 60)
 print("🏁 WHATSAPP LIVE SALES PROCESS COMPLETED")
@@ -2966,39 +2700,9 @@ print("=" * 60)
 print("📱 WHATSAPP SCRIPT TEST")
 print("=" * 60)
 
-print(
-    "API configured      :",
-    bool(API_KEY)
-)
-
-print(
-    "Google connected    :",
-    bool(spreadsheet)
-)
-
-print(
-    "WhatsApp URL        :",
-    bool(WHATSAPP_WEBHOOK_DATA_URL)
-)
-
-print(
-    "WhatsApp secret     :",
-    bool(WHATSAPP_DATA_SECRET)
-)
-
-print(
-    "Phone Number ID     :",
-    bool(WHATSAPP_PHONE_NUMBER_ID)
-)
-
-print(
-    "Access Token        :",
-    bool(WHATSAPP_ACCESS_TOKEN)
-)
-
-print(
-    "Hourly Broadcast    :",
-    WHATSAPP_HOURLY_BROADCAST
-)
+print("API configured      :", bool(API_KEY))
+print("Google connected    :", bool(spreadsheet))
+print("WhatsApp URL        :", bool(WHATSAPP_WEBHOOK_DATA_URL))
+print("WhatsApp secret     :", bool(WHATSAPP_DATA_SECRET))
 
 print("=" * 60)
