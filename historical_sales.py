@@ -55,6 +55,8 @@ import requests
 # CONFIGURATION
 # =========================================================
 
+
+
 HISTORICAL_DATA_URL = os.getenv(
     "HISTORICAL_DATA_URL",
     "https://raw.githubusercontent.com/"
@@ -83,6 +85,14 @@ HISTORICAL_REQUEST_TIMEOUT = int(
     )
 )
 
+HTTP_SESSION = requests.Session()
+
+HTTP_SESSION.headers.update(
+    {
+        "User-Agent": "AI-MIS-Historical-Sales/1.0",
+        "Accept": "text/csv,application/json;q=0.9,*/*;q=0.8",
+    }
+)
 # =========================================================
 # 📚 LOAD CONSOLIDATED HISTORICAL DATA
 # =========================================================
