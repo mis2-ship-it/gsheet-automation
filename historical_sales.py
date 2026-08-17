@@ -1310,167 +1310,215 @@ def extract_historical_dimension(
 # NATURAL QUERY ROUTER
 # =========================================================
 
-def classify_historical_query(
-    message: str,
-) -> Optional[dict]:
-    """
-    Lightweight intent classifier for WhatsApp.
+def classify_historical_query(message):
 
-    Returns:
-        {
-            "intent": "...",
-            "dimension": "store|brand|region|None",
-            "value": "...",
-            "months": 6
-        }
+    import re
 
-    This does not send WhatsApp messages itself.
-    """
-    text = _normalize_text(message)
+    text = _normalize_text(
+        message
+    )
 
     if not text:
+
         return None
 
     months = 6
 
-    match_months = re.search(
-        r"last\s+(\d+)\s+months?",
-        text,
+    month_match = re.search(
+        r"(?:last\s+)?(\d+)\s+months?",
+        text
     )
 
-    if match_months:
-        months = max(
-            1,
-            min(
-                int(match_months.group(1)),
-                24,
-            ),
+    if month_match:
+
+        months = int(
+            month_match.group(1)
         )
 
+    elif (
+        "last six months" in text
+        or
+        "six months" in text
+    ):
+
+        months = 6
+
+    elif (
+        "last twelve months" in text
+        or
+        "twelve months" in text
+    ):
+
+        months = 12
+
+    elif (
+        "last year" in text
+    ):
+
+        months = 12
+
+    # --------------------------------------------------
+    # SEASONALITY
+    # --------------------------------------------------
+
     if any(
-        phrase in text
-        for phrase in [
+        x in text
+        for x in [
             "seasonality",
             "seasonal",
             "season trend",
         ]
     ):
+
         return {
             "intent": "seasonality",
             "dimension": None,
             "value": None,
-            "months": max(months, 12),
+            "months": max(
+                months,
+                12
+            ),
         }
 
-    if any(
-        phrase in text
-        for phrase in [
-            "best stores",
-            "top stores",
-            "worst stores",
-            "declining stores",
-            "store performance",
-        ]
-    ):
+    # --------------------------------------------------
+    # BRAND
+    # --------------------------------------------------
+
+    brands = [
+        "frozen bottle",
+        "madno",
+        "boba bar",
+        "lubov",
+    ]
+
+    for brand in brands:
+
+        if brand in text:
+
+            return {
+                "intent":
+                    "historical_performance",
+                "dimension":
+                    "brand",
+                "value":
+                    brand,
+                "months":
+                    months,
+            }
+
+    # --------------------------------------------------
+    # REGION
+    # --------------------------------------------------
+
+    regions = {
+        "tn": "TN",
+        "tamil nadu": "TN",
+        "tamilnadu": "TN",
+
+        "ka": "KA",
+        "karnataka": "KA",
+
+        "mh": "MH",
+        "maharashtra": "MH",
+
+        "kl": "KL",
+        "kerala": "KL",
+        "kerela": "KL",
+    }
+
+    for key, canonical in regions.items():
+
+        if (
+            text == key
+            or
+            text.startswith(
+                key + " region"
+            )
+            or
+            text.startswith(
+                key + " sales"
+            )
+            or
+            (
+                "region" in text
+                and key in text
+            )
+        ):
+
+            return {
+                "intent":
+                    "historical_performance",
+                "dimension":
+                    "region",
+                "value":
+                    canonical,
+                "months":
+                    months,
+            }
+
+    # --------------------------------------------------
+    # COMMON WORDS TO REMOVE
+    # --------------------------------------------------
+
+    cleaned = text
+
+    for phrase in [
+        "last six months",
+        "last twelve months",
+        "last 12 months",
+        "last 6 months",
+        "last 3 months",
+        "last 2 months",
+        "last month",
+        "historical performance",
+        "historical",
+        "performance",
+        "sales",
+        "trend",
+    ]:
+
+        cleaned = cleaned.replace(
+            phrase,
+            ""
+        )
+
+    cleaned = re.sub(
+        r"\s+",
+        " ",
+        cleaned
+    ).strip()
+
+    # --------------------------------------------------
+    # STORE
+    # --------------------------------------------------
+
+    if cleaned:
+
         return {
-            "intent": "store_ranking",
-            "dimension": "store",
-            "value": None,
-            "months": months,
+            "intent":
+                "historical_performance",
+            "dimension":
+                "store",
+            "value":
+                cleaned,
+            "months":
+                months,
         }
 
-    if any(
-        phrase in text
-        for phrase in [
-            "best brands",
-            "top brands",
-            "brand performance",
-            "brand trend",
-        ]
-    ):
-        return {
-            "intent": "brand_ranking",
-            "dimension": "brand",
-            "value": None,
-            "months": months,
-        }
+    # --------------------------------------------------
+    # OVERALL
+    # --------------------------------------------------
 
-    # Generic last N months.
-    if (
-        "last" in text
-        and "month" in text
-    ):
-        for prefix, dimension in [
-            ("brand", "brand"),
-            ("store", "store"),
-            ("region", "region"),
-        ]:
-            if prefix in text:
-                value = (
-                    text
-                    .replace(
-                        "last",
-                        "",
-                    )
-                    .replace(
-                        str(months),
-                        "",
-                    )
-                    .replace(
-                        "months",
-                        "",
-                    )
-                    .replace(
-                        prefix,
-                        "",
-                    )
-                    .strip()
-                )
-
-                return {
-                    "intent": "historical_performance",
-                    "dimension": dimension,
-                    "value": value or None,
-                    "months": months,
-                }
-
-        return {
-            "intent": "historical_performance",
-            "dimension": None,
-            "value": None,
-            "months": months,
-        }
-
-    # Natural dimension query.
-    if "performance" in text:
-        for prefix, dimension in [
-            ("brand", "brand"),
-            ("store", "store"),
-            ("region", "region"),
-        ]:
-            if prefix in text:
-                value = text.replace(
-                    prefix,
-                    "",
-                ).replace(
-                    "performance",
-                    "",
-                ).replace(
-                    "last",
-                    "",
-                ).replace(
-                    "6 months",
-                    "",
-                ).strip()
-
-                return {
-                    "intent": "historical_performance",
-                    "dimension": dimension,
-                    "value": value or None,
-                    "months": months,
-                }
-
-    return None
+    return {
+        "intent":
+            "historical_performance",
+        "dimension":
+            None,
+        "value":
+            None,
+        "months":
+            months,
+    }
 
 
 # =========================================================
