@@ -2040,6 +2040,42 @@ def send_historical_sales_query(
     return False
 
 # =========================================================
+# 📚 HISTORICAL QUERY DETECTOR
+# =========================================================
+
+def is_historical_query(message):
+
+    text = (
+        str(message)
+        .strip()
+        .lower()
+    )
+
+    historical_phrases = [
+        "last month",
+        "last 2 months",
+        "last 3 months",
+        "last 6 months",
+        "last 12 months",
+        "last year",
+        "historical",
+        "history",
+        "seasonality",
+        "seasonal",
+        "historical performance",
+        "monthly performance",
+        "monthly trend",
+        "sales trend",
+        "last six months",
+        "last twelve months",
+    ]
+
+    return any(
+        phrase in text
+        for phrase in historical_phrases
+    )
+
+# =========================================================
 # 👋 PROCESS MESSAGE
 # =========================================================
 
