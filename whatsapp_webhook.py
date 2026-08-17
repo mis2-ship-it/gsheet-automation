@@ -39,7 +39,6 @@ from whatsapp_menu import (
     handle_menu_selection,
     build_list_message,
     build_button_message,
-    get_session_payload,
     clear_session,
 )
 
@@ -64,6 +63,7 @@ SNAPSHOT_FILE = os.environ.get(
 )
 
 LIVE_SALES_DATA = {}
+
 
 
 # =========================================================
@@ -169,7 +169,7 @@ print("ACCESS_TOKEN exists          :", bool(ACCESS_TOKEN))
 print("VERIFY_TOKEN exists          :", bool(VERIFY_TOKEN))
 print("WHATSAPP_DATA_SECRET exists  :", bool(WHATSAPP_DATA_SECRET))
 print("SNAPSHOT_FILE                :", SNAPSHOT_FILE)
-print("HISTORICAL ENGINE             :", True)
+print("GUIDED MENU ENGINE           :", True)
 print("=" * 60)
 
 
@@ -646,6 +646,7 @@ def send_whatsapp_message(recipient, message):
         print("❌ WhatsApp API error:", str(e))
         return False
 
+
 # =========================================================
 # 📱 SEND WHATSAPP INTERACTIVE LIST
 # =========================================================
@@ -691,7 +692,6 @@ def send_whatsapp_interactive(
     }
 
     try:
-
         response = requests.post(
             url,
             headers=headers,
@@ -699,36 +699,47 @@ def send_whatsapp_interactive(
             timeout=30,
         )
 
-        print(
-            "Meta Status:",
-            response.status_code
-        )
-
-        print(
-            "Meta Response:",
-            response.text
-        )
+        print("Meta Interactive Status:", response.status_code)
+        print("Meta Interactive Response:", response.text)
 
         if response.ok:
-            print(
-                "✅ Interactive menu sent"
-            )
+            print("✅ Interactive menu sent")
             return True
 
-        print(
-            "❌ Interactive menu failed"
-        )
-
+        print("❌ Interactive menu failed")
         return False
 
     except Exception as e:
-
-        print(
-            "❌ Interactive menu error:",
-            str(e)
-        )
-
+        print("❌ Interactive menu error:", str(e))
         return False
+
+
+# =========================================================
+# 🤖 START GUIDED AI MIS MENU
+# =========================================================
+
+def send_main_menu(sender):
+    result = start_menu(sender)
+    options = result.get("options", [])
+
+    if not options:
+        send_whatsapp_message(
+            sender,
+            "❌ Your mobile number is not mapped for AI MIS access."
+        )
+        return
+
+    send_whatsapp_interactive(
+        recipient=sender,
+        body_text=(
+            "👋 *AI MIS WhatsApp*\n\n"
+            "What are you looking for?"
+        ),
+        options=options,
+        button_text="Select",
+        section_title="Sales Analysis",
+    )
+
 
 # =========================================================
 # 📥 RECEIVE RISTA LIVE SALES SNAPSHOT
@@ -1742,20 +1753,17 @@ def send_historical_sales_query(
     query = classify_historical_query(
         message
     )
-    
+
     if not query:
-    
+
         if is_historical_query(message):
-    
             query = {
                 "intent": "historical_performance",
                 "dimension": None,
                 "value": None,
                 "months": 6,
             }
-    
         else:
-    
             return False
 
     intent = query.get(
@@ -2336,12 +2344,7 @@ def is_historical_query(message):
 # 📊 HANDLE GUIDED MENU REPORT ACTION
 # =========================================================
 
-def handle_menu_report_action(
-    sender,
-    action,
-    session,
-):
-
+def handle_menu_report_action(sender, action, session):
     print("=" * 60)
     print("📊 MENU REPORT ACTION")
     print("Sender :", sender)
@@ -2350,494 +2353,32 @@ def handle_menu_report_action(
     print("=" * 60)
 
     if not session:
-        print(
-            "⚠️ No menu session found"
-        )
         return
-
-    # -----------------------------------------------------
-    # TODAY
-    # -----------------------------------------------------
 
     if action == "today_sales":
-
-        send_role_based_ftd_sales(
-            sender
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_role_based_ftd_sales(sender)
+        clear_session(sender)
         return
-
-    # -----------------------------------------------------
-    # LAST WEEK
-    # -----------------------------------------------------
 
     if action == "last_week_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_week"
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_menu_period_report(sender, session, "last_week")
+        clear_session(sender)
         return
-
-    # -----------------------------------------------------
-    # LAST MONTH
-    # -----------------------------------------------------
 
     if action == "last_month_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_month"
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_menu_period_report(sender, session, "last_month")
+        clear_session(sender)
         return
-
-    # -----------------------------------------------------
-    # LAST YEAR
-    # -----------------------------------------------------
 
     if action == "last_year_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_year"
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_menu_period_report(sender, session, "last_year")
+        clear_session(sender)
         return
-
-    # -----------------------------------------------------
-    # HISTORICAL
-    # -----------------------------------------------------
 
     if action == "historical":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_6_months"
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_menu_period_report(sender, session, "last_6_months")
+        clear_session(sender)
         return
-
-    # -----------------------------------------------------
-    # GENERATE OVERALL
-    # -----------------------------------------------------
-
-    if action == "generate_overall":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERATE BRAND
-    # -----------------------------------------------------
-
-    if action == "generate_brand":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERATE REGION
-    # -----------------------------------------------------
-
-    if action == "generate_region":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERATE STORE
-    # -----------------------------------------------------
-
-    if action == "generate_store":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERATE SOURCE
-    # -----------------------------------------------------
-
-    if action == "generate_source":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERATE RANKING
-    # -----------------------------------------------------
-
-    if action == "generate_ranking":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    print(
-        "⚠️ Unknown menu action:",
-        action
-    )
-
-
-# =========================================================
-# 📊 MENU PERIOD REPORT
-# =========================================================
-
-def send_menu_period_report(
-    sender,
-    session,
-    period,
-):
-
-    print("=" * 60)
-    print("📊 MENU PERIOD REPORT")
-    print("Sender:", sender)
-    print("Period:", period)
-    print("Session:", session)
-    print("=" * 60)
-
-    # -----------------------------------------------------
-    # TODAY
-    # -----------------------------------------------------
-
-    if period == "today":
-
-        send_role_based_ftd_sales(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST WEEK
-    # -----------------------------------------------------
-
-    if period == "last_week":
-
-        send_sales_vs_lw(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST MONTH
-    # -----------------------------------------------------
-
-    if period == "last_month":
-
-        send_sales_vs_lm(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST YEAR
-    # -----------------------------------------------------
-
-    if period == "last_year":
-
-        send_sales_vs_ly(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST 3 / 6 / 12 MONTHS
-    # -----------------------------------------------------
-
-    if period in {
-        "last_3_months",
-        "last_6_months",
-        "last_12_months",
-    }:
-
-        months = {
-            "last_3_months": 3,
-            "last_6_months": 6,
-            "last_12_months": 12,
-        }[period]
-
-        historical_message = (
-            f"last {months} months"
-        )
-
-        print(
-            "📚 Historical menu request:",
-            historical_message
-        )
-
-        try:
-
-            handled = (
-                send_historical_sales_query(
-                    sender,
-                    historical_message
-                )
-            )
-
-            if not handled:
-
-                send_whatsapp_message(
-                    sender,
-                    (
-                        "⚠️ Historical report "
-                        "is not available right now."
-                    )
-                )
-
-        except Exception as e:
-
-            print(
-                "❌ Historical menu error:",
-                str(e)
-            )
-
-            send_whatsapp_message(
-                sender,
-                (
-                    "❌ Error while generating "
-                    "historical report.\n\n"
-                    f"Debug: {str(e)}"
-                )
-            )
-
-        return
-
-    # -----------------------------------------------------
-    # UNSUPPORTED
-    # -----------------------------------------------------
-
-    send_whatsapp_message(
-        sender,
-        "⚠️ Report period not supported yet."
-    )
-
-# =========================================================
-# 🤖 START GUIDED AI MIS MENU
-# =========================================================
-
-def send_main_menu(sender):
-
-    result = start_menu(
-        sender
-    )
-
-    if not result.get(
-        "options"
-    ):
-
-        send_whatsapp_message(
-            sender,
-            (
-                "❌ Your mobile number is "
-                "not mapped for AI MIS access."
-            )
-        )
-
-        return
-
-    send_whatsapp_interactive(
-        recipient=sender,
-        body_text=(
-            "👋 *AI MIS WhatsApp*\n\n"
-            "What are you looking for?"
-        ),
-        options=result["options"],
-        button_text="Select",
-        section_title="Sales Analysis",
-    )
-
-# =========================================================
-# 📊 HANDLE GUIDED MENU REPORT
-# =========================================================
-
-def handle_menu_report_action(
-    sender,
-    action,
-    session,
-):
-
-    if not session:
-        return
-
-    print("=" * 60)
-    print("📊 MENU REPORT ACTION")
-    print("Action:", action)
-    print("Session:", session)
-    print("=" * 60)
-
-    # -----------------------------------------------------
-    # TODAY
-    # -----------------------------------------------------
-
-    if action == "today_sales":
-
-        send_role_based_ftd_sales(
-            sender
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST WEEK
-    # -----------------------------------------------------
-
-    if action == "last_week_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_week"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST MONTH
-    # -----------------------------------------------------
-
-    if action == "last_month_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_month"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST YEAR
-    # -----------------------------------------------------
-
-    if action == "last_year_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_year"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # HISTORICAL
-    # -----------------------------------------------------
-
-    if action == "historical":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_6_months"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GENERIC REPORTS
-    # -----------------------------------------------------
 
     if action in {
         "generate_overall",
@@ -2847,18 +2388,171 @@ def handle_menu_report_action(
         "generate_source",
         "generate_ranking",
     }:
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
+        send_menu_period_report(sender, session, session.period)
+        clear_session(sender)
         return
+
+    print("⚠️ Unknown menu action:", action)
+
+
+# =========================================================
+# 📊 MENU PERIOD REPORT
+# =========================================================
+
+def _menu_scope_values(session):
+    if not LIVE_SALES_DATA or not session:
+        return None
+
+    analysis = getattr(session, "analysis", None)
+
+    if analysis in {None, "overall"}:
+        overall = LIVE_SALES_DATA.get("overall", {}) or {}
+        return {
+            "scope": "Overall",
+            "today": _safe_float(overall.get("net")),
+            "lw": _safe_float(overall.get("lw_net")),
+            "lm": _safe_float(overall.get("lm_net")),
+            "ly": _safe_float(overall.get("ly_net")),
+        }
+
+    if analysis == "brand":
+        brands = LIVE_SALES_DATA.get("brands", {}) or {}
+        requested = _normalize_text(getattr(session, "brand", ""))
+        for name, data in brands.items():
+            if _normalize_text(name) == requested:
+                return {
+                    "scope": str(name),
+                    "today": _safe_float(data.get("today")),
+                    "lw": _safe_float(data.get("lw")),
+                    "lm": _safe_float(data.get("lm")),
+                    "ly": _safe_float(data.get("ly")),
+                }
+        return None
+
+    if analysis == "region":
+        values = _region_sales_values(getattr(session, "region", ""))
+        if not values:
+            return None
+        return {
+            "scope": values.get("region") or getattr(session, "region", ""),
+            "today": values.get("today", 0.0),
+            "lw": values.get("lw", 0.0),
+            "lm": values.get("lm", 0.0),
+            "ly": values.get("ly", 0.0),
+        }
+
+    if analysis == "store":
+        name, data = _find_store_snapshot(getattr(session, "store", ""))
+        if not name:
+            return None
+        return {
+            "scope": str(name),
+            "today": _safe_float(data.get("today")),
+            "lw": _safe_float(data.get("lw")),
+            "lm": _safe_float(data.get("lm")),
+            "ly": _safe_float(data.get("ly")),
+        }
+
+    if analysis == "source":
+        sources = LIVE_SALES_DATA.get("sources", {}) or {}
+        requested = _normalize_text(getattr(session, "source", ""))
+        for name, data in sources.items():
+            if _normalize_text(name) == requested:
+                return {
+                    "scope": str(name),
+                    "today": _safe_float(data.get("today")),
+                    "lw": _safe_float(data.get("lw")),
+                    "lm": _safe_float(data.get("lm")),
+                    "ly": _safe_float(data.get("ly")),
+                }
+        return None
+
+    return None
+
+
+def send_menu_period_report(sender, session, period):
+    print("=" * 60)
+    print("📊 MENU PERIOD REPORT")
+    print("Sender:", sender)
+    print("Period:", period)
+    print("Session:", session)
+    print("=" * 60)
+
+    if period == "today":
+        send_role_based_ftd_sales(sender)
+        return
+
+    if period in {"last_week", "last_month", "last_year"}:
+        scoped = _menu_scope_values(session)
+        if not scoped:
+            send_whatsapp_message(sender, "⚠️ Sales data is not available for the selected scope.")
+            return
+
+        key = {
+            "last_week": "lw",
+            "last_month": "lm",
+            "last_year": "ly",
+        }[period]
+        previous = _safe_float(scoped.get(key))
+        today = _safe_float(scoped.get("today"))
+
+        label = {
+            "last_week": "LAST WEEK",
+            "last_month": "LAST MONTH",
+            "last_year": "LAST YEAR",
+        }[period]
+        emoji = "📅" if period == "last_week" else "📆"
+
+        if previous == 0:
+            growth_text = "N/A"
+            performance = "⚠️ No comparison data"
+            previous_text = "No data"
+        else:
+            growth = _growth(today, previous)
+            growth_text = f"{growth:+.1f}%"
+            performance = _performance(growth)
+            previous_text = _format_lacs(previous)
+
+        reply = (
+            f"📊 *AI MIS | {label} SALES*\n"
+            f"{LIVE_SALES_DATA.get('date', '')}\n"
+            f"{LIVE_SALES_DATA.get('report_time', '')}\n\n"
+            f"📍 *{scoped['scope']}*\n\n"
+            f"💰 *Today:* {_format_lacs(today)}\n"
+            f"{emoji} *{label.title()}:* {previous_text}\n"
+            f"📈 *Growth:* {growth_text}\n"
+            f"🧠 *Performance:* {performance}"
+        )
+        send_whatsapp_message(sender, reply)
+        return
+
+    if period in {"last_3_months", "last_6_months", "last_12_months"}:
+        months = {"last_3_months": 3, "last_6_months": 6, "last_12_months": 12}[period]
+        analysis = getattr(session, "analysis", None)
+        value = None
+        if analysis == "brand":
+            value = getattr(session, "brand", None)
+        elif analysis == "region":
+            value = getattr(session, "region", None)
+        elif analysis == "store":
+            value = getattr(session, "store", None)
+
+        historical_message = (
+            f"{value} last {months} months"
+            if value and analysis in {"brand", "region", "store"}
+            else f"last {months} months"
+        )
+        try:
+            handled = send_historical_sales_query(sender, historical_message)
+            if not handled:
+                send_whatsapp_message(sender, "⚠️ Historical report is not available right now.")
+        except Exception as e:
+            print("❌ Historical menu error:", str(e))
+            send_whatsapp_message(sender, f"❌ Error while generating historical report.\n\nDebug: {str(e)}")
+        return
+
+    send_whatsapp_message(sender, "⚠️ Report period not supported yet.")
+
 
 # =========================================================
 # 👋 PROCESS MESSAGE
@@ -2888,45 +2582,17 @@ def process_message(sender, message_text):
     # GREETINGS
     # -----------------------------------------------------
     if message in {
-        "hi",
-        "hello",
-        "hey",
-        "hii",
-        "hiii",
-        "good morning",
-        "good afternoon",
-        "good evening",
+        "hi", "hello", "hey", "hii", "hiii",
+        "good morning", "good afternoon", "good evening"
     }:
-    
-        send_main_menu(
-            sender
-        )
-    
+        send_main_menu(sender)
         return
+
     # -----------------------------------------------------
     # HELP
     # -----------------------------------------------------
     if message == "help":
-        send_whatsapp_message(
-            sender,
-            (
-                "🤖 *AI MIS WhatsApp*\n\n"
-                "Available commands:\n\n"
-                "📊 *sales*\n"
-                "📈 *sales vs lw*\n"
-                "📈 *sales vs lm*\n"
-                "📈 *sales vs ly*\n"
-                "🏪 *Store Name sales*\n"
-                "🌍 *TN region*\n\n"
-                "Examples:\n"
-                "• Byculla sales\n"
-                "• Malad ck sales\n"
-                "• sales of Byculla\n"
-                "• TN region\n"
-                "• sales in TN\n"
-                "\n❓ help"
-            )
-        )
+        send_main_menu(sender)
         return
 
     # -----------------------------------------------------
@@ -3016,68 +2682,47 @@ def process_message(sender, message_text):
             )
         return
 
-
-
     # =====================================================
     # 📚 HISTORICAL SALES QUERY
     # =====================================================
-    
+
     if is_historical_query(message):
-    
-        print("=" * 60)
-        print("📚 HISTORICAL QUERY DETECTED")
-        print("=" * 60)
-    
-        historical_intent = (
-            classify_historical_query(
-                message
-            )
+
+        historical_intent = classify_historical_query(
+            message
         )
-    
-        # -------------------------------------------------
-        # FALLBACK
-        # -------------------------------------------------
-    
+
         if not historical_intent:
-    
             historical_intent = {
                 "intent": "historical_performance",
                 "dimension": None,
                 "value": None,
                 "months": 6,
             }
-    
+
         print(
-            "Historical Intent:",
+            "📚 HISTORICAL QUERY DETECTED:",
             historical_intent
         )
-    
+
         try:
-    
+
             handled = send_historical_sales_query(
                 sender,
                 message
             )
-    
+
             if handled:
-    
-                print(
-                    "✅ Historical query completed"
-                )
-    
+                print("✅ Historical query completed")
                 return
-    
-            print(
-                "⚠️ Historical query was not handled"
-            )
-    
+
         except Exception as e:
-    
+
             print(
                 "❌ HISTORICAL QUERY ERROR:",
                 str(e)
             )
-    
+
             send_whatsapp_message(
                 sender,
                 (
@@ -3086,7 +2731,7 @@ def process_message(sender, message_text):
                     f"Debug: {str(e)}"
                 )
             )
-    
+
             return
 
     # -----------------------------------------------------
@@ -3207,65 +2852,22 @@ def webhook():
             print("Number of messages:", len(messages))
 
             for incoming in messages:
-                message_type = incoming.get(
-                    "type"
-                )
-                
-                sender = incoming.get(
-                    "from"
-                )
-                
-                print(
-                    "Message type:",
-                    message_type
-                )
-                
-                print(
-                    "Sender:",
-                    sender
-                )
-                
-                # =====================================================
-                # TEXT MESSAGE
-                # =====================================================
-                
+                message_type = incoming.get("type")
+                sender = incoming.get("from")
+
+                print("Message type:", message_type)
+                print("Sender:", sender)
+
                 if message_type == "text":
-                
-                    message_text = (
-                        incoming.get(
-                            "text",
-                            {}
-                        ) or {}
-                    ).get(
-                        "body",
-                        ""
-                    )
-                
-                    print(
-                        "💬 Incoming text:",
-                        message_text
-                    )
-                
+                    message_text = (incoming.get("text", {}) or {}).get("body", "")
+                    print("💬 Incoming text:", message_text)
+
                     if sender and message_text:
-                
                         try:
-                
-                            process_message(
-                                sender,
-                                message_text
-                            )
-                
-                            print(
-                                "✅ process_message completed"
-                            )
-                
+                            process_message(sender, message_text)
+                            print("✅ process_message completed")
                         except Exception as e:
-                
-                            print(
-                                "❌ process_message ERROR:",
-                                str(e)
-                            )
-                
+                            print("❌ process_message ERROR:", str(e))
                             send_whatsapp_message(
                                 sender,
                                 (
@@ -3274,163 +2876,75 @@ def webhook():
                                     f"Debug: {str(e)}"
                                 )
                             )
-                
-                
-                # =====================================================
-                # INTERACTIVE MENU RESPONSE
-                # =====================================================
-                
+
                 elif message_type == "interactive":
-                
-                    interactive = (
-                        incoming.get(
-                            "interactive",
-                            {}
-                        ) or {}
-                    )
-                
-                    interactive_type = (
-                        interactive.get(
-                            "type"
-                        )
-                    )
-                
+                    interactive = incoming.get("interactive", {}) or {}
+                    interactive_type = interactive.get("type")
                     selection_id = None
-                
-                    # -----------------------------------------------
-                    # LIST REPLY
-                    # -----------------------------------------------
-                
+
                     if interactive_type == "list_reply":
-                
-                        selection_id = (
-                            interactive.get(
-                                "list_reply",
-                                {}
-                            ) or {}
-                        ).get(
-                            "id"
-                        )
-                
-                    # -----------------------------------------------
-                    # BUTTON REPLY
-                    # -----------------------------------------------
-                
+                        selection_id = (interactive.get("list_reply", {}) or {}).get("id")
                     elif interactive_type == "button_reply":
-                
-                        selection_id = (
-                            interactive.get(
-                                "button_reply",
-                                {}
-                            ) or {}
-                        ).get(
-                            "id"
-                        )
-                
-                    print(
-                        "📱 Interactive type:",
-                        interactive_type
-                    )
-                
-                    print(
-                        "📱 Selection ID:",
-                        selection_id
-                    )
-                
+                        selection_id = (interactive.get("button_reply", {}) or {}).get("id")
+
+                    print("📱 Interactive type:", interactive_type)
+                    print("📱 Selection ID:", selection_id)
+
                     if sender and selection_id:
-                
                         try:
-                
                             result = handle_menu_selection(
                                 sender=sender,
                                 selection=selection_id,
                                 live_snapshot=LIVE_SALES_DATA,
                             )
-                
-                            print(
-                                "📱 Menu Action:",
-                                result.get(
-                                    "action"
-                                )
-                            )
-                
-                            # ---------------------------------------
-                            # NEXT MENU
-                            # ---------------------------------------
-                
-                            next_menu = result.get(
-                                "next_menu"
-                            )
-                
+
+                            print("📱 Menu Action:", result.get("action"))
+
+                            next_menu = result.get("next_menu")
+
                             if next_menu:
-                
-                                send_whatsapp_interactive(
-                                    recipient=sender,
-                                    body_text=next_menu.get(
-                                        "text",
-                                        "Select an option."
-                                    ),
-                                    options=next_menu.get(
-                                        "options",
-                                        []
-                                    ),
-                                    button_text="Select",
-                                    section_title="Options",
-                                )
-                
-                            # ---------------------------------------
-                            # GENERATE REPORT
-                            # ---------------------------------------
-                
-                            action = result.get(
-                                "action"
-                            )
-                
-                            handle_menu_report_action(
-                                sender,
-                                action,
-                                result.get(
-                                    "session"
-                                ),
-                            )
-                
+                                options = next_menu.get("options", [])
+                                if options:
+                                    send_whatsapp_interactive(
+                                        recipient=sender,
+                                        body_text=next_menu.get("text", "Please select an option."),
+                                        options=options,
+                                        button_text="Select",
+                                        section_title="Options",
+                                    )
+                                else:
+                                    send_whatsapp_message(
+                                        sender,
+                                        next_menu.get("text", "No options available.")
+                                    )
+                            else:
+                                action = result.get("action")
+                                if action:
+                                    handle_menu_report_action(
+                                        sender,
+                                        action,
+                                        result.get("session"),
+                                    )
+
                         except Exception as e:
-                
-                            print(
-                                "❌ INTERACTIVE MENU ERROR:",
-                                str(e)
-                            )
-                
+                            print("❌ INTERACTIVE MENU ERROR:", str(e))
                             send_whatsapp_message(
                                 sender,
                                 (
-                                    "❌ Error while processing "
-                                    "your selection.\n\n"
+                                    "❌ Error while processing your selection.\n\n"
                                     f"Debug: {str(e)}"
                                 )
                             )
-                
-                
-                # =====================================================
-                # NON TEXT / NON INTERACTIVE
-                # =====================================================
-                
+
                 else:
-                
-                    print(
-                        "⚠️ Unsupported message type:",
-                        message_type
-                    )
-                
+                    print("⚠️ Non-text/interactive message:", message_type)
                     if sender:
-                
                         send_whatsapp_message(
                             sender,
-                            (
-                                "🤖 AI MIS currently supports "
-                                "text and menu selections."
-                            )
+                            "🤖 AI MIS currently supports text messages and guided menus."
                         )
+
+    return "EVENT_RECEIVED", 200
 
 
 # =========================================================
@@ -3500,8 +3014,7 @@ def test_send():
         "919535075140",
         "918892390985",
         "919620952646",
-        "919959347168"
-        
+        "919959347168",
     ]
 
     results = []
