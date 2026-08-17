@@ -14,6 +14,22 @@ from whatsapp_recipients import (
     get_user_access,
 )
 
+# =========================================================
+# 📚 HISTORICAL SALES ENGINE
+# =========================================================
+
+from historical_sales import (
+    get_last_n_months_performance,
+    get_store_performance,
+    get_brand_performance,
+    get_region_performance,
+    get_seasonality,
+    get_best_worst,
+    compare_periods,
+    classify_historical_query,
+    format_history_summary,
+)
+
 app = Flask(__name__)
 
 
@@ -1189,6 +1205,7 @@ def send_region_sales_query(sender, region_name):
     send_whatsapp_message(sender, reply)
 
 
+
 # =========================================================
 # 🏪 STORE SALES QUERY
 # =========================================================
@@ -1299,6 +1316,728 @@ def send_store_sales_query(sender, store_name):
 
     send_whatsapp_message(sender, reply)
 
+# =========================================================
+# 📚 HISTORICAL ACCESS HELPERS
+# =========================================================
+
+def _normalize_query_value(value):
+    import re
+
+    value = str(value or "").strip().lower()
+
+    value = re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        value
+    )
+
+    return re.sub(
+        r"\s+",
+        " ",
+        value
+    ).strip()
+
+
+def _dimension_matches(
+    user_value,
+    requested_value
+):
+    a = _normalize_query_value(
+        user_value
+    )
+
+    b = _normalize_query_value(
+        requested_value
+    )
+
+    return (
+        a == b
+        or a in b
+        or b in a
+    )
+
+
+def _historical_user_can_access(
+    sender,
+    dimension,
+    value
+):
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        return False, None
+
+    role = (
+        str(
+            user.get(
+                "role",
+                ""
+            )
+        )
+        .strip()
+        .lower()
+    )
+
+    # -----------------------------------------------------
+    # OPS LEADER
+    # -----------------------------------------------------
+
+    if role == "ops leader":
+
+        return True, user
+
+    # -----------------------------------------------------
+    # REGION MANAGER
+    # -----------------------------------------------------
+
+    if role == "region manager":
+
+        if dimension == "region":
+
+            allowed = _dimension_matches(
+                user.get(
+                    "region",
+                    ""
+                ),
+                value
+            )
+
+            return allowed, user
+
+        if dimension == "store":
+
+            # Check current store snapshot first.
+            stores = (
+                LIVE_SALES_DATA.get(
+                    "stores",
+                    {}
+                )
+            )
+
+            for store_name, data in stores.items():
+
+                if _dimension_matches(
+                    store_name,
+                    value
+                ):
+
+                    allowed = _dimension_matches(
+                        user.get(
+                            "region",
+                            ""
+                        ),
+                        data.get(
+                            "region",
+                            ""
+                        )
+                    )
+
+                    return allowed, user
+
+            # Historical file may contain the store
+            # even when it isn't in today's snapshot.
+            return False, user
+
+        # Brand / overall are not automatically
+        # unrestricted for a Region Manager.
+        return False, user
+
+    # -----------------------------------------------------
+    # AREA MANAGER
+    # -----------------------------------------------------
+
+    if role == "area manager":
+
+        if dimension != "store":
+            return False, user
+
+        allowed_stores = user.get(
+            "stores",
+            []
+        )
+
+        if not isinstance(
+            allowed_stores,
+            list
+        ):
+
+            allowed_stores = [
+                allowed_stores
+            ]
+
+        allowed = any(
+            _dimension_matches(
+                store,
+                value
+            )
+            for store in allowed_stores
+        )
+
+        return allowed, user
+
+    return False, user
+
+
+# =========================================================
+# 📚 HISTORICAL SALES RESPONSE
+# =========================================================
+
+def send_historical_sales_query(
+    sender,
+    message
+):
+
+    print("=" * 60)
+    print("📚 HISTORICAL SALES QUERY")
+    print("=" * 60)
+
+    query = classify_historical_query(
+        message
+    )
+
+    if not query:
+
+        return False
+
+    intent = query.get(
+        "intent"
+    )
+
+    dimension = query.get(
+        "dimension"
+    )
+
+    value = query.get(
+        "value"
+    )
+
+    months = int(
+        query.get(
+            "months",
+            6
+        )
+    )
+
+    print(
+        "Historical Intent:",
+        intent
+    )
+
+    print(
+        "Dimension:",
+        dimension
+    )
+
+    print(
+        "Value:",
+        value
+    )
+
+    print(
+        "Months:",
+        months
+    )
+
+    # =====================================================
+    # LAST N MONTHS - OVERALL
+    # =====================================================
+
+    if (
+        intent == "historical_performance"
+        and not dimension
+    ):
+
+        allowed, user = (
+            _historical_user_can_access(
+                sender,
+                "overall",
+                "Overall"
+            )
+        )
+
+        if not allowed:
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Historical Overall sales "
+                    "are not available for your role."
+                )
+            )
+
+            return True
+
+        result = (
+            get_last_n_months_performance(
+                months=months
+            )
+        )
+
+        result["scope"] = "Overall"
+
+        reply = format_history_summary(
+            {
+                "scope": "Overall",
+                "months": months,
+                **result
+            }
+        )
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+        return True
+
+    # =====================================================
+    # STORE / REGION / BRAND PERFORMANCE
+    # =====================================================
+
+    if (
+        intent == "historical_performance"
+        and dimension
+        and value
+    ):
+
+        allowed, user = (
+            _historical_user_can_access(
+                sender,
+                dimension,
+                value
+            )
+        )
+
+        if not allowed:
+
+            role = (
+                str(
+                    user.get(
+                        "role",
+                        ""
+                    )
+                )
+                if user
+                else ""
+            )
+
+            if (
+                role.lower()
+                == "area manager"
+            ):
+
+                message_text = (
+                    "❌ Area Managers can access "
+                    "historical data only for "
+                    "their assigned stores."
+                )
+
+            elif (
+                role.lower()
+                == "region manager"
+            ):
+
+                message_text = (
+                    "❌ Region Managers can access "
+                    "historical data only for "
+                    "their assigned region/stores."
+                )
+
+            else:
+
+                message_text = (
+                    "❌ You don't have access "
+                    "to this historical data."
+                )
+
+            send_whatsapp_message(
+                sender,
+                message_text
+            )
+
+            return True
+
+        if dimension == "store":
+
+            df = get_store_performance(
+                value,
+                months=months
+            )
+
+        elif dimension == "region":
+
+            df = get_region_performance(
+                value,
+                months=months
+            )
+
+        elif dimension == "brand":
+
+            df = get_brand_performance(
+                value,
+                months=months
+            )
+
+        else:
+
+            send_whatsapp_message(
+                sender,
+                "❌ Unsupported historical dimension."
+            )
+
+            return True
+
+        if df.empty:
+
+            send_whatsapp_message(
+                sender,
+                (
+                    f"❌ No historical sales found "
+                    f"for *{value}*."
+                )
+            )
+
+            return True
+
+        total_net = float(
+            df["net"].sum()
+        )
+
+        avg_net = float(
+            df["net"].mean()
+        )
+
+        best_row = df.loc[
+            df["net"].idxmax()
+        ]
+
+        worst_row = df.loc[
+            df["net"].idxmin()
+        ]
+
+        if len(df) >= 2:
+
+            first_net = float(
+                df.iloc[0]["net"]
+            )
+
+            last_net = float(
+                df.iloc[-1]["net"]
+            )
+
+            growth = (
+                (
+                    last_net
+                    -
+                    first_net
+                )
+                /
+                first_net
+                *
+                100
+            ) if first_net else 0.0
+
+        else:
+
+            growth = 0.0
+
+        if growth > 5:
+
+            performance = "🚀 Strong Growth"
+
+        elif growth > 0:
+
+            performance = "📈 Growth"
+
+        elif growth < -5:
+
+            performance = "🔻 Decline"
+
+        else:
+
+            performance = "➡️ Stable"
+
+        reply_lines = [
+
+            "📚 *AI MIS | HISTORICAL SALES*",
+
+            "",
+
+            f"📍 *{dimension.title()}: {value}*",
+
+            f"📅 Last {months} Months",
+
+            "",
+
+            "💰 *PERFORMANCE*",
+
+            "",
+
+            f"💵 Total Net Revenue: "
+            f"₹{total_net / 100000:.2f}L",
+
+            f"📊 Average Monthly: "
+            f"₹{avg_net / 100000:.2f}L",
+
+            f"📈 Period Growth: "
+            f"{growth:+.1f}%",
+
+            f"🧠 Performance: "
+            f"{performance}",
+
+            "",
+
+            "🏆 *BEST MONTH*",
+
+            f"{best_row['month']}: "
+            f"₹{float(best_row['net']) / 100000:.2f}L",
+
+            "",
+
+            "⚠️ *LOWEST MONTH*",
+
+            f"{worst_row['month']}: "
+            f"₹{float(worst_row['net']) / 100000:.2f}L",
+
+            "",
+
+            "📅 *MONTHLY TREND*"
+        ]
+
+        for _, row in df.iterrows():
+
+            row_growth = float(
+                row.get(
+                    "growth_pct",
+                    0
+                )
+                or 0
+            )
+
+            reply_lines.append(
+                f"• {row['month']}: "
+                f"₹{float(row['net']) / 100000:.2f}L "
+                f"({row_growth:+.1f}%)"
+            )
+
+        send_whatsapp_message(
+            sender,
+            "\n".join(
+                reply_lines
+            )
+        )
+
+        return True
+
+    # =====================================================
+    # SEASONALITY
+    # =====================================================
+
+    if intent == "seasonality":
+
+        allowed, user = (
+            _historical_user_can_access(
+                sender,
+                "overall",
+                "Overall"
+            )
+        )
+
+        if not allowed:
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Seasonality analysis "
+                    "is not available for your role."
+                )
+            )
+
+            return True
+
+        seasonal = get_seasonality(
+            years=2
+        )
+
+        if seasonal.empty:
+
+            send_whatsapp_message(
+                sender,
+                "❌ No historical seasonality data found."
+            )
+
+            return True
+
+        best = seasonal.loc[
+            seasonal["average_net"].idxmax()
+        ]
+
+        worst = seasonal.loc[
+            seasonal["average_net"].idxmin()
+        ]
+
+        reply = (
+            "📚 *AI MIS | SALES SEASONALITY*\n\n"
+
+            "📊 Based on available historical months\n\n"
+
+            f"🏆 Strongest Month: "
+            f"*{best['month']}* "
+            f"₹{best['average_net'] / 100000:.2f}L avg\n\n"
+
+            f"⚠️ Weakest Month: "
+            f"*{worst['month']}* "
+            f"₹{worst['average_net'] / 100000:.2f}L avg\n\n"
+
+            "📅 *MONTHLY PATTERN*\n"
+        )
+
+        for _, row in seasonal.iterrows():
+
+            reply += (
+                f"• {row['month']}: "
+                f"₹{row['average_net'] / 100000:.2f}L\n"
+            )
+
+        send_whatsapp_message(
+            sender,
+            reply
+        )
+
+        return True
+
+    # =====================================================
+    # STORE / BRAND / REGION RANKING
+    # =====================================================
+
+    if intent in [
+        "store_ranking",
+        "brand_ranking"
+    ]:
+
+        dimension = (
+            "store"
+            if intent == "store_ranking"
+            else "brand"
+        )
+
+        user = get_user_access(
+            sender
+        )
+
+        role = (
+            str(
+                user.get(
+                    "role",
+                    ""
+                )
+            )
+            .strip()
+            .lower()
+            if user
+            else ""
+        )
+
+        if role == "area manager":
+
+            allowed_stores = user.get(
+                "stores",
+                []
+            )
+
+            if not isinstance(
+                allowed_stores,
+                list
+            ):
+
+                allowed_stores = [
+                    allowed_stores
+                ]
+
+            result = get_best_worst(
+                "store",
+                months=months,
+                top_n=10
+            )
+
+            allowed_norm = {
+                _normalize_query_value(
+                    x
+                )
+                for x in allowed_stores
+            }
+
+            result["best"] = [
+                x for x in result["best"]
+                if _normalize_query_value(
+                    x.get("store")
+                ) in allowed_norm
+            ]
+
+            result["worst"] = [
+                x for x in result["worst"]
+                if _normalize_query_value(
+                    x.get("store")
+                ) in allowed_norm
+            ]
+
+        else:
+
+            result = get_best_worst(
+                dimension,
+                months=months,
+                top_n=10
+            )
+
+        reply_lines = [
+            "📊 *AI MIS | HISTORICAL RANKING*",
+            "",
+            f"📅 Last {months} Months",
+            "",
+            "🏆 *TOP PERFORMERS*",
+        ]
+
+        for row in result["best"]:
+
+            label = row.get(
+                dimension,
+                "Unknown"
+            )
+
+            reply_lines.append(
+                f"• {label}: "
+                f"₹{float(row.get('net', 0)) / 100000:.2f}L"
+            )
+
+        reply_lines.extend(
+            [
+                "",
+                "⚠️ *LOWEST PERFORMERS*",
+            ]
+        )
+
+        for row in result["worst"]:
+
+            label = row.get(
+                dimension,
+                "Unknown"
+            )
+
+            reply_lines.append(
+                f"• {label}: "
+                f"₹{float(row.get('net', 0)) / 100000:.2f}L"
+            )
+
+        send_whatsapp_message(
+            sender,
+            "\n".join(reply_lines)
+        )
+
+        return True
+
+    return False
 
 # =========================================================
 # 👋 PROCESS MESSAGE
@@ -1460,6 +2199,79 @@ def process_message(sender, message_text):
             )
         return
 
+
+    # =====================================================
+    # 📚 HISTORICAL SALES QUERY
+    # =====================================================
+
+    historical_intent = classify_historical_query(
+        message
+    )
+
+    if historical_intent:
+
+        print(
+            "📚 HISTORICAL QUERY DETECTED:",
+            historical_intent
+        )
+
+        try:
+
+            handled = send_historical_sales_query(
+                sender,
+                message
+            )
+
+            if handled:
+
+                print(
+                    "✅ Historical query completed"
+                )
+
+                return
+
+        except Exception as e:
+
+            print(
+                "❌ HISTORICAL QUERY ERROR:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while generating "
+                    "historical sales analysis.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+            return
+
+    # -----------------------------------------------------
+    # STORE QUERY
+    # -----------------------------------------------------
+    store_query = extract_store_query(message)
+
+    if store_query:
+        print("🏪 STORE SALES QUERY DETECTED:", store_query)
+        try:
+            send_store_sales_query(sender, store_query)
+        except Exception as e:
+            print("❌ STORE QUERY ERROR:", str(e))
+            send_whatsapp_message(
+                sender,
+                f"❌ Error while generating Store Sales report.\n\nDebug: {str(e)}"
+            )
+        return
+
+    # Also allow a bare store name if it uniquely matches.
+    if message and LIVE_SALES_DATA.get("stores"):
+        matched_store, _ = _find_store_snapshot(message)
+        if matched_store:
+            send_store_sales_query(sender, matched_store)
+            return
+    
     # -----------------------------------------------------
     # REGION QUERY
     # -----------------------------------------------------
@@ -1506,30 +2318,6 @@ def process_message(sender, message_text):
                 f"❌ Error while generating FTD Sales report.\n\nDebug: {str(e)}"
             )
         return
-
-    # -----------------------------------------------------
-    # STORE QUERY
-    # -----------------------------------------------------
-    store_query = extract_store_query(message)
-
-    if store_query:
-        print("🏪 STORE SALES QUERY DETECTED:", store_query)
-        try:
-            send_store_sales_query(sender, store_query)
-        except Exception as e:
-            print("❌ STORE QUERY ERROR:", str(e))
-            send_whatsapp_message(
-                sender,
-                f"❌ Error while generating Store Sales report.\n\nDebug: {str(e)}"
-            )
-        return
-
-    # Also allow a bare store name if it uniquely matches.
-    if message and LIVE_SALES_DATA.get("stores"):
-        matched_store, _ = _find_store_snapshot(message)
-        if matched_store:
-            send_store_sales_query(sender, matched_store)
-            return
 
     # -----------------------------------------------------
     # UNKNOWN
