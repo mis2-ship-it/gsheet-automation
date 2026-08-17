@@ -85,14 +85,14 @@ CACHE_DIR = Path(
 CACHE_TTL_SECONDS = int(
     os.getenv(
         "HISTORICAL_CACHE_TTL_SECONDS",
-        "1800",
+        "86400",
     )
 )
 
 REQUEST_TIMEOUT = int(
     os.getenv(
         "HISTORICAL_REQUEST_TIMEOUT",
-        "45",
+        "90",
     )
 )
 
