@@ -2332,6 +2332,230 @@ def is_historical_query(message):
         for phrase in historical_phrases
     )
 
+# =========================================================
+# 📊 HANDLE GUIDED MENU REPORT ACTION
+# =========================================================
+
+def handle_menu_report_action(
+    sender,
+    action,
+    session,
+):
+
+    print("=" * 60)
+    print("📊 MENU REPORT ACTION")
+    print("Sender :", sender)
+    print("Action :", action)
+    print("Session:", session)
+    print("=" * 60)
+
+    if not session:
+        print(
+            "⚠️ No menu session found"
+        )
+        return
+
+    # -----------------------------------------------------
+    # TODAY
+    # -----------------------------------------------------
+
+    if action == "today_sales":
+
+        send_role_based_ftd_sales(
+            sender
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # LAST WEEK
+    # -----------------------------------------------------
+
+    if action == "last_week_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_week"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # LAST MONTH
+    # -----------------------------------------------------
+
+    if action == "last_month_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_month"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # LAST YEAR
+    # -----------------------------------------------------
+
+    if action == "last_year_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_year"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # HISTORICAL
+    # -----------------------------------------------------
+
+    if action == "historical":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_6_months"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE OVERALL
+    # -----------------------------------------------------
+
+    if action == "generate_overall":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE BRAND
+    # -----------------------------------------------------
+
+    if action == "generate_brand":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE REGION
+    # -----------------------------------------------------
+
+    if action == "generate_region":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE STORE
+    # -----------------------------------------------------
+
+    if action == "generate_store":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE SOURCE
+    # -----------------------------------------------------
+
+    if action == "generate_source":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE RANKING
+    # -----------------------------------------------------
+
+    if action == "generate_ranking":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    print(
+        "⚠️ Unknown menu action:",
+        action
+    )
+
 
 # =========================================================
 # 📊 MENU PERIOD REPORT
@@ -2399,7 +2623,7 @@ def send_menu_period_report(
         return
 
     # -----------------------------------------------------
-    # HISTORICAL
+    # LAST 3 / 6 / 12 MONTHS
     # -----------------------------------------------------
 
     if period in {
@@ -2418,33 +2642,56 @@ def send_menu_period_report(
             f"last {months} months"
         )
 
-        handled = send_historical_sales_query(
-            sender,
+        print(
+            "📚 Historical menu request:",
             historical_message
         )
 
-        if not handled:
+        try:
+
+            handled = (
+                send_historical_sales_query(
+                    sender,
+                    historical_message
+                )
+            )
+
+            if not handled:
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "⚠️ Historical report "
+                        "is not available right now."
+                    )
+                )
+
+        except Exception as e:
+
+            print(
+                "❌ Historical menu error:",
+                str(e)
+            )
 
             send_whatsapp_message(
                 sender,
                 (
-                    "⚠️ Historical report "
-                    "is not available right now."
+                    "❌ Error while generating "
+                    "historical report.\n\n"
+                    f"Debug: {str(e)}"
                 )
             )
 
         return
 
     # -----------------------------------------------------
-    # UNSUPPORTED PERIOD
+    # UNSUPPORTED
     # -----------------------------------------------------
 
     send_whatsapp_message(
         sender,
         "⚠️ Report period not supported yet."
     )
-
-
 
 # =========================================================
 # 🤖 START GUIDED AI MIS MENU
@@ -3253,6 +3500,8 @@ def test_send():
         "919535075140",
         "918892390985",
         "919620952646",
+        "919959347168"
+        
     ]
 
     results = []
