@@ -55,55 +55,100 @@ import requests
 # CONFIGURATION
 # =========================================================
 
-GITHUB_OWNER = os.getenv(
-    "HISTORICAL_GITHUB_OWNER",
-    "mis2-ship-it",
+HISTORICAL_DATA_URL = os.getenv(
+    "HISTORICAL_DATA_URL",
+    "https://raw.githubusercontent.com/"
+    "mis2-ship-it/gsheet-automation/"
+    "main/historical_data/historical_sales.csv.gz"
 )
 
-GITHUB_REPO = os.getenv(
-    "HISTORICAL_GITHUB_REPO",
-    "gsheet-automation",
-)
-
-GITHUB_BRANCH = os.getenv(
-    "HISTORICAL_GITHUB_BRANCH",
-    "main",
-)
-
-MONTHLY_ROOT = os.getenv(
-    "HISTORICAL_MONTHLY_ROOT",
-    "monthly_data",
-)
-
-CACHE_DIR = Path(
+HISTORICAL_CACHE_FILE = Path(
     os.getenv(
-        "HISTORICAL_CACHE_DIR",
-        ".historical_cache",
+        "HISTORICAL_CACHE_FILE",
+        ".historical_cache/historical_sales.csv.gz"
     )
 )
 
-CACHE_TTL_SECONDS = int(
+HISTORICAL_CACHE_TTL_SECONDS = int(
     os.getenv(
         "HISTORICAL_CACHE_TTL_SECONDS",
-        "86400",
+        "86400"
     )
 )
 
-REQUEST_TIMEOUT = int(
+HISTORICAL_REQUEST_TIMEOUT = int(
     os.getenv(
         "HISTORICAL_REQUEST_TIMEOUT",
-        "90",
+        "120"
     )
 )
 
-HTTP_SESSION = requests.Session()
-HTTP_SESSION.headers.update(
-    {
-        "User-Agent": "AI-MIS-Historical-Sales/1.0",
-        "Accept": "text/csv,application/json;q=0.9,*/*;q=0.8",
-    }
-)
+# =========================================================
+# 📚 LOAD CONSOLIDATED HISTORICAL DATA
+# =========================================================
 
+def load_historical_data(
+    force_refresh=False
+):
+
+    HISTORICAL_CACHE_FILE.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    cache_valid = (
+        HISTORICAL_CACHE_FILE.exists()
+        and (
+            time.time()
+            - HISTORICAL_CACHE_FILE.stat().st_mtime
+        )
+        < HISTORICAL_CACHE_TTL_SECONDS
+    )
+
+    if (
+        cache_valid
+        and not force_refresh
+    ):
+
+        print(
+            "✅ Loading historical data from cache"
+        )
+
+        return pd.read_csv(
+            HISTORICAL_CACHE_FILE,
+            compression="gzip"
+        )
+
+    print(
+        "📥 Downloading consolidated historical data"
+    )
+
+    print(
+        "URL:",
+        HISTORICAL_DATA_URL
+    )
+
+    response = HTTP_SESSION.get(
+        HISTORICAL_DATA_URL,
+        timeout=HISTORICAL_REQUEST_TIMEOUT
+    )
+
+    response.raise_for_status()
+
+    HISTORICAL_CACHE_FILE.write_bytes(
+        response.content
+    )
+
+    print(
+        "✅ Historical data cached"
+    )
+
+    return pd.read_csv(
+        io.BytesIO(
+            response.content
+        ),
+        compression="gzip"
+    )
 
 # =========================================================
 # COLUMN ALIASES
@@ -516,7 +561,7 @@ def normalize_dataframe(
 
 
 # =========================================================
-# LOAD MULTIPLE MONTHS
+# 📚 LOAD HISTORICAL DATA
 # =========================================================
 
 def load_months(
@@ -524,46 +569,152 @@ def load_months(
     end: Optional[date] = None,
     force_refresh: bool = False,
 ) -> pd.DataFrame:
-    parts: list[pd.DataFrame] = []
 
-    requested = _month_range(
-        end=end,
-        months=months,
+    # -----------------------------------------------------
+    # Load the single consolidated historical dataset
+    # -----------------------------------------------------
+
+    df = load_historical_data(
+        force_refresh=force_refresh
     )
 
-    for year, month in requested:
-        try:
-            df = load_monthly_data(
-                year,
-                month,
-                force_refresh=force_refresh,
-            )
+    if df is None or df.empty:
 
-            if not df.empty:
-                parts.append(df)
-
-        except FileNotFoundError:
-            # Historical folders may not contain future/current months.
-            continue
-
-    if not parts:
         raise RuntimeError(
-            "No historical monthly CSV files could be loaded."
+            "Historical sales dataset is empty."
         )
 
-    combined = pd.concat(
-        parts,
-        ignore_index=True,
+    # -----------------------------------------------------
+    # Normalize columns
+    # -----------------------------------------------------
+
+    df = normalize_dataframe(
+        df
     )
 
-    combined = combined.drop_duplicates()
+    if df.empty:
 
-    if "date" in combined.columns:
-        combined = combined[
-            combined["date"].notna()
-        ].copy()
+        raise RuntimeError(
+            "Historical sales dataset could not be normalized."
+        )
 
-    return combined
+    # -----------------------------------------------------
+    # Date filtering
+    # -----------------------------------------------------
+
+    if "date" not in df.columns:
+
+        raise RuntimeError(
+            "Historical dataset does not contain a usable date column."
+        )
+
+    df["date"] = pd.to_datetime(
+        df["date"],
+        errors="coerce"
+    )
+
+    df = df[
+        df["date"].notna()
+    ].copy()
+
+    if df.empty:
+
+        raise RuntimeError(
+            "Historical dataset contains no valid dates."
+        )
+
+    # -----------------------------------------------------
+    # Determine date window
+    # -----------------------------------------------------
+
+    end_date = (
+        end
+        or
+        date.today()
+    )
+
+    # Last N calendar months,
+    # including the current month.
+    start_year = end_date.year
+    start_month = end_date.month
+
+    total_month_index = (
+        start_year * 12
+        +
+        (start_month - 1)
+        -
+        (months - 1)
+    )
+
+    start_year = (
+        total_month_index // 12
+    )
+
+    start_month = (
+        total_month_index % 12
+    ) + 1
+
+    start_date = date(
+        start_year,
+        start_month,
+        1
+    )
+
+    # -----------------------------------------------------
+    # Filter
+    # -----------------------------------------------------
+
+    df = df[
+        (
+            df["date"]
+            >=
+            pd.Timestamp(
+                start_date
+            )
+        )
+        &
+        (
+            df["date"]
+            <=
+            pd.Timestamp(
+                end_date
+            )
+        )
+    ].copy()
+
+    # -----------------------------------------------------
+    # Remove duplicate rows
+    # -----------------------------------------------------
+
+    df = (
+        df
+        .drop_duplicates()
+        .reset_index(
+            drop=True
+        )
+    )
+
+    print("=" * 60)
+    print(
+        "📚 HISTORICAL DATA LOADED"
+    )
+    print(
+        "Period:",
+        start_date,
+        "→",
+        end_date
+    )
+    print(
+        "Months:",
+        months
+    )
+    print(
+        "Rows:",
+        f"{len(df):,}"
+    )
+    print("=" * 60)
+
+    return df
 
 
 # =========================================================
