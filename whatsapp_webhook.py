@@ -789,6 +789,155 @@ def get_ftd_sales():
 
     return result
 
+# =========================================================
+# 📊 FTD SALES RESPONSE
+# =========================================================
+
+def send_ftd_sales(sender):
+
+    print("=" * 60)
+    print("📊 FTD SALES RESPONSE")
+    print("=" * 60)
+
+    sales = get_ftd_sales()
+
+    if not sales:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Sales data is not available right now."
+        )
+
+        return
+
+    net = float(
+        sales.get(
+            "net",
+            0
+        ) or 0
+    )
+
+    txn = float(
+        sales.get(
+            "txn",
+            0
+        ) or 0
+    )
+
+    aov = float(
+        sales.get(
+            "aov",
+            0
+        ) or 0
+    )
+
+    discount = float(
+        sales.get(
+            "discount",
+            0
+        ) or 0
+    )
+
+    report_date = sales.get(
+        "date",
+        ""
+    )
+
+    brands = LIVE_SALES_DATA.get(
+        "brands",
+        {}
+    )
+
+    reply_lines = [
+
+        "📊 *AI MIS | FTD SALES*",
+
+        str(
+            report_date
+        ),
+
+        "",
+
+        f"💰 Net Revenue: "
+        f"₹{net / 100000:.2f}L",
+
+        f"🧾 Transactions: "
+        f"{int(txn):,}",
+
+        f"🧺 AOV: "
+        f"₹{int(round(aov)):,}",
+
+        f"📉 Discount: "
+        f"{abs(discount):.1f}%"
+    ]
+
+    # -----------------------------------------------------
+    # BRAND CONTRIBUTION
+    # -----------------------------------------------------
+
+    if brands:
+
+        reply_lines.extend(
+            [
+                "",
+                "🏪 *Brand Contribution*"
+            ]
+        )
+
+        brand_values = {}
+
+        for brand_name, brand_data in brands.items():
+
+            value = float(
+                brand_data.get(
+                    "today",
+                    0
+                ) or 0
+            )
+
+            brand_values[
+                brand_name
+            ] = value
+
+        total_brand = sum(
+            brand_values.values()
+        )
+
+        for brand_name, value in brand_values.items():
+
+            contribution = (
+                value
+                /
+                max(
+                    total_brand,
+                    1
+                )
+                *
+                100
+            )
+
+            reply_lines.append(
+                f"• {brand_name}: "
+                f"{contribution:.0f}%"
+            )
+
+    reply = "\n".join(
+        reply_lines
+    )
+
+    print(
+        "WhatsApp FTD Reply:"
+    )
+
+    print(reply)
+
+    print("=" * 60)
+
+    send_whatsapp_message(
+        sender,
+        reply
+    )
+
 
 def get_brand_data():
     return LIVE_SALES_DATA.get("brands", {}) or {}
@@ -919,6 +1068,8 @@ def send_comparison(sender, period):
 
     print(reply)
     send_whatsapp_message(sender, reply)
+
+
 
 
 # =========================================================
