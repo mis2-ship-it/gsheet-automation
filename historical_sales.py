@@ -1194,6 +1194,117 @@ def build_management_summary(
 
     return result
 
+# ----------------------
+# HISTORICAL DIMENSION
+# ----------------------
+
+def extract_historical_dimension(
+    message
+):
+    import re
+
+    text = _normalize_text(
+        message
+    )
+
+    dimension = None
+    value = None
+
+    # -----------------------------------------------------
+    # BRAND
+    # -----------------------------------------------------
+
+    known_brands = [
+        "frozen bottle",
+        "madno",
+        "boba bar",
+        "lubov",
+    ]
+
+    for brand in known_brands:
+
+        if brand in text:
+
+            dimension = "brand"
+            value = brand
+            break
+
+    # -----------------------------------------------------
+    # REGION
+    # -----------------------------------------------------
+
+    regions = [
+        "tn",
+        "tamil nadu",
+        "ka",
+        "karnataka",
+        "mh",
+        "maharashtra",
+        "kl",
+        "kerala",
+        "kerela",
+    ]
+
+    if dimension is None:
+
+        for region in regions:
+
+            if (
+                text == region
+                or
+                f"{region} region" in text
+                or
+                f"{region} sales" in text
+                or
+                f"{region} region sales" in text
+            ):
+
+                dimension = "region"
+                value = region
+                break
+
+    # -----------------------------------------------------
+    # GENERIC PATTERNS
+    # -----------------------------------------------------
+
+    if dimension is None:
+
+        patterns = [
+
+            r"(.+?)\s+last\s+\d+\s+months?",
+            r"(.+?)\s+performance",
+            r"sales\s+of\s+(.+?)\s+last",
+            r"(.+?)\s+trend",
+        ]
+
+        for pattern in patterns:
+
+            match = re.search(
+                pattern,
+                text
+            )
+
+            if match:
+
+                candidate = (
+                    match.group(1)
+                    .strip()
+                )
+
+                if candidate not in [
+                    "sales",
+                    "last",
+                    "performance",
+                ]:
+
+                    dimension = "store"
+                    value = candidate
+                    break
+
+    return (
+        dimension,
+        value
+    )
 
 # =========================================================
 # NATURAL QUERY ROUTER
