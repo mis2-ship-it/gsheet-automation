@@ -1646,20 +1646,20 @@ def send_historical_sales_query(
     query = classify_historical_query(
         message
     )
-
+    
     if not query:
-
+    
         if is_historical_query(message):
-
+    
             query = {
                 "intent": "historical_performance",
                 "dimension": None,
                 "value": None,
                 "months": 6,
             }
-
+    
         else:
-
+    
             return False
 
     intent = query.get(
@@ -2397,56 +2397,67 @@ def process_message(sender, message_text):
         return
 
 
-    # =====================================================
-    # 📚 HISTORICAL SALES QUERY
-    # =====================================================
 
     # =====================================================
     # 📚 HISTORICAL SALES QUERY
     # =====================================================
-
+    
     if is_historical_query(message):
-
-        historical_intent = classify_historical_query(
-            message
+    
+        print("=" * 60)
+        print("📚 HISTORICAL QUERY DETECTED")
+        print("=" * 60)
+    
+        historical_intent = (
+            classify_historical_query(
+                message
+            )
         )
-
+    
+        # -------------------------------------------------
+        # FALLBACK
+        # -------------------------------------------------
+    
         if not historical_intent:
-
+    
             historical_intent = {
                 "intent": "historical_performance",
                 "dimension": None,
                 "value": None,
                 "months": 6,
             }
-
+    
         print(
-            "📚 HISTORICAL QUERY DETECTED:",
+            "Historical Intent:",
             historical_intent
         )
-
+    
         try:
-
+    
             handled = send_historical_sales_query(
                 sender,
                 message
             )
-
+    
             if handled:
-
+    
                 print(
                     "✅ Historical query completed"
                 )
-
+    
                 return
-
+    
+            print(
+                "⚠️ Historical query was not handled"
+            )
+    
         except Exception as e:
-
+    
             print(
                 "❌ HISTORICAL QUERY ERROR:",
                 str(e)
             )
-
+    
             send_whatsapp_message(
                 sender,
                 (
@@ -2455,7 +2466,7 @@ def process_message(sender, message_text):
                     f"Debug: {str(e)}"
                 )
             )
-
+    
             return
 
     # -----------------------------------------------------
