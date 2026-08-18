@@ -373,6 +373,73 @@ def handle_menu_selection(
     session = get_session(sender)
     value = _normalize(selection)
 
+def handle_menu_selection(
+    sender: str,
+    selection: str,
+    live_snapshot: Optional[dict] = None,
+) -> dict[str, Any]:
+    session = get_session(sender)
+    value = _normalize(selection)
+
+    # =====================================================
+    # DIRECT MAIN MENU ACTIONS
+    # =====================================================
+    
+    if value == "today_sales":
+    
+        session.period = "today"
+    
+        return {
+            "handled": True,
+            "action": "today_sales",
+            "next_menu": None,
+            "session": session,
+        }
+    
+    if value == "last_week_sales":
+    
+        session.period = "last_week"
+    
+        return {
+            "handled": True,
+            "action": "last_week_sales",
+            "next_menu": None,
+            "session": session,
+        }
+    
+    if value == "last_month_sales":
+    
+        session.period = "last_month"
+    
+        return {
+            "handled": True,
+            "action": "last_month_sales",
+            "next_menu": None,
+            "session": session,
+        }
+    
+    if value == "last_year_sales":
+    
+        session.period = "last_year"
+    
+        return {
+            "handled": True,
+            "action": "last_year_sales",
+            "next_menu": None,
+            "session": session,
+        }
+    
+    if value == "historical":
+    
+        session.period = "last_6_months"
+    
+        return {
+            "handled": True,
+            "action": "historical",
+            "next_menu": None,
+            "session": session,
+        }
+
     if value in {"menu", "main menu", "home", "start"}:
         return {"handled": True, "action": "menu", "next_menu": start_menu(sender), "session": session}
 
