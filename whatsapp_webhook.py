@@ -2341,6 +2341,1485 @@ def is_historical_query(message):
     )
 
 # =========================================================
+# 📊 GUIDED PERIOD REPORT HELPERS
+# =========================================================
+
+def _guided_period_label(
+    period
+):
+    period = str(
+        period or ""
+    ).strip().lower()
+
+    if period == "last_week":
+        return "LAST WEEK"
+
+    if period == "last_month":
+        return "LAST MONTH"
+
+    if period == "last_year":
+        return "LAST YEAR"
+
+    if period == "today":
+        return "TODAY"
+
+    return period.replace(
+        "_",
+        " "
+    ).upper()
+
+
+def _guided_period_values(
+    data,
+    period
+):
+    """
+    Read the requested period from one snapshot object.
+
+    Expected snapshot structure:
+
+        today
+        lw
+        lm
+        ly
+    """
+
+    if not isinstance(
+        data,
+        dict
+    ):
+        return 0.0
+
+    period = str(
+        period or ""
+    ).strip().lower()
+
+    if period == "today":
+        return _safe_float(
+            data.get("today")
+        )
+
+    if period == "last_week":
+        return _safe_float(
+            data.get("lw")
+        )
+
+    if period == "last_month":
+        return _safe_float(
+            data.get("lm")
+        )
+
+    if period == "last_year":
+        return _safe_float(
+            data.get("ly")
+        )
+
+    return 0.0
+
+
+def _guided_period_comparison(
+    data,
+    period
+):
+    """
+    Return the comparison period immediately before the
+    selected period where the snapshot supports it.
+
+    For:
+        last_week  -> lw against l2w when available
+        last_month -> lm against previous month when available
+        last_year  -> ly
+
+    The consolidated historical engine should be used for
+    detailed historical period analysis.
+    """
+
+    if not isinstance(
+        data,
+        dict
+    ):
+        return 0.0
+
+    period = str(
+        period or ""
+    ).strip().lower()
+
+    if period == "last_week":
+
+        return _safe_float(
+            data.get(
+                "l2w",
+                data.get(
+                    "lw_previous"
+                )
+            )
+        )
+
+    if period == "last_month":
+
+        return _safe_float(
+            data.get(
+                "previous_month",
+                data.get(
+                    "pm"
+                )
+            )
+        )
+
+    if period == "last_year":
+
+        return _safe_float(
+            data.get(
+                "previous_year",
+                data.get(
+                    "ly_previous"
+                )
+            )
+        )
+
+    return 0.0
+
+
+def _guided_period_reply(
+    *,
+    title,
+    scope,
+    period,
+    sales,
+    comparison,
+    comparison_label,
+    region=None,
+    brand=None,
+    store=None
+):
+    """
+    Common formatter for guided period reports.
+    """
+
+    growth = _growth(
+        sales,
+        comparison
+    )
+
+    lines = [
+        f"📊 *AI MIS | {title}*",
+        LIVE_SALES_DATA.get(
+            "date",
+            ""
+        ),
+        LIVE_SALES_DATA.get(
+            "report_time",
+            ""
+        ),
+        "",
+        f"📍 *{scope}*",
+    ]
+
+    if brand:
+        lines.append(
+            f"🏷 Brand: {brand}"
+        )
+
+    if region:
+        lines.append(
+            f"🌍 Region: {region}"
+        )
+
+    if store:
+        lines.append(
+            f"🏪 Store: {store}"
+        )
+
+    lines.extend(
+        [
+            "",
+            f"📅 {_guided_period_label(period)}",
+            "",
+            f"💰 Sales: {_format_lacs(sales)}",
+            f"📊 {comparison_label}: "
+            f"{_format_lacs(comparison)}",
+            f"📈 Growth: {growth:+.1f}%",
+            f"🧠 Performance: {_performance(growth)}",
+        ]
+    )
+
+    return "\n".join(
+        lines
+    )
+
+
+# =========================================================
+# 🏪 GUIDED STORE PERIOD SALES
+# =========================================================
+
+def get_guided_period_store_sales(
+    sender,
+    period,
+    brand=None,
+    region=None,
+    store=None,
+):
+
+    print("=" * 60)
+    print("🏪 GUIDED STORE PERIOD SALES")
+    print("Sender :", sender)
+    print("Period :", period)
+    print("Brand  :", brand)
+    print("Region :", region)
+    print("Store  :", store)
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        raise Exception(
+            "User access mapping not found"
+        )
+
+    if not store:
+        raise Exception(
+            "Store was not selected"
+        )
+
+    stores = (
+        LIVE_SALES_DATA.get(
+            "stores",
+            {}
+        ) or {}
+    )
+
+    matched_store, data = (
+        _find_store_snapshot(
+            store
+        )
+    )
+
+    if not matched_store:
+        raise Exception(
+            f"Store not found: {store}"
+        )
+
+    role = _normalize_text(
+        user.get(
+            "role",
+            ""
+        )
+    )
+
+    # -----------------------------------------------------
+    # ACCESS
+    # -----------------------------------------------------
+
+    if role == "area manager":
+
+        allowed_stores = user.get(
+            "stores",
+            []
+        )
+
+        if not isinstance(
+            allowed_stores,
+            list
+        ):
+            allowed_stores = [
+                allowed_stores
+            ]
+
+        allowed = any(
+            _normalize_store_name(
+                x
+            )
+            ==
+            _normalize_store_name(
+                matched_store
+            )
+            for x in allowed_stores
+        )
+
+        if not allowed:
+
+            raise Exception(
+                f"You don't have access "
+                f"to {matched_store}"
+            )
+
+    elif role == "region manager":
+
+        user_region = _normalize_text(
+            user.get(
+                "region",
+                ""
+            )
+        )
+
+        store_region = _normalize_text(
+            data.get(
+                "region",
+                ""
+            )
+        )
+
+        if (
+            user_region
+            and store_region
+            and user_region
+            != store_region
+        ):
+
+            raise Exception(
+                f"You don't have access "
+                f"to {matched_store}"
+            )
+
+    # -----------------------------------------------------
+    # BRAND FILTER
+    # -----------------------------------------------------
+
+    # A store snapshot is valid for the selected store.
+    # If brand is selected, only continue automatically when
+    # the snapshot contains a compatible brand value.
+    if brand:
+
+        store_brand = _normalize_text(
+            data.get(
+                "brand",
+                ""
+            )
+        )
+
+        if (
+            store_brand
+            and
+            _normalize_text(
+                brand
+            )
+            not in store_brand
+        ):
+
+            raise Exception(
+                f"{matched_store} does not "
+                f"match brand {brand}"
+            )
+
+    sales = _guided_period_values(
+        data,
+        period
+    )
+
+    # -----------------------------------------------------
+    # COMPARISON
+    # -----------------------------------------------------
+
+    if period == "last_week":
+
+        comparison = _safe_float(
+            data.get(
+                "l2w"
+            )
+        )
+
+        comparison_label = (
+            "Previous Week"
+        )
+
+    elif period == "last_month":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_month"
+            )
+        )
+
+        comparison_label = (
+            "Previous Month"
+        )
+
+    elif period == "last_year":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_year"
+            )
+        )
+
+        comparison_label = (
+            "Previous Year"
+        )
+
+    else:
+
+        comparison = 0.0
+        comparison_label = (
+            "Comparison"
+        )
+
+    return _guided_period_reply(
+        title=(
+            f"{_guided_period_label(period)} "
+            "STORE SALES"
+        ),
+        scope=matched_store,
+        period=period,
+        sales=sales,
+        comparison=comparison,
+        comparison_label=comparison_label,
+        region=(
+            data.get(
+                "region"
+            )
+            or
+            region
+        ),
+        brand=brand,
+        store=matched_store,
+    )
+
+
+# =========================================================
+# 🌍 GUIDED REGION PERIOD SALES
+# =========================================================
+
+def get_guided_period_region_sales(
+    sender,
+    period,
+    brand=None,
+    region=None,
+):
+
+    print("=" * 60)
+    print("🌍 GUIDED REGION PERIOD SALES")
+    print("Sender :", sender)
+    print("Period :", period)
+    print("Brand  :", brand)
+    print("Region :", region)
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        raise Exception(
+            "User access mapping not found"
+        )
+
+    if not region:
+        raise Exception(
+            "Region was not selected"
+        )
+
+    role = _normalize_text(
+        user.get(
+            "role",
+            ""
+        )
+    )
+
+    if role == "region manager":
+
+        if (
+            _normalize_text(
+                user.get(
+                    "region",
+                    ""
+                )
+            )
+            !=
+            _normalize_text(
+                region
+            )
+        ):
+
+            raise Exception(
+                f"You don't have access "
+                f"to region {region}"
+            )
+
+    if role == "area manager":
+
+        raise Exception(
+            "Area Managers must select a store."
+        )
+
+    regions = (
+        LIVE_SALES_DATA.get(
+            "regions",
+            {}
+        ) or {}
+    )
+
+    requested = find_region_snapshot_key(
+        region
+    )
+
+    if not requested:
+
+        raise Exception(
+            f"Region not found: {region}"
+        )
+
+    data = (
+        regions.get(
+            requested,
+            {}
+        )
+        or {}
+    )
+
+    # -----------------------------------------------------
+    # BRAND-SPECIFIC REGION
+    # -----------------------------------------------------
+
+    if brand:
+
+        brands = (
+            LIVE_SALES_DATA.get(
+                "brands",
+                {}
+            )
+            or {}
+        )
+
+        brand_name = next(
+            (
+                name
+                for name in brands
+                if _normalize_text(
+                    name
+                )
+                ==
+                _normalize_text(
+                    brand
+                )
+            ),
+            None
+        )
+
+        if brand_name:
+
+            brand_region_data = (
+                brands[
+                    brand_name
+                ].get(
+                    "regions",
+                    {}
+                )
+            )
+
+            if isinstance(
+                brand_region_data,
+                dict
+            ):
+
+                data = (
+                    brand_region_data.get(
+                        requested,
+                        data
+                    )
+                    or
+                    data
+                )
+
+    sales = _guided_period_values(
+        data,
+        period
+    )
+
+    if period == "last_week":
+
+        comparison = _safe_float(
+            data.get(
+                "l2w"
+            )
+        )
+
+        comparison_label = (
+            "Previous Week"
+        )
+
+    elif period == "last_month":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_month"
+            )
+        )
+
+        comparison_label = (
+            "Previous Month"
+        )
+
+    elif period == "last_year":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_year"
+            )
+        )
+
+        comparison_label = (
+            "Previous Year"
+        )
+
+    else:
+
+        comparison = 0.0
+        comparison_label = (
+            "Comparison"
+        )
+
+    return _guided_period_reply(
+        title=(
+            f"{_guided_period_label(period)} "
+            "REGION SALES"
+        ),
+        scope=requested,
+        period=period,
+        sales=sales,
+        comparison=comparison,
+        comparison_label=comparison_label,
+        region=requested,
+        brand=brand,
+    )
+
+
+# =========================================================
+# 🏷 GUIDED BRAND PERIOD SALES
+# =========================================================
+
+def get_guided_period_brand_sales(
+    sender,
+    period,
+    brand,
+):
+
+    print("=" * 60)
+    print("🏷 GUIDED BRAND PERIOD SALES")
+    print("Sender :", sender)
+    print("Period :", period)
+    print("Brand  :", brand)
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        raise Exception(
+            "User access mapping not found"
+        )
+
+    if not brand:
+        raise Exception(
+            "Brand was not selected"
+        )
+
+    brands = (
+        LIVE_SALES_DATA.get(
+            "brands",
+            {}
+        ) or {}
+    )
+
+    matched_brand = next(
+        (
+            name
+            for name in brands
+            if _normalize_text(
+                name
+            )
+            ==
+            _normalize_text(
+                brand
+            )
+        ),
+        None
+    )
+
+    if not matched_brand:
+
+        raise Exception(
+            f"Brand not found: {brand}"
+        )
+
+    data = (
+        brands.get(
+            matched_brand,
+            {}
+        )
+        or {}
+    )
+
+    sales = _guided_period_values(
+        data,
+        period
+    )
+
+    if period == "last_week":
+
+        comparison = _safe_float(
+            data.get(
+                "l2w"
+            )
+        )
+
+        comparison_label = (
+            "Previous Week"
+        )
+
+    elif period == "last_month":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_month"
+            )
+        )
+
+        comparison_label = (
+            "Previous Month"
+        )
+
+    elif period == "last_year":
+
+        comparison = _safe_float(
+            data.get(
+                "previous_year"
+            )
+        )
+
+        comparison_label = (
+            "Previous Year"
+        )
+
+    else:
+
+        comparison = 0.0
+        comparison_label = (
+            "Comparison"
+        )
+
+    return _guided_period_reply(
+        title=(
+            f"{_guided_period_label(period)} "
+            "BRAND SALES"
+        ),
+        scope=matched_brand,
+        period=period,
+        sales=sales,
+        comparison=comparison,
+        comparison_label=comparison_label,
+        brand=matched_brand,
+    )
+
+
+# =========================================================
+# 🌐 GUIDED OVERALL PERIOD SALES
+# =========================================================
+
+def get_guided_period_overall_sales(
+    sender,
+    period,
+):
+
+    print("=" * 60)
+    print("🌐 GUIDED OVERALL PERIOD SALES")
+    print("Sender :", sender)
+    print("Period :", period)
+    print("=" * 60)
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        raise Exception(
+            "User access mapping not found"
+        )
+
+    if _normalize_text(
+        user.get(
+            "role",
+            ""
+        )
+    ) != "ops leader":
+
+        raise Exception(
+            "Overall analysis is only "
+            "available to Ops Leaders."
+        )
+
+    overall = (
+        LIVE_SALES_DATA.get(
+            "overall",
+            {}
+        ) or {}
+    )
+
+    sales = _guided_period_values(
+        overall,
+        period
+    )
+
+    if period == "last_week":
+
+        comparison = _safe_float(
+            overall.get(
+                "l2w_net",
+                overall.get(
+                    "l2w"
+                )
+            )
+        )
+
+        comparison_label = (
+            "Previous Week"
+        )
+
+    elif period == "last_month":
+
+        comparison = _safe_float(
+            overall.get(
+                "previous_month",
+                overall.get(
+                    "pm_net"
+                )
+            )
+        )
+
+        comparison_label = (
+            "Previous Month"
+        )
+
+    elif period == "last_year":
+
+        comparison = _safe_float(
+            overall.get(
+                "previous_year",
+                overall.get(
+                    "ly_previous"
+                )
+            )
+        )
+
+        comparison_label = (
+            "Previous Year"
+        )
+
+    else:
+
+        comparison = 0.0
+        comparison_label = (
+            "Comparison"
+        )
+
+    return _guided_period_reply(
+        title=(
+            f"{_guided_period_label(period)} "
+            "OVERALL SALES"
+        ),
+        scope="Overall",
+        period=period,
+        sales=sales,
+        comparison=comparison,
+        comparison_label=comparison_label,
+    )
+
+# =========================================================
+# 📊 GUIDED PERIOD REPORT
+# =========================================================
+
+def send_guided_period_report(
+    sender,
+    session,
+):
+
+    print("=" * 60)
+    print("📊 GUIDED PERIOD REPORT")
+    print("Sender :", sender)
+    print("Session:", session)
+    print("=" * 60)
+
+    if not session:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Your menu session has expired. Please type *hi* to start again."
+        )
+
+        return
+
+    period = str(
+        getattr(
+            session,
+            "period",
+            ""
+        ) or ""
+    ).strip().lower()
+
+    brand = str(
+        getattr(
+            session,
+            "brand",
+            ""
+        ) or ""
+    ).strip()
+
+    region = str(
+        getattr(
+            session,
+            "region",
+            ""
+        ) or ""
+    ).strip()
+
+    store = str(
+        getattr(
+            session,
+            "store",
+            ""
+        ) or ""
+    ).strip()
+
+    print("Period:", period)
+    print("Brand :", brand)
+    print("Region:", region)
+    print("Store :", store)
+
+    # =====================================================
+    # VALIDATION
+    # =====================================================
+
+    if not period:
+
+        send_whatsapp_message(
+            sender,
+            "⚠️ Please select a sales period."
+        )
+
+        return
+
+    # =====================================================
+    # TODAY
+    # =====================================================
+
+    if period == "today":
+
+        send_role_based_ftd_sales(
+            sender
+        )
+
+        return
+
+    # =====================================================
+    # LAST WEEK
+    # =====================================================
+
+    if period == "last_week":
+
+        # -------------------------------------------------
+        # STORE SELECTED
+        # -------------------------------------------------
+
+        if store:
+
+            print(
+                "📊 Guided Last Week Store Report"
+            )
+
+            try:
+
+                result = get_guided_period_store_sales(
+                    sender=sender,
+                    period="last_week",
+                    brand=brand,
+                    region=region,
+                    store=store,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Week Store Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Week Store report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        # -------------------------------------------------
+        # REGION SELECTED, NO STORE
+        # -------------------------------------------------
+
+        if region:
+
+            try:
+
+                result = get_guided_period_region_sales(
+                    sender=sender,
+                    period="last_week",
+                    brand=brand,
+                    region=region,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Week Region Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Week Region report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        # -------------------------------------------------
+        # BRAND SELECTED, NO REGION
+        # -------------------------------------------------
+
+        if brand:
+
+            try:
+
+                result = get_guided_period_brand_sales(
+                    sender=sender,
+                    period="last_week",
+                    brand=brand,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Week Brand Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Week Brand report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        # -------------------------------------------------
+        # OVERALL
+        # -------------------------------------------------
+
+        try:
+
+            result = get_guided_period_overall_sales(
+                sender=sender,
+                period="last_week",
+            )
+
+            send_whatsapp_message(
+                sender,
+                result
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Guided Last Week Overall Error:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Unable to generate "
+                    "Last Week report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+        return
+
+    # =====================================================
+    # LAST MONTH
+    # =====================================================
+
+    if period == "last_month":
+
+        if store:
+
+            try:
+
+                result = get_guided_period_store_sales(
+                    sender=sender,
+                    period="last_month",
+                    brand=brand,
+                    region=region,
+                    store=store,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Month Store Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Month Store report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        if region:
+
+            try:
+
+                result = get_guided_period_region_sales(
+                    sender=sender,
+                    period="last_month",
+                    brand=brand,
+                    region=region,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Month Region Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Month Region report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        if brand:
+
+            try:
+
+                result = get_guided_period_brand_sales(
+                    sender=sender,
+                    period="last_month",
+                    brand=brand,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Month Brand Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Month Brand report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        try:
+
+            result = get_guided_period_overall_sales(
+                sender=sender,
+                period="last_month",
+            )
+
+            send_whatsapp_message(
+                sender,
+                result
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Guided Last Month Overall Error:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Unable to generate "
+                    "Last Month report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+        return
+
+    # =====================================================
+    # LAST YEAR
+    # =====================================================
+
+    if period == "last_year":
+
+        if store:
+
+            try:
+
+                result = get_guided_period_store_sales(
+                    sender=sender,
+                    period="last_year",
+                    brand=brand,
+                    region=region,
+                    store=store,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Year Store Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Year Store report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        if region:
+
+            try:
+
+                result = get_guided_period_region_sales(
+                    sender=sender,
+                    period="last_year",
+                    brand=brand,
+                    region=region,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Year Region Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Year Region report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        if brand:
+
+            try:
+
+                result = get_guided_period_brand_sales(
+                    sender=sender,
+                    period="last_year",
+                    brand=brand,
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    result
+                )
+
+            except Exception as e:
+
+                print(
+                    "❌ Guided Last Year Brand Error:",
+                    str(e)
+                )
+
+                send_whatsapp_message(
+                    sender,
+                    (
+                        "❌ Unable to generate "
+                        "Last Year Brand report.\n\n"
+                        f"Debug: {str(e)}"
+                    )
+                )
+
+            return
+
+        try:
+
+            result = get_guided_period_overall_sales(
+                sender=sender,
+                period="last_year",
+            )
+
+            send_whatsapp_message(
+                sender,
+                result
+            )
+
+        except Exception as e:
+
+            print(
+                "❌ Guided Last Year Overall Error:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Unable to generate "
+                    "Last Year report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+        return
+
+    # =====================================================
+    # HISTORICAL
+    # =====================================================
+
+    if period in {
+        "last_3_months",
+        "last_6_months",
+        "last_12_months",
+    }:
+
+        months_map = {
+            "last_3_months": 3,
+            "last_6_months": 6,
+            "last_12_months": 12,
+        }
+
+        months = months_map[
+            period
+        ]
+
+        historical_message = (
+            f"last {months} months"
+        )
+
+        print(
+            "📚 Guided Historical Request:",
+            historical_message
+        )
+
+        try:
+
+            handled = send_historical_sales_query(
+                sender,
+                historical_message
+            )
+
+            if not handled:
+
+                send_whatsapp_message(
+                    sender,
+                    "⚠️ Historical report is not available right now."
+                )
+
+        except Exception as e:
+
+            print(
+                "❌ Guided Historical Error:",
+                str(e)
+            )
+
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while generating "
+                    "historical report.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+
+        return
+
+    # =====================================================
+    # FALLBACK
+    # =====================================================
+
+    send_whatsapp_message(
+        sender,
+        (
+            "⚠️ I could not determine the "
+            "selected report period."
+        )
+    )
+
+# =========================================================
 # 📊 HANDLE GUIDED MENU REPORT ACTION
 # =========================================================
 
@@ -2380,19 +3859,198 @@ def handle_menu_report_action(sender, action, session):
         clear_session(sender)
         return
 
-    if action in {
-        "generate_overall",
-        "generate_brand",
-        "generate_region",
-        "generate_store",
-        "generate_source",
-        "generate_ranking",
-    }:
-        send_menu_period_report(sender, session, session.period)
-        clear_session(sender)
+    # =========================================================
+# 📊 HANDLE GUIDED MENU REPORT ACTION
+# =========================================================
+
+def handle_menu_report_action(
+    sender,
+    action,
+    session,
+):
+
+    # -----------------------------------------------------
+    # TODAY
+    # -----------------------------------------------------
+
+    if action == "today_sales":
+
+        send_role_based_ftd_sales(
+            sender
+        )
+
+        clear_session(
+            sender
+        )
+
         return
 
-    print("⚠️ Unknown menu action:", action)
+    # -----------------------------------------------------
+    # LAST WEEK
+    # -----------------------------------------------------
+
+    if action == "last_week_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_week"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # LAST MONTH
+    # -----------------------------------------------------
+
+    if action == "last_month_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_month"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # LAST YEAR
+    # -----------------------------------------------------
+
+    if action == "last_year_sales":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_year"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # HISTORICAL
+    # -----------------------------------------------------
+
+    if action == "historical":
+
+        send_menu_period_report(
+            sender,
+            session,
+            "last_6_months"
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GUIDED PERIOD REPORT
+    # -----------------------------------------------------
+
+    if action == "generate_period_report":
+
+        send_guided_period_report(
+            sender,
+            session
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE OVERALL
+    # -----------------------------------------------------
+
+    if action == "generate_overall":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE BRAND
+    # -----------------------------------------------------
+
+    if action == "generate_brand":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE REGION
+    # -----------------------------------------------------
+
+    if action == "generate_region":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    # -----------------------------------------------------
+    # GENERATE STORE
+    # -----------------------------------------------------
+
+    if action == "generate_store":
+
+        send_menu_period_report(
+            sender,
+            session,
+            session.period
+        )
+
+        clear_session(
+            sender
+        )
+
+        return
+
+    print(
+        "⚠️ Unknown menu action:",
+        action
+    )
+
 
 
 # =========================================================
