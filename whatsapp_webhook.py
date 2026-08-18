@@ -2582,10 +2582,25 @@ def process_message(sender, message_text):
     # GREETINGS
     # -----------------------------------------------------
     if message in {
-        "hi", "hello", "hey", "hii", "hiii",
-        "good morning", "good afternoon", "good evening"
+        
+        "hi",
+        "hello",
+        "hey",
+        "hii",
+        "hiii",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "menu",
+        "main menu",
+        "home",
+        "start",
     }:
-        send_main_menu(sender)
+    
+        send_main_menu(
+            sender
+        )
+    
         return
 
     # -----------------------------------------------------
@@ -2804,6 +2819,102 @@ def process_message(sender, message_text):
                 f"❌ Error while generating FTD Sales report.\n\nDebug: {str(e)}"
             )
         return
+
+    # =====================================================
+    # 📱 GUIDED MENU TEXT SELECTION
+    # =====================================================
+    
+    if (
+        message.isdigit()
+        or
+        message in {
+            "menu",
+            "main menu",
+            "home",
+            "start",
+        }
+    ):
+    
+        print(
+            "📱 GUIDED MENU TEXT SELECTION:",
+            message
+        )
+    
+        try:
+    
+            result = handle_menu_selection(
+                sender=sender,
+                selection=message,
+                live_snapshot=LIVE_SALES_DATA,
+            )
+    
+            print(
+                "📱 Menu Action:",
+                result.get("action")
+            )
+    
+            print(
+                "📱 Menu State:",
+                result.get("session")
+            )
+    
+            next_menu = result.get(
+                "next_menu"
+            )
+    
+            if next_menu:
+    
+                send_whatsapp_interactive(
+                    recipient=sender,
+                    body_text=(
+                        next_menu.get(
+                            "text",
+                            "Select an option."
+                        )
+                    ),
+                    options=(
+                        next_menu.get(
+                            "options",
+                            []
+                        )
+                    ),
+                    button_text="Select",
+                    section_title="Options",
+                )
+    
+            action = result.get(
+                "action"
+            )
+    
+            if action:
+    
+                handle_menu_report_action(
+                    sender,
+                    action,
+                    result.get(
+                        "session"
+                    ),
+                )
+    
+            return
+    
+        except Exception as e:
+    
+            print(
+                "❌ MENU TEXT SELECTION ERROR:",
+                str(e)
+            )
+    
+            send_whatsapp_message(
+                sender,
+                (
+                    "❌ Error while processing "
+                    "your menu selection.\n\n"
+                    f"Debug: {str(e)}"
+                )
+            )
+    
+            return
 
     # -----------------------------------------------------
     # UNKNOWN
