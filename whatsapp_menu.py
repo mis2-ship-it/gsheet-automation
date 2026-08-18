@@ -26,12 +26,22 @@ class MenuSession:
     state: str = MAIN_MENU
     analysis: Optional[str] = None
     period: Optional[str] = None
-    brand: Optional[str] = None
-    region: Optional[str] = None
-    store: Optional[str] = None
-    source: Optional[str] = None
+    brand: Optional[str] = field(
+        default_factory=list
+    )
+    region: Optional[str] = field(
+        default_factory=list
+    )
+    store: Optional[str] = field(
+        default_factory=list
+    )
+    source: Optional[str] = field(
+        default_factory=list
+    )
     ranking: Optional[str] = None
-    updated_at: float = field(default_factory=time.time)
+    updated_at: float = field(
+        default_factory=time.time
+    )
 
 
 _SESSIONS: dict[str, MenuSession] = {}
@@ -132,67 +142,373 @@ def get_period_options() -> list[dict[str, str]]:
     ]
 
 
-def get_brand_options(sender: str, available_brands: Optional[list[str]] = None) -> list[dict[str, str]]:
-    if not get_user_access(sender):
-        return []
-    brands = available_brands or ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
-    return [{"id": f"brand:{_clean_id(x)}", "title": str(x)[:24], "description": "Select brand"} for x in brands]
+def get_brand_options(
+    sender,
+    selected=None,
+    available_brands=None,
+):
 
+    user = get_user_access(
+        sender
+    )
 
-def get_region_options(sender: str, available_regions: Optional[list[str]] = None) -> list[dict[str, str]]:
-    user = get_user_access(sender)
     if not user:
         return []
 
-    if _role(user) == "region manager":
-        region = str(user.get("region", "")).strip()
-        regions = [region] if region else []
-    else:
-        regions = available_regions or ["KA", "TN", "MH", "KL"]
+    selected = selected or []
 
-    return [{"id": f"region:{_clean_id(x)}", "title": str(x)[:24], "description": "Select region"} for x in regions if str(x).strip()]
+    brands = (
+        available_brands
+        or
+        [
+            "Frozen Bottle",
+            "Madno",
+            "Boba Bar",
+            "Lubov",
+        ]
+    )
+
+    options = []
+
+    for brand in brands:
+
+        is_selected = (
+            _normalize(
+                brand
+            )
+            in
+            {
+                _normalize(x)
+                for x in selected
+            }
+        )
+
+        options.append(
+            {
+                "id": (
+                    f"brand:{_clean_id(brand)}"
+                ),
+                "title": (
+                    f"✅ {brand}"
+                    if is_selected
+                    else brand
+                ),
+                "description": (
+                    "Selected"
+                    if is_selected
+                    else "Select brand"
+                ),
+            }
+        )
+
+    options.append(
+        {
+            "id": "done",
+            "title": "Done",
+            "description": (
+                f"{len(selected)} brand(s) selected"
+            ),
+        }
+    )
+
+    return options
+
+
+def get_region_options(
+    sender,
+    selected=None,
+    available_regions=None,
+):
+
+    user = get_user_access(
+        sender
+    )
+
+    if not user:
+        return []
+
+    selected = selected or []
+
+    role = _role(
+        user
+    )
+
+    if role == "region manager":
+
+        region = str(
+            user.get(
+                "region",
+                ""
+            )
+        ).strip()
+
+        regions = (
+            [region]
+            if region
+            else []
+        )
+
+    else:
+
+        regions = (
+            available_regions
+            or
+            [
+                "KA",
+                "Kerala",
+                "MH",
+                "TN",
+            ]
+        )
+
+    selected_norm = {
+        _normalize(x)
+        for x in selected
+    }
+
+    options = []
+
+    for region in regions:
+
+        is_selected = (
+            _normalize(region)
+            in selected_norm
+        )
+
+        options.append(
+            {
+                "id": (
+                    f"region:{_clean_id(region)}"
+                ),
+                "title": (
+                    f"✅ {region}"
+                    if is_selected
+                    else region
+                ),
+                "description": (
+                    "Selected"
+                    if is_selected
+                    else "Select region"
+                ),
+            }
+        )
+
+    options.append(
+        {
+            "id": "done",
+            "title": "Done",
+            "description": (
+                f"{len(selected)} region(s) selected"
+            ),
+        }
+    )
+
+    return options
 
 
 def get_store_options(
-    sender: str,
-    stores: Optional[dict] = None,
-    region: Optional[str] = None,
-) -> list[dict[str, str]]:
-    user = get_user_access(sender)
+    sender,
+    stores=None,
+    regions=None,
+    selected=None,
+):
+
+    user = get_user_access(
+        sender
+    )
+
     if not user:
         return []
 
     stores = stores or {}
-    role = _role(user)
+    regions = regions or []
+    selected = selected or []
+
+    role = _role(
+        user
+    )
+
+    selected_norm = {
+        _normalize(x)
+        for x in selected
+    }
+
+    region_norm = {
+        _normalize(x)
+        for x in regions
+    }
 
     if role == "area manager":
-        allowed = user.get("stores", [])
-        if not isinstance(allowed, list):
-            allowed = [allowed]
-        if any(_normalize(x) == "all" for x in allowed):
-            names = list(stores.keys())
-        else:
-            names = [str(x).strip() for x in allowed if str(x).strip()]
-    else:
-        names = list(stores.keys())
 
-    if region:
-        region_norm = _normalize(region)
+        allowed = user.get(
+            "stores",
+            []
+        )
+
+        if not isinstance(
+            allowed,
+            list
+        ):
+            allowed = [
+                allowed
+            ]
+
+        if any(
+            _normalize(x) == "all"
+            for x in allowed
+        ):
+
+            names = list(
+                stores.keys()
+            )
+
+        else:
+
+            names = [
+                str(x).strip()
+                for x in allowed
+                if str(x).strip()
+            ]
+
+    else:
+
+        names = list(
+            stores.keys()
+        )
+
+    # Filter by selected regions.
+    if region_norm:
+
         names = [
-            name for name in names
-            if region_norm in _normalize(stores.get(name, {}).get("region", ""))
-            or _normalize(stores.get(name, {}).get("region", "")) in region_norm
+            name
+            for name in names
+            if _normalize(
+                stores.get(
+                    name,
+                    {}
+                ).get(
+                    "region",
+                    ""
+                )
+            )
+            in region_norm
         ]
 
-    names = sorted(set(names), key=str.lower)
-    return [{"id": f"store:{_clean_id(x)}", "title": x[:24], "description": "Select store"} for x in names]
+    names = sorted(
+        set(names),
+        key=str.lower
+    )
+
+    options = []
+
+    for name in names:
+
+        selected_flag = (
+            _normalize(name)
+            in selected_norm
+        )
+
+        options.append(
+            {
+                "id": (
+                    f"store:{_clean_id(name)}"
+                ),
+                "title": (
+                    f"✅ {name}"
+                    if selected_flag
+                    else name
+                ),
+                "description": (
+                    "Selected"
+                    if selected_flag
+                    else "Select store"
+                ),
+            }
+        )
+
+    options.append(
+        {
+            "id": "done",
+            "title": "Done",
+            "description": (
+                f"{len(selected)} store(s) selected"
+            ),
+        }
+    )
+
+    return options
 
 
-def get_source_options(sender: str, available_sources: Optional[list[str]] = None) -> list[dict[str, str]]:
-    if not get_user_access(sender):
+def get_source_options(
+    sender,
+    selected=None,
+    available_sources=None,
+):
+
+    if not get_user_access(
+        sender
+    ):
         return []
-    sources = available_sources or ["Swiggy", "Zomato", "In Store", "Ownly", "Magicpin", "Website", "Others"]
-    return [{"id": f"source:{_clean_id(x)}", "title": str(x)[:24], "description": "Select source"} for x in sources]
+
+    selected = selected or []
+
+    sources = (
+        available_sources
+        or
+        [
+            "Swiggy",
+            "Zomato",
+            "In Store",
+            "Ownly",
+            "Magicpin",
+            "Website",
+            "Others",
+        ]
+    )
+
+    selected_norm = {
+        _normalize(x)
+        for x in selected
+    }
+
+    options = []
+
+    for source in sources:
+
+        selected_flag = (
+            _normalize(source)
+            in selected_norm
+        )
+
+        options.append(
+            {
+                "id": (
+                    f"source:{_clean_id(source)}"
+                ),
+                "title": (
+                    f"✅ {source}"
+                    if selected_flag
+                    else source
+                ),
+                "description": (
+                    "Selected"
+                    if selected_flag
+                    else "Select source"
+                ),
+            }
+        )
+
+    options.append(
+        {
+            "id": "done",
+            "title": "Done",
+            "description": (
+                f"{len(selected)} source(s) selected"
+            ),
+        }
+    )
+
+    return options
 
 
 def get_ranking_options() -> list[dict[str, str]]:
