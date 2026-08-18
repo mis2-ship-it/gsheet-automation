@@ -24,21 +24,18 @@ RANKING_MENU = "ranking_menu"
 class MenuSession:
     sender: str
     state: str = MAIN_MENU
+
     analysis: Optional[str] = None
-    period: Optional[str] = None
-    brand: Optional[str] = field(
-        default_factory=list
-    )
-    region: Optional[str] = field(
-        default_factory=list
-    )
-    store: Optional[str] = field(
-        default_factory=list
-    )
-    source: Optional[str] = field(
-        default_factory=list
-    )
+
+    # Multiple selection support
+    periods: list[str] = field(default_factory=list)
+    brands: list[str] = field(default_factory=list)
+    regions: list[str] = field(default_factory=list)
+    stores: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
     ranking: Optional[str] = None
+
     updated_at: float = field(
         default_factory=time.time
     )
@@ -132,30 +129,67 @@ def get_analysis_options(sender: str) -> list[dict[str, str]]:
 
 
 def get_period_options() -> list[dict[str, str]]:
-    return [
-        {"id": "today", "title": "Today", "description": "Current business day"},
-        {"id": "last_week", "title": "Last Week", "description": "Monday to Sunday"},
-        {"id": "last_month", "title": "Last Month", "description": "Previous calendar month"},
-        {"id": "last_3_months", "title": "Last 3 Months", "description": "Monthly performance"},
-        {"id": "last_6_months", "title": "Last 6 Months", "description": "Monthly trend"},
-        {"id": "last_12_months", "title": "Last 12 Months", "description": "Annual trend"},
+
+    options = [
+        {
+            "id": "period:today",
+            "title": "Today",
+            "description": "Current business day",
+        },
+        {
+            "id": "period:last_week",
+            "title": "Last Week",
+            "description": "Monday to Sunday",
+        },
+        {
+            "id": "period:last_month",
+            "title": "Last Month",
+            "description": "Previous calendar month",
+        },
+        {
+            "id": "period:last_year",
+            "title": "Last Year",
+            "description": "Same period last year",
+        },
+        {
+            "id": "period:last_3_months",
+            "title": "Last 3 Months",
+            "description": "Monthly performance",
+        },
+        {
+            "id": "period:last_6_months",
+            "title": "Last 6 Months",
+            "description": "Monthly trend",
+        },
+        {
+            "id": "period:last_12_months",
+            "title": "Last 12 Months",
+            "description": "Annual trend",
+        },
+        {
+            "id": "period:add_another",
+            "title": "Add Another",
+            "description": "Select another period",
+        },
+        {
+            "id": "period:done",
+            "title": "Done",
+            "description": "Finish period selection",
+        },
     ]
+
+    return options
 
 
 def get_brand_options(
-    sender,
-    selected=None,
-    available_brands=None,
-):
+    sender: str,
+    available_brands: Optional[list[str]] = None,
+) -> list[dict[str, str]]:
 
-    user = get_user_access(
+    if not get_user_access(
         sender
-    )
-
-    if not user:
+    ):
         return []
-
-    selected = selected or []
 
     brands = (
         available_brands
@@ -168,57 +202,37 @@ def get_brand_options(
         ]
     )
 
-    options = []
-
-    for brand in brands:
-
-        is_selected = (
-            _normalize(
-                brand
-            )
-            in
-            {
-                _normalize(x)
-                for x in selected
-            }
-        )
-
-        options.append(
-            {
-                "id": (
-                    f"brand:{_clean_id(brand)}"
-                ),
-                "title": (
-                    f"✅ {brand}"
-                    if is_selected
-                    else brand
-                ),
-                "description": (
-                    "Selected"
-                    if is_selected
-                    else "Select brand"
-                ),
-            }
-        )
-
-    options.append(
+    options = [
         {
-            "id": "done",
-            "title": "Done",
-            "description": (
-                f"{len(selected)} brand(s) selected"
-            ),
+            "id": f"brand:{_clean_id(name)}",
+            "title": str(name)[:24],
+            "description": "Select brand",
         }
+        for name in brands
+    ]
+
+    options.extend(
+        [
+            {
+                "id": "brand:add_another",
+                "title": "Add Another",
+                "description": "Select another brand",
+            },
+            {
+                "id": "brand:done",
+                "title": "Done",
+                "description": "Finish brand selection",
+            },
+        ]
     )
 
     return options
 
 
 def get_region_options(
-    sender,
-    selected=None,
-    available_regions=None,
-):
+    sender: str,
+    available_regions: Optional[list[str]] = None,
+) -> list[dict[str, str]]:
 
     user = get_user_access(
         sender
@@ -226,8 +240,6 @@ def get_region_options(
 
     if not user:
         return []
-
-    selected = selected or []
 
     role = _role(
         user
@@ -261,57 +273,39 @@ def get_region_options(
             ]
         )
 
-    selected_norm = {
-        _normalize(x)
-        for x in selected
-    }
-
-    options = []
-
-    for region in regions:
-
-        is_selected = (
-            _normalize(region)
-            in selected_norm
-        )
-
-        options.append(
-            {
-                "id": (
-                    f"region:{_clean_id(region)}"
-                ),
-                "title": (
-                    f"✅ {region}"
-                    if is_selected
-                    else region
-                ),
-                "description": (
-                    "Selected"
-                    if is_selected
-                    else "Select region"
-                ),
-            }
-        )
-
-    options.append(
+    options = [
         {
-            "id": "done",
-            "title": "Done",
-            "description": (
-                f"{len(selected)} region(s) selected"
-            ),
+            "id": f"region:{_clean_id(region)}",
+            "title": str(region)[:24],
+            "description": "Select region",
         }
+        for region in regions
+        if str(region).strip()
+    ]
+
+    options.extend(
+        [
+            {
+                "id": "region:add_another",
+                "title": "Add Another",
+                "description": "Select another region",
+            },
+            {
+                "id": "region:done",
+                "title": "Done",
+                "description": "Finish region selection",
+            },
+        ]
     )
 
     return options
 
 
 def get_store_options(
-    sender,
-    stores=None,
-    regions=None,
-    selected=None,
-):
+    sender: str,
+    stores: Optional[dict] = None,
+    regions: Optional[list[str]] = None,
+) -> list[dict[str, str]]:
 
     user = get_user_access(
         sender
@@ -321,22 +315,14 @@ def get_store_options(
         return []
 
     stores = stores or {}
-    regions = regions or []
-    selected = selected or []
 
     role = _role(
         user
     )
 
-    selected_norm = {
-        _normalize(x)
-        for x in selected
-    }
-
-    region_norm = {
-        _normalize(x)
-        for x in regions
-    }
+    # -----------------------------------------------------
+    # AREA MANAGER
+    # -----------------------------------------------------
 
     if role == "area manager":
 
@@ -349,9 +335,7 @@ def get_store_options(
             allowed,
             list
         ):
-            allowed = [
-                allowed
-            ]
+            allowed = [allowed]
 
         if any(
             _normalize(x) == "all"
@@ -376,63 +360,102 @@ def get_store_options(
             stores.keys()
         )
 
-    # Filter by selected regions.
-    if region_norm:
+    # -----------------------------------------------------
+    # REGION FILTER
+    #
+    # IMPORTANT:
+    # Some live store snapshots currently contain
+    # Region = UNKNOWN.
+    #
+    # Therefore do NOT remove all stores when region
+    # metadata is missing.
+    # -----------------------------------------------------
 
-        names = [
-            name
-            for name in names
-            if _normalize(
+    if regions:
+
+        region_set = {
+            _normalize(x)
+            for x in regions
+        }
+
+        filtered = []
+
+        for store_name in names:
+
+            store_data = (
                 stores.get(
-                    name,
+                    store_name,
                     {}
-                ).get(
+                )
+                or {}
+            )
+
+            store_region = _normalize(
+                store_data.get(
                     "region",
                     ""
                 )
             )
-            in region_norm
-        ]
+
+            if (
+                store_region
+                and
+                store_region != "unknown"
+            ):
+
+                if store_region in region_set:
+                    filtered.append(
+                        store_name
+                    )
+
+            else:
+
+                # Keep stores with missing region metadata.
+                # Final report must apply region filtering
+                # from the actual historical data.
+                filtered.append(
+                    store_name
+                )
+
+        names = filtered
 
     names = sorted(
-        set(names),
-        key=str.lower
+        {
+            str(x).strip()
+            for x in names
+            if str(x).strip()
+        },
+        key=lambda x: x.lower()
     )
 
-    options = []
+    options = [
+        {
+            "id": f"store:{_clean_id(name)}",
+            "title": name[:24],
+            "description": "Select store",
+        }
+        for name in names
+    ]
 
-    for name in names:
+    # -----------------------------------------------------
+    # MULTI SELECT CONTROLS
+    # -----------------------------------------------------
 
-        selected_flag = (
-            _normalize(name)
-            in selected_norm
-        )
+    if options:
 
         options.append(
             {
-                "id": (
-                    f"store:{_clean_id(name)}"
-                ),
-                "title": (
-                    f"✅ {name}"
-                    if selected_flag
-                    else name
-                ),
-                "description": (
-                    "Selected"
-                    if selected_flag
-                    else "Select store"
-                ),
+                "id": "store:add_another",
+                "title": "Add Another",
+                "description": "Select another store",
             }
         )
 
     options.append(
         {
-            "id": "done",
+            "id": "store:done",
             "title": "Done",
-            "description": (
-                f"{len(selected)} store(s) selected"
-            ),
+            "description": "Finish store selection",
         }
     )
 
@@ -440,17 +463,14 @@ def get_store_options(
 
 
 def get_source_options(
-    sender,
-    selected=None,
-    available_sources=None,
-):
+    sender: str,
+    available_sources: Optional[list[str]] = None,
+) -> list[dict[str, str]]:
 
     if not get_user_access(
         sender
     ):
         return []
-
-    selected = selected or []
 
     sources = (
         available_sources
@@ -466,46 +486,29 @@ def get_source_options(
         ]
     )
 
-    selected_norm = {
-        _normalize(x)
-        for x in selected
-    }
-
-    options = []
-
-    for source in sources:
-
-        selected_flag = (
-            _normalize(source)
-            in selected_norm
-        )
-
-        options.append(
-            {
-                "id": (
-                    f"source:{_clean_id(source)}"
-                ),
-                "title": (
-                    f"✅ {source}"
-                    if selected_flag
-                    else source
-                ),
-                "description": (
-                    "Selected"
-                    if selected_flag
-                    else "Select source"
-                ),
-            }
-        )
-
-    options.append(
+    options = [
         {
-            "id": "done",
-            "title": "Done",
-            "description": (
-                f"{len(selected)} source(s) selected"
-            ),
+            "id": f"source:{_clean_id(source)}",
+            "title": str(source)[:24],
+            "description": "Select source",
         }
+        for source in sources
+        if str(source).strip()
+    ]
+
+    options.extend(
+        [
+            {
+                "id": "source:add_another",
+                "title": "Add Another",
+                "description": "Select another source",
+            },
+            {
+                "id": "source:done",
+                "title": "Done",
+                "description": "Finish source selection",
+            },
+        ]
     )
 
     return options
@@ -631,22 +634,54 @@ def _next_region(sender: str, regions: Optional[list[str]] = None) -> dict[str, 
     }
 
 
-def _next_store(sender: str, live_snapshot: Optional[dict] = None, region: Optional[str] = None) -> dict[str, Any]:
-    session = get_session(sender)
-    options = get_store_options(sender, (live_snapshot or {}).get("stores", {}), region)
+def _next_store(
+    sender,
+    live_snapshot=None,
+    regions=None
+):
+
+    session = get_session(
+        sender
+    )
+
+    options = get_store_options(
+        sender,
+        (
+            live_snapshot or {}
+        ).get(
+            "stores",
+            {}
+        ),
+        regions
+    )
+
     session.state = STORE_MENU
+
     if not options:
+
         return {
             "state": STORE_MENU,
-            "options": [],
-            "text": "❌ No stores are available for your selection.\n\nType *menu* to start again.",
+            "options": [
+                {
+                    "id": "store:done",
+                    "title": "Done",
+                    "description": "Finish selection",
+                }
+            ],
+            "text": (
+                "🏪 *Select Store*\n\n"
+                "No store list is currently available."
+            ),
         }
+
     return {
         "state": STORE_MENU,
         "options": options,
-        "text": build_text_menu("Select store.", options),
+        "text": build_text_menu(
+            "Select store(s).",
+            options
+        ),
     }
-
 
 def _next_source(sender: str, sources: Optional[list[str]] = None) -> dict[str, Any]:
     session = get_session(sender)
@@ -681,45 +716,86 @@ def _next_ranking(sender: str) -> dict[str, Any]:
     }
 
 
-def handle_menu_selection(
-    sender: str,
-    selection: str,
-    live_snapshot: Optional[dict] = None,
-) -> dict[str, Any]:
-    session = get_session(sender)
-    value = _normalize(selection)
+# =========================================================
+# 📱 HANDLE GUIDED MENU SELECTION
+# =========================================================
 
 def handle_menu_selection(
     sender: str,
     selection: str,
     live_snapshot: Optional[dict] = None,
 ) -> dict[str, Any]:
-    session = get_session(sender)
-    value = _normalize(selection)
+
+    session = get_session(
+        sender
+    )
+
+    value = _normalize(
+        selection
+    )
+
+    print("=" * 60)
+    print("📱 MENU SELECTION")
+    print("Sender   :", sender)
+    print("Selection:", selection)
+    print("Value    :", value)
+    print("State    :", session.state)
+    print("=" * 60)
 
     # =====================================================
-    # DIRECT MAIN MENU ACTIONS
+    # MAIN MENU
     # =====================================================
-    
+
+    if value in {
+        "menu",
+        "main menu",
+        "home",
+        "start",
+    }:
+
+        return {
+            "handled": True,
+            "action": "menu",
+            "next_menu": start_menu(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # TODAY SALES
+    # =====================================================
+
     if value == "today_sales":
-    
-        session.period = "today"
-    
+
+        session.periods = [
+            "today"
+        ]
+
         return {
             "handled": True,
             "action": "today_sales",
             "next_menu": None,
             "session": session,
         }
-    
+
+    # =====================================================
+    # LAST WEEK SALES
+    # =====================================================
+
     if value == "last_week_sales":
 
-        session.period = "last_week"
+        session.periods = [
+            "last_week"
+        ]
+
         session.analysis = None
-        session.brand = None
-        session.region = None
-        session.store = None
-    
+
+        session.brands = []
+        session.regions = []
+        session.stores = []
+        session.sources = []
+
         return {
             "handled": True,
             "action": None,
@@ -728,15 +804,24 @@ def handle_menu_selection(
             ),
             "session": session,
         }
-    
+
+    # =====================================================
+    # LAST MONTH SALES
+    # =====================================================
+
     if value == "last_month_sales":
 
-        session.period = "last_month"
+        session.periods = [
+            "last_month"
+        ]
+
         session.analysis = None
-        session.brand = None
-        session.region = None
-        session.store = None
-    
+
+        session.brands = []
+        session.regions = []
+        session.stores = []
+        session.sources = []
+
         return {
             "handled": True,
             "action": None,
@@ -745,15 +830,24 @@ def handle_menu_selection(
             ),
             "session": session,
         }
-    
+
+    # =====================================================
+    # LAST YEAR SALES
+    # =====================================================
+
     if value == "last_year_sales":
 
-        session.period = "last_year"
+        session.periods = [
+            "last_year"
+        ]
+
         session.analysis = None
-        session.brand = None
-        session.region = None
-        session.store = None
-    
+
+        session.brands = []
+        session.regions = []
+        session.stores = []
+        session.sources = []
+
         return {
             "handled": True,
             "action": None,
@@ -762,26 +856,122 @@ def handle_menu_selection(
             ),
             "session": session,
         }
-    
+
+    # =====================================================
+    # HISTORICAL
+    # =====================================================
+
     if value == "historical":
-    
-        session.period = "last_6_months"
-    
+
+        session.periods = [
+            "last_6_months"
+        ]
+
+        session.analysis = None
+
+        session.brands = []
+        session.regions = []
+        session.stores = []
+        session.sources = []
+
         return {
             "handled": True,
-            "action": "historical",
-            "next_menu": None,
+            "action": None,
+            "next_menu": _next_brand(
+                sender
+            ),
             "session": session,
         }
 
-    if value in {"menu", "main menu", "home", "start"}:
-        return {"handled": True, "action": "menu", "next_menu": start_menu(sender), "session": session}
+    # =====================================================
+    # PERIOD PREFIX
+    # =====================================================
+
+    if value.startswith(
+        "period:"
+    ):
+
+        selected = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+        )
+
+        selected_norm = _normalize(
+            selected
+        )
+
+        # ---------------------------------------------
+        # ADD ANOTHER
+        # ---------------------------------------------
+
+        if selected_norm == "add another":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_period(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # DONE
+        # ---------------------------------------------
+
+        if selected_norm == "done":
+
+            if not session.periods:
+
+                return {
+                    "handled": True,
+                    "action": None,
+                    "next_menu": _next_period(
+                        sender
+                    ),
+                    "session": session,
+                }
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_brand(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # ADD PERIOD
+        # ---------------------------------------------
+
+        if selected not in session.periods:
+
+            session.periods.append(
+                selected
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_period(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # BRAND PREFIX
+    # =====================================================
 
     if value.startswith(
         "brand:"
     ):
-    
-        session.brand = (
+
+        selected = (
             selection
             .split(
                 ":",
@@ -793,7 +983,377 @@ def handle_menu_selection(
             )
             .title()
         )
-    
+
+        selected_norm = _normalize(
+            selected
+        )
+
+        # ---------------------------------------------
+        # ADD ANOTHER
+        # ---------------------------------------------
+
+        if selected_norm == "add another":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_brand(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # DONE
+        # ---------------------------------------------
+
+        if selected_norm == "done":
+
+            if not session.brands:
+
+                return {
+                    "handled": True,
+                    "action": None,
+                    "next_menu": _next_brand(
+                        sender
+                    ),
+                    "session": session,
+                }
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_region(
+                    sender,
+                    list(
+                        (
+                            live_snapshot
+                            or
+                            {}
+                        )
+                        .get(
+                            "regions",
+                            {}
+                        )
+                        .keys()
+                    )
+                    or None
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # ADD BRAND
+        # ---------------------------------------------
+
+        if selected not in session.brands:
+
+            session.brands.append(
+                selected
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_brand(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # REGION PREFIX
+    # =====================================================
+
+    if value.startswith(
+        "region:"
+    ):
+
+        selected = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+        )
+
+        selected_norm = _normalize(
+            selected
+        )
+
+        # ---------------------------------------------
+        # ADD ANOTHER
+        # ---------------------------------------------
+
+        if selected_norm == "add another":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_region(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # DONE
+        # ---------------------------------------------
+
+        if selected_norm == "done":
+
+            if not session.regions:
+
+                return {
+                    "handled": True,
+                    "action": None,
+                    "next_menu": _next_region(
+                        sender
+                    ),
+                    "session": session,
+                }
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_store(
+                    sender,
+                    live_snapshot,
+                    session.regions
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # REGION NAME
+        # ---------------------------------------------
+
+        if (
+            selected_norm
+            ==
+            "kerela"
+        ):
+
+            selected = "Kerala"
+
+        elif (
+            selected_norm
+            ==
+            "kerala"
+        ):
+
+            selected = "Kerala"
+
+        elif selected:
+
+            selected = selected.upper()
+
+        # ---------------------------------------------
+        # ADD REGION
+        # ---------------------------------------------
+
+        if selected not in session.regions:
+
+            session.regions.append(
+                selected
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_region(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # STORE PREFIX
+    # =====================================================
+
+    if value.startswith(
+        "store:"
+    ):
+
+        selected = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+            .title()
+        )
+
+        selected_norm = _normalize(
+            selected
+        )
+
+        # ---------------------------------------------
+        # ADD ANOTHER
+        # ---------------------------------------------
+
+        if selected_norm == "add another":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_store(
+                    sender,
+                    live_snapshot,
+                    session.regions
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # DONE
+        # ---------------------------------------------
+
+        if selected_norm == "done":
+
+            if not session.stores:
+
+                return {
+                    "handled": True,
+                    "action": None,
+                    "next_menu": _next_store(
+                        sender,
+                        live_snapshot,
+                        session.regions
+                    ),
+                    "session": session,
+                }
+
+            return {
+                "handled": True,
+                "action": "generate_period_report",
+                "next_menu": None,
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # ADD STORE
+        # ---------------------------------------------
+
+        if selected not in session.stores:
+
+            session.stores.append(
+                selected
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_store(
+                sender,
+                live_snapshot,
+                session.regions
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # SOURCE PREFIX
+    # =====================================================
+
+    if value.startswith(
+        "source:"
+    ):
+
+        selected = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+            .title()
+        )
+
+        selected_norm = _normalize(
+            selected
+        )
+
+        # ---------------------------------------------
+        # ADD ANOTHER
+        # ---------------------------------------------
+
+        if selected_norm == "add another":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_source(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # DONE
+        # ---------------------------------------------
+
+        if selected_norm == "done":
+
+            if not session.sources:
+
+                return {
+                    "handled": True,
+                    "action": None,
+                    "next_menu": _next_source(
+                        sender
+                    ),
+                    "session": session,
+                }
+
+            return {
+                "handled": True,
+                "action": "sources_selected",
+                "next_menu": _next_period(
+                    sender
+                ),
+                "session": session,
+            }
+
+        # ---------------------------------------------
+        # ADD SOURCE
+        # ---------------------------------------------
+
+        if selected not in session.sources:
+
+            session.sources.append(
+                selected
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_source(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # STORE PERFORMANCE
+    # =====================================================
+
+    if value == "store performance":
+
+        session.analysis = "store"
+
+        # Start with regions
         return {
             "handled": True,
             "action": None,
@@ -801,7 +1361,9 @@ def handle_menu_selection(
                 sender,
                 list(
                     (
-                        live_snapshot or {}
+                        live_snapshot
+                        or
+                        {}
                     )
                     .get(
                         "regions",
@@ -814,143 +1376,355 @@ def handle_menu_selection(
             "session": session,
         }
 
-    if value.startswith(
-        "region:"
-    ):
-    
-        session.region = (
-            selection
-            .split(
-                ":",
-                1
-            )[1]
-            .replace(
-                "_",
-                " "
-            )
-            .upper()
-        )
-    
+    # =====================================================
+    # BRAND PERFORMANCE
+    # =====================================================
+
+    if value == "brand performance":
+
+        session.analysis = "brand"
+
         return {
             "handled": True,
             "action": None,
-            "next_menu": _next_store(
-                sender,
-                live_snapshot,
-                session.region
+            "next_menu": _next_brand(
+                sender
             ),
             "session": session,
         }
 
-    if value.startswith(
-        "store:"
-    ):
-    
-        session.store = (
-            selection
-            .split(
-                ":",
-                1
-            )[1]
-            .replace(
-                "_",
-                " "
-            )
-            .title()
-        )
-    
+    # =====================================================
+    # REGION PERFORMANCE
+    # =====================================================
+
+    if value == "region performance":
+
+        session.analysis = "region"
+
         return {
             "handled": True,
-            "action": "generate_period_report",
-            "next_menu": None,
+            "action": None,
+            "next_menu": _next_region(
+                sender,
+                list(
+                    (
+                        live_snapshot
+                        or
+                        {}
+                    )
+                    .get(
+                        "regions",
+                        {}
+                    )
+                    .keys()
+                )
+                or None
+            ),
             "session": session,
         }
 
-    if value.startswith("source:"):
-        session.source = selection.split(":", 1)[1].replace("_", " ").title()
-        return {"handled": True, "action": "source_selected", "next_menu": _next_period(sender), "session": session}
-
-    direct_main = {
-        "today sales": ("today_sales", "today"),
-        "last week sales": ("last_week_sales", "last_week"),
-        "last month sales": ("last_month_sales", "last_month"),
-        "last year sales": ("last_year_sales", "last_year"),
-        "historical": ("historical", "last_6_months"),
-    }
-    if value in direct_main:
-        action, period = direct_main[value]
-        session.period = period
-        return {"handled": True, "action": action, "next_menu": _next_analysis(sender), "session": session}
-
-    if value == "store performance":
-        session.analysis = "store"
-        return {"handled": True, "action": "store_performance", "next_menu": _next_region(sender, list((live_snapshot or {}).get("regions", {}).keys()) or None), "session": session}
-
-    if value == "brand performance":
-        session.analysis = "brand"
-        return {"handled": True, "action": "brand_performance", "next_menu": _next_brand(sender), "session": session}
-
-    if value == "region performance":
-        session.analysis = "region"
-        return {"handled": True, "action": "region_performance", "next_menu": _next_region(sender, list((live_snapshot or {}).get("regions", {}).keys()) or None), "session": session}
+    # =====================================================
+    # SOURCE PERFORMANCE
+    # =====================================================
 
     if value == "source performance":
+
         session.analysis = "source"
-        return {"handled": True, "action": "source_performance", "next_menu": _next_source(sender, list((live_snapshot or {}).get("sources", {}).keys()) or None), "session": session}
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_source(
+                sender,
+                list(
+                    (
+                        live_snapshot
+                        or
+                        {}
+                    )
+                    .get(
+                        "sources",
+                        {}
+                    )
+                    .keys()
+                )
+                or None
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # RANKINGS
+    # =====================================================
 
     if value == "rankings":
+
         session.analysis = "ranking"
-        return {"handled": True, "action": "rankings", "next_menu": _next_ranking(sender), "session": session}
 
-    if value in {"overall", "brand", "region", "store", "source"}:
-        session.analysis = value
-        if value == "brand":
-            return {"handled": True, "action": "analysis_brand", "next_menu": _next_brand(sender), "session": session}
-        if value == "region":
-            return {"handled": True, "action": "analysis_region", "next_menu": _next_region(sender, list((live_snapshot or {}).get("regions", {}).keys()) or None), "session": session}
-        if value == "store":
-            return {"handled": True, "action": "analysis_store", "next_menu": _next_region(sender, list((live_snapshot or {}).get("regions", {}).keys()) or None), "session": session}
-        if value == "source":
-            return {"handled": True, "action": "analysis_source", "next_menu": _next_source(sender, list((live_snapshot or {}).get("sources", {}).keys()) or None), "session": session}
-        return {"handled": True, "action": "analysis_overall", "next_menu": _next_period(sender), "session": session}
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_ranking(
+                sender
+            ),
+            "session": session,
+        }
 
-    if value in {"today", "last_week", "last_month", "last_3_months", "last_6_months", "last_12_months"}:
-        session.period = value
-        if session.analysis == "overall":
-            return {"handled": True, "action": "generate_overall", "next_menu": None, "session": session}
-        if session.analysis == "ranking":
-            return {"handled": True, "action": "generate_ranking", "next_menu": None, "session": session}
-        if session.analysis == "brand" and session.brand:
-            return {"handled": True, "action": "generate_brand", "next_menu": None, "session": session}
-        if session.analysis == "region" and session.region:
-            return {"handled": True, "action": "generate_region", "next_menu": None, "session": session}
-        if session.analysis == "store" and session.store:
-            return {"handled": True, "action": "generate_store", "next_menu": None, "session": session}
-        if session.analysis == "source" and session.source:
-            return {"handled": True, "action": "generate_source", "next_menu": None, "session": session}
-        return {"handled": True, "action": "period_selected", "next_menu": None, "session": session}
+    # =====================================================
+    # RANKING SELECTION
+    # =====================================================
 
-    if value in {"top_stores", "bottom_stores", "top_brands", "bottom_brands", "top_regions", "bottom_regions"}:
+    if value in {
+        "top_stores",
+        "bottom_stores",
+        "top_brands",
+        "bottom_brands",
+        "top_regions",
+        "bottom_regions",
+    }:
+
         session.ranking = value
-        return {"handled": True, "action": "generate_ranking", "next_menu": None, "session": session}
+
+        # Ranking still needs a period.
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_period(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # GENERIC ANALYSIS
+    # =====================================================
+
+    if value in {
+        "overall",
+        "brand",
+        "region",
+        "store",
+        "source",
+    }:
+
+        session.analysis = value
+
+        if value == "brand":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_brand(
+                    sender
+                ),
+                "session": session,
+            }
+
+        if value == "region":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_region(
+                    sender,
+                    list(
+                        (
+                            live_snapshot
+                            or
+                            {}
+                        )
+                        .get(
+                            "regions",
+                            {}
+                        )
+                        .keys()
+                    )
+                    or None
+                ),
+                "session": session,
+            }
+
+        if value == "store":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_region(
+                    sender,
+                    list(
+                        (
+                            live_snapshot
+                            or
+                            {}
+                        )
+                        .get(
+                            "regions",
+                            {}
+                        )
+                        .keys()
+                    )
+                    or None
+                ),
+                "session": session,
+            }
+
+        if value == "source":
+
+            return {
+                "handled": True,
+                "action": None,
+                "next_menu": _next_source(
+                    sender,
+                    list(
+                        (
+                            live_snapshot
+                            or
+                            {}
+                        )
+                        .get(
+                            "sources",
+                            {}
+                        )
+                        .keys()
+                    )
+                    or None
+                ),
+                "session": session,
+            }
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_period(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # LEGACY TEXT PERIOD VALUES
+    # =====================================================
+
+    if value in {
+        "today",
+        "last_week",
+        "last_month",
+        "last_year",
+        "last_3_months",
+        "last_6_months",
+        "last_12_months",
+    }:
+
+        if value not in session.periods:
+
+            session.periods.append(
+                value
+            )
+
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_brand(
+                sender
+            ),
+            "session": session,
+        }
+
+    # =====================================================
+    # NUMERIC FALLBACK
+    # =====================================================
 
     if value.isdigit():
-        number = int(value)
-        builders = {
-            MAIN_MENU: lambda: get_main_menu_options(sender),
-            ANALYSIS_MENU: lambda: get_analysis_options(sender),
-            PERIOD_MENU: get_period_options,
-            BRAND_MENU: lambda: get_brand_options(sender),
-            REGION_MENU: lambda: get_region_options(sender),
-            STORE_MENU: lambda: get_store_options(sender, (live_snapshot or {}).get("stores", {}), session.region),
-            SOURCE_MENU: lambda: get_source_options(sender),
-            RANKING_MENU: get_ranking_options,
-        }
-        options = builders.get(session.state, lambda: [])()
-        if 1 <= number <= len(options):
-            return handle_menu_selection(sender, options[number - 1]["id"], live_snapshot)
 
-    return {"handled": False, "action": None, "next_menu": None, "session": session}
+        number = int(
+            value
+        )
+
+        builders = {
+
+            MAIN_MENU:
+                lambda:
+                get_main_menu_options(
+                    sender
+                ),
+
+            ANALYSIS_MENU:
+                lambda:
+                get_analysis_options(
+                    sender
+                ),
+
+            PERIOD_MENU:
+                get_period_options,
+
+            BRAND_MENU:
+                lambda:
+                get_brand_options(
+                    sender
+                ),
+
+            REGION_MENU:
+                lambda:
+                get_region_options(
+                    sender
+                ),
+
+            STORE_MENU:
+                lambda:
+                get_store_options(
+                    sender,
+                    (
+                        live_snapshot
+                        or
+                        {}
+                    ).get(
+                        "stores",
+                        {}
+                    ),
+                    session.regions
+                ),
+
+            SOURCE_MENU:
+                lambda:
+                get_source_options(
+                    sender
+                ),
+
+            RANKING_MENU:
+                get_ranking_options,
+        }
+
+        options = builders.get(
+            session.state,
+            lambda: []
+        )()
+
+        if (
+            1
+            <= number
+            <= len(options)
+        ):
+
+            return handle_menu_selection(
+                sender,
+                options[
+                    number - 1
+                ][
+                    "id"
+                ],
+                live_snapshot
+            )
+
+    # =====================================================
+    # UNKNOWN
+    # =====================================================
+
+    return {
+        "handled": False,
+        "action": None,
+        "next_menu": None,
+        "session": session,
+    }
 
 
 def get_session_payload(sender: str) -> dict[str, Any]:
@@ -959,11 +1733,11 @@ def get_session_payload(sender: str) -> dict[str, Any]:
         "sender": session.sender,
         "state": session.state,
         "analysis": session.analysis,
-        "period": session.period,
-        "brand": session.brand,
-        "region": session.region,
-        "store": session.store,
-        "source": session.source,
+        "periods": session.periods,
+        "brands": session.brands,
+        "regions": session.regions,
+        "stores": session.stores,
+        "sources": session.sources,
         "ranking": session.ranking,
         "updated_at": session.updated_at,
     }
