@@ -400,47 +400,50 @@ def handle_menu_selection(
 
         session.period = "last_week"
         session.analysis = None
-    
-        next_menu = _next_brand(
-            sender
-        )
+        session.brand = None
+        session.region = None
+        session.store = None
     
         return {
             "handled": True,
             "action": None,
-            "next_menu": next_menu,
+            "next_menu": _next_brand(
+                sender
+            ),
             "session": session,
         }
     
     if value == "last_month_sales":
-    
+
         session.period = "last_month"
         session.analysis = None
-    
-        next_menu = _next_brand(
-            sender
-        )
+        session.brand = None
+        session.region = None
+        session.store = None
     
         return {
             "handled": True,
-            "action": "last_month_sales",
-            "next_menu": None,
+            "action": None,
+            "next_menu": _next_brand(
+                sender
+            ),
             "session": session,
         }
     
     if value == "last_year_sales":
-    
+
         session.period = "last_year"
         session.analysis = None
-    
-        next_menu = _next_brand(
-            sender
-        )
+        session.brand = None
+        session.region = None
+        session.store = None
     
         return {
             "handled": True,
-            "action": "last_year_sales",
-            "next_menu": None,
+            "action": None,
+            "next_menu": _next_brand(
+                sender
+            ),
             "session": session,
         }
     
@@ -458,19 +461,94 @@ def handle_menu_selection(
     if value in {"menu", "main menu", "home", "start"}:
         return {"handled": True, "action": "menu", "next_menu": start_menu(sender), "session": session}
 
-    if value.startswith("brand:"):
-        session.brand = selection.split(":", 1)[1].replace("_", " ").title()
-        return {"handled": True, "action": "brand_selected", "next_menu": _next_period(sender), "session": session}
+    if value.startswith(
+        "brand:"
+    ):
+    
+        session.brand = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+            .title()
+        )
+    
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_region(
+                sender,
+                list(
+                    (
+                        live_snapshot or {}
+                    )
+                    .get(
+                        "regions",
+                        {}
+                    )
+                    .keys()
+                )
+                or None
+            ),
+            "session": session,
+        }
 
-    if value.startswith("region:"):
-        session.region = selection.split(":", 1)[1].replace("_", " ").upper()
-        if session.analysis == "store":
-            return {"handled": True, "action": "region_selected", "next_menu": _next_store(sender, live_snapshot, session.region), "session": session}
-        return {"handled": True, "action": "region_selected", "next_menu": _next_period(sender), "session": session}
+    if value.startswith(
+        "region:"
+    ):
+    
+        session.region = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+            .upper()
+        )
+    
+        return {
+            "handled": True,
+            "action": None,
+            "next_menu": _next_store(
+                sender,
+                live_snapshot,
+                session.region
+            ),
+            "session": session,
+        }
 
-    if value.startswith("store:"):
-        session.store = selection.split(":", 1)[1].replace("_", " ").title()
-        return {"handled": True, "action": "store_selected", "next_menu": _next_period(sender), "session": session}
+    if value.startswith(
+        "store:"
+    ):
+    
+        session.store = (
+            selection
+            .split(
+                ":",
+                1
+            )[1]
+            .replace(
+                "_",
+                " "
+            )
+            .title()
+        )
+    
+        return {
+            "handled": True,
+            "action": "generate_period_report",
+            "next_menu": None,
+            "session": session,
+        }
 
     if value.startswith("source:"):
         session.source = selection.split(":", 1)[1].replace("_", " ").title()
