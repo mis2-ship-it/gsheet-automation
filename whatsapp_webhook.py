@@ -2897,34 +2897,75 @@ def webhook():
                                 selection=selection_id,
                                 live_snapshot=LIVE_SALES_DATA,
                             )
-
-                            print("📱 Menu Action:", result.get("action"))
-
-                            next_menu = result.get("next_menu")
-
+                            
+                            action = result.get(
+                                "action"
+                            )
+                            
+                            print(
+                                "📱 Menu Action:",
+                                action
+                            )
+                            
+                            print(
+                                "📱 Menu Session:",
+                                result.get("session")
+                            )
+                            
+                            # -------------------------------------------------
+                            # SEND NEXT MENU
+                            # -------------------------------------------------
+                            
+                            next_menu = result.get(
+                                "next_menu"
+                            )
+                            
                             if next_menu:
-                                options = next_menu.get("options", [])
-                                if options:
-                                    send_whatsapp_interactive(
-                                        recipient=sender,
-                                        body_text=next_menu.get("text", "Please select an option."),
-                                        options=options,
-                                        button_text="Select",
-                                        section_title="Options",
-                                    )
-                                else:
-                                    send_whatsapp_message(
-                                        sender,
-                                        next_menu.get("text", "No options available.")
-                                    )
-                            else:
-                                action = result.get("action")
-                                if action:
-                                    handle_menu_report_action(
-                                        sender,
-                                        action,
-                                        result.get("session"),
-                                    )
+                            
+                                print(
+                                    "📱 Sending next menu:",
+                                    next_menu.get("state")
+                                )
+                            
+                                send_whatsapp_interactive(
+                                    recipient=sender,
+                                    body_text=next_menu.get(
+                                        "text",
+                                        "Select an option."
+                                    ),
+                                    options=next_menu.get(
+                                        "options",
+                                        []
+                                    ),
+                                    button_text="Select",
+                                    section_title="Options",
+                                )
+                            
+                            # -------------------------------------------------
+                            # GENERATE FINAL REPORT
+                            # -------------------------------------------------
+                            
+                            if action in {
+                                "today_sales",
+                                "last_week_sales",
+                                "last_month_sales",
+                                "last_year_sales",
+                                "historical",
+                                "generate_overall",
+                                "generate_brand",
+                                "generate_region",
+                                "generate_store",
+                                "generate_source",
+                                "generate_ranking",
+                            }:
+                            
+                                handle_menu_report_action(
+                                    sender,
+                                    action,
+                                    result.get(
+                                        "session"
+                                    ),
+                                )
 
                         except Exception as e:
                             print("❌ INTERACTIVE MENU ERROR:", str(e))
