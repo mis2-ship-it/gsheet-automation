@@ -397,19 +397,29 @@ def handle_menu_selection(
         }
     
     if value == "last_week_sales":
-    
+
         session.period = "last_week"
+        session.analysis = None
+    
+        next_menu = _next_brand(
+            sender
+        )
     
         return {
             "handled": True,
-            "action": "last_week_sales",
-            "next_menu": None,
+            "action": None,
+            "next_menu": next_menu,
             "session": session,
         }
     
     if value == "last_month_sales":
     
         session.period = "last_month"
+        session.analysis = None
+    
+        next_menu = _next_brand(
+            sender
+        )
     
         return {
             "handled": True,
@@ -421,6 +431,11 @@ def handle_menu_selection(
     if value == "last_year_sales":
     
         session.period = "last_year"
+        session.analysis = None
+    
+        next_menu = _next_brand(
+            sender
+        )
     
         return {
             "handled": True,
