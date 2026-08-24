@@ -40,7 +40,7 @@ WHATSAPP_USERS = {
     # REGION MANAGERS
     # -----------------------------------------------------
 
-    "9163668270315": {
+    "916366870315": {
         "role": "Region Manager",
         "region": "MH",
         "patch": "MH Patch",
