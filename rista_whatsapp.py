@@ -288,6 +288,35 @@ print(
     )
 )
 
+print(
+    "WhatsApp Phone ID:",
+    bool(
+        WHATSAPP_PHONE_NUMBER_ID
+    )
+)
+
+print(
+    "WhatsApp Token:",
+    bool(
+        WHATSAPP_ACCESS_TOKEN
+    )
+)
+
+print(
+    "Hourly Broadcast:",
+    WHATSAPP_HOURLY_BROADCAST
+)
+
+print(
+    "Hourly Template:",
+    WHATSAPP_HOURLY_TEMPLATE
+)
+
+print(
+    "Hourly Language:",
+    WHATSAPP_HOURLY_LANGUAGE
+)
+
 print("=" * 60)
 
 print(
