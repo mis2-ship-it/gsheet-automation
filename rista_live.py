@@ -1960,6 +1960,98 @@ print(final_df.columns.tolist())
 
 print("\nTotal Rows :", len(final_df))
 
+# =========================================================
+# 🚀 BI DASHBOARD SUMMARY SYNC (FAST GROUPBY)
+# =========================================================
+
+def push_dashboard_summary(df, client):
+    try:
+        # 1. Target the Sales Dashboard spreadsheet
+        sh = client.open("Sales Dashboard")
+        
+        # 2. Extract closed orders from final_df
+        closed_df = df[df["status"] == "Closed"].copy()
+        if closed_df.empty:
+            print("⚠️ No closed orders to summarize for Dashboard")
+            return
+
+        # Ensure required numeric columns
+        for col in ["netAmount", "chargeAmount", "discountAmount"]:
+            if col in closed_df.columns:
+                closed_df[col] = pd.to_numeric(closed_df[col], errors="coerce").fillna(0)
+
+        closed_df["Net_Sales_Val"] = closed_df["netAmount"] + closed_df["chargeAmount"]
+        closed_df["Discount_Val"] = closed_df["discountAmount"]
+        
+        # Determine Month name (e.g., 'August-26')
+        if "invoiceDate" in closed_df.columns:
+            closed_df["Month_Str"] = pd.to_datetime(closed_df["invoiceDate"]).dt.strftime("%B-%y")
+        else:
+            closed_df["Month_Str"] = "Current"
+
+        # Channel mapping
+        closed_df["Source_Str"] = closed_df["Source Group"].fillna("Direct")
+        closed_df["Store_Type_Str"] = closed_df["Store Type"].fillna("COCO")
+        closed_df["Region_Str"] = closed_df["Region"].fillna("Other")
+        closed_df["Brand_Str"] = closed_df["Brand"].fillna("Other")
+        closed_df["Branch_Str"] = closed_df["branchName"].fillna("Unknown")
+
+        # Swiggy / Zomato channels
+        closed_df["Swiggy_Sales"] = closed_df.apply(
+            lambda r: r["Net_Sales_Val"] if "swiggy" in str(r.get("channel", "")).lower() else 0, axis=1
+        )
+        closed_df["Zomato_Sales"] = closed_df.apply(
+            lambda r: r["Net_Sales_Val"] if "zomato" in str(r.get("channel", "")).lower() else 0, axis=1
+        )
+        closed_df["Offline_Sales"] = closed_df.apply(
+            lambda r: r["Net_Sales_Val"] if str(r.get("Source_Str", "")).lower() in ["in store", "offline", "dine in", "takeaway"] else 0, axis=1
+        )
+        closed_df["Online_Sales"] = closed_df["Net_Sales_Val"] - closed_df["Offline_Sales"]
+
+        # 3. Compact GroupBy Aggregation (Takes ~0.02s)
+        grp_cols = ["Brand_Str", "Branch_Str", "Region_Str", "Store_Type_Str", "Source_Str", "Month_Str"]
+        summary_df = closed_df.groupby(grp_cols, as_index=False).agg({
+            "Net_Sales_Val": "sum",
+            "netAmount": "count",  # Transactions count
+            "Discount_Val": "sum",
+            "Offline_Sales": "sum",
+            "Online_Sales": "sum",
+            "Swiggy_Sales": "sum",
+            "Zomato_Sales": "sum"
+        })
+
+        # Calculate accurate Discount %
+        gross = summary_df["Net_Sales_Val"] + summary_df["Discount_Val"]
+        summary_df["AvgDisPct"] = (summary_df["Discount_Val"] / gross.replace(0, 1) * 100).round(1)
+
+        # 4. Format to match Web App expectations
+        summary_df["City_Str"] = summary_df["Region_Str"]  # Default City to Region fallback
+        
+        summary_df = summary_df[[
+            "Brand_Str", "Branch_Str", "City_Str", "Region_Str", "Store_Type_Str", "Source_Str", "Month_Str",
+            "Net_Sales_Val", "netAmount", "Discount_Val", "AvgDisPct", "Offline_Sales", "Online_Sales", "Swiggy_Sales", "Zomato_Sales"
+        ]]
+
+        headers_out = [
+            "Brand", "Branch", "City", "Region", "StoreType", "Source", "Month",
+            "NetSales", "Trans", "Discount", "AvgDisPct", "Offline", "Online", "Swiggy", "Zomato"
+        ]
+
+        summary_df.columns = headers_out
+
+        # 5. Overwrite '_Dashboard_Summary' tab in 1 API call
+        try:
+            ws = sh.worksheet("_Dashboard_Summary")
+        except:
+            ws = sh.add_worksheet(title="_Dashboard_Summary", rows="1000", cols="20")
+
+        ws.clear()
+        ws.update([summary_df.columns.tolist()] + summary_df.round(0).astype(str).values.tolist())
+        print(f"✅ Successfully pushed {len(summary_df)} summary rows to '_Dashboard_Summary'")
+
+    except Exception as e:
+        print(f"⚠️ Dashboard Summary Sync skipped/error: {str(e)}")
+
 # ---------------- PUSH ---------------- #
 
 def push(name, df):
@@ -3628,6 +3720,9 @@ push("Session", session_analysis)
 push("Top_Stores", top_stores)
 push("Bottom_Stores", bottom_stores)
 push("Hourly", hourly_analysis)
+
+# 🚀 NEW: Auto-push pre-calculated summary for Web App
+push_dashboard_summary(final_df, client)
 
 # =========================================================
 # 📧 EMAIL REPORTS
