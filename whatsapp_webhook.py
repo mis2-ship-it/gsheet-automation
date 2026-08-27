@@ -4122,6 +4122,85 @@ def send_guided_period_report(
 # 📊 HANDLE GUIDED MENU REPORT ACTION
 # =========================================================
 
+def _send_menu_ranking_report(sender, session):
+    """Generate Top/Bottom report directly from the current snapshot."""
+
+    ranking = str(getattr(session, "ranking", "") or "").strip().lower()
+    period = str(getattr(session, "period", "today") or "today").strip().lower()
+
+    period_key = {
+        "today": "today",
+        "last_week": "lw",
+        "last_month": "lm",
+        "last_year": "ly",
+    }.get(period)
+
+    if not period_key:
+        send_whatsapp_message(
+            sender,
+            "⚠️ Ranking currently supports Today, Last Week, Last Month and Last Year."
+        )
+        return
+
+    if ranking in {"top_stores", "bottom_stores"}:
+        dimension = "stores"
+        source = LIVE_SALES_DATA.get("stores", {}) or {}
+        label = "STORES"
+    elif ranking in {"top_brands", "bottom_brands"}:
+        dimension = "brands"
+        source = LIVE_SALES_DATA.get("brands", {}) or {}
+        label = "BRANDS"
+    elif ranking in {"top_regions", "bottom_regions"}:
+        dimension = "regions"
+        source = LIVE_SALES_DATA.get("regions", {}) or {}
+        label = "REGIONS"
+    else:
+        send_whatsapp_message(sender, "⚠️ Ranking option is not supported.")
+        return
+
+    if not source:
+        send_whatsapp_message(sender, "⚠️ Ranking data is not available right now.")
+        return
+
+    rows = []
+    for name, data in source.items():
+        if not isinstance(data, dict):
+            continue
+        value = _safe_float(data.get(period_key))
+        rows.append((str(name), value))
+
+    if not rows:
+        send_whatsapp_message(sender, "⚠️ No ranking data is available for the selected period.")
+        return
+
+    rows.sort(key=lambda x: x[1], reverse=ranking.startswith("top_"))
+    rows = rows[:10]
+
+    title = "TOP" if ranking.startswith("top_") else "BOTTOM"
+    period_label = {
+        "today": "TODAY",
+        "last_week": "LAST WEEK",
+        "last_month": "LAST MONTH",
+        "last_year": "LAST YEAR",
+    }[period]
+
+    lines = [
+        f"📊 *AI MIS | {title} {label}*",
+        str(LIVE_SALES_DATA.get("date", "")),
+        str(LIVE_SALES_DATA.get("report_time", "")),
+        "",
+        f"📅 *{period_label}*",
+        "",
+    ]
+
+    for index, (name, value) in enumerate(rows, 1):
+        lines.append(
+            f"{index}. {name}: {_format_lacs(value)}"
+        )
+
+    send_whatsapp_message(sender, "\n".join(lines))
+
+
 def handle_menu_report_action(sender, action, session):
     print("=" * 60)
     print("📊 MENU REPORT ACTION")
@@ -4131,225 +4210,141 @@ def handle_menu_report_action(sender, action, session):
     print("=" * 60)
 
     if not session:
+        send_whatsapp_message(
+            sender,
+            "⚠️ Your menu session has expired. Please type *hi* to start again."
+        )
         return
 
+    action = str(action or "").strip().lower()
+
+    # =====================================================
+    # TODAY SALES
+    # =====================================================
     if action == "today_sales":
         send_role_based_ftd_sales(sender)
         clear_session(sender)
         return
 
-    if action == "last_week_sales":
-        send_menu_period_report(sender, session, "last_week")
+    # =====================================================
+    # LAST WEEK / LAST MONTH / LAST YEAR
+    # =====================================================
+    if action in {
+        "last_week_sales",
+        "last_month_sales",
+        "last_year_sales",
+    }:
+        period = {
+            "last_week_sales": "last_week",
+            "last_month_sales": "last_month",
+            "last_year_sales": "last_year",
+        }[action]
+
+        send_menu_period_report(
+            sender,
+            session,
+            period,
+        )
         clear_session(sender)
         return
 
-    if action == "last_month_sales":
-        send_menu_period_report(sender, session, "last_month")
-        clear_session(sender)
-        return
-
-    if action == "last_year_sales":
-        send_menu_period_report(sender, session, "last_year")
-        clear_session(sender)
-        return
-
+    # =====================================================
+    # HISTORICAL / 6 MONTHS
+    # =====================================================
     if action == "historical":
-        send_menu_period_report(sender, session, "last_6_months")
+        send_menu_period_report(
+            sender,
+            session,
+            "last_6_months",
+        )
         clear_session(sender)
         return
 
-    # =========================================================
-# 📊 HANDLE GUIDED MENU REPORT ACTION
-# =========================================================
-
-def handle_menu_report_action(
-    sender,
-    action,
-    session,
-):
-
-    # -----------------------------------------------------
-    # TODAY
-    # -----------------------------------------------------
-
-    if action == "today_sales":
-
-        send_role_based_ftd_sales(
-            sender
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST WEEK
-    # -----------------------------------------------------
-
-    if action == "last_week_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_week"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST MONTH
-    # -----------------------------------------------------
-
-    if action == "last_month_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_month"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # LAST YEAR
-    # -----------------------------------------------------
-
-    if action == "last_year_sales":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_year"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # HISTORICAL
-    # -----------------------------------------------------
-
-    if action == "historical":
-
-        send_menu_period_report(
-            sender,
-            session,
-            "last_6_months"
-        )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    # -----------------------------------------------------
-    # GUIDED PERIOD REPORT
-    # -----------------------------------------------------
-
+    # =====================================================
+    # GENERIC GUIDED PERIOD REPORT
+    # =====================================================
     if action == "generate_period_report":
-
         send_guided_period_report(
             sender,
-            session
+            session,
         )
-
-        clear_session(
-            sender
-        )
-
+        clear_session(sender)
         return
 
-    # -----------------------------------------------------
-    # GENERATE OVERALL
-    # -----------------------------------------------------
+    # =====================================================
+    # OVERALL / BRAND / REGION / STORE / SOURCE
+    # =====================================================
+    if action in {
+        "generate_overall",
+        "generate_brand",
+        "generate_region",
+        "generate_store",
+        "generate_source",
+    }:
+        period = str(
+            getattr(session, "period", "") or ""
+        ).strip().lower()
 
-    if action == "generate_overall":
+        if not period:
+            send_whatsapp_message(
+                sender,
+                "⚠️ Please select a period."
+            )
+            return
 
         send_menu_period_report(
             sender,
             session,
-            session.period
+            period,
         )
-
-        clear_session(
-            sender
-        )
-
+        clear_session(sender)
         return
 
-    # -----------------------------------------------------
-    # GENERATE BRAND
-    # -----------------------------------------------------
-
-    if action == "generate_brand":
-
-        send_menu_period_report(
+    # =====================================================
+    # RANKING
+    # =====================================================
+    if action in {
+        "generate_ranking",
+        "rankings",
+    }:
+        _send_menu_ranking_report(
             sender,
             session,
-            session.period
         )
-
-        clear_session(
-            sender
-        )
-
+        clear_session(sender)
         return
 
-    # -----------------------------------------------------
-    # GENERATE REGION
-    # -----------------------------------------------------
-
-    if action == "generate_region":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
-        )
-
-        clear_session(
-            sender
-        )
-
+    # =====================================================
+    # INTERMEDIATE MENU ACTIONS
+    # =====================================================
+    if action in {
+        "menu",
+        "brand_selected",
+        "region_selected",
+        "store_selected",
+        "source_selected",
+        "period_selected",
+        "store_performance",
+        "brand_performance",
+        "region_performance",
+        "source_performance",
+        "analysis_overall",
+        "analysis_brand",
+        "analysis_region",
+        "analysis_store",
+        "analysis_source",
+    }:
+        # These actions intentionally wait for the next menu selection.
         return
 
-    # -----------------------------------------------------
-    # GENERATE STORE
-    # -----------------------------------------------------
-
-    if action == "generate_store":
-
-        send_menu_period_report(
-            sender,
-            session,
-            session.period
+    print("⚠️ Unknown menu action:", action)
+    send_whatsapp_message(
+        sender,
+        (
+            "⚠️ This report option is not configured yet.\n\n"
+            f"Action: {action}"
         )
-
-        clear_session(
-            sender
-        )
-
-        return
-
-    print(
-        "⚠️ Unknown menu action:",
-        action
     )
-
 
 
 # =========================================================
