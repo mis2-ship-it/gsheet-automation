@@ -838,6 +838,304 @@ def update_sales_data():
 
 
 # =========================================================
+# 📲 SEND WHATSAPP TEMPLATE MESSAGE
+# =========================================================
+
+def send_whatsapp_template_message(recipient, message):
+
+    if not WHATSAPP_PHONE_NUMBER_ID:
+        print("❌ WHATSAPP_PHONE_NUMBER_ID missing")
+        return False
+
+    if not WHATSAPP_ACCESS_TOKEN:
+        print("❌ WHATSAPP_ACCESS_TOKEN missing")
+        return False
+
+    url = (
+        f"https://graph.facebook.com/v23.0/"
+        f"{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
+
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": _normalize_mobile(recipient),
+        "type": "template",
+        "template": {
+            "name": WHATSAPP_HOURLY_TEMPLATE,
+            "language": {
+                "code": WHATSAPP_HOURLY_LANGUAGE
+            },
+            "components": [
+                {
+                    "type": "body",
+                    "parameters": [
+                        {
+                            "type": "text",
+                            "text": message
+                        }
+                    ],
+                }
+            ],
+        },
+    }
+
+    try:
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+
+        print(
+            "📲 WhatsApp Template Status:",
+            response.status_code
+        )
+
+        print(
+            "📲 WhatsApp Template Response:",
+            response.text
+        )
+
+        return response.ok
+
+    except Exception as e:
+
+        print(
+            "❌ WhatsApp Template Error:",
+            repr(e)
+        )
+
+        return False
+
+# =========================================================
+# 📲 BUILD ROLE HOURLY MESSAGE
+# =========================================================
+
+def _build_role_hourly_message(user):
+
+    snapshot = LIVE_SALES_DATA
+
+    if not snapshot:
+
+        return (
+            "📊 AI MIS | HOURLY SALES\n\n"
+            "⚠️ Sales data is not available right now."
+        )
+
+    overall = snapshot.get(
+        "overall",
+        {}
+    )
+
+    net = float(
+        overall.get(
+            "net",
+            0
+        ) or 0
+    )
+
+    transactions = int(
+        float(
+            overall.get(
+                "transactions",
+                0
+            ) or 0
+        )
+    )
+
+    qty = int(
+        float(
+            overall.get(
+                "qty",
+                0
+            ) or 0
+        )
+    )
+
+    aov = (
+        net / transactions
+        if transactions
+        else 0
+    )
+
+    date = snapshot.get(
+        "date",
+        ""
+    )
+
+    report_time = snapshot.get(
+        "report_time",
+        ""
+    )
+
+    return (
+        "📊 *AI MIS | HOURLY SALES*\n"
+        f"{date}\n"
+        f"🕒 {report_time}\n\n"
+
+        f"💰 Net Revenue: ₹{net / 100000:.2f}L\n"
+        f"🧾 Transactions: {transactions:,}\n"
+        f"🧺 Qty Sold: {qty:,}\n"
+        f"💵 AOV: ₹{aov:,.0f}"
+    )
+
+# =========================================================
+# 📲 BROADCAST ROLE-BASED HOURLY SALES
+# =========================================================
+
+def broadcast_role_based_hourly_sales():
+
+    if not WHATSAPP_HOURLY_BROADCAST:
+
+        print(
+            "ℹ️ Hourly WhatsApp broadcast disabled"
+        )
+
+        return
+
+    if not WHATSAPP_PHONE_NUMBER_ID:
+
+        print(
+            "⚠️ Hourly broadcast skipped: "
+            "PHONE_NUMBER_ID missing"
+        )
+
+        return
+
+    if not WHATSAPP_ACCESS_TOKEN:
+
+        print(
+            "⚠️ Hourly broadcast skipped: "
+            "ACCESS_TOKEN missing"
+        )
+
+        return
+
+    print("=" * 60)
+    print(
+        "📲 ROLE-BASED HOURLY WHATSAPP BROADCAST"
+    )
+    print("=" * 60)
+
+    sent = 0
+    failed = 0
+    skipped = 0
+
+    seen = set()
+
+    for mobile, user in WHATSAPP_USERS.items():
+
+        role = str(
+            user.get("role", "")
+        ).strip().lower()
+
+        # Only these roles receive proactive hourly sales
+        if role not in {
+            "ops leader",
+            "region manager",
+            "area manager",
+        }:
+
+            skipped += 1
+            continue
+
+        recipient = _normalize_mobile(mobile)
+
+        if not recipient:
+            skipped += 1
+            continue
+
+        if recipient in seen:
+            skipped += 1
+            continue
+
+        seen.add(recipient)
+
+        try:
+
+            message = _build_role_hourly_message(
+                user
+            )
+
+            print(
+                f"📲 Sending hourly sales → "
+                f"{recipient} | {role}"
+            )
+
+            success = (
+                send_whatsapp_template_message(
+                    recipient,
+                    message
+                )
+            )
+
+            if success:
+                sent += 1
+            else:
+                failed += 1
+
+        except Exception as e:
+
+            failed += 1
+
+            print(
+                f"❌ Hourly broadcast error "
+                f"→ {recipient}: {e}"
+            )
+
+    print(
+        "📊 Hourly broadcast result | "
+        f"sent={sent} "
+        f"skipped={skipped} "
+        f"failed={failed}"
+    )
+
+    print("=" * 60)
+
+# =========================================================
+# 📲 HOURLY BROADCAST ENDPOINT
+# =========================================================
+
+@app.route(
+    "/broadcast-hourly",
+    methods=["POST"]
+)
+def broadcast_hourly():
+
+    print("=" * 60)
+    print("📲 HOURLY BROADCAST REQUEST")
+    print("=" * 60)
+
+    try:
+
+        broadcast_role_based_hourly_sales()
+
+        return {
+            "success": True,
+            "message": "Hourly broadcast completed"
+        }, 200
+
+    except Exception as e:
+
+        print(
+            "❌ Hourly broadcast failed:",
+            repr(e)
+        )
+
+        return {
+            "success": False,
+            "message": str(e)
+        }, 500
+
+
+# =========================================================
 # 🔍 CURRENT SALES SNAPSHOT
 # =========================================================
 
@@ -859,6 +1157,7 @@ def sales_data():
         "success": True,
         "data": LIVE_SALES_DATA,
     }), 200
+
 
 
 # =========================================================
