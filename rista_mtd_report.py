@@ -86,60 +86,149 @@ print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
-# DATE RANGE - REFRESH LAST 7 COMPLETED DAYS
+# DATE RANGE - REFRESH LAST 7 COMPLETED BUSINESS DAYS
+# BUSINESS DAY: 08:00 AM → NEXT DAY 05:30 AM
 # =========================================================
 
-today = datetime.now().date()
+now = datetime.now()
 
-# Yesterday = latest completed business date
-end_date = today - timedelta(days=1)
+today = now.date()
 
 # ---------------------------------------------------------
-# Current monthly CSV
+# Determine latest COMPLETED business date
+#
+# Before 05:30 AM:
+#   Today's calendar date is still part of yesterday's
+#   business day, so latest completed BD = today - 2
+#
+# At / after 05:30 AM:
+#   Yesterday's business day is complete
+#   latest completed BD = today - 1
 # ---------------------------------------------------------
+
+if (
+    now.hour < 5
+    or (
+        now.hour == 5
+        and now.minute < 30
+    )
+):
+
+    latest_completed_business_date = (
+        today
+        - timedelta(days=2)
+    )
+
+else:
+
+    latest_completed_business_date = (
+        today
+        - timedelta(days=1)
+    )
+
+
+# =========================================================
+# REPORT MONTH
+# =========================================================
+
+report_year = (
+    latest_completed_business_date.year
+)
+
+report_month = (
+    latest_completed_business_date.month
+)
+
+
+# =========================================================
+# CURRENT MONTH FILE
+# BASED ON LATEST COMPLETED BUSINESS DATE
+# =========================================================
 
 current_month_file = (
     Path("monthly_data")
-    / str(today.year)
-    / today.strftime("MTD_%b_%y.csv")
+    / str(report_year)
+    / latest_completed_business_date.strftime(
+        "MTD_%b_%y.csv"
+    )
 )
 
-# ---------------------------------------------------------
-# Always refresh recent days
-#
-# This protects against:
-# - Missing branch data
-# - Partial API response
-# - Late Rista updates
-# - Previous workflow failure
-# ---------------------------------------------------------
+
+# =========================================================
+# REFRESH LAST 7 COMPLETED BUSINESS DAYS
+# =========================================================
 
 REFRESH_DAYS = 7
 
-start_date = end_date - timedelta(
-    days=REFRESH_DAYS - 1
+end_date = (
+    latest_completed_business_date
 )
 
+start_date = (
+    end_date
+    - timedelta(
+        days=REFRESH_DAYS - 1
+    )
+)
+
+
 # ---------------------------------------------------------
-# Do not go before current month
+# Do not go before the business month start
 # ---------------------------------------------------------
 
-month_start = today.replace(day=1)
+month_start = (
+    latest_completed_business_date.replace(
+        day=1
+    )
+)
 
 if start_date < month_start:
+
     start_date = month_start
+
+
+# =========================================================
+# LOG
+# =========================================================
 
 print("=" * 60)
 print("DATE RANGE CHECK")
 print("=" * 60)
 
-print("📂 Existing CSV:")
-print("   ", current_month_file)
+print(
+    "🕐 Current Time            :",
+    now
+)
 
-print("📅 Today        :", today)
-print("📅 Fetch From   :", start_date)
-print("📅 Fetch Until  :", end_date)
-print("🔄 Refresh Days :", REFRESH_DAYS)
+print(
+    "📅 Today                   :",
+    today
+)
+
+print(
+    "✅ Latest Completed BD    :",
+    latest_completed_business_date
+)
+
+print(
+    "📂 Existing CSV           :",
+    current_month_file
+)
+
+print(
+    "📅 Fetch From             :",
+    start_date
+)
+
+print(
+    "📅 Fetch Until            :",
+    end_date
+)
+
+print(
+    "🔄 Refresh Days           :",
+    REFRESH_DAYS
+)
 
 print("=" * 60)
 
