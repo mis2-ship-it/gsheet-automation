@@ -929,9 +929,20 @@ def _build_role_hourly_message(user):
             "⚠️ Sales data is not available right now."
         )
 
+    # =====================================================
+    # 💰 BUSINESS OVERVIEW
+    # =====================================================
+
     overall = snapshot.get(
         "overall",
         {}
+    )
+
+    gross = float(
+        overall.get(
+            "gross",
+            0
+        ) or 0
     )
 
     net = float(
@@ -959,11 +970,22 @@ def _build_role_hourly_message(user):
         )
     )
 
+    discount = float(
+        overall.get(
+            "discount",
+            0
+        ) or 0
+    )
+
     aov = (
         net / transactions
         if transactions
         else 0
     )
+
+    # =====================================================
+    # 📅 DATE / REPORT TIME
+    # =====================================================
 
     date = snapshot.get(
         "date",
@@ -975,15 +997,138 @@ def _build_role_hourly_message(user):
         ""
     )
 
+    # =====================================================
+    # 🌍 REGIONAL PERFORMANCE
+    # =====================================================
+
+    regions = snapshot.get(
+        "regions",
+        {}
+    )
+
+    regional_lines = []
+
+    if isinstance(regions, dict):
+
+        regional_data = []
+
+        for region_name, region_data in regions.items():
+
+            if not isinstance(region_data, dict):
+                continue
+
+            region_net = float(
+                region_data.get(
+                    "net",
+                    0
+                ) or 0
+            )
+
+            region_transactions = int(
+                float(
+                    region_data.get(
+                        "transactions",
+                        0
+                    ) or 0
+                )
+            )
+
+            if region_net <= 0:
+                continue
+
+            regional_data.append(
+                (
+                    region_name,
+                    region_net,
+                    region_transactions
+                )
+            )
+
+        # Highest revenue first
+        regional_data.sort(
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        medals = [
+            "🥇",
+            "🥈",
+            "🥉"
+        ]
+
+        for index, (
+            region_name,
+            region_net,
+            region_transactions
+        ) in enumerate(regional_data):
+
+            if index < 3:
+                rank_icon = medals[index]
+            else:
+                rank_icon = "🏅"
+
+            # Format transaction count
+            if region_transactions >= 1000:
+
+                txn_text = (
+                    f"{region_transactions / 1000:.1f}K"
+                )
+
+            else:
+
+                txn_text = (
+                    f"{region_transactions:,}"
+                )
+
+            regional_lines.append(
+                f"{rank_icon} {region_name}: "
+                f"₹{region_net / 100000:.2f}L | "
+                f"{txn_text} Txn"
+            )
+
+    # Build regional section
+    regional_section = ""
+
+    if regional_lines:
+
+        regional_section = (
+            "\n\n"
+            "🌍 *REGIONAL PERFORMANCE*\n\n"
+            + "\n".join(
+                regional_lines
+            )
+        )
+
+    # =====================================================
+    # 📲 FINAL HOURLY MESSAGE
+    # =====================================================
+
     return (
         "📊 *AI MIS | HOURLY SALES*\n"
         f"{date}\n"
         f"🕒 {report_time}\n\n"
 
-        f"💰 Net Revenue: ₹{net / 100000:.2f}L\n"
-        f"🧾 Transactions: {transactions:,}\n"
-        f"🧺 Qty Sold: {qty:,}\n"
-        f"💵 AOV: ₹{aov:,.0f}"
+        "💰 *BUSINESS OVERVIEW*\n\n"
+
+        f"💵 Gross Sales: "
+        f"₹{gross / 100000:.2f}L\n"
+
+        f"💵 Net Revenue: "
+        f"₹{net / 100000:.2f}L\n"
+
+        f"🧾 Transactions: "
+        f"{transactions:,}\n"
+
+        f"🧺 Qty Sold: "
+        f"{qty:,}\n"
+
+        f"💵 AOV: "
+        f"₹{aov:,.0f}\n"
+
+        f"📉 Discount: "
+        f"{discount:.1f}%"
+
+        f"{regional_section}"
     )
 
 # =========================================================
