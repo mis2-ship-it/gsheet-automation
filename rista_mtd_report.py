@@ -86,24 +86,15 @@ print("API KEY EXISTS:", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 
 # =========================================================
-# DATE RANGE - REFRESH LAST 7 COMPLETED BUSINESS DAYS
+# DATE RANGE - BUSINESS DATE AWARE
 # BUSINESS DAY: 08:00 AM → NEXT DAY 05:30 AM
 # =========================================================
 
 now = datetime.now()
-
 today = now.date()
 
 # ---------------------------------------------------------
-# Determine latest COMPLETED business date
-#
-# Before 05:30 AM:
-#   Today's calendar date is still part of yesterday's
-#   business day, so latest completed BD = today - 2
-#
-# At / after 05:30 AM:
-#   Yesterday's business day is complete
-#   latest completed BD = today - 1
+# Latest completed business date
 # ---------------------------------------------------------
 
 if (
@@ -115,15 +106,13 @@ if (
 ):
 
     latest_completed_business_date = (
-        today
-        - timedelta(days=2)
+        today - timedelta(days=2)
     )
 
 else:
 
     latest_completed_business_date = (
-        today
-        - timedelta(days=1)
+        today - timedelta(days=1)
     )
 
 
@@ -131,23 +120,20 @@ else:
 # REPORT MONTH
 # =========================================================
 
-report_year = (
-    latest_completed_business_date.year
-)
-
-report_month = (
-    latest_completed_business_date.month
+report_month_start = (
+    latest_completed_business_date.replace(
+        day=1
+    )
 )
 
 
 # =========================================================
-# CURRENT MONTH FILE
-# BASED ON LATEST COMPLETED BUSINESS DATE
+# MONTHLY CSV
 # =========================================================
 
 current_month_file = (
     Path("monthly_data")
-    / str(report_year)
+    / str(latest_completed_business_date.year)
     / latest_completed_business_date.strftime(
         "MTD_%b_%y.csv"
     )
@@ -160,9 +146,7 @@ current_month_file = (
 
 REFRESH_DAYS = 7
 
-end_date = (
-    latest_completed_business_date
-)
+end_date = latest_completed_business_date
 
 start_date = (
     end_date
@@ -173,18 +157,11 @@ start_date = (
 
 
 # ---------------------------------------------------------
-# Do not go before the business month start
+# Do not go before report month start
 # ---------------------------------------------------------
 
-month_start = (
-    latest_completed_business_date.replace(
-        day=1
-    )
-)
-
-if start_date < month_start:
-
-    start_date = month_start
+if start_date < report_month_start:
+    start_date = report_month_start
 
 
 # =========================================================
@@ -196,45 +173,47 @@ print("DATE RANGE CHECK")
 print("=" * 60)
 
 print(
-    "🕐 Current Time            :",
+    "Current Time            :",
     now
 )
 
 print(
-    "📅 Today                   :",
+    "Today                   :",
     today
 )
 
 print(
-    "✅ Latest Completed BD    :",
+    "Latest Completed BD    :",
     latest_completed_business_date
 )
 
 print(
-    "📂 Existing CSV           :",
+    "Existing CSV           :",
     current_month_file
 )
 
 print(
-    "📅 Fetch From             :",
+    "Fetch From             :",
     start_date
 )
 
 print(
-    "📅 Fetch Until            :",
+    "Fetch Until            :",
     end_date
 )
 
 print(
-    "🔄 Refresh Days           :",
+    "Refresh Days           :",
     REFRESH_DAYS
 )
 
 print("=" * 60)
 
 print(
-    f"📅 Fetch Date Range: "
-    f"{start_date} → {end_date}"
+    "📅 Fetch Date Range:",
+    start_date,
+    "→",
+    end_date
 )
 
 print("=" * 60)
