@@ -339,22 +339,22 @@ def handle_menu_selection(sender: str, selection: str, live_snapshot: Optional[d
         reset = start_menu(sender)
         return {"handled": True, "action": "menu", "next_menu": reset, "session": session}
 
-    if value in {"today sales", "today_sales"}:
+    if value in {"today_sales", "today_sales"}:
         session.period = "today"
         session.analysis = "overall"
         return {"handled": True, "action": "today_sales", "next_menu": None, "session": session}
 
-    if value == "last week sales":
+    if value == "last_week_sales":
         session.period = "last_week"
         session.analysis = "overall"
         return {"handled": True, "action": "last_week_sales", "next_menu": None, "session": session}
 
-    if value == "last month sales":
+    if value == "last_month_sales":
         session.period = "last_month"
         session.analysis = "overall"
         return {"handled": True, "action": "last_month_sales", "next_menu": None, "session": session}
 
-    if value == "last year sales":
+    if value == "last_year_sales":
         session.period = "last_year"
         session.analysis = "overall"
         return {"handled": True, "action": "last_year_sales", "next_menu": None, "session": session}
@@ -364,25 +364,25 @@ def handle_menu_selection(sender: str, selection: str, live_snapshot: Optional[d
         session.analysis = "overall"
         return {"handled": True, "action": "historical", "next_menu": None, "session": session}
 
-    if value == "brand performance":
+    if value == "brand_performance":
         session.analysis = "brand"
         session.period = "today"
         return {"handled": True, "action": None, "next_menu": _next_brand(sender), "session": session}
 
-    if value == "region performance":
+    if value == "region_performance":
         session.analysis = "region"
         session.period = "today"
         regions = list((live_snapshot or {}).get("regions", {}).keys())
         return {"handled": True, "action": None, "next_menu": _next_region(sender, regions or None), "session": session}
 
-    if value == "store performance":
+    if value == "store_performance":
         session.analysis = "store"
         session.period = "today"
         # Required flow: Region → Store → Store report.
         regions = list((live_snapshot or {}).get("regions", {}).keys())
         return {"handled": True, "action": None, "next_menu": _next_region(sender, regions or None), "session": session}
 
-    if value == "source performance":
+    if value == "source_performance":
         session.analysis = "source"
         session.period = "today"
         sources = list((live_snapshot or {}).get("sources", {}).keys())
