@@ -1,6 +1,6 @@
 """
 Daily Sales Report (DSR) Dashboard
-Comprehensive multi-level analysis with email delivery
+Updated with exact date matching, correct LW/LY comparisons, clean session order, and bucket contribution heatmaps.
 """
 
 import os
@@ -49,42 +49,42 @@ class DSRDashboard:
 
             # 1. Load Historical Compressed File
             if os.path.exists(HISTORICAL_DATA_FILE):
-                logger.info(f"Loading historical data from {HISTORICAL_DATA_FILE}...")
                 with gzip.open(HISTORICAL_DATA_FILE, 'rt') as f:
-                    hist_df = pd.read_csv(f)
-                    dataframes.append(hist_df)
+                    dataframes.append(pd.read_csv(f))
 
-            # 2. Automatically load all CSVs under monthly_data folder (2025, 2026, 2027)
+            # 2. Load Monthly Directory Data
             monthly_files = glob.glob(os.path.join(MONTHLY_DATA_DIR, '**', '*.csv'), recursive=True)
             for m_file in monthly_files:
-                logger.info(f"Loading monthly file: {m_file}...")
-                m_df = pd.read_csv(m_file)
-                dataframes.append(m_df)
+                dataframes.append(pd.read_csv(m_file))
 
             if not dataframes:
                 raise FileNotFoundError("No sales data files found!")
 
-            # Combine all datasets
             self.df = pd.concat(dataframes, ignore_index=True)
 
-            # Standardize columns and parse dates
+            # Date parsing
             date_col = [col for col in self.df.columns if col.lower() in ['date', 'sales_date']][0]
             self.df['Date'] = pd.to_datetime(self.df[date_col])
             
-            # Deduplicate by Date, Branch, Source, Session, etc. if overlap exists
+            # Clean string fields to prevent duplicate group keys
+            for col in ['Session', 'Source', 'Brand Name', 'Store Type', 'Discount Bucket', 'AOV Bucket']:
+                if col in self.df.columns:
+                    self.df[col] = self.df[col].astype(str).str.strip()
+
+            # Deduplicate records
             dedup_cols = [c for c in ['Date', 'Branch', 'Source', 'Session', 'Brand Name', 'Store Type'] if c in self.df.columns]
             if dedup_cols:
                 self.df.drop_duplicates(subset=dedup_cols, keep='last', inplace=True)
 
-            # Get latest date (will target September automatically from MTD_Sep_26.csv)
+            # Max date in dataset is treated as "Yesterday" for the execution context
             self.today = self.df['Date'].max().date()
             
-            # Convert numeric columns
+            # Standardize Numeric Columns
             for col in ['Net Sales', 'Discount', 'Taxes', 'Gross Sales', 'Quantity', 'Orders']:
                 if col in self.df.columns:
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
                     
-            logger.info(f"✓ Data loaded successfully. Target September Date: {self.today}")
+            logger.info(f"✓ Data loaded successfully. Report Target Date (Yesterday): {self.today}")
         except Exception as e:
             logger.error(f"Error loading data: {e}")
             raise
@@ -163,22 +163,27 @@ class DSRDashboard:
     def get_summary_table(self, store_type=None) -> pd.DataFrame:
         df_filtered = self.df if store_type is None else self.df[self.df['Store Type'] == store_type]
         
-        yesterday = self.today - timedelta(days=1)
-        last_week = self.today - timedelta(days=7)
-        last_month = (self.today - pd.DateOffset(months=1)).date()
-        last_year = (self.today - pd.DateOffset(years=1)).date()
+        # Date definitions relative to Yesterday (self.today)
+        target_day = self.today
+        last_week_day = self.today - timedelta(days=7) # Same day last week (e.g., 8th Sep vs 1st Sep)
         
-        mtd_start = self.today.replace(day=1)
-        lmtd_end = (self.today - pd.DateOffset(months=1)).date()
+        mtd_start = target_day.replace(day=1)
+        
+        last_month_same_day = (target_day - pd.DateOffset(months=1)).date()
+        lmtd_end = last_month_same_day
         lmtd_start = lmtd_end.replace(day=1)
         
-        yest_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == yesterday])
-        lw_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_week])
-        lm_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_month])
-        ly_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_year])
+        last_year_same_day = (target_day - pd.DateOffset(years=1)).date()
+        ly_mtd_end = last_year_same_day
+        ly_mtd_start = ly_mtd_end.replace(day=1)
         
-        mtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= mtd_start) & (df_filtered['Date'].dt.date <= self.today)])
+        yest_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == target_day])
+        lw_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_week_day])
+        lm_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_month_same_day])
+        
+        mtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= mtd_start) & (df_filtered['Date'].dt.date <= target_day)])
         lmtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= lmtd_start) & (df_filtered['Date'].dt.date <= lmtd_end)])
+        ly_mtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= ly_mtd_start) & (df_filtered['Date'].dt.date <= ly_mtd_end)])
         
         metrics_map = {
             'Net Sales': 'net_sales',
@@ -197,9 +202,9 @@ class DSRDashboard:
             lm_val = lm_m[key]
             mtd_val = mtd_m[key]
             lmtd_val = lmtd_m[key]
-            ly_val = ly_m[key]
+            ly_val = ly_mtd_m[key]
             
-            row = {
+            rows.append({
                 'Metrics': m_label,
                 'Yesterday': y_val,
                 'Last Week': lw_val,
@@ -209,39 +214,50 @@ class DSRDashboard:
                 'MTD': mtd_val,
                 'LMTD': lmtd_val,
                 'Growth% (MTD)': self.calculate_growth(mtd_val, lmtd_val),
-                'Last Year': ly_val,
-                'Growth% (LY)': self.calculate_growth(y_val, ly_val)
-            }
-            rows.append(row)
+                'Last Year MTD': ly_val,
+                'Growth% (LY)': self.calculate_growth(mtd_val, ly_val)
+            })
             
         return pd.DataFrame(rows)
 
     def get_dimension_summary(self, dimension: str) -> pd.DataFrame:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
         
-        yesterday = self.today - timedelta(days=1)
-        last_week = self.today - timedelta(days=7)
-        last_month = (self.today - pd.DateOffset(months=1)).date()
-        last_year = (self.today - pd.DateOffset(years=1)).date()
+        target_day = self.today
+        last_week_day = target_day - timedelta(days=7)
+        last_month_same_day = (target_day - pd.DateOffset(months=1)).date()
         
-        mtd_start = self.today.replace(day=1)
-        lmtd_end = (self.today - pd.DateOffset(months=1)).date()
+        mtd_start = target_day.replace(day=1)
+        lmtd_end = last_month_same_day
         lmtd_start = lmtd_end.replace(day=1)
         
+        ly_mtd_end = (target_day - pd.DateOffset(years=1)).date()
+        ly_mtd_start = ly_mtd_end.replace(day=1)
+        
         def group_sales(df_slice):
-            return df_slice.groupby(dimension)['Net Sales'].sum() if not df_slice.empty else pd.Series(dtype=float)
+            if df_slice.empty:
+                return pd.Series(dtype=float)
+            return df_slice.groupby(dimension)['Net Sales'].sum()
         
-        yest_s = group_sales(data[data['Date'].dt.date == yesterday])
-        lw_s = group_sales(data[data['Date'].dt.date == last_week])
-        lm_s = group_sales(data[data['Date'].dt.date == last_month])
-        ly_s = group_sales(data[data['Date'].dt.date == last_year])
+        yest_s = group_sales(data[data['Date'].dt.date == target_day])
+        lw_s = group_sales(data[data['Date'].dt.date == last_week_day])
+        lm_s = group_sales(data[data['Date'].dt.date == last_month_same_day])
         
-        mtd_s = group_sales(data[(data['Date'].dt.date >= mtd_start) & (data['Date'].dt.date <= self.today)])
+        mtd_s = group_sales(data[(data['Date'].dt.date >= mtd_start) & (data['Date'].dt.date <= target_day)])
         lmtd_s = group_sales(data[(data['Date'].dt.date >= lmtd_start) & (data['Date'].dt.date <= lmtd_end)])
+        ly_s = group_sales(data[(data['Date'].dt.date >= ly_mtd_start) & (data['Date'].dt.date <= ly_mtd_end)])
         
-        all_keys = sorted(list(set(data[dimension].dropna().unique())))
+        # Enforce exact ordering for Session summary
+        if dimension == 'Session':
+            session_order = ['Breakfast', 'Lunch', 'Snacks', 'Dinner', 'Post Dinner', 'Late Night', 'Closing']
+            existing_sessions = data[dimension].dropna().unique()
+            all_keys = [s for s in session_order if s in existing_sessions]
+            # append any unexpected custom session names at the end
+            all_keys += [s for s in existing_sessions if s not in session_order]
+        else:
+            all_keys = sorted(list(data[dimension].dropna().unique()))
+
         rows = []
-        
         for k in all_keys:
             y = yest_s.get(k, 0)
             lw = lw_s.get(k, 0)
@@ -260,8 +276,8 @@ class DSRDashboard:
                 'MTD': mtd,
                 'LMTD': lmtd,
                 'Growth% (MTD)': self.calculate_growth(mtd, lmtd),
-                'Last Year': ly,
-                'Growth% (LY)': self.calculate_growth(y, ly)
+                'Last Year MTD': ly,
+                'Growth% (LY)': self.calculate_growth(mtd, ly)
             })
             
         return pd.DataFrame(rows)
@@ -273,20 +289,31 @@ class DSRDashboard:
         mtd_start = self.today.replace(day=1)
         mtd_data = data[(data['Date'].dt.date >= mtd_start) & (data['Date'].dt.date <= self.today)]
         
-        buckets = sorted(list(data[bucket_col].dropna().unique()))
+        ftd_total_sales = ftd_data['Net Sales'].sum()
+        mtd_total_sales = mtd_data['Net Sales'].sum()
         
+        buckets = sorted(list(data[bucket_col].dropna().unique()))
         rows = []
+        
         for b in buckets:
             f_b = ftd_data[ftd_data[bucket_col] == b]
             m_b = mtd_data[mtd_data[bucket_col] == b]
             
+            f_sales = f_b['Net Sales'].sum()
+            m_sales = m_b['Net Sales'].sum()
+            
+            ftd_contrib = (f_sales / ftd_total_sales * 100) if ftd_total_sales > 0 else 0
+            mtd_contrib = (m_sales / mtd_total_sales * 100) if mtd_total_sales > 0 else 0
+            
             rows.append({
                 bucket_col: b,
-                'FTD Overall': f_b['Net Sales'].sum(),
+                'FTD Overall': f_sales,
+                'FTD Contrib %': ftd_contrib,
                 'FTD In Store': f_b[f_b['Source'].str.lower() == 'in store']['Net Sales'].sum(),
                 'FTD Swiggy': f_b[f_b['Source'].str.lower() == 'swiggy']['Net Sales'].sum(),
                 'FTD Zomato': f_b[f_b['Source'].str.lower() == 'zomato']['Net Sales'].sum(),
-                'MTD Overall': m_b['Net Sales'].sum(),
+                'MTD Overall': m_sales,
+                'MTD Contrib %': mtd_contrib,
                 'MTD In Store': m_b[m_b['Source'].str.lower() == 'in store']['Net Sales'].sum(),
                 'MTD Swiggy': m_b[m_b['Source'].str.lower() == 'swiggy']['Net Sales'].sum(),
                 'MTD Zomato': m_b[m_b['Source'].str.lower() == 'zomato']['Net Sales'].sum(),
@@ -347,23 +374,37 @@ class DSRDashboard:
             html += f'<th style="padding: 8px; border: 1px solid #ddd; text-align: left;">{col}</th>'
         html += '</tr></thead><tbody>'
         
+        # Determine max/min contribution for heatmapping bucket tables
+        ftd_max_contrib = df['FTD Contrib %'].max() if 'FTD Contrib %' in df.columns and not df.empty else 0
+        mtd_max_contrib = df['MTD Contrib %'].max() if 'MTD Contrib %' in df.columns and not df.empty else 0
+
         for _, row in df.iterrows():
             html += '<tr>'
             for col in df.columns:
                 val = row[col]
+                bg_style = ""
+                
+                # Apply contribution gradient highlight
+                if col == 'FTD Contrib %' and ftd_max_contrib > 0:
+                    intensity = min(int((val / ftd_max_contrib) * 100), 100)
+                    bg_style = f'background-color: rgba(46, 204, 113, {intensity/100:.2f}); font-weight: bold;'
+                elif col == 'MTD Contrib %' and mtd_max_contrib > 0:
+                    intensity = min(int((val / mtd_max_contrib) * 100), 100)
+                    bg_style = f'background-color: rgba(52, 152, 219, {intensity/100:.2f}); font-weight: bold;'
+
                 if 'Growth%' in col:
                     cell_content = self.format_growth_html(val)
+                elif 'Contrib %' in col or 'Dis%' in col or 'Offline%' in col or 'Online%' in col or '%' in col:
+                    cell_content = f"{val:.2f}%"
                 elif isinstance(val, (int, float)):
-                    if ' %' in col or '%' in col or col == 'Dis%':
-                        cell_content = f"{val:.2f}%"
-                    elif 'Sales' in col or 'Discount' in col or 'AOV' in col or 'Yesterday' in col or 'MTD' in col or 'Last' in col:
+                    if 'Sales' in col or 'Discount' in col or 'AOV' in col or 'Yesterday' in col or 'MTD' in col or 'Last' in col or 'FTD' in col:
                         cell_content = f"₹{val:,.0f}"
                     else:
                         cell_content = f"{val:,.0f}"
                 else:
                     cell_content = str(val)
                 
-                html += f'<td style="padding: 8px; border: 1px solid #ddd;">{cell_content}</td>'
+                html += f'<td style="padding: 8px; border: 1px solid #ddd; {bg_style}">{cell_content}</td>'
             html += '</tr>'
         html += '</tbody></table>'
         return html
@@ -431,8 +472,7 @@ class DSRDashboard:
 
                 <h3 style="color: #34495e;">9. Current Month Day Level Performance (COCO)</h3>
                 {self.render_table_html(self.get_day_level_performance())}
-
-                """
+        """
         
         top10, bottom10 = self.get_top_bottom_stores()
         html += f"""
@@ -453,7 +493,8 @@ class DSRDashboard:
             html_content = self.generate_html_report()
             
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = f"Daily Sales Report (DSR) - {self.today.strftime('%d %b %Y')}"
+            # Fixed Subject Format: Daily Sales Report _ Sep 2026
+            msg['Subject'] = f"Daily Sales Report _ {self.today.strftime('%b %Y')}"
             msg['From'] = EMAIL_CONFIG['sender_email']
             msg['To'] = EMAIL_CONFIG['email_to']
             msg['Cc'] = EMAIL_CONFIG['email_cc']
