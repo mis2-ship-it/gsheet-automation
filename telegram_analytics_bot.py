@@ -10,8 +10,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # DATA LOADER ENGINE (With Auto-Sync from GitHub)
 # =========================================================
 def load_historical_data(months=3):
-    """Syncs with Git repository and loads CSV files from monthly_data/ and historical_data/."""
-    # Pull latest data from GitHub Actions if inside a git repository
     try:
         subprocess.run(["git", "pull"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("✅ Git pull executed successfully.")
@@ -20,9 +18,8 @@ def load_historical_data(months=3):
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Match both monthly_data/ and historical_data/ subdirectories
-    csv_files = glob.glob(os.path.join(base_dir, "monthly_data", "**", "*.csv"), recursive=True) + \
-                glob.glob(os.path.join(base_dir, "historical_data", "**", "*.csv"), recursive=True)
+    # Recursively find all CSV files across all directories
+    csv_files = glob.glob(os.path.join(base_dir, "**", "*.csv"), recursive=True)
     
     df_list = []
     for f in csv_files:
@@ -33,17 +30,16 @@ def load_historical_data(months=3):
             print(f"Error reading {f}: {e}")
             
     if not df_list:
+        print("❌ No CSV files found.")
         return pd.DataFrame()
         
     full_df = pd.concat(df_list, ignore_index=True)
     full_df.columns = full_df.columns.str.strip()
     
-    # Handle Date parsing and dynamic timeframe calculation
     if "Date" in full_df.columns:
         full_df["Date"] = pd.to_datetime(full_df["Date"], errors='coerce')
         full_df = full_df.dropna(subset=["Date"])
         
-        # Calculate dynamic cutoff from latest available date in dataset
         max_date = full_df["Date"].max()
         cutoff_date = max_date - timedelta(days=months * 31)
         full_df = full_df[full_df["Date"] >= cutoff_date]
