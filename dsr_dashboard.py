@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 EMAIL_CONFIG = {
     'sender_email': os.getenv('SENDER_EMAIL', 'your-email@gmail.com'),
     'sender_password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
-    'email_to': os.getenv('EMAIL_TO', 'mis2@frozenbottle.in'),
-    'email_cc': os.getenv('EMAIL_CC', 'mis2@frozenbottle.in'),
+    'email_to': os.getenv('EMAIL_TO', 'vivek@frozenbottle.in, mis2@frozenbottle.in, bhaskar@eatfit.in, scm@frozenbottle.in, prasanth.a@frozenbottle.in, sandeep.ss@eatfit.in, sonal.raj@curefoods.in, Ops.all@frozenbottle.in, mayank.agarwal@curefoods.in'),
+    'email_cc': os.getenv('EMAIL_CC', 'pranshul@frozenbottle.in, arun.k@frozenbottle.in, samir.pandey@frozenbottle.in'),
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587
 }
@@ -487,21 +487,27 @@ class DSRDashboard:
             logger.info("Generating dashboard email...")
             html_content = self.generate_html_report()
             
+            # Parse comma-separated strings into cleaned lists
+            to_list = [addr.strip() for addr in EMAIL_CONFIG['email_to'].split(',') if addr.strip()]
+            cc_list = [addr.strip() for addr in EMAIL_CONFIG['email_cc'].split(',') if addr.strip()]
+            all_recipients = to_list + cc_list
+    
             msg = MIMEMultipart('alternative')
             msg['Subject'] = f"Daily Sales Report _ {self.today.strftime('%b %Y')}"
             msg['From'] = EMAIL_CONFIG['sender_email']
-            msg['To'] = EMAIL_CONFIG['email_to']
-            msg['Cc'] = EMAIL_CONFIG['email_cc']
+            msg['To'] = ", ".join(to_list)
+            msg['Cc'] = ", ".join(cc_list)
             
             msg.attach(MIMEText(html_content, 'html'))
             
-            logger.info(f"Sending email to {EMAIL_CONFIG['email_to']}...")
+            logger.info(f"Sending email to {len(all_recipients)} recipients...")
             with smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port']) as server:
                 server.starttls()
                 server.login(EMAIL_CONFIG['sender_email'], EMAIL_CONFIG['sender_password'])
-                server.send_message(msg)
+                # Pass all_recipients explicitly to guarantee delivery to every address in TO and CC
+                server.sendmail(EMAIL_CONFIG['sender_email'], all_recipients, msg.as_string())
             
-            logger.info("✅ DSR Dashboard email sent successfully!")
+            logger.info("✅ DSR Dashboard email sent successfully to all recipients!")
             return True
         except Exception as e:
             logger.error(f"❌ Error sending email: {e}")
