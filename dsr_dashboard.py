@@ -4,28 +4,26 @@ Comprehensive multi-level analysis with email delivery
 """
 
 import os
+import glob
 import gzip
 import logging
 import warnings
+from typing import Tuple
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Tuple
-
 
 warnings.filterwarnings('ignore')
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Configuration
 EMAIL_CONFIG = {
     'sender_email': os.getenv('SENDER_EMAIL', 'your-email@gmail.com'),
     'sender_password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
@@ -35,11 +33,11 @@ EMAIL_CONFIG = {
     'smtp_port': 587
 }
 
-DATA_FILE = 'historical_data/historical_sales.csv.gz'
+HISTORICAL_DATA_FILE = 'historical_data/historical_sales.csv.gz'
+MONTHLY_DATA_DIR = 'monthly_data'
 
 class DSRDashboard:
-    def __init__(self, data_path=DATA_FILE):
-        self.data_path = data_path
+    def __init__(self):
         self.df = None
         self.today = None
         self.load_data()
@@ -47,33 +45,46 @@ class DSRDashboard:
     def load_data(self):
         try:
             logger.info("Loading sales data...")
-            if self.data_path.endswith('.gz'):
-                with gzip.open(self.data_path, 'rt') as f:
-                    self.df = pd.read_csv(f)
-            else:
-                self.df = pd.read_csv(self.data_path)
-            
+            dataframes = []
+
+            # 1. Load Historical Compressed File
+            if os.path.exists(HISTORICAL_DATA_FILE):
+                logger.info(f"Loading historical data from {HISTORICAL_DATA_FILE}...")
+                with gzip.open(HISTORICAL_DATA_FILE, 'rt') as f:
+                    hist_df = pd.read_csv(f)
+                    dataframes.append(hist_df)
+
+            # 2. Automatically load all CSVs under monthly_data folder (2025, 2026, 2027)
+            monthly_files = glob.glob(os.path.join(MONTHLY_DATA_DIR, '**', '*.csv'), recursive=True)
+            for m_file in monthly_files:
+                logger.info(f"Loading monthly file: {m_file}...")
+                m_df = pd.read_csv(m_file)
+                dataframes.append(m_df)
+
+            if not dataframes:
+                raise FileNotFoundError("No sales data files found!")
+
+            # Combine all datasets
+            self.df = pd.concat(dataframes, ignore_index=True)
+
+            # Standardize columns and parse dates
             date_col = [col for col in self.df.columns if col.lower() in ['date', 'sales_date']][0]
             self.df['Date'] = pd.to_datetime(self.df[date_col])
             
-            # --- DATE OVERRIDE FOR SEPTEMBER ---
-            # Set today to current system date (or the max date if system date is outside dataset)
-            current_date = datetime.now().date()
+            # Deduplicate by Date, Branch, Source, Session, etc. if overlap exists
+            dedup_cols = [c for c in ['Date', 'Branch', 'Source', 'Session', 'Brand Name', 'Store Type'] if c in self.df.columns]
+            if dedup_cols:
+                self.df.drop_duplicates(subset=dedup_cols, keep='last', inplace=True)
+
+            # Get latest date (will target September automatically from MTD_Sep_26.csv)
+            self.today = self.df['Date'].max().date()
             
-            # If current date is in September, use current date; otherwise fallback to September max date in CSV
-            sep_data = self.df[self.df['Date'].dt.month == 9]
-            if not sep_data.empty:
-                self.today = sep_data['Date'].max().date()
-            else:
-                # Fallback to current system date if needed
-                self.today = current_date
-            
-            # Numeric conversion guardrails
+            # Convert numeric columns
             for col in ['Net Sales', 'Discount', 'Taxes', 'Gross Sales', 'Quantity', 'Orders']:
                 if col in self.df.columns:
                     self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
                     
-            logger.info(f"✓ Data loaded successfully. Report Target Date: {self.today}")
+            logger.info(f"✓ Data loaded successfully. Target September Date: {self.today}")
         except Exception as e:
             logger.error(f"Error loading data: {e}")
             raise
@@ -119,24 +130,19 @@ class DSRDashboard:
             'online_pct': online_pct
         }
 
-    # ==================== 1. KPI CARDS ====================
     def get_kpi_cards_data(self) -> dict:
-        # Today / Yesterday
         ftd_data = self.df[self.df['Date'].dt.date == self.today]
         ftd = self.get_metrics_dict(ftd_data)
         
-        # MTD
         mtd_start = self.today.replace(day=1)
         mtd_data = self.df[(self.df['Date'].dt.date >= mtd_start) & (self.df['Date'].dt.date <= self.today)]
         mtd = self.get_metrics_dict(mtd_data)
         
-        # LMTD (Last Month Till Date)
         lmtd_end = self.today - pd.DateOffset(months=1)
         lmtd_start = lmtd_end.replace(day=1)
         lmtd_data = self.df[(self.df['Date'].dt.date >= lmtd_start.date()) & (self.df['Date'].dt.date <= lmtd_end.date())]
         lmtd = self.get_metrics_dict(lmtd_data)
         
-        # LYTD (Last Year Till Date)
         lytd_end = self.today - pd.DateOffset(years=1)
         lytd_start = lytd_end.replace(day=1)
         lytd_data = self.df[(self.df['Date'].dt.date >= lytd_start.date()) & (self.df['Date'].dt.date <= lytd_end.date())]
@@ -154,11 +160,9 @@ class DSRDashboard:
             'yoy_growth': yoy
         }
 
-    # ==================== 2. SUMMARY TABLES ====================
     def get_summary_table(self, store_type=None) -> pd.DataFrame:
         df_filtered = self.df if store_type is None else self.df[self.df['Store Type'] == store_type]
         
-        # Dates
         yesterday = self.today - timedelta(days=1)
         last_week = self.today - timedelta(days=7)
         last_month = (self.today - pd.DateOffset(months=1)).date()
@@ -168,7 +172,6 @@ class DSRDashboard:
         lmtd_end = (self.today - pd.DateOffset(months=1)).date()
         lmtd_start = lmtd_end.replace(day=1)
         
-        # Slices
         yest_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == yesterday])
         lw_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_week])
         lm_m = self.get_metrics_dict(df_filtered[df_filtered['Date'].dt.date == last_month])
@@ -177,12 +180,18 @@ class DSRDashboard:
         mtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= mtd_start) & (df_filtered['Date'].dt.date <= self.today)])
         lmtd_m = self.get_metrics_dict(df_filtered[(df_filtered['Date'].dt.date >= lmtd_start) & (df_filtered['Date'].dt.date <= lmtd_end)])
         
-        metrics = ['Net Sales', 'Discount', 'Orders', 'Dis%', 'AOV', 'Offline %', 'Online %']
-        rows = []
+        metrics_map = {
+            'Net Sales': 'net_sales',
+            'Discount': 'discount',
+            'Orders': 'orders',
+            'Dis%': 'dis_pct',
+            'AOV': 'aov',
+            'Offline %': 'offline_pct',
+            'Online %': 'online_pct'
+        }
         
-        for m in metrics:
-            key = m.lower().replace(' ', '_').replace('%', 'pct')
-            
+        rows = []
+        for m_label, key in metrics_map.items():
             y_val = yest_m[key]
             lw_val = lw_m[key]
             lm_val = lm_m[key]
@@ -191,7 +200,7 @@ class DSRDashboard:
             ly_val = ly_m[key]
             
             row = {
-                'Metrics': m,
+                'Metrics': m_label,
                 'Yesterday': y_val,
                 'Last Week': lw_val,
                 'Growth% (LW)': self.calculate_growth(y_val, lw_val),
@@ -207,7 +216,6 @@ class DSRDashboard:
             
         return pd.DataFrame(rows)
 
-    # ==================== 3. DIMENSION SUMMARIES (COCO) ====================
     def get_dimension_summary(self, dimension: str) -> pd.DataFrame:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
         
@@ -258,7 +266,6 @@ class DSRDashboard:
             
         return pd.DataFrame(rows)
 
-    # ==================== 4. BUCKET ANALYSIS (COCO) ====================
     def get_bucket_analysis(self, bucket_col: str) -> pd.DataFrame:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
         
@@ -287,7 +294,6 @@ class DSRDashboard:
             
         return pd.DataFrame(rows)
 
-    # ==================== 5. DAY LEVEL PERFORMANCE (COCO) ====================
     def get_day_level_performance(self) -> pd.DataFrame:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
         mtd_start = self.today.replace(day=1)
@@ -313,7 +319,6 @@ class DSRDashboard:
         res.rename(columns={'index': 'Metrics'}, inplace=True)
         return res
 
-    # ==================== 6. TOP 10 / BOTTOM STORES (COCO) ====================
     def get_top_bottom_stores(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
         mtd_start = self.today.replace(day=1)
@@ -335,8 +340,7 @@ class DSRDashboard:
         bottom10 = summary.tail(10).sort_values(by='Net Sales', ascending=True)
         return top10, bottom10
 
-    # ==================== HTML GENERATION ====================
-    def render_table_html(self, df: pd.DataFrame, is_growth_table=False) -> str:
+    def render_table_html(self, df: pd.DataFrame) -> str:
         html = '<table style="width:100%; border-collapse: collapse; font-size: 12px; margin-bottom: 20px;"><thead><tr style="background-color: #2c3e50; color: white;">'
         
         for col in df.columns:
@@ -350,9 +354,9 @@ class DSRDashboard:
                 if 'Growth%' in col:
                     cell_content = self.format_growth_html(val)
                 elif isinstance(val, (int, float)):
-                    if ' %' in col or '%' in col:
+                    if ' %' in col or '%' in col or col == 'Dis%':
                         cell_content = f"{val:.2f}%"
-                    elif 'Sales' in col or 'Discount' in col or 'AOV' in col or 'Yesterday' in col or 'MTD' in col:
+                    elif 'Sales' in col or 'Discount' in col or 'AOV' in col or 'Yesterday' in col or 'MTD' in col or 'Last' in col:
                         cell_content = f"₹{val:,.0f}"
                     else:
                         cell_content = f"{val:,.0f}"
@@ -374,7 +378,6 @@ class DSRDashboard:
                 <h2 style="color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;">📊 Daily Sales Report (DSR) Dashboard</h2>
                 <p style="color: #7f8c8d; font-size: 14px;">Report Date: <strong>{self.today.strftime('%d %B %Y')}</strong></p>
                 
-                <!-- KPI CARDS -->
                 <div style="display: flex; gap: 15px; margin-bottom: 25px;">
                     <div style="flex: 1; background: #ebf5fb; padding: 15px; border-radius: 5px; text-align: center; border-left: 4px solid #3498db;">
                         <span style="font-size: 12px; color: #5d6d7e;">Net Sales (FTD)</span>
@@ -428,7 +431,8 @@ class DSRDashboard:
 
                 <h3 style="color: #34495e;">9. Current Month Day Level Performance (COCO)</h3>
                 {self.render_table_html(self.get_day_level_performance())}
-        """
+
+                """
         
         top10, bottom10 = self.get_top_bottom_stores()
         html += f"""
