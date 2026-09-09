@@ -3904,3 +3904,775 @@ print(
 send_whatsapp_live()
 
 print("🎉 WHATSAPP LIVE SALES SENT SUCCESSFULLY")
+
+# =========================================================
+# 📱 TELEGRAM LIVE SALES
+# =========================================================
+#
+# IMPORTANT:
+# - Added at the very bottom intentionally
+# - Does NOT modify Email
+# - Does NOT modify WhatsApp
+# - Uses already calculated LIVE data
+# - NO Contribution % in Telegram
+# - Uses LW Growth % instead
+# - NO MTD
+# =========================================================
+
+def send_telegram_live():
+
+    print("=" * 60)
+    print("📱 Sending Telegram Live Sales")
+    print("=" * 60)
+
+    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+    # -----------------------------------------------------
+    # CREDENTIAL CHECK
+    # -----------------------------------------------------
+
+    if not TELEGRAM_BOT_TOKEN:
+        print("⚠️ TELEGRAM_BOT_TOKEN not found")
+        return
+
+    if not TELEGRAM_CHAT_ID:
+        print("⚠️ TELEGRAM_CHAT_ID not found")
+        return
+
+    # -----------------------------------------------------
+    # REPORT TIME
+    # -----------------------------------------------------
+
+    report_time = now.replace(
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+    # =====================================================
+    # HELPER
+    # =====================================================
+
+    def fmt_lakh(value):
+        try:
+            return f"₹{float(value) / 100000:.2f}L"
+        except:
+            return "₹0.00L"
+
+    def fmt_pct(value):
+        try:
+            return f"{float(value):+.1f}%"
+        except:
+            return "0.0%"
+
+    def calc_growth(today_value, lw_value):
+        try:
+            return (
+                (float(today_value) - float(lw_value))
+                / max(float(lw_value), 1)
+            ) * 100
+        except:
+            return 0
+
+    # =====================================================
+    # OVERALL KPI
+    # =====================================================
+
+    try:
+
+        net_row = overall[
+            overall["Parameters"] == "Net"
+        ].iloc[0]
+
+        gross_row = overall[
+            overall["Parameters"] == "Gross"
+        ].iloc[0]
+
+        txn_row = overall[
+            overall["Parameters"] == "Txn"
+        ].iloc[0]
+
+        aov_row = overall[
+            overall["Parameters"] == "AOV"
+        ].iloc[0]
+
+        discount_row = overall[
+            overall["Parameters"] == "Discount %"
+        ].iloc[0]
+
+        net_today = float(net_row["Today"])
+        net_lw = float(net_row["Last Week"])
+
+        gross_today = float(gross_row["Today"])
+        gross_lw = float(gross_row["Last Week"])
+
+        txn_today = int(txn_row["Today"])
+        txn_lw = int(txn_row["Last Week"])
+
+        aov_today = float(aov_row["Today"])
+        aov_lw = float(aov_row["Last Week"])
+
+        discount_today = float(
+            discount_row["Today"]
+        )
+
+        net_growth = calc_growth(
+            net_today,
+            net_lw
+        )
+
+        gross_growth = calc_growth(
+            gross_today,
+            gross_lw
+        )
+
+        txn_growth = calc_growth(
+            txn_today,
+            txn_lw
+        )
+
+        aov_growth = calc_growth(
+            aov_today,
+            aov_lw
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Telegram Overall KPI Error: {e}"
+        )
+
+        return
+
+    # =====================================================
+    # 🏪 BRAND PERFORMANCE
+    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # =====================================================
+
+    brand_lines = []
+
+    brands_required = [
+        "Frozen Bottle",
+        "Madno",
+        "Boba Bar",
+        "Lubov"
+    ]
+
+    brand_emojis = {
+        "Frozen Bottle": "🍶",
+        "Madno": "🥤",
+        "Boba Bar": "🧋",
+        "Lubov": "🍨"
+    }
+
+    for brand in brands_required:
+
+        t = today_cut[
+            today_cut["Brand"] == brand
+        ]
+
+        lw = lastweek_cut[
+            lastweek_cut["Brand"] == brand
+        ]
+
+        if t.empty and lw.empty:
+            continue
+
+        today_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = calc_growth(
+            today_rev,
+            lw_rev
+        )
+
+        t_gross = t["grossAmount"].sum()
+
+        t_disc = t["discountAmount"].sum()
+
+        discount = (
+            t_disc /
+            max(t_gross, 1)
+        ) * 100
+
+        emoji = brand_emojis.get(
+            brand,
+            "🏷️"
+        )
+
+        brand_lines.append(
+            f"{emoji} {brand}: "
+            f"{fmt_lakh(today_rev)} "
+            f"| LW Growth: {fmt_pct(growth)} "
+            f"· {discount:.0f}% dis"
+        )
+
+    brand_text = (
+        "\n".join(brand_lines)
+        if brand_lines
+        else "No brand data available"
+    )
+
+    # =====================================================
+    # 🛵 SOURCE PERFORMANCE
+    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # =====================================================
+
+    source_lines = []
+
+    source_emojis = {
+        "Swiggy": "🟢",
+        "Zomato": "🟡",
+        "In Store": "🔵",
+        "Ownly": "🟣"
+    }
+
+    sources = sorted(
+        today_cut[
+            "Source Group"
+        ]
+        .dropna()
+        .unique()
+    )
+
+    for source in sources:
+
+        t = today_cut[
+            today_cut["Source Group"] == source
+        ]
+
+        lw = lastweek_cut[
+            lastweek_cut["Source Group"] == source
+        ]
+
+        today_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = calc_growth(
+            today_rev,
+            lw_rev
+        )
+
+        t_gross = t["grossAmount"].sum()
+
+        t_disc = t["discountAmount"].sum()
+
+        discount = (
+            t_disc /
+            max(t_gross, 1)
+        ) * 100
+
+        emoji = source_emojis.get(
+            source,
+            "📍"
+        )
+
+        source_lines.append(
+            f"{emoji} {source}: "
+            f"{fmt_lakh(today_rev)} "
+            f"| LW Growth: {fmt_pct(growth)} "
+            f"· {discount:.0f}% dis"
+        )
+
+    source_text = (
+        "\n".join(source_lines)
+        if source_lines
+        else "No source data available"
+    )
+
+    # =====================================================
+    # 🏪 SOURCE × BRAND PERFORMANCE
+    # =====================================================
+
+    source_brand_lines = []
+
+    source_emojis = {
+        "Swiggy": "🟢",
+        "Zomato": "🟡",
+        "In Store": "🔵",
+        "Ownly": "🟣"
+    }
+
+    brand_emojis = {
+        "Frozen Bottle": "🍶",
+        "Madno": "🥤",
+        "Boba Bar": "🧋",
+        "Lubov": "🍨"
+    }
+
+    if not source_brand_analysis.empty:
+
+        for source in sorted(
+            source_brand_analysis[
+                "Source Group"
+            ]
+            .dropna()
+            .unique()
+        ):
+
+            # Skip header rows such as "🔹 Swiggy"
+            source_name = str(source).replace("🔹 ", "").strip()
+
+            source_emoji = source_emojis.get(
+                source_name,
+                "📍"
+            )
+
+            source_brand_lines.append(
+                f"{source_emoji} {source_name}"
+            )
+
+            source_rows = source_brand_analysis[
+                source_brand_analysis["Source Group"].eq("")
+                &
+                source_brand_analysis["Brand"].notna()
+            ].copy()
+
+            # Get actual source section from original data
+            for brand in brands_required:
+
+                t = today_cut[
+                    (today_cut["Source Group"] == source_name)
+                    &
+                    (today_cut["Brand"] == brand)
+                ]
+
+                lw = lastweek_cut[
+                    (lastweek_cut["Source Group"] == source_name)
+                    &
+                    (lastweek_cut["Brand"] == brand)
+                ]
+
+                if t.empty and lw.empty:
+                    continue
+
+                today_rev = t["Net Sales"].sum()
+                lw_rev = lw["Net Sales"].sum()
+
+                growth = calc_growth(
+                    today_rev,
+                    lw_rev
+                )
+
+                brand_emoji = brand_emojis.get(
+                    brand,
+                    "🏷️"
+                )
+
+                source_brand_lines.append(
+                    f"  {brand_emoji} {brand}: "
+                    f"{fmt_lakh(today_rev)} "
+                    f"| LW Growth: {fmt_pct(growth)}"
+                )
+
+    source_brand_text = (
+        "\n".join(source_brand_lines)
+        if source_brand_lines
+        else "No Source × Brand data available"
+    )
+
+    # =====================================================
+    # 🌍 REGION PERFORMANCE
+    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # =====================================================
+
+    region_lines = []
+
+    regions_required = [
+        "KA",
+        "TN",
+        "MH",
+        "Kerela"
+    ]
+
+    region_data = []
+
+    for region in regions_required:
+
+        t = today_cut[
+            today_cut["Region"] == region
+        ]
+
+        lw = lastweek_cut[
+            lastweek_cut["Region"] == region
+        ]
+
+        if t.empty and lw.empty:
+            continue
+
+        today_rev = t["Net Sales"].sum()
+        lw_rev = lw["Net Sales"].sum()
+
+        growth = calc_growth(
+            today_rev,
+            lw_rev
+        )
+
+        transactions = len(t)
+
+        t_gross = t["grossAmount"].sum()
+
+        t_disc = t["discountAmount"].sum()
+
+        discount = (
+            t_disc /
+            max(t_gross, 1)
+        ) * 100
+
+        region_data.append({
+            "Region": region,
+            "Today Rev": today_rev,
+            "LW Rev": lw_rev,
+            "Growth": growth,
+            "Transactions": transactions,
+            "Discount": discount
+        })
+
+    # -----------------------------------------------------
+    # SORT REGION BY TODAY REVENUE
+    # -----------------------------------------------------
+
+    region_data = sorted(
+        region_data,
+        key=lambda x: x["Today Rev"],
+        reverse=True
+    )
+
+    medals = [
+        "🥇",
+        "🥈",
+        "🥉"
+    ]
+
+    for i, r in enumerate(region_data):
+
+        if i < 3:
+            medal = medals[i]
+        else:
+            medal = "🏅"
+
+        region_lines.append(
+            f"{medal} {r['Region']}: "
+            f"{fmt_lakh(r['Today Rev'])} "
+            f"| {r['Transactions']:,} Txn "
+            f"| LW Growth: {fmt_pct(r['Growth'])} "
+            f"· {r['Discount']:.0f}% dis"
+        )
+
+    region_text = (
+        "\n".join(region_lines)
+        if region_lines
+        else "No region data available"
+    )
+
+    # =====================================================
+    # ⏰ HOURLY PERFORMANCE
+    # =====================================================
+
+    hourly_text = ""
+
+    if not hourly_analysis.empty:
+
+        latest_hour = (
+            hourly_analysis
+            .sort_values("BusinessHour")
+            .iloc[-1]
+        )
+
+        hourly_today = float(
+            latest_hour["Today"]
+        )
+
+        hourly_lw = float(
+            latest_hour["Last Week"]
+        )
+
+        hourly_growth = float(
+            latest_hour["Growth %"]
+        )
+
+        hour_value = int(
+            latest_hour["Hour"]
+        )
+
+        hourly_text = (
+            f"⏰ {hour_value:02d}:00 Hour: "
+            f"{fmt_lakh(hourly_today)}\n"
+            f"📊 Same Hour LW: "
+            f"{fmt_lakh(hourly_lw)}\n"
+            f"📈 LW Growth: "
+            f"{fmt_pct(hourly_growth)}"
+        )
+
+    else:
+
+        hourly_text = (
+            "Hourly data unavailable"
+        )
+
+    # =====================================================
+    # 🎯 TARGET / PROJECTION
+    # =====================================================
+
+    target_text = ""
+
+    try:
+
+        target_row = target_summary[
+            target_summary["Metric"] == "Total"
+        ].iloc[0]
+
+        target = float(
+            target_row["Target"]
+        )
+
+        eod_projection = float(
+            target_row["EOD Projection"]
+        )
+
+        achievement = float(
+            target_row["Ach %"]
+        )
+
+        target_text = (
+            f"🎯 Target: "
+            f"{fmt_lakh(target)}\n"
+            f"🔮 EOD Projection: "
+            f"{fmt_lakh(eod_projection)}\n"
+            f"📊 Achievement: "
+            f"{achievement:.1f}%"
+        )
+
+    except Exception:
+
+        target_text = (
+            "🎯 Target information unavailable"
+        )
+
+    # =====================================================
+    # 🧠 KEY TAKEAWAY
+    # =====================================================
+
+    if net_growth > 0:
+
+        insight_line = (
+            f"🟢 Net Revenue is "
+            f"{fmt_pct(net_growth)} "
+            f"vs Last Week."
+        )
+
+    elif net_growth < 0:
+
+        insight_line = (
+            f"🔻 Net Revenue is "
+            f"{fmt_pct(net_growth)} "
+            f"vs Last Week."
+        )
+
+    else:
+
+        insight_line = (
+            "🟡 Net Revenue is flat "
+            "vs Last Week."
+        )
+
+    # =====================================================
+    # 📱 TELEGRAM MESSAGE
+    # =====================================================
+
+    telegram_message = f"""
+📊 LIVE SALES REPORT : {report_time.strftime('%I:%M %p').lstrip('0')}
+📅 {report_time.strftime('%d-%b-%Y')}
+
+💰 BUSINESS OVERVIEW
+
+💵 Net Revenue: {fmt_lakh(net_today)}
+📈 LW Growth: {fmt_pct(net_growth)}
+
+💵 Gross Sales: {fmt_lakh(gross_today)}
+📈 LW Growth: {fmt_pct(gross_growth)}
+
+🧾 Transactions: {txn_today:,}
+📈 LW Growth: {fmt_pct(txn_growth)}
+
+🧺 AOV: ₹{aov_today:,.0f}
+📈 LW Growth: {fmt_pct(aov_growth)}
+
+📉 Discount: {discount_today:.0f}%
+
+🏪 BRAND PERFORMANCE
+
+{brand_text}
+
+🛵 CHANNEL PERFORMANCE
+
+{source_text}
+
+🏪 SOURCE × BRAND PERFORMANCE
+
+{source_brand_text}
+
+🌍 REGIONAL PERFORMANCE
+
+{region_text}
+
+⏰ HOURLY PERFORMANCE
+
+{hourly_text}
+
+🎯 TARGET vs PROJECTION
+
+{target_text}
+
+📌 KEY TAKEAWAY
+
+{insight_line}
+
+🤖 AI MIS Automation
+""".strip()
+
+    # =====================================================
+    # TELEGRAM API
+    # =====================================================
+
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
+
+    # Telegram message limit protection
+    MAX_LENGTH = 4000
+
+    try:
+
+        if len(telegram_message) <= MAX_LENGTH:
+
+            response = requests.post(
+                url,
+                json={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": telegram_message
+                },
+                timeout=20
+            )
+
+            if response.ok:
+
+                print(
+                    "✅ Telegram Live Sales Sent"
+                )
+
+            else:
+
+                print(
+                    "❌ Telegram Send Failed"
+                )
+
+                print(
+                    response.text
+                )
+
+        else:
+
+            print(
+                "⚠️ Telegram message is long. "
+                "Sending in parts."
+            )
+
+            chunks = []
+
+            current_chunk = ""
+
+            for line in telegram_message.split("\n"):
+
+                if len(
+                    current_chunk + "\n" + line
+                ) > MAX_LENGTH:
+
+                    chunks.append(
+                        current_chunk
+                    )
+
+                    current_chunk = line
+
+                else:
+
+                    if current_chunk:
+                        current_chunk += "\n" + line
+                    else:
+                        current_chunk = line
+
+            if current_chunk:
+                chunks.append(
+                    current_chunk
+                )
+
+            for i, chunk in enumerate(chunks):
+
+                response = requests.post(
+                    url,
+                    json={
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "text": chunk
+                    },
+                    timeout=20
+                )
+
+                if response.ok:
+
+                    print(
+                        f"✅ Telegram Part "
+                        f"{i + 1}/{len(chunks)} Sent"
+                    )
+
+                else:
+
+                    print(
+                        f"❌ Telegram Part "
+                        f"{i + 1} Failed"
+                    )
+
+                    print(
+                        response.text
+                    )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Telegram failed: {e}"
+        )
+
+        print(
+            "📧 Email/WhatsApp reports "
+            "remain unaffected."
+        )
+
+    print("=" * 60)
+
+
+# =========================================================
+# 📱 EXECUTE TELEGRAM
+# =========================================================
+
+try:
+
+    send_telegram_live()
+
+except Exception as e:
+
+    # IMPORTANT:
+    # Telegram failure must NEVER break
+    # Email / WhatsApp / Dashboard execution.
+
+    print(
+        f"⚠️ Telegram execution failed: {e}"
+    )
+
+    print(
+        "📧 Existing reports are unaffected."
+    )
+
+print(
+    "🎉 TELEGRAM LIVE SALES PROCESS COMPLETED"
+)
