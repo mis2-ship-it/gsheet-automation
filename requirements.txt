@@ -10,7 +10,8 @@ loguru
 python-dotenv
 orjson
 matplotlib
-requests
+seaborn
+numpy
 oauth2client
 PyYAML
 google-api-python-client
