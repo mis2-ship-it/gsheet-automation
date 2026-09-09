@@ -106,7 +106,7 @@ if (
 ):
 
     latest_completed_business_date = (
-        today - timedelta(days=2)
+        today - timedelta(days=1)
     )
 
 else:
