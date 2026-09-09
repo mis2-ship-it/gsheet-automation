@@ -520,3 +520,89 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+import os
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
+
+def send_telegram_summary(self):
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    
+    if not bot_token or not chat_id:
+        logger.info("⚠️ Telegram credentials missing. Skipping notification.")
+        return False
+
+    def post_message(text):
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+        return requests.post(url, json=payload, timeout=10)
+
+    try:
+        # Fetch metrics dictionary from your existing dashboard logic
+        ftd = self.get_ftd_metrics()
+        mtd = self.get_mtd_metrics()
+        
+        # ---------------------------------------------------
+        # 1. FTD MESSAGE
+        # ---------------------------------------------------
+        ftd_msg = [
+            "📊 *COCO _ FTD SALES REPORT*",
+            f"📅 *{self.today.strftime('%d-%b-%Y')}*\n",
+            "💰 *Business Overview*",
+            f"💵 *Net Revenue:* ₹{ftd['net_rev']:.2f}L (Gross: ₹{ftd['gross_sales']:.2f}L)",
+            f"🧾 *Transactions:* {ftd['txns']:,}",
+            f"🛒 *Qty Sold:* {ftd.get('qty', 0):,} | 🧺 *AOV:* ₹{ftd['aov']:.0f}",
+            f"📉 *Discount:* {ftd['dis_pct']:.0f}% (₹{ftd['dis_val']:.2f}L)\n",
+            "🏪 *Brand Contribution*",
+            *[f"{icon} *{b}:* ₹{d['val']:.2f}L ({d['pct']}%) · {d['dis']}% dis" 
+              for b, d, icon in self.get_brand_data(is_mtd=False)],
+            "\n🛵 *Channel Mix*",
+            *[f"{icon} *{c}:* ₹{d['val']:.2f}L ({d['pct']}%) · {d['dis']}% dis" 
+              for c, d, icon in self.get_channel_data(is_mtd=False)],
+            "\n🌍 *Regional Performance*",
+            *[f"{icon} *{r}:* ₹{d['val']:.2f}L | {d['txns']:,} Txn · {d['dis']}% dis" 
+              for r, d, icon in self.get_region_data(is_mtd=False)],
+            "\n⏰ *Session Performance*",
+            *[f"🔹 *{s}:* ₹{d['val']:.2f}L ({d['pct']}%)" 
+              for s, d in self.get_session_data(is_mtd=False)],
+            f"\n💡 *Highest discount channel:* {ftd.get('max_dis_channel', 'N/A')} | *Region:* {ftd.get('max_dis_region', 'N/A')}"
+        ]
+
+        # ---------------------------------------------------
+        # 2. MTD MESSAGE
+        # ---------------------------------------------------
+        mtd_msg = [
+            "📊 *COCO _ MTD SALES REPORT*",
+            f"📅 *{self.today.strftime('%b-%Y')}*\n",
+            "💰 *MTD Business Overview*",
+            f"💵 *Net Revenue:* ₹{mtd['net_rev']:.2f}L (Gross: ₹{mtd['gross_sales']:.2f}L)",
+            f"🧾 *Transactions:* {mtd['txns']:,}",
+            f"🧺 *AOV:* ₹{mtd['aov']:.0f}",
+            f"📉 *Discount:* {mtd['dis_pct']:.0f}% (₹{mtd['dis_val']:.2f}L)\n",
+            "🏪 *MTD Brand Contribution*",
+            *[f"{icon} *{b}:* ₹{d['val']:.2f}L ({d['pct']}%) · {d['dis']}% dis" 
+              for b, d, icon in self.get_brand_data(is_mtd=True)],
+            "\n🛵 *MTD Channel Mix*",
+            *[f"{icon} *{c}:* ₹{d['val']:.2f}L ({d['pct']}%) · {d['dis']}% dis" 
+              for c, d, icon in self.get_channel_data(is_mtd=True)],
+            "\n🌍 *MTD Regional Performance*",
+            *[f"{icon} *{r}:* ₹{d['val']:.2f}L | {d['txns']:,} Txn · {d['dis']}% dis" 
+              for r, d, icon in self.get_region_data(is_mtd=True)],
+            "\n⏰ *MTD Session Performance*",
+            *[f"🔹 *{s}:* ₹{d['val']:.2f}L ({d['pct']}%)" 
+              for s, d in self.get_session_data(is_mtd=True)],
+            f"\n💡 *Highest discount channel:* {mtd.get('max_dis_channel', 'N/A')} | *Region:* {mtd.get('max_dis_region', 'N/A')}"
+        ]
+
+        # Send both reports
+        post_message("\n".join(ftd_msg))
+        post_message("\n".join(mtd_msg))
+        logger.info("✅ FTD and MTD Telegram reports sent successfully!")
+        return True
+
+    except Exception as e:
+        logger.error(f"❌ Failed to send Telegram summary: {e}")
+        return False
