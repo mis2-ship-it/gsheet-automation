@@ -1,0 +1,57 @@
+name: DSR Dashboard Daily Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * *'  # Runs daily at 8:00 AM UTC
+
+jobs:
+  DSR_Dashboard:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run DSR Dashboard
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          API_KEY: ${{ secrets.API_KEY }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          SENDER_EMAIL: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASS }}
+          DSR_RECIPIENTS: mis2@frozenbottle.in
+          DSR_CC: mis2@frozenbottle.in
+
+        run: |
+          echo "🚀 Starting DSR Dashboard Generation..."
+          python dsr_dashboard.py
+          echo "✅ DSR Dashboard completed successfully!"
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: dsr-dashboard-output
+          path: |
+            dsr_dashboard.xlsx
+            dsr_dashboard.html
+          retention-days: 7
