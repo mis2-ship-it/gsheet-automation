@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 EMAIL_CONFIG = {
     'sender_email': os.getenv('SENDER_EMAIL', 'your-email@gmail.com'),
     'sender_password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
-    'email_to': os.getenv('EMAIL_TO', 'vivek@frozenbottle.in, mis2@frozenbottle.in, bhaskar@eatfit.in, scm@frozenbottle.in, prasanth.a@frozenbottle.in, sandeep.ss@eatfit.in, sonal.raj@curefoods.in, Ops.all@frozenbottle.in, mayank.agarwal@curefoods.in'),
+    'email_to': os.getenv('EMAIL_TO', 'vivek@frozenbottle.in, mis2@frozenbottle.in, mis3@frozenbottle.in, bhaskar@eatfit.in, scm@frozenbottle.in, prasanth.a@frozenbottle.in, sandeep.ss@eatfit.in, sonal.raj@curefoods.in, Ops.all@frozenbottle.in, mayank.agarwal@curefoods.in'),
     'email_cc': os.getenv('EMAIL_CC', 'pranshul@frozenbottle.in, arun.k@frozenbottle.in, samir.pandey@frozenbottle.in'),
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587
