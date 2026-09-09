@@ -627,9 +627,9 @@ print(
 
 today = datetime.now()
 
-year_folder = str(today.year)
-
-month_file = today.strftime("MTD_%b_%y.csv")
+# Use latest_completed_business_date to build file paths
+year_folder = str(latest_completed_business_date.year)
+month_file = latest_completed_business_date.strftime("MTD_%b_%y.csv")
 
 csv_path = (
     Path("monthly_data")
@@ -776,14 +776,15 @@ if len(mtd_summary.columns) != 14:
 # KEEP ONLY CURRENT MONTH
 # =========================================================
 
-current_month = today.month
-current_year = today.year
+# Filter using latest_completed_business_date instead of system today
+target_month = latest_completed_business_date.month
+target_year = latest_completed_business_date.year
 
 mtd_summary["Date"] = pd.to_datetime(mtd_summary["Date"])
 
 mtd_summary = mtd_summary[
-    (mtd_summary["Date"].dt.month == current_month) &
-    (mtd_summary["Date"].dt.year == current_year)
+    (mtd_summary["Date"].dt.month == target_month) &
+    (mtd_summary["Date"].dt.year == target_year)
 ].copy()
 
 print("Current Month Rows :", len(mtd_summary))
