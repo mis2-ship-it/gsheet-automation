@@ -36,8 +36,8 @@ jobs:
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           SENDER_EMAIL: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASS }}
-          EMAIL_TO: mis2@frozenbottle.in
-          EMAIL_CC: mis2@frozenbottle.in
+          EMAIL_TO: "vivek@frozenbottle.in, mis2@frozenbottle.in, bhaskar@eatfit.in, scm@frozenbottle.in, prasanth.a@frozenbottle.in, sandeep.ss@eatfit.in, sonal.raj@curefoods.in, Ops.all@frozenbottle.in, mayank.agarwal@curefoods.in"
+          EMAIL_CC: "pranshul@frozenbottle.in, arun.k@frozenbottle.in, samir.pandey@frozenbottle.in"
 
         run: |
           echo "🚀 Starting DSR Dashboard Generation..."
