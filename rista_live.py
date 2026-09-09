@@ -1333,6 +1333,166 @@ brand_source_analysis = pd.DataFrame(
 print("✅ Brand Source Analysis Created")
 
 # =========================================================
+# 🔥 SOURCE x BRAND
+# =========================================================
+
+source_brand_rows = []
+
+sources = sorted(
+    today_cut["Source Group"]
+    .dropna()
+    .unique()
+)
+
+brands_required = [
+    "Frozen Bottle",
+    "Madno",
+    "Boba Bar",
+    "Lubov"
+]
+
+
+for source in sources:
+
+    # =====================================================
+    # SOURCE HEADER
+    # =====================================================
+
+    source_brand_rows.append({
+        "Source Group": f"🔹 {source}",
+        "Brand": "Total",
+        "Today Rev": "",
+        "LW Rev": "",
+        "Growth %": "",
+        "Today Dis %": "",
+        "LW Dis %": "",
+        "Dis Change %": ""
+    })
+
+
+    # =====================================================
+    # BRAND BREAKDOWN
+    # =====================================================
+
+    for brand in brands_required:
+
+        t = today_cut[
+            (today_cut["Source Group"] == source)
+            &
+            (today_cut["Brand"] == brand)
+        ]
+
+        lw = lastweek_cut[
+            (lastweek_cut["Source Group"] == source)
+            &
+            (lastweek_cut["Brand"] == brand)
+        ]
+
+
+        # -------------------------------------------------
+        # REVENUE
+        # -------------------------------------------------
+
+        t_rev = t["Net Sales"].sum()
+
+        lw_rev = lw["Net Sales"].sum()
+
+
+        growth = (
+            (t_rev - lw_rev)
+            /
+            max(lw_rev, 1)
+        ) * 100
+
+
+        # -------------------------------------------------
+        # DISCOUNT %
+        # -------------------------------------------------
+
+        t_gross = t["grossAmount"].sum()
+
+        lw_gross = lw["grossAmount"].sum()
+
+
+        t_disc = (
+            t["discountAmount"].sum()
+            /
+            max(t_gross, 1)
+        ) * 100
+
+
+        lw_disc = (
+            lw["discountAmount"].sum()
+            /
+            max(lw_gross, 1)
+        ) * 100
+
+
+        disc_change = (
+            t_disc - lw_disc
+        )
+
+
+        # -------------------------------------------------
+        # ROW
+        # -------------------------------------------------
+
+        source_brand_rows.append({
+
+            "Source Group": "",
+
+            "Brand": brand,
+
+            "Today Rev": round(
+                t_rev,
+                2
+            ),
+
+            "LW Rev": round(
+                lw_rev,
+                2
+            ),
+
+            "Growth %": round(
+                growth,
+                2
+            ),
+
+            "Today Dis %": round(
+                t_disc,
+                2
+            ),
+
+            "LW Dis %": round(
+                lw_disc,
+                2
+            ),
+
+            "Dis Change %": round(
+                disc_change,
+                2
+            )
+        })
+
+
+# =========================================================
+# CREATE DATAFRAME
+# =========================================================
+
+source_brand_analysis = pd.DataFrame(
+    source_brand_rows
+)
+
+
+print(
+    "✅ Source Brand Analysis Created"
+)
+
+print(
+    source_brand_analysis.head(20)
+)
+
+# =========================================================
 # 🔥 REGION x SOURCE
 # =========================================================
 
@@ -2367,6 +2527,11 @@ def send_email():
 
         <h2>🏷️ Brand Source Analysis</h2>
         {styled_html(brand_source_analysis)}
+
+        <br><br>
+
+        <h2>📦 Source × Brand Analysis</h2>
+        {styled_html(source_brand_analysis)}
 
         <br><br>
 
