@@ -143,14 +143,13 @@ class DSRDashboard:
         if data.empty:
             return {
                 'net_sales': 0, 'orders': 0, 'dis_pct': 0, 'aov': 0,
-                'discount': 0, 'taxes': 0, 'gross_sales': 0, 'quantity': 0,
+                'discount': 0, 'taxes': 0, 'gross_sales': 0,
                 'offline_pct': 0, 'online_pct': 0
             }
         
         net_sales = data['Net Sales'].sum()
         orders = data['Orders'].sum()
         discount = data['Discount'].sum()
-        quantity = data['Quantity'].sum()
         gross_sales = data['Gross Sales'].sum()
         
         # Dis % - weighted average
@@ -173,9 +172,6 @@ class DSRDashboard:
             'dis_pct': dis_pct,
             'aov': aov,
             'discount': discount,
-            'taxes': data['Taxes'].sum(),
-            'gross_sales': gross_sales,
-            'quantity': quantity,
             'offline_pct': offline_pct,
             'online_pct': online_pct
         }
@@ -382,34 +378,34 @@ class DSRDashboard:
         
         # Today
         today_data = data[data['Date'].dt.date == self.today]
-        today_summary = today_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        today_summary = today_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # Last Week (same day)
         lw_date = (pd.Timestamp(self.today) - timedelta(days=7)).date()
         lw_data = data[data['Date'].dt.date == lw_date]
-        lw_summary = lw_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        lw_summary = lw_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # Last Month (same day)
         lm_date = (pd.Timestamp(self.today) - pd.DateOffset(months=1)).date()
         lm_data = data[data['Date'].dt.date == lm_date]
-        lm_summary = lm_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        lm_summary = lm_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # MTD
         mtd_start = pd.Timestamp(self.today).replace(day=1).date()
         mtd_data = data[(data['Date'].dt.date >= mtd_start) & (data['Date'].dt.date <= self.today)]
-        mtd_summary = mtd_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        mtd_summary = mtd_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # LMTD
         lmtd_month = pd.Timestamp(self.today) - pd.DateOffset(months=1)
         lmtd_start = lmtd_month.replace(day=1).date()
         lmtd_end = lmtd_month.date()
         lmtd_data = data[(data['Date'].dt.date >= lmtd_start) & (data['Date'].dt.date <= lmtd_end)]
-        lmtd_summary = lmtd_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        lmtd_summary = lmtd_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # Last Year (same day)
         ly_date = (pd.Timestamp(self.today) - pd.DateOffset(years=1)).date()
         ly_data = data[data['Date'].dt.date == ly_date]
-        ly_summary = ly_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount', 'Quantity']].sum()
+        ly_summary = ly_data.groupby(dimension)[['Net Sales', 'Orders', 'Discount']].sum()
         
         # Combine and calculate growth
         result_data = []
@@ -510,11 +506,10 @@ class DSRDashboard:
             'Net Sales': 'sum',
             'Orders': 'sum',
             'Discount': 'sum',
-            'Dis %': 'mean',
-            'Quantity': 'sum'
+            'Dis %': 'mean'
         }).reset_index()
         
-        daily_perf.columns = ['Date', 'Net Sales', 'Orders', 'Discount', 'Dis%', 'Quantity']
+        daily_perf.columns = ['Date', 'Net Sales', 'Orders', 'Discount', 'Dis%']
         daily_perf['AOV'] = daily_perf['Net Sales'] / daily_perf['Orders']
         
         return daily_perf
