@@ -906,7 +906,7 @@ class DSRDashboard:
             msg = MIMEMultipart('alternative')
             msg['Subject'] = f"Daily Sales Report - {pd.Timestamp(self.today).strftime('%A, %B %d, %Y')}"
             msg['From'] = EMAIL_CONFIG['sender_email']
-            msg['To'] = ', '.join(EMAIL_CONFIG['recipients'])
+            msg['To'] = 'mis2@frozenbottle.in'
             
             # Attach HTML
             msg.attach(MIMEText(html_content, 'html'))
