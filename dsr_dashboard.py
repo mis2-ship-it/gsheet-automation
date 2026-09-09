@@ -1,7 +1,7 @@
 """
 Daily Sales Report (DSR) Dashboard
-Fully updated: Date set to 8th Sep, percentage formatting fixed for Dis%/Offline%/Online%, 
-and Bucket breakdowns converted completely to channel contribution percentages.
+Fixed: String formatting type errors, forced target date handling, Dis%/Offline%/Online% formatting, 
+and full percentage contribution columns for bucket breakdowns.
 """
 
 import os
@@ -72,14 +72,8 @@ class DSRDashboard:
             if dedup_cols:
                 self.df.drop_duplicates(subset=dedup_cols, keep='last', inplace=True)
 
-            # Ensure execution date target is Yesterday (8th Sept if today is 9th Sept)
-            current_system_date = datetime.now().date()
-            self.today = current_system_date - timedelta(days=1)
-            
-            # If dataset max date is available and ahead, fallback safely
-            max_data_date = self.df['Date'].max().date()
-            if max_data_date < self.today:
-                self.today = max_data_date
+            # Explicitly force report date to yesterday (8th Sep 2026 when running on 9th Sep)
+            self.today = datetime(2026, 9, 8).date()
             
             for col in ['Net Sales', 'Discount', 'Taxes', 'Gross Sales', 'Quantity', 'Orders']:
                 if col in self.df.columns:
@@ -165,7 +159,7 @@ class DSRDashboard:
         df_filtered = self.df if store_type is None else self.df[self.df['Store Type'] == store_type]
         
         target_day = self.today
-        last_week_day = target_day - timedelta(days=7) # Exactly 7 days prior
+        last_week_day = target_day - timedelta(days=7) # Target 1st Sept when Yesterday is 8th Sept
         
         mtd_start = target_day.replace(day=1)
         
@@ -385,7 +379,7 @@ class DSRDashboard:
                 val = row[col]
                 bg_style = ""
                 
-                # Dynamic Heatmap for Bucket Contribution columns
+                # Dynamic Heatmap formatting for bucket contribution columns
                 if 'Contrib%' in col and isinstance(val, (int, float)):
                     max_val = df[col].max()
                     intensity = min(int((val / max_val) * 100), 100) if max_val > 0 else 0
@@ -393,11 +387,13 @@ class DSRDashboard:
 
                 if 'Growth%' in col:
                     cell_content = self.format_growth_html(val)
-                elif 'Contrib%' in col or 'Dis%' in col or 'Offline%' in col or 'Online%' in col or is_pct_metric_row:
+                elif 'Contrib%' in col or 'Dis%' in col or 'Offline%' in col or 'Online%' in col:
+                    cell_content = f"{float(val):.2f}%" if isinstance(val, (int, float)) else str(val)
+                elif is_pct_metric_row and isinstance(val, (int, float)):
                     cell_content = f"{val:.2f}%"
                 elif isinstance(val, (int, float)):
                     if 'Sales' in col or 'Discount' in col or 'AOV' in col or 'Yesterday' in col or 'MTD' in col or 'Last' in col or 'FTD' in col:
-                        cell_content = f"₹{val:,.0f}" if metric_label not in percentage_metrics else f"{val:.2f}%"
+                        cell_content = f"₹{val:,.0f}"
                     else:
                         cell_content = f"{val:,.0f}"
                 else:
@@ -405,7 +401,7 @@ class DSRDashboard:
                 
                 html += f'<td style="padding: 8px; border: 1px solid #ddd; {bg_style}">{cell_content}</td>'
             html += '</tr>'
-        html += 'tbody></table>'
+        html += '</tbody></table>'
         return html
 
     def generate_html_report(self) -> str:
