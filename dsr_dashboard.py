@@ -56,8 +56,17 @@ class DSRDashboard:
             date_col = [col for col in self.df.columns if col.lower() in ['date', 'sales_date']][0]
             self.df['Date'] = pd.to_datetime(self.df[date_col])
             
-            # Target latest available date (e.g., September)
-            self.today = self.df['Date'].max().date()
+            # --- DATE OVERRIDE FOR SEPTEMBER ---
+            # Set today to current system date (or the max date if system date is outside dataset)
+            current_date = datetime.now().date()
+            
+            # If current date is in September, use current date; otherwise fallback to September max date in CSV
+            sep_data = self.df[self.df['Date'].dt.month == 9]
+            if not sep_data.empty:
+                self.today = sep_data['Date'].max().date()
+            else:
+                # Fallback to current system date if needed
+                self.today = current_date
             
             # Numeric conversion guardrails
             for col in ['Net Sales', 'Discount', 'Taxes', 'Gross Sales', 'Quantity', 'Orders']:
@@ -355,7 +364,7 @@ class DSRDashboard:
         html += '</tbody></table>'
         return html
 
-    def generate_html_report() -> str:
+    def generate_html_report(self) -> str:
         kpi = self.get_kpi_cards_data()
         
         html = f"""
@@ -419,8 +428,7 @@ class DSRDashboard:
 
                 <h3 style="color: #34495e;">9. Current Month Day Level Performance (COCO)</h3>
                 {self.render_table_html(self.get_day_level_performance())}
-
-                """
+        """
         
         top10, bottom10 = self.get_top_bottom_stores()
         html += f"""
