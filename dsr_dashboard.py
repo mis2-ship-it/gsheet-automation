@@ -73,7 +73,8 @@ class DSRDashboard:
                 self.df.drop_duplicates(subset=dedup_cols, keep='last', inplace=True)
 
             # Explicitly force report date to yesterday (8th Sep 2026 when running on 9th Sep)
-            self.today = datetime(2026, 9, 8).date()
+            # Dynamic: Sets report target date to yesterday (T-1)
+            self.today = (datetime.now() - timedelta(days=1)).date()
             
             for col in ['Net Sales', 'Discount', 'Taxes', 'Gross Sales', 'Quantity', 'Orders']:
                 if col in self.df.columns:
