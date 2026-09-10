@@ -1,9 +1,12 @@
 import glob
 import os
+import gc
 import pandas as pd
 import numpy as np
 from datetime import datetime
 from io import BytesIO
+import threading
+from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -12,7 +15,6 @@ from telegram.ext import (
     CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
-    AIORateLimiter,
     filters,
 )
 
@@ -23,50 +25,92 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+# =========================================================
+# 1. FLASK HEALTH CHECK SERVER (For Render Free Tier)
+# =========================================================
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def health_check():
+    return "Bot is running live!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
 
 # =========================================================
-# 1. OPTIMIZED DATA LOADING ENGINE
+# 2. ULTRA-LOW MEMORY DATA ENGINE
 # =========================================================
-def load_dataset():
+DB_CACHE_FILE = "cached_dataset.parquet"
+
+def optimize_and_cache_data():
+    if os.path.exists(DB_CACHE_FILE):
+        print("Found Parquet cache! Loading directly...")
+        return pd.read_parquet(DB_CACHE_FILE)
+
     all_csvs = glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True)
     all_csvs = sorted(list(set([f for f in all_csvs if not os.path.basename(f).startswith('.')])))
 
     if not all_csvs:
         raise FileNotFoundError("No CSV files found in directory!")
 
-    print(f"Loading {len(all_csvs)} CSV files into memory...")
-    dfs = []
+    print(f"Processing {len(all_csvs)} CSV files with low-RAM chunking...")
     target_cols = ['Date', 'Brand Name', 'Brand', 'Branch', 'Store', 'Store Type', 'Region', 'Source', 'Session', 'Net Sales', 'Orders', 'Discount', 'Gross Sales']
 
+    dfs = []
     for file_path in all_csvs:
         try:
-            sample_df = pd.read_csv(file_path, nrows=2)
+            # Detect existing headers first to only load relevant columns
+            sample_df = pd.read_csv(file_path, nrows=1)
             valid_cols = [c for c in target_cols if c in sample_df.columns]
-            temp_df = pd.read_csv(file_path, usecols=valid_cols, low_memory=False)
+            del sample_df
+            
+            # Read single CSV with lower bit-width data types to save RAM
+            temp_df = pd.read_csv(file_path, usecols=valid_cols, low_memory=True)
             dfs.append(temp_df)
         except Exception as e:
-            print(f"Skipping unparseable file {file_path}: {e}")
+            print(f"Skipping {file_path}: {e}")
 
-    df = pd.concat(dfs, ignore_ignore=True) if hasattr(pd.concat, 'ignore_ignore') else pd.concat(dfs, ignore_index=True)
+    df = pd.concat(dfs, ignore_index=True)
+    
+    # Free temporary memory list
+    del dfs
+    gc.collect()
 
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df = df.dropna(subset=['Date'])
-    df['YearMonth'] = df['Date'].dt.year.astype(str) + '-' + df['Date'].dt.month.astype(str).str.zfill(2)
+    
+    df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y')
 
     df['Brand Name'] = df['Brand Name'] if 'Brand Name' in df.columns else df.get('Brand', 'Unknown')
     df['Branch'] = df['Branch'] if 'Branch' in df.columns else df.get('Store', 'Unknown')
 
-    for col in ['Net Sales', 'Orders', 'Discount', 'Gross Sales']:
+    # Convert numeric fields to lower RAM float32/int32
+    for col in ['Net Sales', 'Gross Sales', 'Discount']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0).astype('float32')
         else:
-            df[col] = 0.0
+            df[col] = np.float32(0.0)
 
-    print("Dataset successfully indexed into memory.")
+    df['Orders'] = pd.to_numeric(df.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
+
+    # Convert repeated strings to categorical memory representations
+    cat_cols = ['Brand Name', 'Branch', 'Store Type', 'Region', 'Source', 'Session', 'YearMonth', 'MonthLabel']
+    for c in cat_cols:
+        if c in df.columns:
+            df[c] = df[c].astype(str).fillna('Unknown').astype('category')
+
+    # Cache dataset to disk
+    df.to_parquet(DB_CACHE_FILE, compression='snappy')
+    gc.collect()
+    
+    print(f"Dataset successfully compiled! RAM footprint: {df.memory_usage().sum() / 1024**2:.2f} MB")
     return df
 
-GLOBAL_DF = load_dataset()
+GLOBAL_DF = optimize_and_cache_data()
 
 DIM_COL_MAP = {
     'Brand': 'Brand Name',
@@ -82,7 +126,7 @@ def get_unique_options(col_name):
     return []
 
 # =========================================================
-# 2. PIVOT & MATRIX CALCULATIONS
+# 3. PIVOT & MATRIX CALCULATIONS
 # =========================================================
 def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe):
     df = GLOBAL_DF.copy()
@@ -131,10 +175,10 @@ def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe)
     if not group_cols:
         group_cols = [DIM_COL_MAP.get(primary_dim, 'Brand Name')]
 
-    pivot_sales = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
-    pivot_orders = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Orders', aggfunc='sum', fill_value=0)
-    pivot_discount = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Discount', aggfunc='sum', fill_value=0)
-    pivot_gross = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Gross Sales', aggfunc='sum', fill_value=0)
+    pivot_sales = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0, observed=False)
+    pivot_orders = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Orders', aggfunc='sum', fill_value=0, observed=False)
+    pivot_discount = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Discount', aggfunc='sum', fill_value=0, observed=False)
+    pivot_gross = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Gross Sales', aggfunc='sum', fill_value=0, observed=False)
 
     active_cols = [m for m in target_months if m in pivot_sales.columns]
     prev_cols = [m for m in prev_months if m in pivot_sales.columns]
@@ -158,7 +202,7 @@ def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe)
     return summary_df, df_eval
 
 # =========================================================
-# 3. EXCEL & PDF EXPORTERS
+# 4. EXCEL & PDF EXPORTERS
 # =========================================================
 def build_excel_export(pivot_sales, df_raw, title):
     output = BytesIO()
@@ -188,12 +232,10 @@ def build_excel_export(pivot_sales, df_raw, title):
                     formatted_row.append(item)
             ws.append(formatted_row)
 
-    # Main Sheet
     ws1 = wb.active
     ws1.title = "Executive Summary"
     write_sheet(ws1, f"Detailed Breakdown - {title}", pivot_sales)
 
-    # Summary Tabs
     summary_dims = {
         "Brand Summary": "Brand Name",
         "Store Summary": "Branch",
@@ -204,7 +246,7 @@ def build_excel_export(pivot_sales, df_raw, title):
     for sheet_name, col_name in summary_dims.items():
         if col_name in df_raw.columns:
             ws = wb.create_sheet(title=sheet_name)
-            grp = df_raw.groupby(col_name).agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'}).reset_index()
+            grp = df_raw.groupby(col_name, observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'}).reset_index()
             grp['Discount %'] = np.where(grp['Gross Sales'] > 0, (grp['Discount'] / grp['Gross Sales']) * 100, 0.0)
             grp['AOV'] = np.where(grp['Orders'] > 0, grp['Net Sales'] / grp['Orders'], 0.0)
             
@@ -226,8 +268,8 @@ def build_pdf_export(pivot_sales, title):
     cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10)
     header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.white)
 
-    # Logo Header Path
-    logo_path = "/home/RaviMallappa/frozen_bottle_logo.png"
+    logo_path = "frozen_bottle_logo.png"
+
     if os.path.exists(logo_path):
         logo_img = Image(logo_path, width=100, height=45)
     else:
@@ -287,7 +329,7 @@ def build_pdf_export(pivot_sales, title):
     return output
 
 # =========================================================
-# 4. TELEGRAM BOT CONTROLLER
+# 5. TELEGRAM BOT CONTROLLER
 # =========================================================
 async def start_greeting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -496,7 +538,7 @@ async def render_entity_filter_menu(query, context, dim):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def generate_final_summary_view(query, context):
-    await query.edit_message_text("🔄 *Calculating analytics matrix from MTD dataset...*", parse_mode="Markdown")
+    await query.edit_message_text("🔄 *Calculating analytics matrix from dataset...*", parse_mode="Markdown")
 
     pivot_sales, df_raw = generate_pivoted_report(
         context.user_data['filters'],
@@ -539,17 +581,16 @@ async def generate_final_summary_view(query, context):
     await query.edit_message_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # =========================================================
-# 5. MAIN LAUNCHER (CLEANED)
+# 6. MAIN LAUNCHER
 # =========================================================
 if __name__ == "__main__":
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     
-    # Simple, direct builder without custom proxy parameters
     app = ApplicationBuilder().token(bot_token).build()
 
     app.add_handler(CommandHandler("start", start_greeting))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start_greeting))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    print("🤖 Analytics Bot running with Frozen Bottle branding...")
+    print("🤖 Analytics Bot running with Low-RAM Engine...")
     app.run_polling(poll_interval=2.0, timeout=30)
