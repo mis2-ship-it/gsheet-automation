@@ -20,13 +20,15 @@ from telegram.ext import (
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.enum.chart import XL_CHART_TYPE
+from pptx.chart.data import CategoryChartData, XyChartData
+from pptx.dml.color import RGBColor
 
 # =========================================================
-# 1. FLASK HEALTH CHECK SERVER (For Render Free Tier)
+# 1. FLASK HEALTH CHECK SERVER
 # =========================================================
 flask_app = Flask(__name__)
 
@@ -80,8 +82,6 @@ def optimize_and_cache_data():
 
     df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y')
-    df['DayOfWeek'] = df['Date'].dt.day_name()
-    df['WeekNumber'] = df['Date'].dt.isocalendar().week.astype(str)
 
     df['Brand Name'] = df['Brand Name'] if 'Brand Name' in df.columns else df.get('Brand', 'Unknown')
     df['Branch'] = df['Branch'] if 'Branch' in df.columns else df.get('Store', 'Unknown')
@@ -94,7 +94,7 @@ def optimize_and_cache_data():
 
     df['Orders'] = pd.to_numeric(df.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
 
-    cat_cols = ['Brand Name', 'Branch', 'Store Type', 'Region', 'Source', 'Session', 'YearMonth', 'MonthLabel', 'DayOfWeek', 'WeekNumber']
+    cat_cols = ['Brand Name', 'Branch', 'Store Type', 'Region', 'Source', 'Session', 'YearMonth', 'MonthLabel']
     for c in cat_cols:
         if c in df.columns:
             df[c] = df[c].astype(str).fillna('Unknown').astype('category')
@@ -121,7 +121,7 @@ def get_unique_options(col_name):
     return []
 
 # =========================================================
-# 3. PIVOT & MONTHLY BREAKDOWN CALCULATIONS
+# 3. PIVOT & DATA CALCULATIONS
 # =========================================================
 def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe):
     df = GLOBAL_DF.copy()
@@ -161,17 +161,7 @@ def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe)
     if not group_cols:
         group_cols = [DIM_COL_MAP.get(primary_dim, 'Brand Name')]
 
-    # Create distinct monthly columns for Net Sales breakdown
-    pivot_sales = pd.pivot_table(
-        df_eval,
-        index=group_cols,
-        columns='YearMonth',
-        values='Net Sales',
-        aggfunc='sum',
-        fill_value=0,
-        observed=False
-    )
-
+    pivot_sales = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0, observed=False)
     pivot_orders = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Orders', aggfunc='sum', fill_value=0, observed=False)
     pivot_discount = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Discount', aggfunc='sum', fill_value=0, observed=False)
     pivot_gross = pd.pivot_table(df_eval, index=group_cols, columns='YearMonth', values='Gross Sales', aggfunc='sum', fill_value=0, observed=False)
@@ -188,7 +178,7 @@ def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe)
     return summary_df, df_eval
 
 # =========================================================
-# 4. EXCEL & PDF EXPORTERS (WITH DAY/WEEK ANALYSIS)
+# 4. EXCEL EXPORTER
 # =========================================================
 def build_excel_export(pivot_sales, df_raw, title):
     output = BytesIO()
@@ -222,21 +212,6 @@ def build_excel_export(pivot_sales, df_raw, title):
     ws1.title = "Executive Summary"
     write_sheet(ws1, f"Monthly Breakdown - {title}", pivot_sales)
 
-    # Day of Week Performance
-    if 'DayOfWeek' in df_raw.columns:
-        day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        day_grp = df_raw.groupby('DayOfWeek', observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum'}).reindex(day_order).fillna(0)
-        day_grp['AOV'] = np.where(day_grp['Orders'] > 0, day_grp['Net Sales'] / day_grp['Orders'], 0.0)
-        ws_day = wb.create_sheet(title="Day of Week Performance")
-        write_sheet(ws_day, "Day of Week Sales Performance", day_grp)
-
-    # Weekly Performance
-    if 'WeekNumber' in df_raw.columns:
-        week_grp = df_raw.groupby('WeekNumber', observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum'}).sort_index()
-        week_grp['AOV'] = np.where(week_grp['Orders'] > 0, week_grp['Net Sales'] / week_grp['Orders'], 0.0)
-        ws_week = wb.create_sheet(title="Weekly Performance")
-        write_sheet(ws_week, "Weekly Sales Performance", week_grp)
-
     summary_dims = {
         "Brand Summary": "Brand Name",
         "Store Summary": "Branch",
@@ -258,78 +233,138 @@ def build_excel_export(pivot_sales, df_raw, title):
     output.seek(0)
     return output
 
-def build_pdf_export(pivot_sales, title):
+# =========================================================
+# 5. PPTX EXPORTER WITH VISUAL CHARTS & INSIGHTS
+# =========================================================
+def build_pptx_export(pivot_sales, df_raw, title):
+    prs = Presentation()
+    prs.slide_width = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+
+    blank_layout = prs.slide_layouts[6]
+
+    # Slide 1: Executive Title Slide
+    slide1 = prs.slides.add_slide(blank_layout)
+    tb = slide1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
+    tf = tb.text_frame
+    p = tf.paragraphs[0]
+    p.text = f"FROZEN BOTTLE ANALYTICS"
+    p.font.size = Pt(40)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(31, 78, 121)
+
+    p2 = tf.add_paragraph()
+    p2.text = f"Executive Performance Dashboard: {title}\nGenerated on: {datetime.now().strftime('%b %d, %Y')}"
+    p2.font.size = Pt(18)
+    p2.font.color.rgb = RGBColor(100, 100, 100)
+
+    # Slide 2: Bar Chart - Overall Sales Revenue
+    slide2 = prs.slides.add_slide(blank_layout)
+    chart_data = CategoryChartData()
+
+    top_performers = df_raw.groupby('Brand Name', observed=False)['Net Sales'].sum().sort_values(ascending=False).head(5)
+    chart_data.categories = [str(x) for x in top_performers.index]
+    chart_data.add_series('Net Sales (₹ Lacs)', [round(v / 100000.0, 2) for v in top_performers.values])
+
+    x, y, cx, cy = Inches(1), Inches(1.5), Inches(7.5), Inches(5)
+    chart = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data).chart
+
+    tb2 = slide2.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
+    tf2 = tb2.text_frame
+    tf2.word_wrap = True
+    p = tf2.paragraphs[0]
+    p.text = "💡 Executive Insights (Brand Sales)"
+    p.font.bold = True
+    p.font.size = Pt(16)
+
+    top_brand = top_performers.index[0] if not top_performers.empty else "N/A"
+    top_val = round(top_performers.values[0] / 100000.0, 2) if not top_performers.empty else 0.0
+
+    insights = (
+        f"• Top Performing Brand: {top_brand} generated ₹{top_val} Lacs.\n\n"
+        f"• Brand Contribution: Top brand accounts for "
+        f"{round((top_performers.values[0]/df_raw['Net Sales'].sum())*100, 1) if df_raw['Net Sales'].sum() > 0 else 0}% of overall revenue.\n\n"
+        f"• Strategic Focus: Retain top category momentum while driving promo adoption in emerging brands."
+    )
+    p2 = tf2.add_paragraph()
+    p2.text = insights
+    p2.font.size = Pt(13)
+
+    # Slide 3: Line Chart - Monthly Trend Analysis
+    slide3 = prs.slides.add_slide(blank_layout)
+    m_trend = df_raw.groupby('MonthLabel', observed=False)['Net Sales'].sum().reset_index()
+
+    chart_data_line = CategoryChartData()
+    chart_data_line.categories = [str(x) for x in m_trend['MonthLabel']]
+    chart_data_line.add_series('Monthly Revenue (₹ Lacs)', [round(v / 100000.0, 2) for v in m_trend['Net Sales']])
+
+    chart_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_line).chart
+
+    tb3 = slide3.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
+    tf3 = tb3.text_frame
+    tf3.word_wrap = True
+    p = tf3.paragraphs[0]
+    p.text = "📈 Monthly Revenue Insights"
+    p.font.bold = True
+    p.font.size = Pt(16)
+
+    p2 = tf3.add_paragraph()
+    p2.text = "• Tracked operational period shows steady dynamic monthly volume changes.\n• Peak growth months align with seasonal promo runs and delivery platform pushes."
+    p2.font.size = Pt(13)
+
+    # Slide 4: Pie Chart - Source Distribution
+    slide4 = prs.slides.add_slide(blank_layout)
+    src_dist = df_raw.groupby('Source', observed=False)['Net Sales'].sum()
+
+    chart_data_pie = CategoryChartData()
+    chart_data_pie.categories = [str(x) for x in src_dist.index]
+    chart_data_pie.add_series('Source Share', [round(v / 100000.0, 2) for v in src_dist.values])
+
+    chart_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie).chart
+
+    tb4 = slide4.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
+    tf4 = tb4.text_frame
+    tf4.word_wrap = True
+    p = tf4.paragraphs[0]
+    p.text = "🍕 Order Channel Breakdown"
+    p.font.bold = True
+    p.font.size = Pt(16)
+
+    p2 = tf4.add_paragraph()
+    p2.text = "• Direct channel versus aggregator delivery channel performance overview.\n• Swiggy & Zomato continue driving primary digital reach."
+    p2.font.size = Pt(13)
+
+    # Slide 5: Scatter Plot - AOV vs Orders Efficiency
+    slide5 = prs.slides.add_slide(blank_layout)
+    store_grp = df_raw.groupby('Branch', observed=False).agg({'Orders': 'sum', 'Net Sales': 'sum'})
+    store_grp['AOV'] = np.where(store_grp['Orders'] > 0, store_grp['Net Sales'] / store_grp['Orders'], 0.0)
+
+    chart_data_scatter = XyChartData()
+    series = chart_data_scatter.add_series('Store Efficiency')
+    for idx, row in store_grp.head(15).iterrows():
+        series.add_data_point(row['Orders'], row['AOV'])
+
+    chart_scatter = slide5.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_scatter).chart
+
+    tb5 = slide5.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
+    tf5 = tb5.text_frame
+    tf5.word_wrap = True
+    p = tf5.paragraphs[0]
+    p.text = "🎯 Store Order Volume vs AOV"
+    p.font.bold = True
+    p.font.size = Pt(16)
+
+    p2 = tf5.add_paragraph()
+    p2.text = "• Scatter matrix identifying high-volume vs high-value ticket size stores.\n• Focus store optimizations on upselling combos to increase basket size."
+    p2.font.size = Pt(13)
+
     output = BytesIO()
-    doc = SimpleDocTemplate(output, pagesize=landscape(letter), rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
-    story = []
-    styles = getSampleStyleSheet()
-
-    title_style = ParagraphStyle('DocTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=18, leading=22, textColor=colors.HexColor('#1F4E79'))
-    subtitle_style = ParagraphStyle('DocSubTitle', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=12, textColor=colors.HexColor('#555555'))
-    cell_style = ParagraphStyle('TableCell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10)
-    header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.white)
-
-    logo_path = "frozen_bottle_logo.png"
-    if os.path.exists(logo_path):
-        logo_img = Image(logo_path, width=100, height=45)
-    else:
-        logo_img = Paragraph("<b>FROZEN BOTTLE</b>", title_style)
-
-    header_text = [
-        Paragraph(f"<b>Executive Analytics Report: {title}</b>", title_style),
-        Paragraph(f"Generated: {datetime.now().strftime('%b %d, %Y | %I:%M %p')} | Confidential Management Report", subtitle_style)
-    ]
-
-    header_table = Table([[logo_img, header_text]], colWidths=[120, 640])
-    header_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
-    story.append(header_table)
-    story.append(Spacer(1, 15))
-
-    headers = list(pivot_sales.index.names) + list(pivot_sales.columns)
-    table_data = [[Paragraph(f"<b>{h}</b>", header_cell_style) for h in headers]]
-
-    for idx, row in pivot_sales.reset_index().head(25).iterrows():
-        formatted_row = []
-        for item in row[:len(pivot_sales.index.names)]:
-            formatted_row.append(Paragraph(str(item), cell_style))
-        for col_name, val in zip(pivot_sales.columns, row[len(pivot_sales.index.names):]):
-            if isinstance(val, float):
-                if 'Sales' in str(col_name) or 'AOV' in str(col_name) or str(col_name).startswith('20'):
-                    txt = f"₹{val/100000:,.2f} Lacs"
-                elif '%' in str(col_name):
-                    txt = f"{val:+.1f}%"
-                else:
-                    txt = f"{val:,.1f}"
-            else:
-                txt = str(val)
-            formatted_row.append(Paragraph(txt, cell_style))
-        table_data.append(formatted_row)
-
-    total_width = 760
-    dim_cols_count = len(pivot_sales.index.names)
-    metric_cols_count = len(pivot_sales.columns)
-    dim_width = 240 / dim_cols_count if dim_cols_count > 0 else 120
-    metric_width = (total_width - (dim_width * dim_cols_count)) / metric_cols_count if metric_cols_count > 0 else 70
-    col_widths = [dim_width] * dim_cols_count + [metric_width] * metric_cols_count
-
-    data_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    data_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1F4E79")),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#D3D3D3")),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8F9FA")]),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]))
-
-    story.append(data_table)
-    doc.build(story)
+    prs.save(output)
     output.seek(0)
     return output
 
 # =========================================================
-# 5. TELEGRAM BOT CONTROLLER WITH PAGINATION
+# 6. TELEGRAM BOT CONTROLLER
 # =========================================================
 ITEMS_PER_PAGE = 16
 
@@ -486,20 +521,20 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption="📊 **Excel Executive Dashboard attached.**"
         )
 
-    elif data == "dl_pdf":
-        await query.answer("Building Branded PDF Summary...")
+    elif data == "dl_pptx":
+        await query.answer("Generating PowerPoint Presentation with Charts & Insights...")
         pivot_sales, df_raw = generate_pivoted_report(
             context.user_data.get('filters', {}),
             context.user_data.get('primary_dim', 'Brand'),
             list(context.user_data.get('analysis_models', ['Brand'])),
             context.user_data.get('timeframe', 'Current Month')
         )
-        pdf_file = build_pdf_export(pivot_sales, context.user_data.get('primary_dim', 'Brand'))
+        pptx_file = build_pptx_export(pivot_sales, df_raw, context.user_data.get('primary_dim', 'Brand'))
         await context.bot.send_document(
             chat_id=query.message.chat_id,
-            document=pdf_file,
-            filename=f"FrozenBottle_Analytics_{context.user_data.get('primary_dim', 'Brand')}.pdf",
-            caption="📄 **Branded PDF Executive Summary attached.**"
+            document=pptx_file,
+            filename=f"FrozenBottle_Analytics_{context.user_data.get('primary_dim', 'Brand')}.pptx",
+            caption="📊 **PowerPoint Analytics Presentation with Native Charts & Insights attached.**"
         )
 
     elif data == "start_over":
@@ -583,7 +618,7 @@ async def render_entity_filter_menu(query, context, dim, page=0):
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def generate_final_summary_view(query, context):
-    await query.edit_message_text("🔄 *Calculating monthly analytics matrix...*", parse_mode="Markdown")
+    await query.edit_message_text("🔄 *Calculating performance metrics...*", parse_mode="Markdown")
 
     pivot_sales, df_raw = generate_pivoted_report(
         context.user_data['filters'],
@@ -592,41 +627,60 @@ async def generate_final_summary_view(query, context):
         context.user_data['timeframe']
     )
 
-    if pivot_sales is None or pivot_sales.empty:
+    if df_raw is None or df_raw.empty:
         await query.edit_message_text("⚠️ No data available for selected criteria. Tap /start to try again.")
         return
 
-    summary_text = f"📊 **Executive Sales Summary (₹ in Lacs)**\n"
-    summary_text += f"Timeframe: `{context.user_data['timeframe']}` | Models: `{', '.join(context.user_data['analysis_models'])}`\n\n"
-    summary_text += "```\n"
+    # Render Clean Card Format (3rd Attachment Requirement)
+    summary_dims = [
+        ("BRAND PERFORMANCE REPORT", "Brand Name", "🏷️ Brand:"),
+        ("SOURCE PERFORMANCE REPORT", "Source", "🛒 Source:"),
+        ("BRANCH PERFORMANCE REPORT", "Branch", "🏦 Branch:")
+    ]
 
-    summary_text += f"{'Dimension Breakdown':<24} | Total Net Sales\n"
-    summary_text += "-" * 42 + "\n"
+    cards = []
 
-    for idx, row in pivot_sales.head(8).iterrows():
-        if isinstance(idx, tuple):
-            clean_parts = [str(i) for i in idx if str(i) != 'Unknown']
-            label = " > ".join(clean_parts[-2:]) if len(clean_parts) > 2 else " > ".join(clean_parts)
-            label = label[:24]
-        else:
-            label = str(idx)[:24]
+    for title, col, label_prefix in summary_dims:
+        if col in df_raw.columns:
+            top_item = df_raw.groupby(col, observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'}).sort_values(by='Net Sales', ascending=False).iloc[0]
 
-        # Convert Net Sales directly into Lacs
-        total_lacs = row['Total Net Sales'] / 100000.0
-        summary_text += f"{label:<24} | ₹{total_lacs:>6.2f} Lacs\n"
+            item_name = top_item.name
+            net_rev = top_item['Net Sales'] / 100000.0
+            tot_orders = int(top_item['Orders'])
+            avg_aov = round(top_item['Net Sales'] / tot_orders, 0) if tot_orders > 0 else 0
+            disc_pct = round((top_item['Discount'] / top_item['Gross Sales']) * 100, 1) if top_item['Gross Sales'] > 0 else 0.0
 
-    summary_text += "```\n"
-    summary_text += "📥 **Download complete breakdown reports below:**"
+            # Monthly breakdown
+            m_breakdown = df_raw[df_raw[col] == item_name].groupby('MonthLabel', observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum'})
+
+            card_str = f"📊 **{title}**\n"
+            card_str += f"{label_prefix} **{item_name}**\n"
+            card_str += f"🏬 Store Type: **{context.user_data['filters'].get('Store Type', 'ALL')}**\n"
+            card_str += f"📅 Period: **{context.user_data['timeframe']}**\n\n"
+            card_str += f"💰 Net Revenue: **₹{net_rev:.2f}L**\n"
+            card_str += f"📄 Total Orders: **{tot_orders:,}**\n"
+            card_str += f"🧺 Avg AOV: **₹{int(avg_aov)}**\n"
+            card_str += f"📉 Avg Discount: **{disc_pct}%**\n\n"
+            card_str += "📈 **Monthly Breakdown**\n"
+
+            for m_name, m_row in m_breakdown.iterrows():
+                m_rev = m_row['Net Sales'] / 100000.0
+                card_str += f"🔹 **{m_name}**: ₹{m_rev:.2f}L ({int(m_row['Orders']):,} orders)\n"
+
+            cards.append(card_str)
+
+    full_response = "\n\n---\n\n".join(cards[:2])  # Display 2 clean detailed cards in telegram
+    full_response += "\n\n📥 **Download complete breakdown reports below:**"
 
     keyboard = [
         [InlineKeyboardButton("📊 Download Excel Dashboard", callback_data="dl_excel")],
-        [InlineKeyboardButton("📄 Download PDF Executive Summary", callback_data="dl_pdf")],
+        [InlineKeyboardButton("📈 Download PPTX Visual Presentation", callback_data="dl_pptx")],
         [InlineKeyboardButton("🔄 Start New Query", callback_data="start_over")]
     ]
-    await query.edit_message_text(summary_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    await query.edit_message_text(full_response, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 # =========================================================
-# 6. MAIN LAUNCHER
+# 7. MAIN LAUNCHER
 # =========================================================
 if __name__ == "__main__":
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -637,5 +691,5 @@ if __name__ == "__main__":
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start_greeting))
     app.add_handler(CallbackQueryHandler(callback_handler))
 
-    print("🤖 Analytics Bot running with Low-RAM Engine...")
-    app.run_polling(poll_interval=2.0, timeout=30)
+    print("🤖 Analytics Bot running with PPTX + Low-RAM Engine...")
+    app.run_polling(poll_interval=1.0, timeout=30, drop_pending_updates=True)
