@@ -23,7 +23,7 @@ from openpyxl.styles import Font, PatternFill
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
-from pptx.enum.chart import XL_CHART_TYPE
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 
@@ -41,7 +41,7 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=port)
 
 # =========================================================
-# 2. ULTRA-LOW MEMORY DATA ENGINE
+# 2. ULTRA-LOW MEMORY DATA ENGINE WITH BUCKETING
 # =========================================================
 DB_CACHE_FILE = "cached_dataset.parquet"
 
@@ -83,6 +83,7 @@ def optimize_and_cache_data():
 
     df['Brand Name'] = df['Brand Name'] if 'Brand Name' in df.columns else df.get('Brand', 'Unknown')
     df['Branch'] = df['Branch'] if 'Branch' in df.columns else df.get('Store', 'Unknown')
+    df['Source'] = df.get('Source', 'Unknown').astype(str).fillna('Unknown')
 
     for col in ['Net Sales', 'Gross Sales', 'Discount']:
         if col in df.columns:
@@ -92,7 +93,21 @@ def optimize_and_cache_data():
 
     df['Orders'] = pd.to_numeric(df.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
 
-    cat_cols = ['Brand Name', 'Branch', 'Store Type', 'Region', 'Source', 'Session', 'YearMonth', 'MonthLabel']
+    # Calculate Order-level AOV & Discount % for Bucketing
+    df['Calc_AOV'] = np.where(df['Orders'] > 0, df['Net Sales'] / df['Orders'], 0.0)
+    df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0)
+
+    # AOV Buckets
+    aov_bins = [-np.inf, 200, 400, 600, 800, np.inf]
+    aov_labels = ['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800']
+    df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=aov_bins, labels=aov_labels)
+
+    # Discount Buckets
+    disc_bins = [-np.inf, 5, 15, 25, 35, np.inf]
+    disc_labels = ['0 - 5%', '5 - 15%', '15 - 25%', '25 - 35%', '> 35%']
+    df['Discount Bucket'] = pd.cut(df['Calc_Disc_Pct'], bins=disc_bins, labels=disc_labels)
+
+    cat_cols = ['Brand Name', 'Branch', 'Store Type', 'Region', 'Source', 'Session', 'YearMonth', 'MonthLabel', 'AOV Bucket', 'Discount Bucket']
     for c in cat_cols:
         if c in df.columns:
             df[c] = df[c].astype(str).fillna('Unknown').astype('category')
@@ -176,7 +191,7 @@ def generate_pivoted_report(filters_dict, primary_dim, analysis_dims, timeframe)
     return summary_df, df_eval
 
 # =========================================================
-# 4. EXCEL EXPORTER
+# 4. EXCEL EXPORTER (WITH BUCKET SUMMARIES)
 # =========================================================
 def build_excel_export(pivot_sales, df_raw, title):
     output = BytesIO()
@@ -229,6 +244,7 @@ def build_excel_export(pivot_sales, df_raw, title):
     ws1.title = "Executive Summary"
     write_sheet(ws1, f"Monthly Breakdown - {title}", clean_pivot)
 
+    # Standard Dimension Summaries
     summary_dims = {
         "Brand Summary": "Brand Name",
         "Store Summary": "Branch",
@@ -267,12 +283,27 @@ def build_excel_export(pivot_sales, df_raw, title):
 
             write_sheet(ws, f"{sheet_name} Matrix", dim_df)
 
+    # Bucket Summaries (AOV & Discount Buckets in Rows, Months in Columns)
+    bucket_dims = {
+        "AOV Bucket Summary": "AOV Bucket",
+        "Discount Bucket Summary": "Discount Bucket"
+    }
+
+    for sheet_name, col_name in bucket_dims.items():
+        if col_name in df_raw.columns:
+            ws = wb.create_sheet(title=sheet_name)
+            piv_b = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0, observed=True)
+            b_df = piv_b[active_months].copy()
+            b_df['Total Net Sales'] = piv_b.sum(axis=1)
+            b_df = b_df[b_df['Total Net Sales'] > 0]
+            write_sheet(ws, f"{sheet_name} (Sales in ₹)", b_df)
+
     wb.save(output)
     output.seek(0)
     return output
 
 # =========================================================
-# 5. PPTX EXPORTER WITH VISUAL CHARTS & INSIGHTS
+# 5. PPTX EXPORTER WITH INSIGHTS & BUCKET SLIDES
 # =========================================================
 def build_pptx_export(pivot_sales, df_raw, title):
     prs = Presentation()
@@ -280,6 +311,25 @@ def build_pptx_export(pivot_sales, df_raw, title):
     prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6]
 
+    # Helper function to add structured insight boxes
+    def add_insight_box(slide, heading, bullet_lines):
+        tb = slide.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4.2), Inches(5.0))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        
+        p = tf.paragraphs[0]
+        p.text = f"💡 Executive Insights: {heading}"
+        p.font.size = Pt(14)
+        p.font.bold = True
+        p.font.color.rgb = RGBColor(31, 78, 121)
+
+        for line in bullet_lines:
+            p_bullet = tf.add_paragraph()
+            p_bullet.text = f"• {line}"
+            p_bullet.font.size = Pt(11)
+            p_bullet.space_before = Pt(8)
+
+    # Slide 1: Title Slide
     slide1 = prs.slides.add_slide(blank_layout)
     tb = slide1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
     p = tb.text_frame.paragraphs[0]
@@ -292,22 +342,33 @@ def build_pptx_export(pivot_sales, df_raw, title):
     p2.text = f"Executive Dashboard: {title}\nGenerated on: {datetime.now().strftime('%b %d, %Y')}"
     p2.font.size = Pt(18)
 
+    # Slide 2: Brand Performance (Bar Chart)
     slide2 = prs.slides.add_slide(blank_layout)
     top_performers = df_raw.groupby('Brand Name', observed=True)['Net Sales'].sum().sort_values(ascending=False).head(5)
     
     chart_data = CategoryChartData()
     chart_data.categories = [str(x) for x in top_performers.index]
-    chart_data.add_series('Net Sales (₹ Lacs)', [round(v / 100000.0, 2) for v in top_performers.values])
+    chart_data.add_series('Net Sales (₹ Lacs)', [round(float(v) / 100000.0, 2) for v in top_performers.values])
 
-    chart_shape = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data)
+    chart_shape = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.8), Inches(1.5), Inches(7.5), Inches(5), chart_data)
     chart = chart_shape.chart
     
     plots = chart.plots[0]
     plots.has_data_labels = True
-    data_labels = plots.data_labels
-    data_labels.font.size = Pt(11)
-    data_labels.font.bold = True
+    plots.data_labels.font.size = Pt(10)
+    plots.data_labels.font.bold = True
 
+    top_brand = top_performers.index[0] if not top_performers.empty else "N/A"
+    top_brand_rev = round(top_performers.iloc[0] / 100000.0, 2) if not top_performers.empty else 0
+    tot_rev = round(df_raw['Net Sales'].sum() / 100000.0, 2)
+
+    add_insight_box(slide2, "Brand Performance", [
+        f"Top Performing Brand: {top_brand} generating ₹{top_brand_rev:.2f} Lacs.",
+        f"Overall portfolio revenue for selected period is ₹{tot_rev:.2f} Lacs.",
+        f"Brand concentration: Top brand contributes {round((top_brand_rev/tot_rev)*100, 1) if tot_rev > 0 else 0}% of net sales."
+    ])
+
+    # Slide 3: Monthly Breakdown (Line Chart)
     slide3 = prs.slides.add_slide(blank_layout)
     m_trend = (
         df_raw.groupby(['YearMonth', 'MonthLabel'], observed=True)['Net Sales']
@@ -318,28 +379,96 @@ def build_pptx_export(pivot_sales, df_raw, title):
 
     chart_data_line = CategoryChartData()
     chart_data_line.categories = [str(x) for x in m_trend['MonthLabel']]
-    chart_data_line.add_series('Monthly Revenue (₹ Lacs)', [round(v / 100000.0, 2) for v in m_trend['Net Sales']])
+    chart_data_line.add_series('Monthly Revenue (₹ Lacs)', [round(float(v) / 100000.0, 2) for v in m_trend['Net Sales']])
 
-    chart_shape_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_line)
+    chart_shape_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(0.8), Inches(1.5), Inches(7.5), Inches(5), chart_data_line)
     chart_line = chart_shape_line.chart
-    
     plots_line = chart_line.plots[0]
     plots_line.has_data_labels = True
-    plots_line.data_labels.font.size = Pt(11)
+    plots_line.data_labels.font.size = Pt(10)
 
+    growth_str = "Stable trajectory across active months."
+    if len(m_trend) >= 2:
+        m1 = m_trend.iloc[0]['Net Sales']
+        m2 = m_trend.iloc[-1]['Net Sales']
+        pct_chg = round(((m2 - m1) / m1) * 100, 1) if m1 > 0 else 0
+        growth_str = f"Net Sales changed by {pct_chg}% from {m_trend.iloc[0]['MonthLabel']} to {m_trend.iloc[-1]['MonthLabel']}."
+
+    add_insight_box(slide3, "Monthly Dynamics", [
+        f"Monthly revenue trend analyzed over {len(m_trend)} active months.",
+        growth_str,
+        f"Peak sales month recorded at ₹{round(m_trend['Net Sales'].max()/100000.0, 2)} Lacs."
+    ])
+
+    # Slide 4: Pie Chart (Source Share) with Legend and Category Names
     slide4 = prs.slides.add_slide(blank_layout)
     src_dist = df_raw.groupby('Source', observed=True)['Net Sales'].sum()
     src_dist = src_dist[src_dist > 0]
 
     chart_data_pie = CategoryChartData()
     chart_data_pie.categories = [str(x) for x in src_dist.index]
-    chart_data_pie.add_series('Source Share', [round(v / 100000.0, 2) for v in src_dist.values])
+    chart_data_pie.add_series('Source Share', [round(float(v) / 100000.0, 2) for v in src_dist.values])
 
-    chart_shape_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie)
+    chart_shape_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(0.8), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie)
     chart_pie = chart_shape_pie.chart
-    
+    chart_pie.has_legend = True
+    chart_pie.legend.position = XL_LEGEND_POSITION.RIGHT
+    chart_pie.legend.font.size = Pt(10)
+
     plots_pie = chart_pie.plots[0]
     plots_pie.has_data_labels = True
+    plots_pie.data_labels.show_category_name = True
+    plots_pie.data_labels.show_value = True
+    plots_pie.data_labels.font.size = Pt(9)
+
+    top_src = src_dist.idxmax() if not src_dist.empty else "N/A"
+    top_src_pct = round((src_dist.max() / src_dist.sum()) * 100, 1) if not src_dist.empty else 0
+
+    add_insight_box(slide4, "Source Share", [
+        f"Dominant Channel: {top_src} accounts for {top_src_pct}% of total sales.",
+        f"Total active fulfillment channels: {len(src_dist)}.",
+        "Clear channel segmentation visible between Online Aggregators and Offline In-Store sales."
+    ])
+
+    # Slide 5: AOV Bucket Analysis (Revenue in Lacs vs AOV Buckets)
+    slide5 = prs.slides.add_slide(blank_layout)
+    aov_dist = df_raw.groupby('AOV Bucket', observed=True)['Net Sales'].sum()
+    
+    chart_data_aov = CategoryChartData()
+    chart_data_aov.categories = [str(x) for x in aov_dist.index]
+    chart_data_aov.add_series('Revenue (₹ Lacs)', [round(float(v) / 100000.0, 2) for v in aov_dist.values])
+
+    chart_shape_aov = slide5.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.8), Inches(1.5), Inches(7.5), Inches(5), chart_data_aov)
+    chart_aov = chart_shape_aov.chart
+    chart_aov.plots[0].has_data_labels = True
+    chart_aov.plots[0].data_labels.font.size = Pt(10)
+
+    top_aov_bucket = aov_dist.idxmax() if not aov_dist.empty else "N/A"
+    add_insight_box(slide5, "AOV Bucket Distribution", [
+        f"Primary Revenue Driver: Orders in the '{top_aov_bucket}' AOV bucket.",
+        "Higher AOV buckets reflect premium product combos and larger order sizes.",
+        "Strategic focus recommended on upselling to push transactions into higher buckets."
+    ])
+
+    # Slide 6: Discount Bucket Analysis (Revenue in Lacs vs Discount Buckets)
+    slide6 = prs.slides.add_slide(blank_layout)
+    disc_dist = df_raw.groupby('Discount Bucket', observed=True)['Net Sales'].sum()
+
+    chart_data_disc = CategoryChartData()
+    chart_data_disc.categories = [str(x) for x in disc_dist.index]
+    chart_data_disc.add_series('Revenue (₹ Lacs)', [round(float(v) / 100000.0, 2) for v in disc_dist.values])
+
+    chart_shape_disc = slide6.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.8), Inches(1.5), Inches(7.5), Inches(5), chart_data_disc)
+    chart_disc = chart_shape_disc.chart
+    chart_disc.plots[0].has_data_labels = True
+    chart_disc.plots[0].data_labels.font.size = Pt(10)
+
+    top_disc_bucket = disc_dist.idxmax() if not disc_dist.empty else "N/A"
+    add_insight_box(slide6, "Discount Bucket Distribution", [
+        f"Largest Revenue Bucket: '{top_disc_bucket}' discount range.",
+        "Monitors margin health by evaluating revenue generated at steep discount levels.",
+        "Targeted discount optimization can help improve overall gross margins."
+    ])
 
     output = BytesIO()
     prs.save(output)
@@ -492,7 +621,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await prompt_next_entity_filter(query, context)
 
     elif data == "dl_excel":
-        await query.answer("Building Multi-Tab Excel Dashboard...")
+        await query.answer("Building Multi-Tab Excel Dashboard with Bucketing...")
         pivot_sales, df_raw = generate_pivoted_report(
             context.user_data.get('filters', {}),
             context.user_data.get('primary_dim', 'Brand'),
@@ -504,11 +633,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=query.message.chat_id,
             document=excel_file,
             filename=f"FrozenBottle_Analytics_{context.user_data.get('primary_dim', 'Brand')}.xlsx",
-            caption="📊 **Excel Executive Dashboard attached.**"
+            caption="📊 **Excel Executive Dashboard attached (includes AOV & Discount Bucketing).**"
         )
 
     elif data == "dl_pptx":
-        await query.answer("Generating PowerPoint Presentation with Charts & Insights...")
+        await query.answer("Generating PowerPoint Presentation with Insights & Bucket Slides...")
         pivot_sales, df_raw = generate_pivoted_report(
             context.user_data.get('filters', {}),
             context.user_data.get('primary_dim', 'Brand'),
@@ -520,7 +649,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=query.message.chat_id,
             document=pptx_file,
             filename=f"FrozenBottle_Analytics_{context.user_data.get('primary_dim', 'Brand')}.pptx",
-            caption="📊 **PowerPoint Analytics Presentation attached.**"
+            caption="📊 **PowerPoint Analytics Presentation with Native Charts & Insights attached.**"
         )
 
     elif data == "start_over":
@@ -617,6 +746,18 @@ async def generate_final_summary_view(query, context):
         await query.edit_message_text("⚠️ No data available for selected criteria. Tap /start to try again.")
         return
 
+    # Source & Discount Analysis calculations
+    src_grouped = df_raw.groupby('Source', observed=True).agg({'Net Sales': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'})
+    tot_net = src_grouped['Net Sales'].sum()
+    
+    in_store_sales = src_grouped.loc[src_grouped.index.astype(str).str.lower().isin(['in store', 'instore', 'takeaway', 'dine in']), 'Net Sales'].sum()
+    offline_pct = round((in_store_sales / tot_net) * 100, 1) if tot_net > 0 else 0.0
+    online_pct = round(100.0 - offline_pct, 1)
+
+    src_grouped['Disc_Pct'] = np.where(src_grouped['Gross Sales'] > 0, (src_grouped['Discount'] / src_grouped['Gross Sales']) * 100, 0.0)
+    max_disc_src = src_grouped['Disc_Pct'].idxmax() if not src_grouped.empty else "N/A"
+    max_disc_val = round(src_grouped['Disc_Pct'].max(), 1) if not src_grouped.empty else 0.0
+
     summary_dims = [
         ("BRAND PERFORMANCE REPORT", "Brand Name", "🏷️ Brand:"),
         ("SOURCE PERFORMANCE REPORT", "Source", "🛒 Source:"),
@@ -647,13 +788,15 @@ async def generate_final_summary_view(query, context):
             card_str += f"💰 Net Revenue: **₹{net_rev:.2f}L**\n"
             card_str += f"📄 Total Orders: **{tot_orders:,}**\n"
             card_str += f"🧺 Avg AOV: **₹{int(avg_aov)}**\n"
-            card_str += f"📉 Avg Discount: **{disc_pct}%**\n\n"
+            card_str += f"📉 Avg Discount: **{disc_pct}%**\n"
+            card_str += f"🏪 Offline Share: **{offline_pct}%** | 🌐 Online Share: **{online_pct}%**\n"
+            card_str += f"⚠️ Highest Discount Channel: **{max_disc_src} ({max_disc_val}%)**\n\n"
             card_str += "📈 **Monthly Breakdown**\n"
     
             item_df = df_raw[df_raw[col] == item_name]
             m_breakdown = (
                 item_df.groupby(['YearMonth', 'MonthLabel'], observed=True)
-                .agg({'Net Sales': 'sum', 'Orders': 'sum'})
+                .agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'})
                 .reset_index()
             )
     
@@ -662,7 +805,8 @@ async def generate_final_summary_view(query, context):
             for _, m_row in m_breakdown.iterrows():
                 m_name = m_row['MonthLabel']
                 m_rev = m_row['Net Sales'] / 100000.0
-                card_str += f"🔹 **{m_name}**: ₹{m_rev:.2f}L ({int(m_row['Orders']):,} orders)\n"
+                m_disc = round((m_row['Discount'] / m_row['Gross Sales']) * 100, 1) if m_row['Gross Sales'] > 0 else 0.0
+                card_str += f"🔹 **{m_name}**: ₹{m_rev:.2f}L ({int(m_row['Orders']):,} orders | Dis: {m_disc}%)\n"
     
             cards.append(card_str)
     
@@ -680,15 +824,12 @@ async def generate_final_summary_view(query, context):
 # 7. MAIN LAUNCHER
 # =========================================================
 if __name__ == '__main__':
-    # 1. Launch Flask in background thread for Render Port check
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # 2. Get Telegram Token
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is missing!")
 
-    # 3. Build Application Handlers correctly referencing defined functions
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start_greeting))
@@ -696,6 +837,4 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     print("🤖 Telegram Bot Polling Started...")
-
-    # 4. Run polling on main thread
     app.run_polling(drop_pending_updates=True)
