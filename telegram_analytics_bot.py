@@ -189,6 +189,11 @@ def build_excel_export(pivot_sales, df_raw, title):
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
 
+    # Drop unselected zero-revenue month columns from Pivot
+    active_months = [col for col in pivot_sales.columns if col not in ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']]
+    valid_cols = [m for m in active_months if pivot_sales[m].sum() > 0] + ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']
+    clean_pivot = pivot_sales[valid_cols]
+
     def write_sheet(ws, sheet_title, data_df):
         ws.append([sheet_title])
         ws.append([])
@@ -212,7 +217,7 @@ def build_excel_export(pivot_sales, df_raw, title):
 
     ws1 = wb.active
     ws1.title = "Executive Summary"
-    write_sheet(ws1, f"Monthly Breakdown - {title}", pivot_sales)
+    write_sheet(ws1, f"Monthly Breakdown - {title}", clean_pivot)
 
     summary_dims = {
         "Brand Summary": "Brand Name",
@@ -224,7 +229,12 @@ def build_excel_export(pivot_sales, df_raw, title):
     for sheet_name, col_name in summary_dims.items():
         if col_name in df_raw.columns:
             ws = wb.create_sheet(title=sheet_name)
-            grp = df_raw.groupby(col_name, observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'}).reset_index()
+            # Use observed=True to stop unused categories from inserting empty rows
+            grp = df_raw.groupby(col_name, observed=True).agg({
+                'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'
+            }).reset_index()
+            
+            grp = grp[grp['Net Sales'] > 0]  # Strip zero sales
             grp['Discount %'] = np.where(grp['Gross Sales'] > 0, (grp['Discount'] / grp['Gross Sales']) * 100, 0.0)
             grp['AOV'] = np.where(grp['Orders'] > 0, grp['Net Sales'] / grp['Orders'], 0.0)
 
@@ -242,123 +252,75 @@ def build_pptx_export(pivot_sales, df_raw, title):
     prs = Presentation()
     prs.slide_width = Inches(13.33)
     prs.slide_height = Inches(7.5)
-
     blank_layout = prs.slide_layouts[6]
 
-    # Slide 1: Executive Title Slide
+    # Slide 1: Title Slide
     slide1 = prs.slides.add_slide(blank_layout)
     tb = slide1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
-    tf = tb.text_frame
-    p = tf.paragraphs[0]
+    p = tb.text_frame.paragraphs[0]
     p.text = f"FROZEN BOTTLE ANALYTICS"
     p.font.size = Pt(40)
     p.font.bold = True
     p.font.color.rgb = RGBColor(31, 78, 121)
 
-    p2 = tf.add_paragraph()
-    p2.text = f"Executive Performance Dashboard: {title}\nGenerated on: {datetime.now().strftime('%b %d, %Y')}"
+    p2 = tb.text_frame.add_paragraph()
+    p2.text = f"Executive Dashboard: {title}\nGenerated on: {datetime.now().strftime('%b %d, %Y')}"
     p2.font.size = Pt(18)
-    p2.font.color.rgb = RGBColor(100, 100, 100)
 
-    # Slide 2: Bar Chart - Overall Sales Revenue
+    # Slide 2: Bar Chart with Data Labels (Brand Performance)
     slide2 = prs.slides.add_slide(blank_layout)
+    top_performers = df_raw.groupby('Brand Name', observed=True)['Net Sales'].sum().sort_values(ascending=False).head(5)
+    
     chart_data = CategoryChartData()
-
-    top_performers = df_raw.groupby('Brand Name', observed=False)['Net Sales'].sum().sort_values(ascending=False).head(5)
     chart_data.categories = [str(x) for x in top_performers.index]
     chart_data.add_series('Net Sales (₹ Lacs)', [round(v / 100000.0, 2) for v in top_performers.values])
 
-    x, y, cx, cy = Inches(1), Inches(1.5), Inches(7.5), Inches(5)
-    chart = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data).chart
+    chart_shape = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data)
+    chart = chart_shape.chart
+    
+    # Enable Data Labels on Bar Chart
+    plots = chart.plots[0]
+    plots.has_data_labels = True
+    data_labels = plots.data_labels
+    data_labels.font.size = Pt(11)
+    data_labels.font.bold = True
 
-    tb2 = slide2.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
-    tf2 = tb2.text_frame
-    tf2.word_wrap = True
-    p = tf2.paragraphs[0]
-    p.text = "💡 Executive Insights (Brand Sales)"
-    p.font.bold = True
-    p.font.size = Pt(16)
-
-    top_brand = top_performers.index[0] if not top_performers.empty else "N/A"
-    top_val = round(top_performers.values[0] / 100000.0, 2) if not top_performers.empty else 0.0
-
-    insights = (
-        f"• Top Performing Brand: {top_brand} generated ₹{top_val} Lacs.\n\n"
-        f"• Brand Contribution: Top brand accounts for "
-        f"{round((top_performers.values[0]/df_raw['Net Sales'].sum())*100, 1) if df_raw['Net Sales'].sum() > 0 else 0}% of overall revenue.\n\n"
-        f"• Strategic Focus: Retain top category momentum while driving promo adoption in emerging brands."
-    )
-    p2 = tf2.add_paragraph()
-    p2.text = insights
-    p2.font.size = Pt(13)
-
-    # Slide 3: Line Chart - Monthly Trend Analysis
+    # Slide 3: Line Chart with Data Labels (Monthly Breakdown for Selected Period)
     slide3 = prs.slides.add_slide(blank_layout)
-    m_trend = df_raw.groupby('MonthLabel', observed=False)['Net Sales'].sum().reset_index()
+    m_trend = (
+        df_raw.groupby(['YearMonth', 'MonthLabel'], observed=True)['Net Sales']
+        .sum()
+        .reset_index()
+        .sort_values('YearMonth')
+    )
 
     chart_data_line = CategoryChartData()
     chart_data_line.categories = [str(x) for x in m_trend['MonthLabel']]
     chart_data_line.add_series('Monthly Revenue (₹ Lacs)', [round(v / 100000.0, 2) for v in m_trend['Net Sales']])
 
-    chart_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_line).chart
+    chart_shape_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_line)
+    chart_line = chart_shape_line.chart
+    
+    # Enable Data Labels on Line Chart
+    plots_line = chart_line.plots[0]
+    plots_line.has_data_labels = True
+    plots_line.data_labels.font.size = Pt(11)
 
-    tb3 = slide3.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
-    tf3 = tb3.text_frame
-    tf3.word_wrap = True
-    p = tf3.paragraphs[0]
-    p.text = "📈 Monthly Revenue Insights"
-    p.font.bold = True
-    p.font.size = Pt(16)
-
-    p2 = tf3.add_paragraph()
-    p2.text = "• Tracked operational period shows steady dynamic monthly volume changes.\n• Peak growth months align with seasonal promo runs and delivery platform pushes."
-    p2.font.size = Pt(13)
-
-    # Slide 4: Pie Chart - Source Distribution
+    # Slide 4: Pie Chart with Data Labels (Source Share)
     slide4 = prs.slides.add_slide(blank_layout)
-    src_dist = df_raw.groupby('Source', observed=False)['Net Sales'].sum()
+    src_dist = df_raw.groupby('Source', observed=True)['Net Sales'].sum()
+    src_dist = src_dist[src_dist > 0]
 
     chart_data_pie = CategoryChartData()
     chart_data_pie.categories = [str(x) for x in src_dist.index]
     chart_data_pie.add_series('Source Share', [round(v / 100000.0, 2) for v in src_dist.values])
 
-    chart_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie).chart
-
-    tb4 = slide4.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
-    tf4 = tb4.text_frame
-    tf4.word_wrap = True
-    p = tf4.paragraphs[0]
-    p.text = "🍕 Order Channel Breakdown"
-    p.font.bold = True
-    p.font.size = Pt(16)
-
-    p2 = tf4.add_paragraph()
-    p2.text = "• Direct channel versus aggregator delivery channel performance overview.\n• Swiggy & Zomato continue driving primary digital reach."
-    p2.font.size = Pt(13)
-
-    # Slide 5: Scatter Plot - AOV vs Orders Efficiency
-    slide5 = prs.slides.add_slide(blank_layout)
-    store_grp = df_raw.groupby('Branch', observed=False).agg({'Orders': 'sum', 'Net Sales': 'sum'})
-    store_grp['AOV'] = np.where(store_grp['Orders'] > 0, store_grp['Net Sales'] / store_grp['Orders'], 0.0)
-
-    chart_data_scatter = XyChartData()
-    series = chart_data_scatter.add_series('Store Efficiency')
-    for idx, row in store_grp.head(15).iterrows():
-        series.add_data_point(row['Orders'], row['AOV'])
-
-    chart_scatter = slide5.shapes.add_chart(XL_CHART_TYPE.XY_SCATTER, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_scatter).chart
-
-    tb5 = slide5.shapes.add_textbox(Inches(8.8), Inches(1.5), Inches(4), Inches(5))
-    tf5 = tb5.text_frame
-    tf5.word_wrap = True
-    p = tf5.paragraphs[0]
-    p.text = "🎯 Store Order Volume vs AOV"
-    p.font.bold = True
-    p.font.size = Pt(16)
-
-    p2 = tf5.add_paragraph()
-    p2.text = "• Scatter matrix identifying high-volume vs high-value ticket size stores.\n• Focus store optimizations on upselling combos to increase basket size."
-    p2.font.size = Pt(13)
+    chart_shape_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie)
+    chart_pie = chart_shape_pie.chart
+    
+    # Enable Data Labels on Pie Chart
+    plots_pie = chart_pie.plots[0]
+    plots_pie.has_data_labels = True
 
     output = BytesIO()
     prs.save(output)
