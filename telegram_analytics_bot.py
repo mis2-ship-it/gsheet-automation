@@ -30,14 +30,17 @@ from pptx.dml.color import RGBColor
 # =========================================================
 # 1. FLASK HEALTH CHECK SERVER
 # =========================================================
+
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler
+
+# Flask setup for Render port check
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def health_check():
-    return "Bot is running live!"
+    return "Telegram Bot is running live!", 200
 
 def run_flask():
-    # Render provides PORT dynamically via environment variables
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
 
