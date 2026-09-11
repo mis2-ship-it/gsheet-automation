@@ -189,10 +189,26 @@ def build_excel_export(pivot_sales, df_raw, title):
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
 
-    # Drop unselected zero-revenue month columns from Pivot
-    active_months = [col for col in pivot_sales.columns if col not in ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']]
-    valid_cols = [m for m in active_months if pivot_sales[m].sum() > 0] + ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']
-    clean_pivot = pivot_sales[valid_cols]
+    # 1. Prune zero columns to keep ONLY selected active months
+    month_cols = [c for c in pivot_sales.columns if c not in ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']]
+    active_months = [m for m in month_cols if pivot_sales[m].sum() > 0]
+    active_months = sorted(active_months)
+
+    # Calculate MoM Growth % if 2 or more months are selected
+    clean_pivot = pivot_sales.copy()
+    if len(active_months) >= 2:
+        first_m, last_m = active_months[0], active_months[-1]
+        clean_pivot['MoM Growth %'] = np.where(
+            clean_pivot[first_m] > 0,
+            ((clean_pivot[last_m] - clean_pivot[first_m]) / clean_pivot[first_m]) * 100,
+            0.0
+        )
+        final_cols = active_months + ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %', 'MoM Growth %']
+    else:
+        final_cols = active_months + ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']
+
+    clean_pivot = clean_pivot[final_cols]
+    clean_pivot = clean_pivot[clean_pivot['Total Net Sales'] > 0]
 
     def write_sheet(ws, sheet_title, data_df):
         ws.append([sheet_title])
@@ -215,10 +231,12 @@ def build_excel_export(pivot_sales, df_raw, title):
                     formatted_row.append(item)
             ws.append(formatted_row)
 
+    # Sheet 1: Main Executive Pivot
     ws1 = wb.active
     ws1.title = "Executive Summary"
     write_sheet(ws1, f"Monthly Breakdown - {title}", clean_pivot)
 
+    # 2. Build Summary Tabs with Monthly Breakdown + Growth %
     summary_dims = {
         "Brand Summary": "Brand Name",
         "Store Summary": "Branch",
@@ -229,22 +247,39 @@ def build_excel_export(pivot_sales, df_raw, title):
     for sheet_name, col_name in summary_dims.items():
         if col_name in df_raw.columns:
             ws = wb.create_sheet(title=sheet_name)
-            # Use observed=True to stop unused categories from inserting empty rows
-            grp = df_raw.groupby(col_name, observed=True).agg({
-                'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'
-            }).reset_index()
             
-            grp = grp[grp['Net Sales'] > 0]  # Strip zero sales
-            grp['Discount %'] = np.where(grp['Gross Sales'] > 0, (grp['Discount'] / grp['Gross Sales']) * 100, 0.0)
-            grp['AOV'] = np.where(grp['Orders'] > 0, grp['Net Sales'] / grp['Orders'], 0.0)
+            # Group by Dimension AND YearMonth to build monthly columns per sheet
+            piv_s = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0, observed=True)
+            piv_o = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Orders', aggfunc='sum', fill_value=0, observed=True)
+            piv_d = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Discount', aggfunc='sum', fill_value=0, observed=True)
+            piv_g = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Gross Sales', aggfunc='sum', fill_value=0, observed=True)
 
-            res_df = grp.set_index(col_name)[['Net Sales', 'Orders', 'AOV', 'Discount %']].sort_values(by='Net Sales', ascending=False)
-            write_sheet(ws, f"{sheet_name} Matrix", res_df)
+            dim_df = piv_s[active_months].copy()
+            dim_df['Total Net Sales'] = piv_s.sum(axis=1)
+            dim_df['Total Orders'] = piv_o.sum(axis=1)
+            dim_df['AOV'] = np.where(dim_df['Total Orders'] > 0, dim_df['Total Net Sales'] / dim_df['Total Orders'], 0.0)
+            
+            tot_gross = piv_g.sum(axis=1)
+            tot_disc = piv_d.sum(axis=1)
+            dim_df['Discount %'] = np.where(tot_gross > 0, (tot_disc / tot_gross) * 100, 0.0)
+
+            if len(active_months) >= 2:
+                first_m, last_m = active_months[0], active_months[-1]
+                dim_df['MoM Growth %'] = np.where(
+                    dim_df[first_m] > 0,
+                    ((dim_df[last_m] - dim_df[first_m]) / dim_df[first_m]) * 100,
+                    0.0
+                )
+
+            # Drop zero/unknown rows and sort descending by sales
+            dim_df = dim_df[dim_df['Total Net Sales'] > 0].sort_values(by='Total Net Sales', ascending=False)
+            dim_df = dim_df.loc[~dim_df.index.isin(['Unknown', 'nan'])]
+
+            write_sheet(ws, f"{sheet_name} Matrix", dim_df)
 
     wb.save(output)
     output.seek(0)
     return output
-
 # =========================================================
 # 5. PPTX EXPORTER WITH VISUAL CHARTS & INSIGHTS
 # =========================================================
