@@ -24,16 +24,12 @@ from openpyxl.styles import Font, PatternFill
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.enum.chart import XL_CHART_TYPE
-from pptx.chart.data import CategoryChartData, XyChartData
+from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 
 # =========================================================
 # 1. FLASK HEALTH CHECK SERVER
 # =========================================================
-
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-
-# Flask setup for Render port check
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -43,9 +39,6 @@ def health_check():
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
-
-# Start Flask on server startup
-threading.Thread(target=run_flask, daemon=True).start()
 
 # =========================================================
 # 2. ULTRA-LOW MEMORY DATA ENGINE
@@ -192,12 +185,10 @@ def build_excel_export(pivot_sales, df_raw, title):
     header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     font_header = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
 
-    # 1. Prune zero columns to keep ONLY selected active months
     month_cols = [c for c in pivot_sales.columns if c not in ['Total Net Sales', 'Total Orders', 'AOV', 'Discount %']]
     active_months = [m for m in month_cols if pivot_sales[m].sum() > 0]
     active_months = sorted(active_months)
 
-    # Calculate MoM Growth % if 2 or more months are selected
     clean_pivot = pivot_sales.copy()
     if len(active_months) >= 2:
         first_m, last_m = active_months[0], active_months[-1]
@@ -234,12 +225,10 @@ def build_excel_export(pivot_sales, df_raw, title):
                     formatted_row.append(item)
             ws.append(formatted_row)
 
-    # Sheet 1: Main Executive Pivot
     ws1 = wb.active
     ws1.title = "Executive Summary"
     write_sheet(ws1, f"Monthly Breakdown - {title}", clean_pivot)
 
-    # 2. Build Summary Tabs with Monthly Breakdown + Growth %
     summary_dims = {
         "Brand Summary": "Brand Name",
         "Store Summary": "Branch",
@@ -251,7 +240,6 @@ def build_excel_export(pivot_sales, df_raw, title):
         if col_name in df_raw.columns:
             ws = wb.create_sheet(title=sheet_name)
             
-            # Group by Dimension AND YearMonth to build monthly columns per sheet
             piv_s = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0, observed=True)
             piv_o = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Orders', aggfunc='sum', fill_value=0, observed=True)
             piv_d = pd.pivot_table(df_raw, index=col_name, columns='YearMonth', values='Discount', aggfunc='sum', fill_value=0, observed=True)
@@ -274,7 +262,6 @@ def build_excel_export(pivot_sales, df_raw, title):
                     0.0
                 )
 
-            # Drop zero/unknown rows and sort descending by sales
             dim_df = dim_df[dim_df['Total Net Sales'] > 0].sort_values(by='Total Net Sales', ascending=False)
             dim_df = dim_df.loc[~dim_df.index.isin(['Unknown', 'nan'])]
 
@@ -283,6 +270,7 @@ def build_excel_export(pivot_sales, df_raw, title):
     wb.save(output)
     output.seek(0)
     return output
+
 # =========================================================
 # 5. PPTX EXPORTER WITH VISUAL CHARTS & INSIGHTS
 # =========================================================
@@ -292,7 +280,6 @@ def build_pptx_export(pivot_sales, df_raw, title):
     prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6]
 
-    # Slide 1: Title Slide
     slide1 = prs.slides.add_slide(blank_layout)
     tb = slide1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
     p = tb.text_frame.paragraphs[0]
@@ -305,7 +292,6 @@ def build_pptx_export(pivot_sales, df_raw, title):
     p2.text = f"Executive Dashboard: {title}\nGenerated on: {datetime.now().strftime('%b %d, %Y')}"
     p2.font.size = Pt(18)
 
-    # Slide 2: Bar Chart with Data Labels (Brand Performance)
     slide2 = prs.slides.add_slide(blank_layout)
     top_performers = df_raw.groupby('Brand Name', observed=True)['Net Sales'].sum().sort_values(ascending=False).head(5)
     
@@ -316,14 +302,12 @@ def build_pptx_export(pivot_sales, df_raw, title):
     chart_shape = slide2.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data)
     chart = chart_shape.chart
     
-    # Enable Data Labels on Bar Chart
     plots = chart.plots[0]
     plots.has_data_labels = True
     data_labels = plots.data_labels
     data_labels.font.size = Pt(11)
     data_labels.font.bold = True
 
-    # Slide 3: Line Chart with Data Labels (Monthly Breakdown for Selected Period)
     slide3 = prs.slides.add_slide(blank_layout)
     m_trend = (
         df_raw.groupby(['YearMonth', 'MonthLabel'], observed=True)['Net Sales']
@@ -339,12 +323,10 @@ def build_pptx_export(pivot_sales, df_raw, title):
     chart_shape_line = slide3.shapes.add_chart(XL_CHART_TYPE.LINE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_line)
     chart_line = chart_shape_line.chart
     
-    # Enable Data Labels on Line Chart
     plots_line = chart_line.plots[0]
     plots_line.has_data_labels = True
     plots_line.data_labels.font.size = Pt(11)
 
-    # Slide 4: Pie Chart with Data Labels (Source Share)
     slide4 = prs.slides.add_slide(blank_layout)
     src_dist = df_raw.groupby('Source', observed=True)['Net Sales'].sum()
     src_dist = src_dist[src_dist > 0]
@@ -356,7 +338,6 @@ def build_pptx_export(pivot_sales, df_raw, title):
     chart_shape_pie = slide4.shapes.add_chart(XL_CHART_TYPE.PIE, Inches(1), Inches(1.5), Inches(7.5), Inches(5), chart_data_pie)
     chart_pie = chart_shape_pie.chart
     
-    # Enable Data Labels on Pie Chart
     plots_pie = chart_pie.plots[0]
     plots_pie.has_data_labels = True
 
@@ -388,6 +369,9 @@ async def start_greeting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     elif update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_greeting(update, context)
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -536,7 +520,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=query.message.chat_id,
             document=pptx_file,
             filename=f"FrozenBottle_Analytics_{context.user_data.get('primary_dim', 'Brand')}.pptx",
-            caption="📊 **PowerPoint Analytics Presentation with Native Charts & Insights attached.**"
+            caption="📊 **PowerPoint Analytics Presentation attached.**"
         )
 
     elif data == "start_over":
@@ -633,7 +617,6 @@ async def generate_final_summary_view(query, context):
         await query.edit_message_text("⚠️ No data available for selected criteria. Tap /start to try again.")
         return
 
-    # Render Clean Card Format (3rd Attachment Requirement)
     summary_dims = [
         ("BRAND PERFORMANCE REPORT", "Brand Name", "🏷️ Brand:"),
         ("SOURCE PERFORMANCE REPORT", "Source", "🛒 Source:"),
@@ -644,7 +627,6 @@ async def generate_final_summary_view(query, context):
 
     for title, col, label_prefix in summary_dims:
         if col in df_raw.columns:
-            # Use observed=True to ignore non-existent categorical combinations
             top_item = df_raw.groupby(col, observed=True).agg({
                 'Net Sales': 'sum', 
                 'Orders': 'sum', 
@@ -668,7 +650,6 @@ async def generate_final_summary_view(query, context):
             card_str += f"📉 Avg Discount: **{disc_pct}%**\n\n"
             card_str += "📈 **Monthly Breakdown**\n"
     
-            # Filter dataset to selected item and aggregate by YearMonth for chronological sorting
             item_df = df_raw[df_raw[col] == item_name]
             m_breakdown = (
                 item_df.groupby(['YearMonth', 'MonthLabel'], observed=True)
@@ -676,7 +657,6 @@ async def generate_final_summary_view(query, context):
                 .reset_index()
             )
     
-            # Remove months with 0 orders and sort chronologically
             m_breakdown = m_breakdown[m_breakdown['Orders'] > 0].sort_values('YearMonth')
     
             for _, m_row in m_breakdown.iterrows():
@@ -686,7 +666,7 @@ async def generate_final_summary_view(query, context):
     
             cards.append(card_str)
     
-    full_response = "\n\n---\n\n".join(cards[:2])  # Display top 2 clean cards in Telegram
+    full_response = "\n\n---\n\n".join(cards[:2])
     full_response += "\n\n📥 **Download complete breakdown reports below:**"
 
     keyboard = [
@@ -700,7 +680,7 @@ async def generate_final_summary_view(query, context):
 # 7. MAIN LAUNCHER
 # =========================================================
 if __name__ == '__main__':
-    # 1. Start Flask in the background so it doesn't block Telegram
+    # 1. Launch Flask in background thread for Render Port check
     threading.Thread(target=run_flask, daemon=True).start()
 
     # 2. Get Telegram Token
@@ -708,15 +688,14 @@ if __name__ == '__main__':
     if not token:
         raise ValueError("TELEGRAM_BOT_TOKEN environment variable is missing!")
 
-    # 3. Initialize Telegram Bot
+    # 3. Build Application Handlers correctly referencing defined functions
     app = ApplicationBuilder().token(token).build()
 
-    # Add Handlers (ensuring text messages like 'hi' or 'sales' trigger your main menu)
-    app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-    app.add_handler(CallbackQueryHandler(button_click_handler))
+    app.add_handler(CommandHandler("start", start_greeting))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
+    app.add_handler(CallbackQueryHandler(callback_handler))
 
     print("🤖 Telegram Bot Polling Started...")
 
-    # 4. Start Telegram Polling on the Main Thread
+    # 4. Run polling on main thread
     app.run_polling(drop_pending_updates=True)
