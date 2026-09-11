@@ -6,24 +6,21 @@ from io import BytesIO
 from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 import openpyxl
-from openpyxl.styles import Font, PatternFill
 from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.chart.data import CategoryChartData
-from pptx.dml.color import RGBColor
+from pptx.util import Inches
 
 # Flask Web Server
 flask_app = Flask(__name__)
 @flask_app.route('/')
-def health(): return "Analytics Bot Online", 200
+def health(): 
+    return "Analytics Bot Online", 200
 
 def run_flask():
     flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
-# Parquet Data Loader & Bucketing
+# Parquet Data Loader & Memory Optimization
 DB_CACHE_FILE = "cached_dataset.parquet"
 
 def optimize_and_cache_data():
@@ -31,35 +28,56 @@ def optimize_and_cache_data():
         return pd.read_parquet(DB_CACHE_FILE)
 
     all_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
-    if not all_csvs: raise FileNotFoundError("No historical CSV files found!")
+    if not all_csvs: 
+        raise FileNotFoundError("No historical CSV files found!")
 
     target_cols = ['Date', 'Brand Name', 'Brand', 'Branch', 'Store', 'Store Type', 'Region', 'Source', 'Session', 'Net Sales', 'Orders', 'Discount', 'Gross Sales']
-    dfs = []
+    
+    parquet_parts = []
     for f in all_csvs:
         try:
             s_df = pd.read_csv(f, nrows=1)
             v_cols = [c for c in target_cols if c in s_df.columns]
-            dfs.append(pd.read_csv(f, usecols=v_cols, low_memory=True))
-        except: pass
+            df_part = pd.read_csv(f, usecols=v_cols, low_memory=True)
 
-    df = pd.concat(dfs, ignore_index=True)
-    del dfs
+            # Date formatting & cleanup
+            df_part['Date'] = pd.to_datetime(df_part['Date'], errors='coerce')
+            df_part = df_part.dropna(subset=['Date'])
+            if df_part.empty:
+                continue
+
+            # Standardize & downcast categorical columns
+            df_part['Brand Name'] = df_part.get('Brand Name', df_part.get('Brand', 'Unknown')).astype(str).astype('category')
+            df_part['Branch'] = df_part.get('Branch', df_part.get('Store', 'Unknown')).astype(str).astype('category')
+            df_part['Source'] = df_part.get('Source', 'Unknown').astype(str).astype('category')
+            if 'Store Type' in df_part: df_part['Store Type'] = df_part['Store Type'].astype(str).astype('category')
+            if 'Region' in df_part: df_part['Region'] = df_part['Region'].astype(str).astype('category')
+            if 'Session' in df_part: df_part['Session'] = df_part['Session'].astype(str).astype('category')
+
+            # Numeric optimizations
+            for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
+                df_part[num_col] = pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0).astype('float32')
+            df_part['Orders'] = pd.to_numeric(df_part.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
+
+            parquet_parts.append(df_part)
+            del df_part
+            gc.collect()
+        except Exception:
+            continue
+
+    if not parquet_parts:
+        raise ValueError("No valid data could be processed from CSVs.")
+
+    df = pd.concat(parquet_parts, ignore_index=True)
+    del parquet_parts
     gc.collect()
 
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date'])
-    df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
-    df['MonthLabel'] = df['Date'].dt.strftime('%b %Y')
-    df['Brand Name'] = df.get('Brand Name', df.get('Brand', 'Unknown'))
-    df['Branch'] = df.get('Branch', df.get('Store', 'Unknown'))
-    df['Source'] = df.get('Source', 'Unknown').astype(str)
+    df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
+    df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
 
-    for c in ['Net Sales', 'Gross Sales', 'Discount']:
-        df[c] = pd.to_numeric(df.get(c, 0), errors='coerce').fillna(0.0).astype('float32')
-    df['Orders'] = pd.to_numeric(df.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
-
-    df['Calc_AOV'] = np.where(df['Orders'] > 0, df['Net Sales'] / df['Orders'], 0.0)
-    df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0)
+    # Bucketing logic
+    df['Calc_AOV'] = np.where(df['Orders'] > 0, df['Net Sales'] / df['Orders'], 0.0).astype('float32')
+    df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0).astype('float32')
 
     df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=[-np.inf, 200, 400, 600, 800, np.inf], labels=['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800'])
     df['Discount Bucket'] = pd.cut(df['Calc_Disc_Pct'], bins=[-np.inf, 5, 15, 25, 35, np.inf], labels=['0 - 5%', '5 - 15%', '15 - 25%', '25 - 35%', '> 35%'])
@@ -70,7 +88,7 @@ def optimize_and_cache_data():
 GLOBAL_DF = optimize_and_cache_data()
 DIM_COL_MAP = {'Brand': 'Brand Name', 'Region': 'Region', 'Source': 'Source', 'Session': 'Session', 'Store': 'Branch'}
 
-# Pivot & Exporters
+# Report Builders
 def generate_pivoted_report(filters_dict, primary_dim, timeframe):
     df = GLOBAL_DF.copy()
     if filters_dict.get('Store Type') and filters_dict['Store Type'] != 'ALL':
@@ -113,7 +131,7 @@ def build_pptx(piv, df_raw):
     out.seek(0)
     return out
 
-# Telegram Callbacks
+# Telegram Handlers
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")]]
     await (u.message or u.callback_query.message).reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -122,6 +140,7 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
     await q.answer()
     data = q.data
+    
     if data.startswith("p_"):
         c.user_data['prim'] = data.split("_")[1]
         c.user_data['filters'] = {}
@@ -129,9 +148,11 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['piv'], c.user_data['df_raw'] = piv, df_raw
         kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
         await q.edit_message_text(f"Summary generated for **{c.user_data['prim']}**. Choose export:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        
     elif data == "dl_xls":
         doc = build_excel(c.user_data['piv'], c.user_data['df_raw'])
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Report.xlsx")
+        
     elif data == "dl_ppt":
         doc = build_pptx(c.user_data['piv'], c.user_data['df_raw'])
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
