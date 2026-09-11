@@ -37,9 +37,11 @@ def health_check():
     return "Bot is running live!"
 
 def run_flask():
+    # Render provides PORT dynamically via environment variables
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port)
 
+# Start Flask on server startup
 threading.Thread(target=run_flask, daemon=True).start()
 
 # =========================================================
