@@ -644,17 +644,20 @@ async def generate_final_summary_view(query, context):
 
     for title, col, label_prefix in summary_dims:
         if col in df_raw.columns:
-            top_item = df_raw.groupby(col, observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum', 'Discount': 'sum', 'Gross Sales': 'sum'}).sort_values(by='Net Sales', ascending=False).iloc[0]
-
+            # Use observed=True to ignore non-existent categorical combinations
+            top_item = df_raw.groupby(col, observed=True).agg({
+                'Net Sales': 'sum', 
+                'Orders': 'sum', 
+                'Discount': 'sum', 
+                'Gross Sales': 'sum'
+            }).sort_values(by='Net Sales', ascending=False).iloc[0]
+    
             item_name = top_item.name
             net_rev = top_item['Net Sales'] / 100000.0
             tot_orders = int(top_item['Orders'])
             avg_aov = round(top_item['Net Sales'] / tot_orders, 0) if tot_orders > 0 else 0
             disc_pct = round((top_item['Discount'] / top_item['Gross Sales']) * 100, 1) if top_item['Gross Sales'] > 0 else 0.0
-
-            # Monthly breakdown
-            m_breakdown = df_raw[df_raw[col] == item_name].groupby('MonthLabel', observed=False).agg({'Net Sales': 'sum', 'Orders': 'sum'})
-
+    
             card_str = f"📊 **{title}**\n"
             card_str += f"{label_prefix} **{item_name}**\n"
             card_str += f"🏬 Store Type: **{context.user_data['filters'].get('Store Type', 'ALL')}**\n"
@@ -664,14 +667,26 @@ async def generate_final_summary_view(query, context):
             card_str += f"🧺 Avg AOV: **₹{int(avg_aov)}**\n"
             card_str += f"📉 Avg Discount: **{disc_pct}%**\n\n"
             card_str += "📈 **Monthly Breakdown**\n"
-
-            for m_name, m_row in m_breakdown.iterrows():
+    
+            # Filter dataset to selected item and aggregate by YearMonth for chronological sorting
+            item_df = df_raw[df_raw[col] == item_name]
+            m_breakdown = (
+                item_df.groupby(['YearMonth', 'MonthLabel'], observed=True)
+                .agg({'Net Sales': 'sum', 'Orders': 'sum'})
+                .reset_index()
+            )
+    
+            # Remove months with 0 orders and sort chronologically
+            m_breakdown = m_breakdown[m_breakdown['Orders'] > 0].sort_values('YearMonth')
+    
+            for _, m_row in m_breakdown.iterrows():
+                m_name = m_row['MonthLabel']
                 m_rev = m_row['Net Sales'] / 100000.0
                 card_str += f"🔹 **{m_name}**: ₹{m_rev:.2f}L ({int(m_row['Orders']):,} orders)\n"
-
+    
             cards.append(card_str)
-
-    full_response = "\n\n---\n\n".join(cards[:2])  # Display 2 clean detailed cards in telegram
+    
+    full_response = "\n\n---\n\n".join(cards[:2])  # Display top 2 clean cards in Telegram
     full_response += "\n\n📥 **Download complete breakdown reports below:**"
 
     keyboard = [
