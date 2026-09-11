@@ -826,9 +826,9 @@ async def generate_final_summary_view(query, context):
 if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
 
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    token = os.environ.get("ANALYTICS_BOT_TOKEN")
     if not token:
-        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is missing!")
+        raise ValueError("ANALYTICS_BOT_TOKEN environment variable is missing!")
 
     app = ApplicationBuilder().token(token).build()
 
