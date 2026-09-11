@@ -696,14 +696,24 @@ async def generate_final_summary_view(query, context):
 # =========================================================
 # 7. MAIN LAUNCHER
 # =========================================================
-if __name__ == "__main__":
-    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+if __name__ == '__main__':
+    # 1. Start Flask in the background so it doesn't block Telegram
+    threading.Thread(target=run_flask, daemon=True).start()
 
-    app = ApplicationBuilder().token(bot_token).build()
+    # 2. Get Telegram Token
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN environment variable is missing!")
 
-    app.add_handler(CommandHandler("start", start_greeting))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), start_greeting))
-    app.add_handler(CallbackQueryHandler(callback_handler))
+    # 3. Initialize Telegram Bot
+    app = ApplicationBuilder().token(token).build()
 
-    print("🤖 Analytics Bot running with PPTX + Low-RAM Engine...")
-    app.run_polling(poll_interval=1.0, timeout=30, drop_pending_updates=True)
+    # Add Handlers (ensuring text messages like 'hi' or 'sales' trigger your main menu)
+    app.add_handler(CommandHandler("start", start_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+    app.add_handler(CallbackQueryHandler(button_click_handler))
+
+    print("🤖 Telegram Bot Polling Started...")
+
+    # 4. Start Telegram Polling on the Main Thread
+    app.run_polling(drop_pending_updates=True)
