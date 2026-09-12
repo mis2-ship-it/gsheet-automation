@@ -1,4 +1,4 @@
-import glob, os, gc, threading
+import glob, os, gc, threading, logging
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -6,21 +6,23 @@ from io import BytesIO
 from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 import openpyxl
 from pptx import Presentation
 from pptx.util import Inches
 
-# 1. FLASK BINDING FOR RENDER PORT SCANNER
-flask_app = Flask(__name__)
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
+# Flask Web Server
+flask_app = Flask(__name__)
 @flask_app.route('/')
 @flask_app.route('/health')
 def health(): 
     return "Analytics Bot Online", 200
 
 def run_flask():
-    # Force port to 10000 if PORT env variable is not set by Render
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
@@ -134,7 +136,12 @@ def build_pptx(piv, df_raw):
 # Telegram Handlers
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     kb = [[InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")]]
-    await (u.message or u.callback_query.message).reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    msg = u.message or u.callback_query.message
+    await msg.reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+async def handle_all_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    # Respond to any text message (like "Hi", "Hello") with the start menu
+    await start(u, c)
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
@@ -157,40 +164,30 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         doc = build_pptx(c.user_data['piv'], c.user_data['df_raw'])
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
 
-import logging
-
-# Suppress noisy conflict errors during zero-downtime container swaps
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("telegram.ext.Updater").setLevel(logging.ERROR)
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if "Conflict" in str(context.error):
-        # Ignore temporary conflict errors during deployment transitions
+async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
+    if "Conflict" in str(c.error):
         return
-    logging.error("Exception while handling an update:", exc_info=context.error)
+    logger.error("Error encountered:", exc_info=c.error)
 
 if __name__ == '__main__':
-    # Start Flask Web Server for Render
     threading.Thread(target=run_flask, daemon=True).start()
 
     token = os.environ.get("ANALYTICS_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    
     if not token:
-        raise KeyError(
-            "Bot token missing! Please set 'ANALYTICS_BOT_TOKEN' or 'TELEGRAM_BOT_TOKEN' "
-            "in your Render Environment Variables."
-        )
+        raise KeyError("Bot token missing in Environment Variables!")
 
     app = ApplicationBuilder().token(token).build()
     
-    # Register error handler
-    app.add_error_handler(error_handler)
-
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    
+    # Catch-all text message handler
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
+    app.add_error_handler(error_handler)
+
     print("📊 Analytics Bot Running...")
     
+    # Force delete webhooks to ensure polling receives messages
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
