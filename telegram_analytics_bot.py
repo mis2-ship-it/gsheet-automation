@@ -158,10 +158,9 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
 
 if __name__ == '__main__':
-    # Start Web Server Thread
+    # Start Web Server Thread for Render Health Checks
     threading.Thread(target=run_flask, daemon=True).start()
 
-    # Safely get token (supports ANALYTICS_BOT_TOKEN or TELEGRAM_BOT_TOKEN)
     token = os.environ.get("ANALYTICS_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
     
     if not token:
@@ -170,8 +169,17 @@ if __name__ == '__main__':
             "in your Render Environment Variables."
         )
 
+    # Build bot application
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
+    
     print("📊 Analytics Bot Running...")
-    app.run_polling(drop_pending_updates=True)
+    
+    # drop_pending_updates=True clears old polling queues during container swaps
+    app.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+        poll_interval=1.0,
+        timeout=30
+    )
