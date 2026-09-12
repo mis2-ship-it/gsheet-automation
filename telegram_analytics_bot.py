@@ -11,14 +11,18 @@ import openpyxl
 from pptx import Presentation
 from pptx.util import Inches
 
-# Flask Web Server
+# 1. FLASK BINDING FOR RENDER PORT SCANNER
 flask_app = Flask(__name__)
+
 @flask_app.route('/')
+@flask_app.route('/health')
 def health(): 
     return "Analytics Bot Online", 200
 
 def run_flask():
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    # Force port to 10000 if PORT env variable is not set by Render
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # Parquet Data Loader & Memory Optimization
 DB_CACHE_FILE = "cached_dataset.parquet"
@@ -40,13 +44,11 @@ def optimize_and_cache_data():
             v_cols = [c for c in target_cols if c in s_df.columns]
             df_part = pd.read_csv(f, usecols=v_cols, low_memory=True)
 
-            # Date formatting & cleanup
             df_part['Date'] = pd.to_datetime(df_part['Date'], errors='coerce')
             df_part = df_part.dropna(subset=['Date'])
             if df_part.empty:
                 continue
 
-            # Standardize & downcast categorical columns
             df_part['Brand Name'] = df_part.get('Brand Name', df_part.get('Brand', 'Unknown')).astype(str).astype('category')
             df_part['Branch'] = df_part.get('Branch', df_part.get('Store', 'Unknown')).astype(str).astype('category')
             df_part['Source'] = df_part.get('Source', 'Unknown').astype(str).astype('category')
@@ -54,7 +56,6 @@ def optimize_and_cache_data():
             if 'Region' in df_part: df_part['Region'] = df_part['Region'].astype(str).astype('category')
             if 'Session' in df_part: df_part['Session'] = df_part['Session'].astype(str).astype('category')
 
-            # Numeric optimizations
             for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
                 df_part[num_col] = pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0).astype('float32')
             df_part['Orders'] = pd.to_numeric(df_part.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
@@ -75,7 +76,6 @@ def optimize_and_cache_data():
     df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
 
-    # Bucketing logic
     df['Calc_AOV'] = np.where(df['Orders'] > 0, df['Net Sales'] / df['Orders'], 0.0).astype('float32')
     df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0).astype('float32')
 
@@ -158,8 +158,19 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
 
 if __name__ == '__main__':
+    # Start Web Server Thread
     threading.Thread(target=run_flask, daemon=True).start()
-    app = ApplicationBuilder().token(os.environ["ANALYTICS_BOT_TOKEN"]).build()
+
+    # Safely get token (supports ANALYTICS_BOT_TOKEN or TELEGRAM_BOT_TOKEN)
+    token = os.environ.get("ANALYTICS_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
+    
+    if not token:
+        raise KeyError(
+            "Bot token missing! Please set 'ANALYTICS_BOT_TOKEN' or 'TELEGRAM_BOT_TOKEN' "
+            "in your Render Environment Variables."
+        )
+
+    app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
     print("📊 Analytics Bot Running...")
