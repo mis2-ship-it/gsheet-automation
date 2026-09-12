@@ -88,7 +88,15 @@ def optimize_and_cache_data():
     return df
 
 GLOBAL_DF = optimize_and_cache_data()
-DIM_COL_MAP = {'Brand': 'Brand Name', 'Region': 'Region', 'Source': 'Source', 'Session': 'Session', 'Store': 'Branch'}
+DIM_COL_MAP = {
+    'Brand': 'Brand Name',
+    'Region': 'Region',
+    'Source': 'Source',
+    'Session': 'Session',
+    'Store': 'Branch',
+    'AOV Bucket': 'AOV Bucket',
+    'Discount Bucket': 'Discount Bucket'
+}
 
 # Report Builders
 def generate_pivoted_report(filters_dict, primary_dim, timeframe):
@@ -133,14 +141,61 @@ def build_pptx(piv, df_raw):
     out.seek(0)
     return out
 
+# UI Builders
+def get_main_menu():
+    kb = [
+        [InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")],
+        [InlineKeyboardButton("🗺️ Region", callback_data="p_Region"), InlineKeyboardButton("🌐 Source", callback_data="p_Source")],
+        [InlineKeyboardButton("🕒 Session", callback_data="p_Session"), InlineKeyboardButton("💰 AOV Bucket", callback_data="p_AOV Bucket")],
+        [InlineKeyboardButton("🏷️ Discount Bucket", callback_data="p_Discount Bucket")]
+    ]
+    return InlineKeyboardMarkup(kb)
+
+def get_store_type_menu():
+    kb = [
+        [InlineKeyboardButton("🌐 ALL Types", callback_data="st_ALL")],
+        [InlineKeyboardButton("🏬 FOFO", callback_data="st_FOFO"), InlineKeyboardButton("🏢 COCO", callback_data="st_COCO")],
+        [InlineKeyboardButton("🤝 Partner", callback_data="st_Partner")]
+    ]
+    return InlineKeyboardMarkup(kb)
+
+def get_timeframe_menu():
+    kb = [
+        [InlineKeyboardButton("📅 Current Month", callback_data="tf_Current Month"), InlineKeyboardButton("📅 Last Month", callback_data="tf_Last Month")],
+        [InlineKeyboardButton("📊 Last 2 Months", callback_data="tf_Last 2 Months"), InlineKeyboardButton("📈 Quarterly", callback_data="tf_Quarterly")],
+        [InlineKeyboardButton("📉 Half-Yearly", callback_data="tf_Half-Yearly"), InlineKeyboardButton("📅 Yearly", callback_data="tf_Yearly")]
+    ]
+    return InlineKeyboardMarkup(kb)
+
+def get_filter_menu(dim_name, selected_set):
+    col = DIM_COL_MAP[dim_name]
+    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist())
+    kb = []
+    
+    all_mark = "✅ " if "ALL" in selected_set or not selected_set else ""
+    kb.append([InlineKeyboardButton(f"{all_mark}ALL Options", callback_data=f"fl_{dim_name}_ALL")])
+    
+    row = []
+    for opt in opts[:10]:
+        mark = "✅ " if opt in selected_set else ""
+        row.append(InlineKeyboardButton(f"{mark}{opt}", callback_data=f"fl_{dim_name}_{opt}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+        
+    kb.append([InlineKeyboardButton("➡️ Continue to Timeframe", callback_data="step_timeframe")])
+    return InlineKeyboardMarkup(kb)
+
 # Telegram Handlers
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")]]
+    c.user_data.clear()
+    c.user_data['filters'] = {}
     msg = u.message or u.callback_query.message
-    await msg.reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+    await msg.reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
 
 async def handle_all_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    # Respond to any text message (like "Hi", "Hello") with the start menu
     await start(u, c)
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
@@ -150,11 +205,46 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     
     if data.startswith("p_"):
         c.user_data['prim'] = data.split("_")[1]
-        c.user_data['filters'] = {}
-        piv, df_raw = generate_pivoted_report(c.user_data['filters'], c.user_data['prim'], "Current Month")
+        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
+        
+    elif data.startswith("st_"):
+        c.user_data['filters']['Store Type'] = data.split("_")[1]
+        c.user_data['filter_dim_index'] = 0
+        dims = [d for d in ['Brand', 'Region', 'Source', 'Session'] if d != c.user_data.get('prim')]
+        c.user_data['active_filter_dims'] = dims
+        
+        first_dim = dims[0]
+        c.user_data['curr_filter_dim'] = first_dim
+        await q.edit_message_text(f"🔍 **Filter by {first_dim}:**", reply_markup=get_filter_menu(first_dim, set()), parse_mode="Markdown")
+
+    elif data.startswith("fl_"):
+        _, dim, val = data.split("_", 2)
+        if dim not in c.user_data['filters']:
+            c.user_data['filters'][dim] = set()
+            
+        if val == "ALL":
+            c.user_data['filters'][dim] = {"ALL"}
+        else:
+            c.user_data['filters'][dim].discard("ALL")
+            if val in c.user_data['filters'][dim]:
+                c.user_data['filters'][dim].remove(val)
+            else:
+                c.user_data['filters'][dim].add(val)
+                
+        await q.edit_message_reply_markup(reply_markup=get_filter_menu(dim, c.user_data['filters'][dim]))
+
+    elif data == "step_timeframe":
+        await q.edit_message_text("📅 **Select Timeframe:**", reply_markup=get_timeframe_menu(), parse_mode="Markdown")
+
+    elif data.startswith("tf_"):
+        tf = data.split("_")[1]
+        c.user_data['timeframe'] = tf
+        
+        piv, df_raw = generate_pivoted_report(c.user_data['filters'], c.user_data['prim'], tf)
         c.user_data['piv'], c.user_data['df_raw'] = piv, df_raw
+        
         kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
-        await q.edit_message_text(f"Summary generated for **{c.user_data['prim']}**. Choose export:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        await q.edit_message_text(f"✅ Summary generated for **{c.user_data['prim']}** ({tf}).\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         
     elif data == "dl_xls":
         doc = build_excel(c.user_data['piv'], c.user_data['df_raw'])
@@ -178,16 +268,13 @@ if __name__ == '__main__':
 
     app = ApplicationBuilder().token(token).build()
     
-    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    # Catch-all text message handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
     app.add_error_handler(error_handler)
 
     print("📊 Analytics Bot Running...")
     
-    # Force delete webhooks to ensure polling receives messages
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
