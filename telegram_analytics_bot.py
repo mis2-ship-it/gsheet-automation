@@ -157,8 +157,20 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         doc = build_pptx(c.user_data['piv'], c.user_data['df_raw'])
         await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
 
+import logging
+
+# Suppress noisy conflict errors during zero-downtime container swaps
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("telegram.ext.Updater").setLevel(logging.ERROR)
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if "Conflict" in str(context.error):
+        # Ignore temporary conflict errors during deployment transitions
+        return
+    logging.error("Exception while handling an update:", exc_info=context.error)
+
 if __name__ == '__main__':
-    # Start Web Server Thread for Render Health Checks
+    # Start Flask Web Server for Render
     threading.Thread(target=run_flask, daemon=True).start()
 
     token = os.environ.get("ANALYTICS_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -169,14 +181,16 @@ if __name__ == '__main__':
             "in your Render Environment Variables."
         )
 
-    # Build bot application
     app = ApplicationBuilder().token(token).build()
+    
+    # Register error handler
+    app.add_error_handler(error_handler)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
     
     print("📊 Analytics Bot Running...")
     
-    # drop_pending_updates=True clears old polling queues during container swaps
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=Update.ALL_TYPES,
