@@ -479,22 +479,33 @@ async def handle_email_login(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
     text = u.message.text.strip().lower()
 
+    # If already logged in, route directly to main menu
     if user_id in SESSION_CACHE:
         await start(u, c)
         return
 
-    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    if not re.match(email_regex, text):
-        await u.message.reply_text("⚠️ Invalid email format. Please provide a valid corporate email address.")
+    # If message doesn't look like an email address, ask for corporate email
+    if "@" not in text:
+        await u.message.reply_text(
+            "👋 **Hello!**\n\n"
+            "To access the analytics system, please send your **registered corporate email address** (e.g., `user@frozenbottle.in`)."
+        )
         return
 
+    # Validate email format
+    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    if not re.match(email_regex, text):
+        await u.message.reply_text("⚠️ **Invalid email format.** Please enter a valid corporate email address.")
+        return
+
+    # Verify email against authorized user list
     if text in AUTHORIZED_USERS:
         SESSION_CACHE[user_id] = AUTHORIZED_USERS[text]
         SESSION_CACHE[user_id]['email'] = text
         await u.message.reply_text(f"✅ **Login Successful!** Authenticated as `{text}`.")
         await start(u, c)
     else:
-        await u.message.reply_text("⛔ **Access Denied:** Your email address is not registered in the system. Please contact your Operations Lead.")
+        await u.message.reply_text("⛔ **Access Denied:** Your email address is not authorized in the system. Please contact your Operations Lead.")
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
