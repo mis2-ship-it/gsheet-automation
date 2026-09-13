@@ -14,6 +14,9 @@ from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -150,13 +153,15 @@ def build_telegram_summary(piv, primary_dim, timeframe):
 def build_multi_sheet_excel(df_filtered, months):
     out = BytesIO()
     wb = openpyxl.Workbook()
-    wb.remove(wb.active)  # Remove default sheet
+    wb.remove(wb.active)
 
     sections = [
         ("Brand Summary", "Brand Name"),
         ("Store Summary", "Branch"),
         ("Source Summary", "Source"),
-        ("Session Summary", "Session")
+        ("Session Summary", "Session"),
+        ("AOV Bucket Summary", "AOV Bucket"),
+        ("Discount Bucket Summary", "Discount Bucket")
     ]
 
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
@@ -164,7 +169,6 @@ def build_multi_sheet_excel(df_filtered, months):
     thin = Side(border_style="thin", color="CCCCCC")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    # 1. Generate Summary Tabs
     for sheet_title, dim_col in sections:
         piv = generate_pivot(df_filtered, dim_col, months)
         ws = wb.create_sheet(title=sheet_title)
@@ -196,7 +200,7 @@ def build_multi_sheet_excel(df_filtered, months):
             sum_row.append("-" if c == 'MoM Growth %' else round(piv[c].sum(), 2))
         ws.append(sum_row)
 
-        # Border & Formatting
+        # Formatting
         for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)):
             for cell in row:
                 cell.border = border
@@ -207,7 +211,7 @@ def build_multi_sheet_excel(df_filtered, months):
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
 
-    # 2. Raw Data Tab
+    # Raw Data Tab
     ws_raw = wb.create_sheet(title="Raw Data")
     ws_raw.append(list(df_filtered.columns))
     for r in df_filtered.head(5000).values:
@@ -217,12 +221,84 @@ def build_multi_sheet_excel(df_filtered, months):
     out.seek(0)
     return out
 
-def build_pptx(piv, primary_dim, timeframe):
+def add_analysis_slide(prs, title, piv, dim_name):
+    if piv.empty:
+        return
+        
+    blank_layout = prs.slide_layouts[6]
+    slide = prs.slides.add_slide(blank_layout)
+    
+    # Title
+    tb_title = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12), Inches(0.6))
+    p_title = tb_title.text_frame.paragraphs[0]
+    p_title.text = title
+    p_title.font.size = Pt(24)
+    p_title.font.bold = True
+    p_title.font.color.rgb = RGBColor(31, 78, 120)
+
+    # 1. Chart Data
+    chart_data = CategoryChartData()
+    categories = list(piv.head(6).index.astype(str))
+    chart_data.categories = categories
+
+    month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales']]
+    for m in month_cols:
+        chart_data.add_series(str(m), list(piv.head(6)[m]))
+
+    x, y, cx, cy = Inches(0.6), Inches(1.2), Inches(7.5), Inches(5.5)
+    chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data).chart
+    chart.has_legend = True
+    chart.legend.position = XL_LEGEND_POSITION.TOP
+    chart.plots[0].has_data_labels = True
+    
+    for series in chart.series:
+        for point in series.points:
+            dl = point.data_label
+            dl.font.size = Pt(9)
+
+    # 2. Insights Panel
+    tb_insight = slide.shapes.add_textbox(Inches(8.3), Inches(1.2), Inches(4.5), Inches(5.5))
+    tf = tb_insight.text_frame
+    tf.word_wrap = True
+    
+    p = tf.paragraphs[0]
+    p.text = "📌 Key Insights & Performance"
+    p.font.size = Pt(16)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(31, 78, 120)
+    
+    top_performer = piv.index[0]
+    top_sales = piv.iloc[0]['Total Sales']
+    p1 = tf.add_paragraph()
+    p1.text = f"• Top Contributor: {top_performer} with ₹{top_sales:,.0f} net sales."
+    p1.font.size = Pt(12)
+    
+    if 'MoM Growth %' in piv.columns:
+        valid_growth = piv.dropna(subset=['MoM Growth %'])
+        if not valid_growth.empty:
+            highest_growth = valid_growth.sort_values(by='MoM Growth %', ascending=False).iloc[0]
+            lowest_growth = valid_growth.sort_values(by='MoM Growth %', ascending=True).iloc[0]
+            
+            p2 = tf.add_paragraph()
+            p2.text = f"• Highest Growth: {highest_growth.name} ({highest_growth['MoM Growth %']:+.1f}% MoM)."
+            p2.font.size = Pt(12)
+            
+            p3 = tf.add_paragraph()
+            p3.text = f"• Drop/Lagging Area: {lowest_growth.name} ({lowest_growth['MoM Growth %']:+.1f}% MoM)."
+            p3.font.size = Pt(12)
+
+    total_sales = piv['Total Sales'].sum()
+    top_3_contrib = (piv.head(3)['Total Sales'].sum() / total_sales * 100) if total_sales > 0 else 0
+    p4 = tf.add_paragraph()
+    p4.text = f"• Concentration: Top 3 {dim_name}s drive {top_3_contrib:.1f}% of total sales."
+    p4.font.size = Pt(12)
+
+def build_pptx(df_filtered, months, primary_dim, timeframe):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
     blank_layout = prs.slide_layouts[6]
     
-    # Slide 1: Cover
+    # Title Slide
     s1 = prs.slides.add_slide(blank_layout)
     bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
     bg1.fill.solid()
@@ -230,49 +306,28 @@ def build_pptx(piv, primary_dim, timeframe):
     
     tb = s1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
     p = tb.text_frame.paragraphs[0]
-    p.text = f"{primary_dim} Executive Overview"
+    p.text = "Executive Performance Overview"
     p.font.size = Pt(40)
     p.font.bold = True
     p.font.color.rgb = RGBColor(255, 255, 255)
     
     p2 = tb.text_frame.add_paragraph()
-    p2.text = f"Timeframe: {timeframe} | Generated on {datetime.now().strftime('%Y-%m-%d')}"
+    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Generated on {datetime.now().strftime('%Y-%m-%d')}"
     p2.font.size = Pt(20)
     p2.font.color.rgb = RGBColor(200, 220, 240)
 
-    # Slide 2: Data Matrix
-    s2 = prs.slides.add_slide(blank_layout)
-    tb2 = s2.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11), Inches(0.8))
-    p3 = tb2.text_frame.paragraphs[0]
-    p3.text = f"Performance Breakup by {primary_dim}"
-    p3.font.size = Pt(28)
-    p3.font.bold = True
-    p3.font.color.rgb = RGBColor(31, 78, 120)
+    # Multi-Slide Analysis
+    dimensions = [
+        ("Brand Breakdown & Insights", "Brand Name", "Brand"),
+        ("Source Contribution & Insights", "Source", "Source"),
+        ("Session Performance & Insights", "Session", "Session"),
+        ("AOV Bucket Distribution", "AOV Bucket", "AOV Bucket"),
+        ("Discount Bucket Distribution", "Discount Bucket", "Discount Bucket")
+    ]
 
-    rows = min(10, len(piv) + 1)
-    cols = len(piv.columns) + 1
-    table_shape = s2.shapes.add_table(rows, cols, Inches(0.8), Inches(1.5), Inches(11.73), Inches(4.8))
-    table = table_shape.table
-
-    headers = [piv.index.name or primary_dim] + list(piv.columns)
-    for col_idx, h in enumerate(headers):
-        cell = table.cell(0, col_idx)
-        cell.text = str(h)
-        cell.fill.solid()
-        cell.fill.fore_color.rgb = RGBColor(31, 78, 120)
-        p = cell.text_frame.paragraphs[0]
-        p.font.color.rgb = RGBColor(255, 255, 255)
-        p.font.bold = True
-        p.font.size = Pt(13)
-
-    for row_idx, (dim_val, row_data) in enumerate(piv.head(rows - 1).iterrows(), start=1):
-        cell_dim = table.cell(row_idx, 0)
-        cell_dim.text = str(dim_val)
-        cell_dim.text_frame.paragraphs[0].font.size = Pt(11)
-        for col_idx, val in enumerate(row_data, start=1):
-            cell = table.cell(row_idx, col_idx)
-            cell.text = f"{val:,.2f}" if isinstance(val, (float, int)) else str(val)
-            cell.text_frame.paragraphs[0].font.size = Pt(11)
+    for title, dim_col, dim_name in dimensions:
+        piv = generate_pivot(df_filtered, dim_col, months)
+        add_analysis_slide(prs, title, piv, dim_name)
 
     out = BytesIO()
     prs.save(out)
@@ -392,8 +447,8 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Full_Report.xlsx")
         
     elif data == "dl_ppt":
-        doc = build_pptx(c.user_data['piv'], c.user_data['prim'], c.user_data['timeframe'])
-        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_{c.user_data['prim']}.pptx")
+        doc = build_pptx(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'], c.user_data['timeframe'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Presentation.pptx")
 
 async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
     if "Conflict" in str(c.error):
