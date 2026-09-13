@@ -8,8 +8,12 @@ from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -98,8 +102,21 @@ DIM_COL_MAP = {
     'Discount Bucket': 'Discount Bucket'
 }
 
-# Report Builders
-def generate_pivoted_report(filters_dict, primary_dim, timeframe):
+def generate_pivot(df_filtered, dim_col, months):
+    df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
+    if df_eval.empty or dim_col not in df_eval.columns:
+        return pd.DataFrame()
+        
+    piv = pd.pivot_table(df_eval, index=dim_col, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
+    
+    if len(piv.columns) >= 2:
+        c1, c2 = piv.columns[-2], piv.columns[-1]
+        piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
+    piv['Total Sales'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
+    
+    return piv.sort_values(by='Total Sales', ascending=False)
+
+def get_filtered_data(filters_dict, timeframe):
     df = GLOBAL_DF.copy()
     if filters_dict.get('Store Type') and filters_dict['Store Type'] != 'ALL':
         df = df[df['Store Type'] == filters_dict['Store Type']]
@@ -112,30 +129,151 @@ def generate_pivoted_report(filters_dict, primary_dim, timeframe):
     tf_map = {"Current Month": 1, "Last Month": 2, "Last 2 Months": 2, "Quarterly": 3, "Half-Yearly": 6, "Yearly": 12}
     months = avail[-tf_map.get(timeframe, 3):]
     
-    df_eval = df[df['YearMonth'].isin(months)].copy()
-    piv = pd.pivot_table(df_eval, index=DIM_COL_MAP.get(primary_dim, 'Brand Name'), columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
-    return piv, df_eval
+    return df, df[df['YearMonth'].isin(months)].copy(), months
 
-def build_excel(piv, df_raw):
+def build_telegram_summary(piv, primary_dim, timeframe):
+    if piv.empty:
+        return "No data available for the selected parameters."
+    lines = [f"📊 **Performance Summary ({primary_dim} | {timeframe})**\n"]
+    lines.append("`" + f"{primary_dim[:12]:<12} | " + " | ".join([str(c) for c in piv.columns[:-2]]) + " | Total`")
+    lines.append("`" + "-"*40 + "`")
+    
+    for idx, row in piv.head(8).iterrows():
+        val_str = " | ".join([f"₹{int(v/1000)}k" for v in row[:-2]])
+        tot_str = f"₹{int(row['Total Sales']/1000)}k"
+        lines.append(f"`{str(idx)[:12]:<12} | {val_str} | {tot_str}`")
+        
+    tot_sales = piv['Total Sales'].sum()
+    lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f}")
+    return "\n".join(lines)
+
+def build_multi_sheet_excel(df_filtered, months):
     out = BytesIO()
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Analytics Overview"
-    ws.append(["Analytics Matrix"])
-    ws.append([])
-    ws.append(list(piv.index.names) + list(piv.columns))
-    for r in piv.reset_index().values:
-        ws.append([round(x, 2) if isinstance(x, float) else x for x in r])
+    wb.remove(wb.active)  # Remove default sheet
+
+    sections = [
+        ("Brand Summary", "Brand Name"),
+        ("Store Summary", "Branch"),
+        ("Source Summary", "Source"),
+        ("Session Summary", "Session")
+    ]
+
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin = Side(border_style="thin", color="CCCCCC")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # 1. Generate Summary Tabs
+    for sheet_title, dim_col in sections:
+        piv = generate_pivot(df_filtered, dim_col, months)
+        ws = wb.create_sheet(title=sheet_title)
+        
+        ws.append([f"{sheet_title} Report"])
+        ws.cell(1, 1).font = Font(size=14, bold=True, color="1F4E78")
+        ws.append([])
+
+        if piv.empty:
+            ws.append(["No data available"])
+            continue
+
+        headers = [dim_col] + list(piv.columns)
+        ws.append(headers)
+
+        for col_idx, h in enumerate(headers, 1):
+            cell = ws.cell(3, col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center")
+
+        for r in piv.reset_index().values:
+            row_vals = [round(val, 2) if isinstance(val, (float, int)) else val for val in r]
+            ws.append(row_vals)
+
+        # Summary Row
+        sum_row = ["Total Summary"]
+        for c in piv.columns:
+            sum_row.append("-" if c == 'MoM Growth %' else round(piv[c].sum(), 2))
+        ws.append(sum_row)
+
+        # Border & Formatting
+        for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)):
+            for cell in row:
+                cell.border = border
+                if isinstance(cell.value, (int, float)):
+                    cell.number_format = '#,##0.00'
+
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
+
+    # 2. Raw Data Tab
+    ws_raw = wb.create_sheet(title="Raw Data")
+    ws_raw.append(list(df_filtered.columns))
+    for r in df_filtered.head(5000).values:
+        ws_raw.append([str(x) if isinstance(x, pd.Timestamp) else x for x in r])
+
     wb.save(out)
     out.seek(0)
     return out
 
-def build_pptx(piv, df_raw):
+def build_pptx(piv, primary_dim, timeframe):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
-    s = prs.slides.add_slide(prs.slide_layouts[6])
-    tb = s.shapes.add_textbox(Inches(1), Inches(2), Inches(11), Inches(2))
-    tb.text_frame.paragraphs[0].text = "Executive Performance Report"
+    blank_layout = prs.slide_layouts[6]
+    
+    # Slide 1: Cover
+    s1 = prs.slides.add_slide(blank_layout)
+    bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
+    bg1.fill.solid()
+    bg1.fill.fore_color.rgb = RGBColor(31, 78, 120)
+    
+    tb = s1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
+    p = tb.text_frame.paragraphs[0]
+    p.text = f"{primary_dim} Executive Overview"
+    p.font.size = Pt(40)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(255, 255, 255)
+    
+    p2 = tb.text_frame.add_paragraph()
+    p2.text = f"Timeframe: {timeframe} | Generated on {datetime.now().strftime('%Y-%m-%d')}"
+    p2.font.size = Pt(20)
+    p2.font.color.rgb = RGBColor(200, 220, 240)
+
+    # Slide 2: Data Matrix
+    s2 = prs.slides.add_slide(blank_layout)
+    tb2 = s2.shapes.add_textbox(Inches(0.8), Inches(0.5), Inches(11), Inches(0.8))
+    p3 = tb2.text_frame.paragraphs[0]
+    p3.text = f"Performance Breakup by {primary_dim}"
+    p3.font.size = Pt(28)
+    p3.font.bold = True
+    p3.font.color.rgb = RGBColor(31, 78, 120)
+
+    rows = min(10, len(piv) + 1)
+    cols = len(piv.columns) + 1
+    table_shape = s2.shapes.add_table(rows, cols, Inches(0.8), Inches(1.5), Inches(11.73), Inches(4.8))
+    table = table_shape.table
+
+    headers = [piv.index.name or primary_dim] + list(piv.columns)
+    for col_idx, h in enumerate(headers):
+        cell = table.cell(0, col_idx)
+        cell.text = str(h)
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = RGBColor(31, 78, 120)
+        p = cell.text_frame.paragraphs[0]
+        p.font.color.rgb = RGBColor(255, 255, 255)
+        p.font.bold = True
+        p.font.size = Pt(13)
+
+    for row_idx, (dim_val, row_data) in enumerate(piv.head(rows - 1).iterrows(), start=1):
+        cell_dim = table.cell(row_idx, 0)
+        cell_dim.text = str(dim_val)
+        cell_dim.text_frame.paragraphs[0].font.size = Pt(11)
+        for col_idx, val in enumerate(row_data, start=1):
+            cell = table.cell(row_idx, col_idx)
+            cell.text = f"{val:,.2f}" if isinstance(val, (float, int)) else str(val)
+            cell.text_frame.paragraphs[0].font.size = Pt(11)
+
     out = BytesIO()
     prs.save(out)
     out.seek(0)
@@ -209,12 +347,8 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         
     elif data.startswith("st_"):
         c.user_data['filters']['Store Type'] = data.split("_")[1]
-        c.user_data['filter_dim_index'] = 0
         dims = [d for d in ['Brand', 'Region', 'Source', 'Session'] if d != c.user_data.get('prim')]
-        c.user_data['active_filter_dims'] = dims
-        
         first_dim = dims[0]
-        c.user_data['curr_filter_dim'] = first_dim
         await q.edit_message_text(f"🔍 **Filter by {first_dim}:**", reply_markup=get_filter_menu(first_dim, set()), parse_mode="Markdown")
 
     elif data.startswith("fl_"):
@@ -240,19 +374,26 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         tf = data.split("_")[1]
         c.user_data['timeframe'] = tf
         
-        piv, df_raw = generate_pivoted_report(c.user_data['filters'], c.user_data['prim'], tf)
-        c.user_data['piv'], c.user_data['df_raw'] = piv, df_raw
+        df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf)
+        prim_col = DIM_COL_MAP[c.user_data['prim']]
+        piv = generate_pivot(df_all, prim_col, months)
         
+        c.user_data['piv'] = piv
+        c.user_data['df_eval'] = df_eval
+        c.user_data['months'] = months
+        
+        summary_text = build_telegram_summary(piv, c.user_data['prim'], tf)
         kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
-        await q.edit_message_text(f"✅ Summary generated for **{c.user_data['prim']}** ({tf}).\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+        
+        await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         
     elif data == "dl_xls":
-        doc = build_excel(c.user_data['piv'], c.user_data['df_raw'])
-        await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Report.xlsx")
+        doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Full_Report.xlsx")
         
     elif data == "dl_ppt":
-        doc = build_pptx(c.user_data['piv'], c.user_data['df_raw'])
-        await c.bot.send_document(q.message.chat_id, doc, filename="Analytics_Presentation.pptx")
+        doc = build_pptx(c.user_data['piv'], c.user_data['prim'], c.user_data['timeframe'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_{c.user_data['prim']}.pptx")
 
 async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
     if "Conflict" in str(c.error):
