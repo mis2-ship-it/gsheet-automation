@@ -1,4 +1,4 @@
-import glob, os, gc, threading, logging
+import glob, os, gc, threading, logging, re
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -14,9 +14,8 @@ from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
-from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.chart.data import CategoryChartData
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +32,84 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
+# ---------------------------------------------------------
+# AUTHORIZED USERS DIRECTORY (Generated from User Details)
+# ---------------------------------------------------------
+AUTHORIZED_USERS = {
+    # Full Admin Access
+    "mis2@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
+    "mis3@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
+    "faraz@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
+    "vivek@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
+
+    # Area Managers & Territory Managers
+    "am.chennai@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Guduvanchery", "Mudichur", "OMR", "Pallikaranai", "Thoraipakkam", "Urapakkam CK", "Velachery"]
+    },
+    "am1.chennai@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Annanagar", "Besant Nagar", "Express Avenue Mall", "Mogappair", "Nanganallur CK", "Race Course Road", "Valsarvakkam", "Vellore"]
+    },
+    "am2.pune@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Baner Road - Pune", "Hinjewadi", "Hinjewadi Phase 3", "Koregaon Park - Pune", "Sinhagad", "Wagholi - CF CK"]
+    },
+    "am4.chennai@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Alwarpet", "Erode", "Iyyappanthangal - CK", "Kolathur", "Nungambakkam - CK", "Perambur - CK", "Zamin Pallavaram"]
+    },
+    "areamanager.kerala@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Kakkanad", "Ravipuram", "Thiruvalla"]
+    },
+    "areamanager.mumbai3@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Badlapur", "Byculla", "Kalyan", "Khar", "Lokhandwala", "Malad - CF - CK", "Prabhadevi", "Thakur Village"]
+    },
+    "areamanager.mumbai@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Dahisar", "Kamothe", "Manpada - CF CK", "Marol - CF CK", "Mira Road", "Mulund", "Powai- CF - CK", "SEAWOOD", "Sher- E-Punjab", "Virar"]
+    },
+    "areamanager1@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["AECS Layout", "Gunjur", "ITPL", "Kempfort", "Manipal", "Miraya Rose", "Shivamogga", "Tata Sherwood", "Tumkur", "Whitefield", "Yemalur"]
+    },
+    "areamanager5@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Ananth Nagar", "BTM Layout", "Banashankari", "HSR Layout", "Harlur Road", "JP Nagar", "Kadubisanahalli - CF CK", "Koramangala", "Meenakshi Mall", "Sarjapur Road"]
+    },
+    "areamanager6@frozenbottle.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Basaveshwarnagar", "Bel Road", "Channasandra", "Frazer Town", "Indiranagar - CK", "Kammanhalli", "Kanakapura", "Kolar- Highway Star", "Nagavara", "Yelahanka"]
+    },
+    "ops@lubov.in": {
+        "role": "area_manager",
+        "allowed_stores": ["Lubov Store"]
+    },
+    "bangaloreterritorymanager1@frozenbottle.in": {
+        "role": "territory_manager",
+        "allowed_stores": ["AECS Layout", "Ananth Nagar", "BTM Layout", "Banashankari", "Basaveshwarnagar", "Bel Road", "Channasandra", "Frazer Town", "Gunjur", "HSR Layout", "Harlur Road", "ITPL", "Indiranagar - CK", "JP Nagar", "Kadubisanahalli - CF CK", "Kammanhalli", "Kanakapura", "Kempfort", "Kolar- Highway Star", "Koramangala", "Lubov Store", "Manipal", "Meenakshi Mall", "Miraya Rose", "Nagavara", "Sarjapur Road", "Shivamogga", "Tata Sherwood", "Tumkur", "Whitefield", "Yelahanka", "Yemalur"]
+    },
+    "bangaloreterritorymanager@frozenbottle.in": {
+        "role": "territory_manager",
+        "allowed_stores": ["Kakkanad", "Ravipuram", "Thiruvalla"]
+    },
+    "manohar@frozenbottle.in": {
+        "role": "territory_manager",
+        "allowed_stores": ["Badlapur", "Baner Road - Pune", "Byculla", "Dahisar", "Hinjewadi", "Hinjewadi Phase 3", "Kalyan", "Kamothe", "Khar", "Koregaon Park - Pune", "Lokhandwala", "Malad - CF - CK", "Manpada - CF CK", "Marol - CF CK", "Mira Road", "Mulund", "Powai- CF - CK", "Prabhadevi", "SEAWOOD", "Sher- E-Punjab", "Sinhagad", "Thakur Village", "Virar", "Wagholi - CF CK"]
+    },
+    "tm.chennai@frozenbottle.in": {
+        "role": "territory_manager",
+        "allowed_stores": ["Alwarpet", "Annanagar", "Besant Nagar", "Erode", "Express Avenue Mall", "Guduvanchery", "Iyyappanthangal - CK", "Kolathur", "Mogappair", "Mudichur", "Nanganallur CK", "Nungambakkam - CK", "OMR", "Pallikaranai", "Perambur - CK", "Race Course Road", "Thoraipakkam", "Urapakkam CK", "Valsarvakkam", "Velachery", "Vellore", "Zamin Pallavaram"]
+    }
+}
+
+SESSION_CACHE = {}
+
+# ---------------------------------------------------------
 # Parquet Data Loader & Memory Optimization
+# ---------------------------------------------------------
 DB_CACHE_FILE = "cached_dataset.parquet"
 
 def optimize_and_cache_data():
@@ -65,8 +141,9 @@ def optimize_and_cache_data():
             if 'Region' in df_part: df_part['Region'] = df_part['Region'].astype(str).astype('category')
             if 'Session' in df_part: df_part['Session'] = df_part['Session'].astype(str).astype('category')
 
+            # Convert monetary figures into Lacs (Divide by 100,000)
             for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
-                df_part[num_col] = pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0).astype('float32')
+                df_part[num_col] = (pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0) / 100000.0).astype('float32')
             df_part['Orders'] = pd.to_numeric(df_part.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
 
             parquet_parts.append(df_part)
@@ -85,7 +162,9 @@ def optimize_and_cache_data():
     df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
 
-    df['Calc_AOV'] = np.where(df['Orders'] > 0, df['Net Sales'] / df['Orders'], 0.0).astype('float32')
+    # Calculate AOV in INR for bucket definitions
+    raw_sales_inr = df['Net Sales'] * 100000.0
+    df['Calc_AOV'] = np.where(df['Orders'] > 0, raw_sales_inr / df['Orders'], 0.0).astype('float32')
     df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0).astype('float32')
 
     df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=[-np.inf, 200, 400, 600, 800, np.inf], labels=['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800'])
@@ -115,12 +194,18 @@ def generate_pivot(df_filtered, dim_col, months):
     if len(piv.columns) >= 2:
         c1, c2 = piv.columns[-2], piv.columns[-1]
         piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
-    piv['Total Sales'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
+    piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
     
-    return piv.sort_values(by='Total Sales', ascending=False)
+    return piv.sort_values(by='Total Sales (Lacs)', ascending=False)
 
-def get_filtered_data(filters_dict, timeframe):
+def get_filtered_data(filters_dict, timeframe, user_config):
     df = GLOBAL_DF.copy()
+
+    # Enforce Store scoping per user role
+    allowed_stores = user_config.get('allowed_stores', 'ALL')
+    if allowed_stores != 'ALL':
+        df = df[df['Branch'].isin(allowed_stores)]
+
     if filters_dict.get('Store Type') and filters_dict['Store Type'] != 'ALL':
         df = df[df['Store Type'] == filters_dict['Store Type']]
     for k, col in DIM_COL_MAP.items():
@@ -137,17 +222,17 @@ def get_filtered_data(filters_dict, timeframe):
 def build_telegram_summary(piv, primary_dim, timeframe):
     if piv.empty:
         return "No data available for the selected parameters."
-    lines = [f"📊 **Performance Summary ({primary_dim} | {timeframe})**\n"]
+    lines = [f"📊 **Performance Summary in Lacs ({primary_dim} | {timeframe})**\n"]
     lines.append("`" + f"{primary_dim[:12]:<12} | " + " | ".join([str(c) for c in piv.columns[:-2]]) + " | Total`")
     lines.append("`" + "-"*40 + "`")
     
     for idx, row in piv.head(8).iterrows():
-        val_str = " | ".join([f"₹{int(v/1000)}k" for v in row[:-2]])
-        tot_str = f"₹{int(row['Total Sales']/1000)}k"
+        val_str = " | ".join([f"₹{v:.2f}L" for v in row[:-2]])
+        tot_str = f"₹{row['Total Sales (Lacs)']:.2f}L"
         lines.append(f"`{str(idx)[:12]:<12} | {val_str} | {tot_str}`")
         
-    tot_sales = piv['Total Sales'].sum()
-    lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f}")
+    tot_sales = piv['Total Sales (Lacs)'].sum()
+    lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f} Lacs")
     return "\n".join(lines)
 
 def build_multi_sheet_excel(df_filtered, months):
@@ -173,7 +258,7 @@ def build_multi_sheet_excel(df_filtered, months):
         piv = generate_pivot(df_filtered, dim_col, months)
         ws = wb.create_sheet(title=sheet_title)
         
-        ws.append([f"{sheet_title} Report"])
+        ws.append([f"{sheet_title} Report (in ₹ Lacs)"])
         ws.cell(1, 1).font = Font(size=14, bold=True, color="1F4E78")
         ws.append([])
 
@@ -194,25 +279,22 @@ def build_multi_sheet_excel(df_filtered, months):
             row_vals = [round(val, 2) if isinstance(val, (float, int)) else val for val in r]
             ws.append(row_vals)
 
-        # Summary Row
-        sum_row = ["Total Summary"]
+        sum_row = ["Total Summary (Lacs)"]
         for c in piv.columns:
             sum_row.append("-" if c == 'MoM Growth %' else round(piv[c].sum(), 2))
         ws.append(sum_row)
 
-        # Formatting
         for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)):
             for cell in row:
                 cell.border = border
                 if isinstance(cell.value, (int, float)):
-                    cell.number_format = '#,##0.00'
+                    cell.number_format = '₹#,##0.00 "Lacs"'
 
         for col in ws.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 12)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 5, 14)
 
-    # Raw Data Tab
-    ws_raw = wb.create_sheet(title="Raw Data")
+    ws_raw = wb.create_sheet(title="Raw Data (Sales in Lacs)")
     ws_raw.append(list(df_filtered.columns))
     for r in df_filtered.head(5000).values:
         ws_raw.append([str(x) if isinstance(x, pd.Timestamp) else x for x in r])
@@ -228,20 +310,18 @@ def add_analysis_slide(prs, title, piv, dim_name):
     blank_layout = prs.slide_layouts[6]
     slide = prs.slides.add_slide(blank_layout)
     
-    # Title
     tb_title = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12), Inches(0.6))
     p_title = tb_title.text_frame.paragraphs[0]
-    p_title.text = title
+    p_title.text = f"{title} (in ₹ Lacs)"
     p_title.font.size = Pt(24)
     p_title.font.bold = True
     p_title.font.color.rgb = RGBColor(31, 78, 120)
 
-    # 1. Chart Data
     chart_data = CategoryChartData()
     categories = list(piv.head(6).index.astype(str))
     chart_data.categories = categories
 
-    month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales']]
+    month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales (Lacs)']]
     for m in month_cols:
         chart_data.add_series(str(m), list(piv.head(6)[m]))
 
@@ -256,7 +336,6 @@ def add_analysis_slide(prs, title, piv, dim_name):
             dl = point.data_label
             dl.font.size = Pt(9)
 
-    # 2. Insights Panel
     tb_insight = slide.shapes.add_textbox(Inches(8.3), Inches(1.2), Inches(4.5), Inches(5.5))
     tf = tb_insight.text_frame
     tf.word_wrap = True
@@ -268,9 +347,9 @@ def add_analysis_slide(prs, title, piv, dim_name):
     p.font.color.rgb = RGBColor(31, 78, 120)
     
     top_performer = piv.index[0]
-    top_sales = piv.iloc[0]['Total Sales']
+    top_sales = piv.iloc[0]['Total Sales (Lacs)']
     p1 = tf.add_paragraph()
-    p1.text = f"• Top Contributor: {top_performer} with ₹{top_sales:,.0f} net sales."
+    p1.text = f"• Top Contributor: {top_performer} with ₹{top_sales:.2f} Lacs net sales."
     p1.font.size = Pt(12)
     
     if 'MoM Growth %' in piv.columns:
@@ -287,8 +366,8 @@ def add_analysis_slide(prs, title, piv, dim_name):
             p3.text = f"• Drop/Lagging Area: {lowest_growth.name} ({lowest_growth['MoM Growth %']:+.1f}% MoM)."
             p3.font.size = Pt(12)
 
-    total_sales = piv['Total Sales'].sum()
-    top_3_contrib = (piv.head(3)['Total Sales'].sum() / total_sales * 100) if total_sales > 0 else 0
+    total_sales = piv['Total Sales (Lacs)'].sum()
+    top_3_contrib = (piv.head(3)['Total Sales (Lacs)'].sum() / total_sales * 100) if total_sales > 0 else 0
     p4 = tf.add_paragraph()
     p4.text = f"• Concentration: Top 3 {dim_name}s drive {top_3_contrib:.1f}% of total sales."
     p4.font.size = Pt(12)
@@ -298,7 +377,6 @@ def build_pptx(df_filtered, months, primary_dim, timeframe):
     prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
     blank_layout = prs.slide_layouts[6]
     
-    # Title Slide
     s1 = prs.slides.add_slide(blank_layout)
     bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
     bg1.fill.solid()
@@ -312,11 +390,10 @@ def build_pptx(df_filtered, months, primary_dim, timeframe):
     p.font.color.rgb = RGBColor(255, 255, 255)
     
     p2 = tb.text_frame.add_paragraph()
-    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Generated on {datetime.now().strftime('%Y-%m-%d')}"
+    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Figures in ₹ Lacs"
     p2.font.size = Pt(20)
     p2.font.color.rgb = RGBColor(200, 220, 240)
 
-    # Multi-Slide Analysis
     dimensions = [
         ("Brand Breakdown & Insights", "Brand Name", "Brand"),
         ("Source Contribution & Insights", "Source", "Source"),
@@ -381,20 +458,55 @@ def get_filter_menu(dim_name, selected_set):
     kb.append([InlineKeyboardButton("➡️ Continue to Timeframe", callback_data="step_timeframe")])
     return InlineKeyboardMarkup(kb)
 
-# Telegram Handlers
+# ---------------------------------------------------------
+# Telegram Handlers (Login & Authentication)
+# ---------------------------------------------------------
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    user_id = u.effective_user.id
+    
+    if user_id not in SESSION_CACHE:
+        await u.message.reply_text("🔐 **Authentication Required**\nPlease reply with your registered **corporate email ID** to log in:")
+        return
+
     c.user_data.clear()
     c.user_data['filters'] = {}
-    msg = u.message or u.callback_query.message
-    await msg.reply_text("📊 **Historical Analytics Engine**\nSelect Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
+    user_config = SESSION_CACHE[user_id]
+    
+    store_info = "All Stores" if user_config['allowed_stores'] == "ALL" else ", ".join(user_config['allowed_stores'])
+    await u.message.reply_text(f"👋 **Welcome ({user_config['email']})**\n🔑 **Role:** `{user_config['role']}`\n🏬 **Scope:** `{store_info}`\n💰 **Figures:** `Values in ₹ Lacs`\n\nSelect Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
 
-async def handle_all_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    await start(u, c)
+async def handle_email_login(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    user_id = u.effective_user.id
+    text = u.message.text.strip().lower()
+
+    if user_id in SESSION_CACHE:
+        await start(u, c)
+        return
+
+    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    if not re.match(email_regex, text):
+        await u.message.reply_text("⚠️ Invalid email format. Please provide a valid corporate email address.")
+        return
+
+    if text in AUTHORIZED_USERS:
+        SESSION_CACHE[user_id] = AUTHORIZED_USERS[text]
+        SESSION_CACHE[user_id]['email'] = text
+        await u.message.reply_text(f"✅ **Login Successful!** Authenticated as `{text}`.")
+        await start(u, c)
+    else:
+        await u.message.reply_text("⛔ **Access Denied:** Your email address is not registered in the system. Please contact your Operations Lead.")
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
     await q.answer()
+    user_id = q.from_user.id
+    
+    if user_id not in SESSION_CACHE:
+        await q.message.reply_text("🔐 **Session expired.** Please send your registered email ID to log in.")
+        return
+
     data = q.data
+    user_config = SESSION_CACHE[user_id]
     
     if data.startswith("p_"):
         c.user_data['prim'] = data.split("_")[1]
@@ -429,7 +541,7 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         tf = data.split("_")[1]
         c.user_data['timeframe'] = tf
         
-        df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf)
+        df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
         prim_col = DIM_COL_MAP[c.user_data['prim']]
         piv = generate_pivot(df_all, prim_col, months)
         
@@ -466,10 +578,10 @@ if __name__ == '__main__':
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_all_messages))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_login))
     app.add_error_handler(error_handler)
 
-    print("📊 Analytics Bot Running...")
+    print("📊 Analytics Bot Online (Role-Based Access & Figures in Lacs Enabled)...")
     
     app.run_polling(
         drop_pending_updates=True,
