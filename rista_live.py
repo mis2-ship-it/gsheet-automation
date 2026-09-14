@@ -701,7 +701,7 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
     })
 
     # Growth calculations
-    df["LW Growth %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
+    df["LW GW% %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
     df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
     df["MoM Growth %"] = ((df["Today"]-df["Last Month"]) / df["Last Month"].replace(0,1)) * 100
     df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
@@ -897,7 +897,7 @@ def generate_insight(overall):
     try:
         row = overall[overall["Parameters"]=="Net"].iloc[0]
 
-        lw = row["LW Growth %"]
+        lw = row["LW GW% %"]
         l2w = row["L2W Growth %"]
         mom = row["MoM Growth %"]
         ly = row["LY Growth %"]
@@ -3915,7 +3915,7 @@ print("🎉 WHATSAPP LIVE SALES SENT SUCCESSFULLY")
 # - Does NOT modify WhatsApp
 # - Uses already calculated LIVE data
 # - NO Contribution % in Telegram
-# - Uses LW Growth % instead
+# - Uses LW GW% % instead
 # - NO MTD
 # =========================================================
 
@@ -4047,7 +4047,7 @@ def send_telegram_live():
 
     # =====================================================
     # 🏪 BRAND PERFORMANCE
-    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # LW GW% INSTEAD OF CONTRIBUTION
     # =====================================================
 
     brand_lines = []
@@ -4104,7 +4104,7 @@ def send_telegram_live():
         brand_lines.append(
             f"{emoji} {brand}: "
             f"{fmt_lakh(today_rev)} "
-            f"| LW Growth: {fmt_pct(growth)} "
+            f"| LW GW%: {fmt_pct(growth)} "
             f"· {discount:.0f}% dis"
         )
 
@@ -4116,7 +4116,7 @@ def send_telegram_live():
 
     # =====================================================
     # 🛵 SOURCE PERFORMANCE
-    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # LW GW% INSTEAD OF CONTRIBUTION
     # =====================================================
 
     source_lines = []
@@ -4171,7 +4171,7 @@ def send_telegram_live():
         source_lines.append(
             f"{emoji} {source}: "
             f"{fmt_lakh(today_rev)} "
-            f"| LW Growth: {fmt_pct(growth)} "
+            f"| LW GW%: {fmt_pct(growth)} "
             f"· {discount:.0f}% dis"
         )
 
@@ -4263,7 +4263,7 @@ def send_telegram_live():
                 source_brand_lines.append(
                     f"  {brand_emoji} {brand}: "
                     f"{fmt_lakh(today_rev)} "
-                    f"| LW Growth: {fmt_pct(growth)}"
+                    f"| LW GW%: {fmt_pct(growth)}"
                 )
 
     source_brand_text = (
@@ -4274,7 +4274,7 @@ def send_telegram_live():
 
     # =====================================================
     # 🌍 REGION PERFORMANCE
-    # LW GROWTH INSTEAD OF CONTRIBUTION
+    # LW GW% INSTEAD OF CONTRIBUTION
     # =====================================================
 
     region_lines = []
@@ -4356,7 +4356,7 @@ def send_telegram_live():
             f"{medal} {r['Region']}: "
             f"{fmt_lakh(r['Today Rev'])} "
             f"| {r['Transactions']:,} Txn "
-            f"| LW Growth: {fmt_pct(r['Growth'])} "
+            f"| LW GW%: {fmt_pct(r['Growth'])} "
             f"· {r['Discount']:.0f}% dis"
         )
 
@@ -4401,7 +4401,7 @@ def send_telegram_live():
             f"{fmt_lakh(hourly_today)}\n"
             f"📊 Same Hour LW: "
             f"{fmt_lakh(hourly_lw)}\n"
-            f"📈 LW Growth: "
+            f"📈 LW GW%: "
             f"{fmt_pct(hourly_growth)}"
         )
 
@@ -4488,16 +4488,16 @@ def send_telegram_live():
 💰 BUSINESS OVERVIEW
 
 💵 Net Revenue: {fmt_lakh(net_today)}
-📈 LW Growth: {fmt_pct(net_growth)}
+📈 LW GW%: {fmt_pct(net_growth)}
 
 💵 Gross Sales: {fmt_lakh(gross_today)}
-📈 LW Growth: {fmt_pct(gross_growth)}
+📈 LW GW%: {fmt_pct(gross_growth)}
 
 🧾 Transactions: {txn_today:,}
-📈 LW Growth: {fmt_pct(txn_growth)}
+📈 LW GW%: {fmt_pct(txn_growth)}
 
 🧺 AOV: ₹{aov_today:,.0f}
-📈 LW Growth: {fmt_pct(aov_growth)}
+📈 LW GW%: {fmt_pct(aov_growth)}
 
 📉 Discount: {discount_today:.0f}%
 
