@@ -213,9 +213,28 @@ def get_filtered_data(filters_dict, timeframe, user_config):
         if sel and 'ALL' not in sel and col in df.columns:
             df = df[df[col].isin(list(sel))]
     
-    avail = sorted(df['YearMonth'].dropna().unique())
-    tf_map = {"Current Month": 1, "Last Month": 2, "Last 2 Months": 2, "Quarterly": 3, "Half-Yearly": 6, "Yearly": 12}
-    months = avail[-tf_map.get(timeframe, 3):]
+    # Get sorted list of available months in dataset
+    avail = sorted(df['YearMonth'].dropna().unique().tolist())
+    if not avail:
+        return df, df, []
+
+    # Filter logic to handle current month vs completed months
+    if timeframe == "Current Month":
+        months = [avail[-1]]  # Only the current month
+    elif timeframe == "Last Month":
+        months = [avail[-2]] if len(avail) >= 2 else [avail[-1]]
+    else:
+        # Exclude the ongoing current month for accurate MoM analysis
+        completed_months = avail[:-1] if len(avail) > 1 else avail
+        
+        tf_map = {
+            "Last 2 Months": 2,
+            "Quarterly": 3,
+            "Half-Yearly": 6,
+            "Yearly": 12
+        }
+        count = tf_map.get(timeframe, 3)
+        months = completed_months[-count:]
     
     return df, df[df['YearMonth'].isin(months)].copy(), months
 
