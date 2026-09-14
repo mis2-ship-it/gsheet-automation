@@ -323,7 +323,9 @@ def add_analysis_slide(prs, title, piv, dim_name):
 
     month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales (Lacs)']]
     for m in month_cols:
-        chart_data.add_series(str(m), list(piv.head(6)[m]))
+        # 1. Round float values to 2 decimal places
+        series_vals = [round(float(v), 2) for v in piv.head(6)[m]]
+        chart_data.add_series(str(m), series_vals)
 
     x, y, cx, cy = Inches(0.6), Inches(1.2), Inches(7.5), Inches(5.5)
     chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data).chart
@@ -331,10 +333,12 @@ def add_analysis_slide(prs, title, piv, dim_name):
     chart.legend.position = XL_LEGEND_POSITION.TOP
     chart.plots[0].has_data_labels = True
     
+    # 2. Format data labels to 2 decimal places
     for series in chart.series:
         for point in series.points:
             dl = point.data_label
-            dl.font.size = Pt(9)
+            dl.font.size = Pt(8)
+            dl.number_format = '0.00'
 
     tb_insight = slide.shapes.add_textbox(Inches(8.3), Inches(1.2), Inches(4.5), Inches(5.5))
     tf = tb_insight.text_frame
