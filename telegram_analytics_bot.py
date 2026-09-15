@@ -120,14 +120,18 @@ def generate_random_password(length=8):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 def send_access_email(user_email: str, passcode: str) -> bool:
-    """Sends HTML passcode email via SMTP with connection timeout protection."""
+    """Sends HTML passcode email via SMTP_SSL (Port 465)."""
+    # Use SSL Port 465 as default for higher reliability on cloud hosters
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_port = int(os.environ.get("SMTP_PORT", 465))
     smtp_email = os.environ.get("SMTP_EMAIL", "mis2@frozenbottle.in")
     smtp_password = os.environ.get("SMTP_PASSWORD", "nfyx nyqp dpyb hlig")
 
+    # Strip spaces from App Passwords just in case
+    smtp_password = smtp_password.replace(" ", "")
+
     if not all([smtp_email, smtp_password]):
-        logger.warning("SMTP credentials missing in environment variables.")
+        logger.warning("SMTP credentials missing.")
         return False
 
     msg = EmailMessage()
@@ -145,9 +149,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
           <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
             <span style="font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #1F4E78;">{passcode}</span>
           </div>
-          <p style="font-size: 13px; color: #666;">Enter this passcode in your Telegram chat to unlock access to your dashboards.</p>
-          <hr style="border: none; border-top: 1px solid #eeeeee; margin: 20px 0;">
-          <p style="font-size: 11px; color: #999; text-align: center;">If you did not request this code, please ignore this message.</p>
+          <p style="font-size: 13px; color: #666;">Enter this passcode in your Telegram chat to unlock access.</p>
         </div>
       </body>
     </html>
@@ -156,12 +158,18 @@ def send_access_email(user_email: str, passcode: str) -> bool:
     msg.add_alternative(html_content, subtype='html')
 
     try:
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_email, smtp_password)
-            server.send_message(msg)
+        if smtp_port == 465:
+            with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
+                server.login(smtp_email, smtp_password)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(smtp_email, smtp_password)
+                server.send_message(msg)
+        logger.info(f"Email sent successfully to {user_email}")
         return True
     except Exception as e:
         logger.error(f"Failed to send email to {user_email}: {e}")
