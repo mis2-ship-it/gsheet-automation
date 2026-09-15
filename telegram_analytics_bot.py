@@ -158,7 +158,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
     msg.add_alternative(html_content, subtype='html')
 
     try:
-        if smtp_port == 465:
+        if smtp_port == 587:
             with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
                 server.login(smtp_email, smtp_password)
                 server.send_message(msg)
