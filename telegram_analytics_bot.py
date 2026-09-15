@@ -123,7 +123,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
     """Sends HTML passcode email via SMTP_SSL (Port 465)."""
     # Use SSL Port 465 as default for higher reliability on cloud hosters
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.environ.get("SMTP_PORT", 465))
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_email = os.environ.get("SMTP_EMAIL", "mis2@frozenbottle.in")
     smtp_password = os.environ.get("SMTP_PASSWORD", "nfyx nyqp dpyb hlig")
 
