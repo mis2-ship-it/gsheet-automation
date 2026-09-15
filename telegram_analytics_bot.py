@@ -1,9 +1,9 @@
 import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib
-from email.mime.text import MIMEText
 import pandas as pd
 import numpy as np
 from datetime import datetime
 from io import BytesIO
+from email.message import EmailMessage
 from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -117,34 +117,53 @@ def hash_pass(pwd: str) -> str:
     return hashlib.sha256(pwd.encode()).hexdigest()
 
 def generate_random_password(length=8):
-    return secrets.token_hex(length // 2)
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
-def send_password_email(to_email, raw_password):
-    smtp_server = os.environ.get("SMTP_SERVER")
-    smtp_port = os.environ.get("SMTP_PORT", 587)
-    smtp_email = os.environ.get("SMTP_EMAIL")
+def send_access_email(user_email: str, passcode: str) -> bool:
+    """Sends HTML passcode email via SMTP."""
+    smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.environ.get("SMTP_PORT", 587))
+    smtp_email = os.environ.get("SMTP_EMAIL", "analytics@frozenbottle.in")
     smtp_password = os.environ.get("SMTP_PASSWORD")
 
-    if not all([smtp_server, smtp_email, smtp_password]):
-        logger.warning("SMTP environment variables not configured. Skipping email send.")
+    if not all([smtp_email, smtp_password]):
+        logger.warning("SMTP credentials missing in environment variables. Skipping email.")
         return False
 
-    try:
-        msg = MIMEText(
-            f"Hello,\n\nYour login password for the Frozen Bottle Analytics Telegram Bot is:\n\nPassword: {raw_password}\n\n"
-            f"Please keep this password safe.\n\nRegards,\nAnalytics Team"
-        )
-        msg['Subject'] = "Your Analytics Bot Access Password"
-        msg['From'] = smtp_email
-        msg['To'] = to_email
+    msg = EmailMessage()
+    msg['Subject'] = "🔐 Your Frozen Bottle Analytics Bot Login Code"
+    msg['From'] = f"Frozen Bottle Analytics <{smtp_email}>"
+    msg['To'] = user_email
 
-        with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
+    html_content = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
+        <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #1F4E78; text-align: center;">Frozen Bottle Analytics</h2>
+          <p>Hello,</p>
+          <p>You requested access to the <strong>Analytics Telegram Bot</strong>.</p>
+          <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
+            <span style="font-size: 24px; font-weight: bold; letter-spacing: 3px; color: #1F4E78;">{passcode}</span>
+          </div>
+          <p style="font-size: 13px; color: #666;">Enter this passcode in your Telegram chat to unlock access to your store dashboards.</p>
+          <hr style="border: none; border-top: 1px solid #eeeeee; margin: 20px 0;">
+          <p style="font-size: 11px; color: #999; text-align: center;">If you did not request this code, please ignore this email.</p>
+        </div>
+      </body>
+    </html>
+    """
+    msg.set_content(f"Your login code for Frozen Bottle Analytics Bot is: {passcode}")
+    msg.add_alternative(html_content, subtype='html')
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls()
             server.login(smtp_email, smtp_password)
-            server.sendmail(smtp_email, [to_email], msg.as_string())
+            server.send_message(msg)
         return True
     except Exception as e:
-        logger.error(f"Failed to send email to {to_email}: {e}")
+        logger.error(f"Failed to send email to {user_email}: {e}")
         return False
 
 # ---------------------------------------------------------
@@ -241,7 +260,6 @@ def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='St
     if df_eval.empty:
         return pd.DataFrame()
 
-    # Enable Store-level grouping if primary dimension is Store or Branch
     is_store_prim = primary_dim in ['Store', 'Branch']
 
     if is_store_prim and sec_dim_col != 'Branch':
@@ -257,7 +275,6 @@ def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='St
         
     piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
     
-    # Sort by Store name first, then Total Sales
     if is_store_prim and sec_dim_col != 'Branch':
         return piv.sort_values(by=['Branch', 'Total Sales (Lacs)'], ascending=[True, False])
     return piv.sort_values(by=['Total Sales (Lacs)'], ascending=False)
@@ -265,7 +282,6 @@ def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='St
 def get_filtered_data(filters_dict, timeframe, user_config):
     df = GLOBAL_DF.copy()
 
-    # Store scoping per user
     allowed_stores = user_config.get('allowed_stores', 'ALL')
     if allowed_stores != 'ALL':
         df = df[df['Branch'].isin(allowed_stores)]
@@ -281,7 +297,6 @@ def get_filtered_data(filters_dict, timeframe, user_config):
     if not avail:
         return df, df, []
 
-    # Filter logic to handle current month vs completed historical months
     if timeframe == "Current Month":
         months = [avail[-1]]
     elif timeframe == "Last Month":
@@ -303,11 +318,9 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     if df_eval.empty or dim_col not in df_eval.columns:
         return "No data available for the selected parameters."
 
-    # Copy data and mark offline vs online orders
     df_calc = df_eval.copy()
     df_calc['Is_Offline'] = df_calc['Source'] == 'In Store'
 
-    # Group metrics by selected primary dimension
     grouped = df_calc.groupby(dim_col).agg({
         'Net Sales': 'sum',
         'Gross Sales': 'sum',
@@ -321,14 +334,12 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     grouped = grouped.merge(offline_grp, on=dim_col, how='left').fillna({'Offline_Orders': 0})
     grouped = grouped.merge(online_grp, on=dim_col, how='left').fillna({'Online_Orders': 0})
 
-    # Calculate ratios
     grouped['Disc%'] = np.where(grouped['Gross Sales'] > 0, (grouped['Discount'] / grouped['Gross Sales']) * 100, 0.0)
     grouped['Offline%'] = np.where(grouped['Orders'] > 0, (grouped['Offline_Orders'] / grouped['Orders']) * 100, 0.0)
     grouped['Online%'] = np.where(grouped['Orders'] > 0, (grouped['Online_Orders'] / grouped['Orders']) * 100, 0.0)
 
     grouped = grouped.sort_values(by='Net Sales', ascending=False)
 
-    # Format into code block table for crisp alignment in Telegram
     lines = [f"📊 **Performance Summary in Lacs ({dim_name} | {timeframe})**\n"]
     lines.append("`" + f"{dim_name[:10]:<10} | Sales  | Disc% | Off%  | On%`")
     lines.append("`" + "-"*42 + "`")
@@ -367,7 +378,6 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for sheet_title, dim_col in sections:
-        # Pass primary_dim directly so Store split triggers across all tabs
         piv = generate_store_split_pivot(df_filtered, dim_col, months, primary_dim)
         ws = wb.create_sheet(title=sheet_title)
         
@@ -383,14 +393,12 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
         headers = list(reset_piv.columns)
         ws.append(headers)
 
-        # Header styling
         for col_idx, h in enumerate(headers, 1):
             cell = ws.cell(3, col_idx)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
 
-        # Data rows
         for r in reset_piv.values:
             row_vals = []
             for val in r:
@@ -400,10 +408,9 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
                     row_vals.append(val)
             ws.append(row_vals)
 
-        # Total summary row logic
         sum_row = ["Total Summary (Lacs)"]
         if is_store_prim and dim_col != 'Branch':
-            sum_row.append("")  # Blank spacer for column B (e.g., Source / Session)
+            sum_row.append("")
 
         for c in piv.columns:
             if c == 'MoM Growth %':
@@ -412,7 +419,6 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
                 sum_row.append(round(float(piv[c].sum()), 2))
         ws.append(sum_row)
 
-        # Cell border and number formatting
         mom_col_idx = headers.index('MoM Growth %') + 1 if 'MoM Growth %' in headers else None
 
         for r_idx, row in enumerate(ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)), start=4):
@@ -428,7 +434,6 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 14)
 
-    # Raw Data Sheet
     ws_raw = wb.create_sheet(title="Raw Data (Sales in Lacs)")
     ws_raw.append(list(df_filtered.columns))
     for r in df_filtered.head(5000).values:
@@ -596,7 +601,7 @@ def get_filter_menu(dim_name, selected_set):
     return InlineKeyboardMarkup(kb)
 
 # ---------------------------------------------------------
-# Telegram Handlers (Authentication & Password Enforcement)
+# Telegram Handlers
 # ---------------------------------------------------------
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
@@ -633,21 +638,20 @@ async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
     if user_email in USER_PASSWORDS:
         raw_pass = USER_PASSWORDS[user_email]['plain']
-        email_sent = send_password_email(user_email, raw_pass)
+        email_sent = send_access_email(user_email, raw_pass)
         
-        msg = f"🔑 **Password Recovery**\n\nYour active password is: `{raw_pass}`\n"
+        msg = f"🔑 **Passcode Recovery**\n\nYour active passcode is: `{raw_pass}`\n"
         if email_sent:
-            msg += f"\n📧 An email containing your password has also been sent to `{user_email}`."
+            msg += f"\n📧 An email containing your passcode has also been sent to `{user_email}`."
         await u.message.reply_text(msg, parse_mode="Markdown")
     else:
-        await u.message.reply_text("No active password found. Please log in using /start.")
+        await u.message.reply_text("No active passcode found. Please log in using /start.")
 
 async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
     text = u.message.text.strip()
     stage = c.user_data.get('login_stage')
 
-    # If already fully authenticated
     if user_id in SESSION_CACHE and SESSION_CACHE[user_id].get("authenticated"):
         await start(u, c)
         return
@@ -661,34 +665,34 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
         c.user_data['pending_email'] = email
 
-        # Generate password if first time
         if email not in USER_PASSWORDS:
             generated_pwd = generate_random_password(8)
             USER_PASSWORDS[email] = {
                 "hash": hash_pass(generated_pwd),
                 "plain": generated_pwd
             }
-            send_password_email(email, generated_pwd)
             
-            await u.message.reply_text(
-                f"✅ **Email Recognized.**\n\n"
-                f"🔑 A new secure password has been generated for your account:\n"
-                f"**Password:** `{generated_pwd}`\n\n"
-                f"*(Save this password. You can use `/forgotpassword` anytime if you forget it.)*\n\n"
-                f"Please reply with this **Password** now to log in:",
-                parse_mode="Markdown"
-            )
+            email_sent = send_access_email(email, generated_pwd)
+            if email_sent:
+                await u.message.reply_text(
+                    f"✅ **Email Recognized.**\n\n"
+                    f"📩 A secure passcode has been sent to **{email}**.\n"
+                    f"Please check your inbox (and spam folder) and reply with the passcode to log in:",
+                    parse_mode="Markdown"
+                )
+            else:
+                await u.message.reply_text("❌ Failed to send email. Check SMTP server configurations.")
         else:
             await u.message.reply_text(
-                f"🔒 **Password Required** for `{email}`:\n\n"
-                f"Please enter your password to unlock performance data:",
+                f"🔒 **Passcode Required** for `{email}`:\n\n"
+                f"Please enter your passcode to unlock performance data:",
                 parse_mode="Markdown"
             )
 
         c.user_data['login_stage'] = 'AWAITING_PASSWORD'
         return
 
-    # Stage 2: Validate Password
+    # Stage 2: Validate Passcode
     if stage == 'AWAITING_PASSWORD':
         email = c.user_data.get('pending_email')
         if not email or email not in USER_PASSWORDS:
@@ -708,10 +712,9 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.")
             await start(u, c)
         else:
-            await u.message.reply_text("❌ **Incorrect Password.** Please try again or use /forgotpassword.")
+            await u.message.reply_text("❌ **Incorrect Passcode.** Please try again or use /forgotpassword.")
         return
 
-    # Fallback greeting prompt
     await u.message.reply_text(
         "👋 **Welcome to Analytics Control System**\n\n"
         "Please enter your **registered corporate email address** to continue:"
@@ -771,7 +774,6 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['df_eval'] = df_eval
         c.user_data['months'] = months
         
-        # Pass df_eval to compute Discount %, Offline %, and Online %
         summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
         kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
         
