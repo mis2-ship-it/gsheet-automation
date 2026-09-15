@@ -1,4 +1,5 @@
-import glob, os, gc, threading, logging, re
+import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib
+from email.mime.text import MIMEText
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -6,7 +7,10 @@ from io import BytesIO
 from flask import Flask
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, CallbackQueryHandler, 
+    MessageHandler, ContextTypes, filters
+)
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -33,7 +37,7 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # ---------------------------------------------------------
-# AUTHORIZED USERS DIRECTORY (Generated from User Details)
+# AUTHORIZED USERS DIRECTORY & SECURITY DATABASE
 # ---------------------------------------------------------
 AUTHORIZED_USERS = {
     # Full Admin Access
@@ -105,7 +109,43 @@ AUTHORIZED_USERS = {
     }
 }
 
+# Dynamic In-Memory User Security Store: email -> {"hash": sha256_str, "plain": plain_text_pass}
+USER_PASSWORDS = {}
 SESSION_CACHE = {}
+
+def hash_pass(pwd: str) -> str:
+    return hashlib.sha256(pwd.encode()).hexdigest()
+
+def generate_random_password(length=8):
+    return secrets.token_hex(length // 2)
+
+def send_password_email(to_email, raw_password):
+    smtp_server = os.environ.get("SMTP_SERVER")
+    smtp_port = os.environ.get("SMTP_PORT", 587)
+    smtp_email = os.environ.get("SMTP_EMAIL")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+
+    if not all([smtp_server, smtp_email, smtp_password]):
+        logger.warning("SMTP environment variables not configured. Skipping email send.")
+        return False
+
+    try:
+        msg = MIMEText(
+            f"Hello,\n\nYour login password for the Frozen Bottle Analytics Telegram Bot is:\n\nPassword: {raw_password}\n\n"
+            f"Please keep this password safe.\n\nRegards,\nAnalytics Team"
+        )
+        msg['Subject'] = "Your Analytics Bot Access Password"
+        msg['From'] = smtp_email
+        msg['To'] = to_email
+
+        with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
+            server.starttls()
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return False
 
 # ---------------------------------------------------------
 # Parquet Data Loader & Memory Optimization
@@ -141,7 +181,6 @@ def optimize_and_cache_data():
             if 'Region' in df_part: df_part['Region'] = df_part['Region'].astype(str).astype('category')
             if 'Session' in df_part: df_part['Session'] = df_part['Session'].astype(str).astype('category')
 
-            # Convert monetary figures into Lacs (Divide by 100,000)
             for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
                 df_part[num_col] = (pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0) / 100000.0).astype('float32')
             df_part['Orders'] = pd.to_numeric(df_part.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
@@ -162,7 +201,6 @@ def optimize_and_cache_data():
     df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
 
-    # Calculate AOV in INR for bucket definitions
     raw_sales_inr = df['Net Sales'] * 100000.0
     df['Calc_AOV'] = np.where(df['Orders'] > 0, raw_sales_inr / df['Orders'], 0.0).astype('float32')
     df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0).astype('float32')
@@ -198,10 +236,29 @@ def generate_pivot(df_filtered, dim_col, months):
     
     return piv.sort_values(by='Total Sales (Lacs)', ascending=False)
 
+def generate_store_split_pivot(df_filtered, sec_dim_col, months, is_store_prim=False):
+    df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
+    if df_eval.empty:
+        return pd.DataFrame()
+        
+    if is_store_prim and sec_dim_col != 'Branch':
+        idx_cols = ['Branch', sec_dim_col]
+    else:
+        idx_cols = [sec_dim_col]
+
+    piv = pd.pivot_table(df_eval, index=idx_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
+    
+    if len(piv.columns) >= 2:
+        c1, c2 = piv.columns[-2], piv.columns[-1]
+        piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
+        
+    piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
+    return piv.sort_values(by=['Total Sales (Lacs)'], ascending=False)
+
 def get_filtered_data(filters_dict, timeframe, user_config):
     df = GLOBAL_DF.copy()
 
-    # Enforce Store scoping per user role
+    # Store scoping per user
     allowed_stores = user_config.get('allowed_stores', 'ALL')
     if allowed_stores != 'ALL':
         df = df[df['Branch'].isin(allowed_stores)]
@@ -213,20 +270,17 @@ def get_filtered_data(filters_dict, timeframe, user_config):
         if sel and 'ALL' not in sel and col in df.columns:
             df = df[df[col].isin(list(sel))]
     
-    # Get sorted list of available months in dataset
     avail = sorted(df['YearMonth'].dropna().unique().tolist())
     if not avail:
         return df, df, []
 
-    # Filter logic to handle current month vs completed months
+    # Filter logic to handle current month vs completed historical months
     if timeframe == "Current Month":
-        months = [avail[-1]]  # Only the current month
+        months = [avail[-1]]
     elif timeframe == "Last Month":
         months = [avail[-2]] if len(avail) >= 2 else [avail[-1]]
     else:
-        # Exclude the ongoing current month for accurate MoM analysis
         completed_months = avail[:-1] if len(avail) > 1 else avail
-        
         tf_map = {
             "Last 2 Months": 2,
             "Quarterly": 3,
@@ -254,14 +308,16 @@ def build_telegram_summary(piv, primary_dim, timeframe):
     lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f} Lacs")
     return "\n".join(lines)
 
-def build_multi_sheet_excel(df_filtered, months):
+def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
     out = BytesIO()
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
+    is_store_prim = (primary_dim == 'Store')
+
     sections = [
-        ("Brand Summary", "Brand Name"),
         ("Store Summary", "Branch"),
+        ("Brand Summary", "Brand Name"),
         ("Source Summary", "Source"),
         ("Session Summary", "Session"),
         ("AOV Bucket Summary", "AOV Bucket"),
@@ -274,7 +330,7 @@ def build_multi_sheet_excel(df_filtered, months):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for sheet_title, dim_col in sections:
-        piv = generate_pivot(df_filtered, dim_col, months)
+        piv = generate_store_split_pivot(df_filtered, dim_col, months, is_store_prim)
         ws = wb.create_sheet(title=sheet_title)
         
         ws.append([f"{sheet_title} Report (in ₹ Lacs)"])
@@ -285,7 +341,8 @@ def build_multi_sheet_excel(df_filtered, months):
             ws.append(["No data available"])
             continue
 
-        headers = [dim_col] + list(piv.columns)
+        reset_piv = piv.reset_index()
+        headers = list(reset_piv.columns)
         ws.append(headers)
 
         for col_idx, h in enumerate(headers, 1):
@@ -294,24 +351,40 @@ def build_multi_sheet_excel(df_filtered, months):
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
 
-        for r in piv.reset_index().values:
-            row_vals = [round(val, 2) if isinstance(val, (float, int)) else val for val in r]
+        for r in reset_piv.values:
+            row_vals = []
+            for val in r:
+                if isinstance(val, (float, np.floating, int, np.integer)):
+                    row_vals.append(round(float(val), 2))
+                else:
+                    row_vals.append(val)
             ws.append(row_vals)
 
         sum_row = ["Total Summary (Lacs)"]
+        if is_store_prim and dim_col != 'Branch':
+            sum_row.append("")
+
         for c in piv.columns:
-            sum_row.append("-" if c == 'MoM Growth %' else round(piv[c].sum(), 2))
+            if c == 'MoM Growth %':
+                sum_row.append("-")
+            else:
+                sum_row.append(round(float(piv[c].sum()), 2))
         ws.append(sum_row)
 
-        for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)):
-            for cell in row:
+        mom_col_idx = headers.index('MoM Growth %') + 1 if 'MoM Growth %' in headers else None
+
+        for r_idx, row in enumerate(ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)), start=4):
+            for c_idx, cell in enumerate(row, start=1):
                 cell.border = border
                 if isinstance(cell.value, (int, float)):
-                    cell.number_format = '₹#,##0.00 "Lacs"'
+                    if mom_col_idx and c_idx == mom_col_idx:
+                        cell.number_format = '0.0"%"'
+                    else:
+                        cell.number_format = '₹#,##0.00'
 
         for col in ws.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
-            ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 5, 14)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 14)
 
     ws_raw = wb.create_sheet(title="Raw Data (Sales in Lacs)")
     ws_raw.append(list(df_filtered.columns))
@@ -342,7 +415,6 @@ def add_analysis_slide(prs, title, piv, dim_name):
 
     month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales (Lacs)']]
     for m in month_cols:
-        # 1. Round float values to 2 decimal places
         series_vals = [round(float(v), 2) for v in piv.head(6)[m]]
         chart_data.add_series(str(m), series_vals)
 
@@ -352,7 +424,6 @@ def add_analysis_slide(prs, title, piv, dim_name):
     chart.legend.position = XL_LEGEND_POSITION.TOP
     chart.plots[0].has_data_labels = True
     
-    # 2. Format data labels to 2 decimal places
     for series in chart.series:
         for point in series.points:
             dl = point.data_label
@@ -434,7 +505,7 @@ def build_pptx(df_filtered, months, primary_dim, timeframe):
     out.seek(0)
     return out
 
-# UI Builders
+# UI Menus
 def get_main_menu():
     kb = [
         [InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")],
@@ -482,61 +553,134 @@ def get_filter_menu(dim_name, selected_set):
     return InlineKeyboardMarkup(kb)
 
 # ---------------------------------------------------------
-# Telegram Handlers (Login & Authentication)
+# Telegram Handlers (Authentication & Password Enforcement)
 # ---------------------------------------------------------
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
     
-    if user_id not in SESSION_CACHE:
-        await u.message.reply_text("🔐 **Authentication Required**\nPlease reply with your registered **corporate email ID** to log in:")
+    if user_id not in SESSION_CACHE or not SESSION_CACHE[user_id].get("authenticated"):
+        c.user_data['login_stage'] = 'AWAITING_EMAIL'
+        await u.message.reply_text(
+            "🔐 **Data Access Control System**\n\n"
+            "Please enter your registered **corporate email address** to begin:"
+        )
         return
 
-    c.user_data.clear()
     c.user_data['filters'] = {}
     user_config = SESSION_CACHE[user_id]
     
     store_info = "All Stores" if user_config['allowed_stores'] == "ALL" else ", ".join(user_config['allowed_stores'])
-    await u.message.reply_text(f"👋 **Welcome ({user_config['email']})**\n🔑 **Role:** `{user_config['role']}`\n🏬 **Scope:** `{store_info}`\n💰 **Figures:** `Values in ₹ Lacs`\n\nSelect Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
+    await u.message.reply_text(
+        f"👋 **Welcome ({user_config['email']})**\n"
+        f"🔑 **Role:** `{user_config['role']}`\n"
+        f"🏬 **Scope:** `{store_info}`\n"
+        f"💰 **Figures:** `Values in ₹ Lacs`\n\n"
+        f"Select Primary Dimension:", 
+        reply_markup=get_main_menu(), 
+        parse_mode="Markdown"
+    )
 
-async def handle_email_login(u: Update, c: ContextTypes.DEFAULT_TYPE):
+async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
-    text = u.message.text.strip().lower()
+    user_email = SESSION_CACHE.get(user_id, {}).get('email')
 
-    # If already logged in, route directly to main menu
-    if user_id in SESSION_CACHE:
-        await start(u, c)
+    if not user_email:
+        await u.message.reply_text(" Please send your registered email ID first using /start.")
         return
 
-    # If message doesn't look like an email address, ask for corporate email
-    if "@" not in text:
-        await u.message.reply_text(
-            "👋 **Hello!**\n\n"
-            "To access the analytics system, please send your **registered corporate email address** (e.g., `user@frozenbottle.in`)."
-        )
-        return
-
-    # Validate email format
-    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
-    if not re.match(email_regex, text):
-        await u.message.reply_text("⚠️ **Invalid email format.** Please enter a valid corporate email address.")
-        return
-
-    # Verify email against authorized user list
-    if text in AUTHORIZED_USERS:
-        SESSION_CACHE[user_id] = AUTHORIZED_USERS[text]
-        SESSION_CACHE[user_id]['email'] = text
-        await u.message.reply_text(f"✅ **Login Successful!** Authenticated as `{text}`.")
-        await start(u, c)
+    if user_email in USER_PASSWORDS:
+        raw_pass = USER_PASSWORDS[user_email]['plain']
+        email_sent = send_password_email(user_email, raw_pass)
+        
+        msg = f"🔑 **Password Recovery**\n\nYour active password is: `{raw_pass}`\n"
+        if email_sent:
+            msg += f"\n📧 An email containing your password has also been sent to `{user_email}`."
+        await u.message.reply_text(msg, parse_mode="Markdown")
     else:
-        await u.message.reply_text("⛔ **Access Denied:** Your email address is not authorized in the system. Please contact your Operations Lead.")
+        await u.message.reply_text("No active password found. Please log in using /start.")
+
+async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    user_id = u.effective_user.id
+    text = u.message.text.strip()
+    stage = c.user_data.get('login_stage')
+
+    # If already fully authenticated
+    if user_id in SESSION_CACHE and SESSION_CACHE[user_id].get("authenticated"):
+        await start(u, c)
+        return
+
+    # Stage 1: Check Email
+    if stage == 'AWAITING_EMAIL' or "@" in text:
+        email = text.lower()
+        if email not in AUTHORIZED_USERS:
+            await u.message.reply_text("⛔ **Access Denied:** Email address is not authorized. Contact your Operations Lead.")
+            return
+
+        c.user_data['pending_email'] = email
+
+        # Generate password if first time
+        if email not in USER_PASSWORDS:
+            generated_pwd = generate_random_password(8)
+            USER_PASSWORDS[email] = {
+                "hash": hash_pass(generated_pwd),
+                "plain": generated_pwd
+            }
+            send_password_email(email, generated_pwd)
+            
+            await u.message.reply_text(
+                f"✅ **Email Recognized.**\n\n"
+                f"🔑 A new secure password has been generated for your account:\n"
+                f"**Password:** `{generated_pwd}`\n\n"
+                f"*(Save this password. You can use `/forgotpassword` anytime if you forget it.)*\n\n"
+                f"Please reply with this **Password** now to log in:",
+                parse_mode="Markdown"
+            )
+        else:
+            await u.message.reply_text(
+                f"🔒 **Password Required** for `{email}`:\n\n"
+                f"Please enter your password to unlock performance data:",
+                parse_mode="Markdown"
+            )
+
+        c.user_data['login_stage'] = 'AWAITING_PASSWORD'
+        return
+
+    # Stage 2: Validate Password
+    if stage == 'AWAITING_PASSWORD':
+        email = c.user_data.get('pending_email')
+        if not email or email not in USER_PASSWORDS:
+            c.user_data['login_stage'] = 'AWAITING_EMAIL'
+            await u.message.reply_text("Session expired. Please send your email ID again.")
+            return
+
+        entered_hash = hash_pass(text)
+        stored_hash = USER_PASSWORDS[email]['hash']
+
+        if entered_hash == stored_hash:
+            SESSION_CACHE[user_id] = AUTHORIZED_USERS[email].copy()
+            SESSION_CACHE[user_id]['email'] = email
+            SESSION_CACHE[user_id]['authenticated'] = True
+            c.user_data['login_stage'] = None
+
+            await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.")
+            await start(u, c)
+        else:
+            await u.message.reply_text("❌ **Incorrect Password.** Please try again or use /forgotpassword.")
+        return
+
+    # Fallback greeting prompt
+    await u.message.reply_text(
+        "👋 **Welcome to Analytics Control System**\n\n"
+        "Please enter your **registered corporate email address** to continue:"
+    )
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
     await q.answer()
     user_id = q.from_user.id
     
-    if user_id not in SESSION_CACHE:
-        await q.message.reply_text("🔐 **Session expired.** Please send your registered email ID to log in.")
+    if user_id not in SESSION_CACHE or not SESSION_CACHE[user_id].get("authenticated"):
+        await q.message.reply_text("🔒 **Access Denied.** Please log in using /start.")
         return
 
     data = q.data
@@ -589,8 +733,8 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         
     elif data == "dl_xls":
-        doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'])
-        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Full_Report.xlsx")
+        doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Store_Split_Report.xlsx")
         
     elif data == "dl_ppt":
         doc = build_pptx(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'], c.user_data['timeframe'])
@@ -611,11 +755,12 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(token).build()
     
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("forgotpassword", forgot_password_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_email_login))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
     app.add_error_handler(error_handler)
 
-    print("📊 Analytics Bot Online (Role-Based Access & Figures in Lacs Enabled)...")
+    print("📊 Password-Protected Analytics Bot Online...")
     
     app.run_polling(
         drop_pending_updates=True,
