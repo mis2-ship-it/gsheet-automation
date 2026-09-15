@@ -1,4 +1,4 @@
-import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib
+import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib, asyncio
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -109,7 +109,6 @@ AUTHORIZED_USERS = {
     }
 }
 
-# Dynamic In-Memory User Security Store: email -> {"hash": sha256_str, "plain": plain_text_pass}
 USER_PASSWORDS = {}
 SESSION_CACHE = {}
 
@@ -121,18 +120,18 @@ def generate_random_password(length=8):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 def send_access_email(user_email: str, passcode: str) -> bool:
-    """Sends HTML passcode email via SMTP."""
+    """Sends HTML passcode email via SMTP with connection timeout protection."""
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_email = os.environ.get("SMTP_EMAIL", "mis2@frozenbottle.in")
-    smtp_password = os.environ.get("SMTP_PASSWORD","nfyx nyqp dpyb hlig")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "nfyx nyqp dpyb hlig")
 
     if not all([smtp_email, smtp_password]):
-        logger.warning("SMTP credentials missing in environment variables. Skipping email.")
+        logger.warning("SMTP credentials missing in environment variables.")
         return False
 
     msg = EmailMessage()
-    msg['Subject'] = "🔐 Your Frozen Bottle Analytics Bot Login Code"
+    msg['Subject'] = "🔐 Your Frozen Bottle Analytics Passcode"
     msg['From'] = f"Frozen Bottle Analytics <{smtp_email}>"
     msg['To'] = user_email
 
@@ -142,23 +141,25 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
           <h2 style="color: #1F4E78; text-align: center;">Frozen Bottle Analytics</h2>
           <p>Hello,</p>
-          <p>You requested access to the <strong>Analytics Telegram Bot</strong>.</p>
+          <p>Your single-use passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
           <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
-            <span style="font-size: 24px; font-weight: bold; letter-spacing: 3px; color: #1F4E78;">{passcode}</span>
+            <span style="font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #1F4E78;">{passcode}</span>
           </div>
-          <p style="font-size: 13px; color: #666;">Enter this passcode in your Telegram chat to unlock access to your store dashboards.</p>
+          <p style="font-size: 13px; color: #666;">Enter this passcode in your Telegram chat to unlock access to your dashboards.</p>
           <hr style="border: none; border-top: 1px solid #eeeeee; margin: 20px 0;">
-          <p style="font-size: 11px; color: #999; text-align: center;">If you did not request this code, please ignore this email.</p>
+          <p style="font-size: 11px; color: #999; text-align: center;">If you did not request this code, please ignore this message.</p>
         </div>
       </body>
     </html>
     """
-    msg.set_content(f"Your login code for Frozen Bottle Analytics Bot is: {passcode}")
+    msg.set_content(f"Your passcode for Frozen Bottle Analytics Bot is: {passcode}")
     msg.add_alternative(html_content, subtype='html')
 
     try:
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=15) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(smtp_email, smtp_password)
             server.send_message(msg)
         return True
@@ -610,7 +611,8 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['login_stage'] = 'AWAITING_EMAIL'
         await u.message.reply_text(
             "🔐 **Data Access Control System**\n\n"
-            "Please enter your registered **corporate email address** to begin:"
+            "Please enter your registered **corporate email address** to begin:",
+            parse_mode="Markdown"
         )
         return
 
@@ -630,22 +632,35 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
 async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
-    user_email = SESSION_CACHE.get(user_id, {}).get('email')
+    user_email = SESSION_CACHE.get(user_id, {}).get('email') or c.user_data.get('pending_email')
 
     if not user_email:
-        await u.message.reply_text(" Please send your registered email ID first using /start.")
+        await u.message.reply_text("Please send your registered email ID first using /start.")
         return
 
-    if user_email in USER_PASSWORDS:
-        raw_pass = USER_PASSWORDS[user_email]['plain']
-        email_sent = send_access_email(user_email, raw_pass)
-        
-        msg = f"🔑 **Passcode Recovery**\n\nYour active passcode is: `{raw_pass}`\n"
-        if email_sent:
-            msg += f"\n📧 An email containing your passcode has also been sent to `{user_email}`."
-        await u.message.reply_text(msg, parse_mode="Markdown")
+    # Generate fresh passcode
+    new_passcode = generate_random_password(8)
+    USER_PASSWORDS[user_email] = {
+        "hash": hash_pass(new_passcode),
+        "plain": new_passcode
+    }
+    
+    status_msg = await u.message.reply_text("🔄 Resending passcode to your email...")
+    email_sent = await asyncio.to_thread(send_access_email, user_email, new_passcode)
+
+    if email_sent:
+        await status_msg.edit_text(
+            f"🔑 **New Passcode Sent!**\n\n"
+            f"A fresh code has been sent to `{user_email}`.\n"
+            f"Please check your inbox/spam folder and enter it here:",
+            parse_mode="Markdown"
+        )
     else:
-        await u.message.reply_text("No active passcode found. Please log in using /start.")
+        await status_msg.edit_text(
+            f"⚠️ **Email Delivery Failed**\n\n"
+            f"Check SMTP settings. Testing code: `{new_passcode}`",
+            parse_mode="Markdown"
+        )
 
 async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
@@ -665,27 +680,29 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
         c.user_data['pending_email'] = email
 
-        if email not in USER_PASSWORDS:
-            generated_pwd = generate_random_password(8)
-            USER_PASSWORDS[email] = {
-                "hash": hash_pass(generated_pwd),
-                "plain": generated_pwd
-            }
-            
-            email_sent = send_access_email(email, generated_pwd)
-            if email_sent:
-                await u.message.reply_text(
-                    f"✅ **Email Recognized.**\n\n"
-                    f"📩 A secure passcode has been sent to **{email}**.\n"
-                    f"Please check your inbox (and spam folder) and reply with the passcode to log in:",
-                    parse_mode="Markdown"
-                )
-            else:
-                await u.message.reply_text("❌ Failed to send email. Check SMTP server configurations.")
+        # ALWAYS generate a fresh code upon entering an email
+        generated_pwd = generate_random_password(8)
+        USER_PASSWORDS[email] = {
+            "hash": hash_pass(generated_pwd),
+            "plain": generated_pwd
+        }
+        
+        status_msg = await u.message.reply_text("📧 Sending access code to your email...")
+        
+        # Async non-blocking email dispatch
+        email_sent = await asyncio.to_thread(send_access_email, email, generated_pwd)
+
+        if email_sent:
+            await status_msg.edit_text(
+                f"✅ **Passcode Sent!**\n\n"
+                f"A secure code has been sent to `{email}`.\n"
+                f"Please check your inbox (or spam) and reply with the passcode to log in:",
+                parse_mode="Markdown"
+            )
         else:
-            await u.message.reply_text(
-                f"🔒 **Passcode Required** for `{email}`:\n\n"
-                f"Please enter your passcode to unlock performance data:",
+            await status_msg.edit_text(
+                f"⚠️ **Passcode Generated (Email Delivery Failed)**\n\n"
+                f"Could not reach SMTP server. Use this code to log in: `{generated_pwd}`",
                 parse_mode="Markdown"
             )
 
@@ -697,7 +714,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         email = c.user_data.get('pending_email')
         if not email or email not in USER_PASSWORDS:
             c.user_data['login_stage'] = 'AWAITING_EMAIL'
-            await u.message.reply_text("Session expired. Please send your email ID again.")
+            await u.message.reply_text("Session expired. Please send your email ID again using /start.")
             return
 
         entered_hash = hash_pass(text)
@@ -709,15 +726,16 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
             SESSION_CACHE[user_id]['authenticated'] = True
             c.user_data['login_stage'] = None
 
-            await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.")
+            await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.", parse_mode="Markdown")
             await start(u, c)
         else:
-            await u.message.reply_text("❌ **Incorrect Passcode.** Please try again or use /forgotpassword.")
+            await u.message.reply_text("❌ **Incorrect Passcode.** Please check your email and try again or use /forgotpassword.", parse_mode="Markdown")
         return
 
     await u.message.reply_text(
         "👋 **Welcome to Analytics Control System**\n\n"
-        "Please enter your **registered corporate email address** to continue:"
+        "Please enter your **registered corporate email address** to continue:",
+        parse_mode="Markdown"
     )
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
