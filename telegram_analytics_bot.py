@@ -299,19 +299,49 @@ def get_filtered_data(filters_dict, timeframe, user_config):
     
     return df, df[df['YearMonth'].isin(months)].copy(), months
 
-def build_telegram_summary(piv, primary_dim, timeframe):
-    if piv.empty:
+def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
+    if df_eval.empty or dim_col not in df_eval.columns:
         return "No data available for the selected parameters."
-    lines = [f"📊 **Performance Summary in Lacs ({primary_dim} | {timeframe})**\n"]
-    lines.append("`" + f"{primary_dim[:12]:<12} | " + " | ".join([str(c) for c in piv.columns[:-2]]) + " | Total`")
-    lines.append("`" + "-"*40 + "`")
-    
-    for idx, row in piv.head(8).iterrows():
-        val_str = " | ".join([f"₹{v:.2f}L" for v in row[:-2]])
-        tot_str = f"₹{row['Total Sales (Lacs)']:.2f}L"
-        lines.append(f"`{str(idx)[:12]:<12} | {val_str} | {tot_str}`")
-        
-    tot_sales = piv['Total Sales (Lacs)'].sum()
+
+    # Copy data and mark offline vs online orders
+    df_calc = df_eval.copy()
+    df_calc['Is_Offline'] = df_calc['Source'] == 'In Store'
+
+    # Group metrics by selected primary dimension
+    grouped = df_calc.groupby(dim_col).agg({
+        'Net Sales': 'sum',
+        'Gross Sales': 'sum',
+        'Discount': 'sum',
+        'Orders': 'sum'
+    }).reset_index()
+
+    offline_grp = df_calc[df_calc['Is_Offline']].groupby(dim_col)['Orders'].sum().rename('Offline_Orders')
+    online_grp = df_calc[~df_calc['Is_Offline']].groupby(dim_col)['Orders'].sum().rename('Online_Orders')
+
+    grouped = grouped.merge(offline_grp, on=dim_col, how='left').fillna({'Offline_Orders': 0})
+    grouped = grouped.merge(online_grp, on=dim_col, how='left').fillna({'Online_Orders': 0})
+
+    # Calculate ratios
+    grouped['Disc%'] = np.where(grouped['Gross Sales'] > 0, (grouped['Discount'] / grouped['Gross Sales']) * 100, 0.0)
+    grouped['Offline%'] = np.where(grouped['Orders'] > 0, (grouped['Offline_Orders'] / grouped['Orders']) * 100, 0.0)
+    grouped['Online%'] = np.where(grouped['Orders'] > 0, (grouped['Online_Orders'] / grouped['Orders']) * 100, 0.0)
+
+    grouped = grouped.sort_values(by='Net Sales', ascending=False)
+
+    # Format into code block table for crisp alignment in Telegram
+    lines = [f"📊 **Performance Summary in Lacs ({dim_name} | {timeframe})**\n"]
+    lines.append("`" + f"{dim_name[:10]:<10} | Sales  | Disc% | Off%  | On%`")
+    lines.append("`" + "-"*42 + "`")
+
+    for _, r in grouped.head(8).iterrows():
+        name = str(r[dim_col])[:10]
+        sales = f"₹{r['Net Sales']:.2f}L"
+        disc = f"{r['Disc%']:.1f}%"
+        off = f"{r['Offline%']:.0f}%"
+        on = f"{r['Online%']:.0f}%"
+        lines.append(f"`{name:<10} | {sales:<6} | {disc:<5} | {off:<4} | {on:<4}`")
+
+    tot_sales = grouped['Net Sales'].sum()
     lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f} Lacs")
     return "\n".join(lines)
 
@@ -733,14 +763,16 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['timeframe'] = tf
         
         df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
-        prim_col = DIM_COL_MAP[c.user_data['prim']]
+        prim_dim_name = c.user_data['prim']
+        prim_col = DIM_COL_MAP[prim_dim_name]
         piv = generate_pivot(df_all, prim_col, months)
         
         c.user_data['piv'] = piv
         c.user_data['df_eval'] = df_eval
         c.user_data['months'] = months
         
-        summary_text = build_telegram_summary(piv, c.user_data['prim'], tf)
+        # Pass df_eval to compute Discount %, Offline %, and Online %
+        summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
         kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
         
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
