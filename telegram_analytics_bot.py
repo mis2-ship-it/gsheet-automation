@@ -236,11 +236,14 @@ def generate_pivot(df_filtered, dim_col, months):
     
     return piv.sort_values(by='Total Sales (Lacs)', ascending=False)
 
-def generate_store_split_pivot(df_filtered, sec_dim_col, months, is_store_prim=False):
+def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='Store'):
     df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
     if df_eval.empty:
         return pd.DataFrame()
-        
+
+    # Enable Store-level grouping if primary dimension is Store or Branch
+    is_store_prim = primary_dim in ['Store', 'Branch']
+
     if is_store_prim and sec_dim_col != 'Branch':
         idx_cols = ['Branch', sec_dim_col]
     else:
@@ -253,6 +256,10 @@ def generate_store_split_pivot(df_filtered, sec_dim_col, months, is_store_prim=F
         piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
         
     piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
+    
+    # Sort by Store name first, then Total Sales
+    if is_store_prim and sec_dim_col != 'Branch':
+        return piv.sort_values(by=['Branch', 'Total Sales (Lacs)'], ascending=[True, False])
     return piv.sort_values(by=['Total Sales (Lacs)'], ascending=False)
 
 def get_filtered_data(filters_dict, timeframe, user_config):
@@ -313,7 +320,7 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    is_store_prim = (primary_dim == 'Store')
+    is_store_prim = primary_dim in ['Store', 'Branch']
 
     sections = [
         ("Store Summary", "Branch"),
@@ -330,7 +337,8 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for sheet_title, dim_col in sections:
-        piv = generate_store_split_pivot(df_filtered, dim_col, months, is_store_prim)
+        # Pass primary_dim directly so Store split triggers across all tabs
+        piv = generate_store_split_pivot(df_filtered, dim_col, months, primary_dim)
         ws = wb.create_sheet(title=sheet_title)
         
         ws.append([f"{sheet_title} Report (in ₹ Lacs)"])
@@ -345,12 +353,14 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
         headers = list(reset_piv.columns)
         ws.append(headers)
 
+        # Header styling
         for col_idx, h in enumerate(headers, 1):
             cell = ws.cell(3, col_idx)
             cell.fill = header_fill
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
 
+        # Data rows
         for r in reset_piv.values:
             row_vals = []
             for val in r:
@@ -360,9 +370,10 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
                     row_vals.append(val)
             ws.append(row_vals)
 
+        # Total summary row logic
         sum_row = ["Total Summary (Lacs)"]
         if is_store_prim and dim_col != 'Branch':
-            sum_row.append("")
+            sum_row.append("")  # Blank spacer for column B (e.g., Source / Session)
 
         for c in piv.columns:
             if c == 'MoM Growth %':
@@ -371,6 +382,7 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
                 sum_row.append(round(float(piv[c].sum()), 2))
         ws.append(sum_row)
 
+        # Cell border and number formatting
         mom_col_idx = headers.index('MoM Growth %') + 1 if 'MoM Growth %' in headers else None
 
         for r_idx, row in enumerate(ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)), start=4):
@@ -386,6 +398,7 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 14)
 
+    # Raw Data Sheet
     ws_raw = wb.create_sheet(title="Raw Data (Sales in Lacs)")
     ws_raw.append(list(df_filtered.columns))
     for r in df_filtered.head(5000).values:
