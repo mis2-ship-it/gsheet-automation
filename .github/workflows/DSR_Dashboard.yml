@@ -3,6 +3,13 @@ name: DSR Dashboard Daily Report
 on:
   workflow_dispatch:
 
+concurrency:
+  group: dsr-dashboard
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   DSR_Dashboard:
     runs-on: ubuntu-latest
@@ -31,13 +38,20 @@ jobs:
 
       - name: Run DSR Dashboard
         env:
+          # Google Sheets
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+          # Rista API
           API_KEY: ${{ secrets.API_KEY }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
+
+          # Email
           SENDER_EMAIL: ${{ secrets.EMAIL_USER }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASS }}
           EMAIL_TO: "vivek@frozenbottle.in, mis2@frozenbottle.in, mis3@frozenbottle.in, bhaskar@eatfit.in, scm@frozenbottle.in, prasanth.a@frozenbottle.in, sandeep.ss@eatfit.in, sonal.raj@curefoods.in, Ops.all@frozenbottle.in, mayank.agarwal@curefoods.in"
           EMAIL_CC: "pranshul@frozenbottle.in, arun.k@frozenbottle.in, samir.pandey@frozenbottle.in"
+
+          # Telegram
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
