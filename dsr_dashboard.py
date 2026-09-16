@@ -515,9 +515,35 @@ class DSRDashboard:
             return False
 
 def main():
-    logger.info("Starting DSR Dashboard execution...")
+
+    logger.info(
+        "Starting DSR Dashboard execution..."
+    )
+
     dashboard = DSRDashboard()
+
+    # ========================================================
+    # 1. EMAIL
+    # ========================================================
+
     dashboard.send_dashboard_email()
+
+    # ========================================================
+    # 2. TELEGRAM
+    # ========================================================
+
+    dashboard.send_telegram_summary()
+
+    # ========================================================
+    # 3. GOOGLE SHEET - LAST
+    # ========================================================
+
+    dashboard.update_google_sheet()
+
+    logger.info(
+        "✅ DSR Dashboard execution completed."
+    )
+
 
 if __name__ == "__main__":
     main()
@@ -607,3 +633,1280 @@ def send_telegram_summary(self):
     except Exception as e:
         logger.error(f"❌ Failed to send Telegram summary: {e}")
         return False
+
+# ============================================================
+# GOOGLE SHEETS DSR DASHBOARD
+# ============================================================
+
+GOOGLE_SHEET_ID = "1gryf29pAcBUQ9YN5igXklWvhbSASzL_3a7Cqdt9vrC0"
+GOOGLE_SHEET_TAB = "Dashboard"
+
+
+def _gs_col_letter(n):
+    """Convert column number to Google Sheets column letter."""
+    result = ""
+
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        result = chr(65 + remainder) + result
+
+    return result
+
+
+def _gs_clean_dataframe(df):
+    """Convert DataFrame into Google Sheets-safe values."""
+
+    if df is None or df.empty:
+        return []
+
+    df = df.copy()
+
+    # Datetime → text
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = df[col].dt.strftime("%d-%b-%Y")
+
+    # Replace invalid values
+    df = df.replace(
+        [np.nan, np.inf, -np.inf],
+        ""
+    )
+
+    output = []
+
+    for row in df.values.tolist():
+
+        clean_row = []
+
+        for value in row:
+
+            if isinstance(value, np.integer):
+                value = int(value)
+
+            elif isinstance(value, np.floating):
+                value = float(value)
+
+            elif pd.isna(value):
+                value = ""
+
+            clean_row.append(value)
+
+        output.append(clean_row)
+
+    return output
+
+
+def _gs_get_filters(worksheet, dashboard):
+
+    """
+    Read filter values from Dashboard row 2.
+
+    A2 = From Date
+    B2 = To Date
+    C2 = From Month
+    D2 = To Month
+    E2 = Region
+    F2 = Store Type
+    G2 = Source
+    """
+
+    values = worksheet.get("A2:G2")
+
+    if not values:
+        values = [[]]
+
+    row = values[0]
+
+    while len(row) < 7:
+        row.append("")
+
+    from_date = str(row[0]).strip()
+    to_date = str(row[1]).strip()
+
+    from_month = str(row[2]).strip()
+    to_month = str(row[3]).strip()
+
+    region = str(row[4]).strip()
+    store_type = str(row[5]).strip()
+    source = str(row[6]).strip()
+
+    region = region or "ALL"
+    store_type = store_type or "ALL"
+    source = source or "ALL"
+
+    # --------------------------------------------------------
+    # Determine mode
+    # --------------------------------------------------------
+
+    if from_date and to_date:
+
+        mode = "DATE"
+
+    elif from_month and to_month:
+
+        mode = "MONTH"
+
+    else:
+
+        # Default = yesterday
+        default_date = dashboard.today.strftime("%d-%b-%Y")
+
+        from_date = default_date
+        to_date = default_date
+
+        mode = "DATE"
+
+    return {
+        "mode": mode,
+        "from_date": from_date,
+        "to_date": to_date,
+        "from_month": from_month,
+        "to_month": to_month,
+        "region": region,
+        "store_type": store_type,
+        "source": source
+    }
+
+
+def _gs_apply_filters(dashboard, filters):
+
+    """
+    Apply Google Sheet filters to the master DSR dataframe.
+    """
+
+    df = dashboard.df.copy()
+
+    # --------------------------------------------------------
+    # Clean dimensions
+    # --------------------------------------------------------
+
+    for col in ["Region", "Store Type", "Source"]:
+
+        if col in df.columns:
+
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+                .str.strip()
+            )
+
+    # --------------------------------------------------------
+    # DATE MODE
+    # --------------------------------------------------------
+
+    if filters["mode"] == "DATE":
+
+        from_date = pd.to_datetime(
+            filters["from_date"],
+            dayfirst=True,
+            errors="coerce"
+        )
+
+        to_date = pd.to_datetime(
+            filters["to_date"],
+            dayfirst=True,
+            errors="coerce"
+        )
+
+        if pd.isna(from_date) or pd.isna(to_date):
+
+            raise ValueError(
+                "Invalid From Date / To Date in Dashboard."
+            )
+
+        from_date = from_date.normalize()
+        to_date = to_date.normalize()
+
+        df = df[
+            (df["Date"].dt.normalize() >= from_date)
+            &
+            (df["Date"].dt.normalize() <= to_date)
+        ].copy()
+
+    # --------------------------------------------------------
+    # MONTH MODE
+    # --------------------------------------------------------
+
+    else:
+
+        from_month = pd.to_datetime(
+            filters["from_month"],
+            errors="coerce"
+        )
+
+        to_month = pd.to_datetime(
+            filters["to_month"],
+            errors="coerce"
+        )
+
+        if pd.isna(from_month) or pd.isna(to_month):
+
+            raise ValueError(
+                "Invalid From Month / To Month in Dashboard."
+            )
+
+        from_period = from_month.to_period("M")
+        to_period = to_month.to_period("M")
+
+        if from_period > to_period:
+
+            raise ValueError(
+                "From Month cannot be greater than To Month."
+            )
+
+        df_period = df["Date"].dt.to_period("M")
+
+        df = df[
+            (df_period >= from_period)
+            &
+            (df_period <= to_period)
+        ].copy()
+
+    # --------------------------------------------------------
+    # REGION
+    # --------------------------------------------------------
+
+    if (
+        filters["region"]
+        and filters["region"].upper() != "ALL"
+    ):
+
+        df = df[
+            df["Region"].str.lower()
+            ==
+            filters["region"].strip().lower()
+        ].copy()
+
+    # --------------------------------------------------------
+    # STORE TYPE
+    # --------------------------------------------------------
+
+    if (
+        filters["store_type"]
+        and filters["store_type"].upper() != "ALL"
+    ):
+
+        df = df[
+            df["Store Type"].str.lower()
+            ==
+            filters["store_type"].strip().lower()
+        ].copy()
+
+    # --------------------------------------------------------
+    # SOURCE
+    # --------------------------------------------------------
+
+    if (
+        filters["source"]
+        and filters["source"].upper() != "ALL"
+    ):
+
+        df = df[
+            df["Source"].str.lower()
+            ==
+            filters["source"].strip().lower()
+        ].copy()
+
+    return df
+
+
+def _gs_metrics(data):
+
+    """
+    Generic metrics used by the Google Sheet report.
+    """
+
+    if data is None or data.empty:
+
+        return {
+            "net_sales": 0,
+            "discount": 0,
+            "orders": 0,
+            "gross_sales": 0,
+            "quantity": 0,
+            "dis_pct": 0,
+            "aov": 0,
+            "offline_pct": 0,
+            "online_pct": 0
+        }
+
+    net_sales = data["Net Sales"].sum()
+
+    discount = data["Discount"].sum()
+
+    orders = data["Orders"].sum()
+
+    gross_sales = (
+        data["Gross Sales"].sum()
+        if "Gross Sales" in data.columns
+        else net_sales + discount
+    )
+
+    quantity = (
+        data["Quantity"].sum()
+        if "Quantity" in data.columns
+        else 0
+    )
+
+    dis_pct = (
+        discount / gross_sales * 100
+        if gross_sales > 0
+        else 0
+    )
+
+    aov = (
+        net_sales / orders
+        if orders > 0
+        else 0
+    )
+
+    offline_sales = data[
+        data["Source"]
+        .str.lower()
+        .eq("in store")
+    ]["Net Sales"].sum()
+
+    offline_pct = (
+        offline_sales / net_sales * 100
+        if net_sales > 0
+        else 0
+    )
+
+    online_pct = (
+        100 - offline_pct
+        if net_sales > 0
+        else 0
+    )
+
+    return {
+        "net_sales": net_sales,
+        "discount": discount,
+        "orders": orders,
+        "gross_sales": gross_sales,
+        "quantity": quantity,
+        "dis_pct": dis_pct,
+        "aov": aov,
+        "offline_pct": offline_pct,
+        "online_pct": online_pct
+    }
+
+
+def _gs_calculate_growth(current, previous):
+
+    if previous == 0 or pd.isna(previous):
+
+        return 0
+
+    return ((current - previous) / previous) * 100
+
+
+def _gs_period_comparison(dashboard, filtered_df, filters):
+
+    """
+    Creates the main comparison table.
+
+    DATE mode:
+        Selected Period
+        Previous Week
+        Previous Month
+        Previous Year
+
+    MONTH mode:
+        Selected Month Range
+        Month-by-month analysis
+    """
+
+    rows = []
+
+    # ========================================================
+    # DATE MODE
+    # ========================================================
+
+    if filters["mode"] == "DATE":
+
+        from_date = pd.to_datetime(
+            filters["from_date"],
+            dayfirst=True
+        ).normalize()
+
+        to_date = pd.to_datetime(
+            filters["to_date"],
+            dayfirst=True
+        ).normalize()
+
+        period_days = (
+            to_date - from_date
+        ).days + 1
+
+        current = filtered_df[
+            (filtered_df["Date"].dt.normalize() >= from_date)
+            &
+            (filtered_df["Date"].dt.normalize() <= to_date)
+        ]
+
+        previous_week_start = from_date - timedelta(
+            days=7
+        )
+
+        previous_week_end = to_date - timedelta(
+            days=7
+        )
+
+        previous_month_end = from_date - timedelta(
+            days=1
+        )
+
+        previous_month_start = (
+            previous_month_end
+            - timedelta(days=period_days - 1)
+        )
+
+        previous_year_start = from_date - pd.DateOffset(
+            years=1
+        )
+
+        previous_year_end = to_date - pd.DateOffset(
+            years=1
+        )
+
+        previous_week = filtered_df[
+            (filtered_df["Date"].dt.normalize() >= previous_week_start)
+            &
+            (filtered_df["Date"].dt.normalize() <= previous_week_end)
+        ]
+
+        previous_month = filtered_df[
+            (filtered_df["Date"].dt.normalize() >= previous_month_start)
+            &
+            (filtered_df["Date"].dt.normalize() <= previous_month_end)
+        ]
+
+        previous_year = filtered_df[
+            (filtered_df["Date"].dt.normalize() >= previous_year_start)
+            &
+            (filtered_df["Date"].dt.normalize() <= previous_year_end)
+        ]
+
+        datasets = {
+            "Selected Period": current,
+            "Previous Week": previous_week,
+            "Previous Month": previous_month,
+            "Previous Year": previous_year
+        }
+
+        metric_map = {
+            "Net Sales": "net_sales",
+            "Discount": "discount",
+            "Orders": "orders",
+            "Dis%": "dis_pct",
+            "AOV": "aov",
+            "Offline %": "offline_pct",
+            "Online %": "online_pct"
+        }
+
+        metric_values = {}
+
+        for label, data in datasets.items():
+
+            metric_values[label] = _gs_metrics(data)
+
+        for metric, key in metric_map.items():
+
+            current_value = metric_values[
+                "Selected Period"
+            ][key]
+
+            week_value = metric_values[
+                "Previous Week"
+            ][key]
+
+            month_value = metric_values[
+                "Previous Month"
+            ][key]
+
+            year_value = metric_values[
+                "Previous Year"
+            ][key]
+
+            rows.append({
+                "Metrics": metric,
+                "Selected Period": current_value,
+                "Previous Week": week_value,
+                "Growth % (PW)": _gs_calculate_growth(
+                    current_value,
+                    week_value
+                ),
+                "Previous Month": month_value,
+                "Growth % (PM)": _gs_calculate_growth(
+                    current_value,
+                    month_value
+                ),
+                "Previous Year": year_value,
+                "Growth % (PY)": _gs_calculate_growth(
+                    current_value,
+                    year_value
+                )
+            })
+
+        return pd.DataFrame(rows)
+
+    # ========================================================
+    # MONTH MODE
+    # ========================================================
+
+    from_month = pd.to_datetime(
+        filters["from_month"]
+    ).to_period("M")
+
+    to_month = pd.to_datetime(
+        filters["to_month"]
+    ).to_period("M")
+
+    months = pd.period_range(
+        from_month,
+        to_month,
+        freq="M"
+    )
+
+    month_rows = []
+
+    for month in months:
+
+        data = filtered_df[
+            filtered_df["Date"].dt.to_period("M")
+            == month
+        ]
+
+        m = _gs_metrics(data)
+
+        month_rows.append({
+            "Month": month.strftime("%b-%Y"),
+            "Net Sales": m["net_sales"],
+            "Discount": m["discount"],
+            "Orders": m["orders"],
+            "Quantity": m["quantity"],
+            "Dis%": m["dis_pct"],
+            "AOV": m["aov"],
+            "Offline %": m["offline_pct"],
+            "Online %": m["online_pct"]
+        })
+
+    return pd.DataFrame(month_rows)
+
+
+def _gs_dimension_summary(
+    filtered_df,
+    dimension,
+    coco_only=True
+):
+
+    data = filtered_df.copy()
+
+    if coco_only and "Store Type" in data.columns:
+
+        data = data[
+            data["Store Type"].str.upper()
+            == "COCO"
+        ]
+
+    if data.empty:
+
+        return pd.DataFrame(
+            columns=[
+                dimension,
+                "Net Sales",
+                "Orders",
+                "Quantity",
+                "Discount",
+                "Dis%",
+                "AOV"
+            ]
+        )
+
+    grouped = (
+        data.groupby(
+            dimension,
+            dropna=False
+        )
+        .agg({
+            "Net Sales": "sum",
+            "Orders": "sum",
+            "Quantity": "sum",
+            "Discount": "sum",
+            "Gross Sales": "sum"
+        })
+        .reset_index()
+    )
+
+    grouped["Dis%"] = np.where(
+        grouped["Gross Sales"] > 0,
+        grouped["Discount"]
+        / grouped["Gross Sales"]
+        * 100,
+        0
+    )
+
+    grouped["AOV"] = np.where(
+        grouped["Orders"] > 0,
+        grouped["Net Sales"]
+        / grouped["Orders"],
+        0
+    )
+
+    grouped.drop(
+        columns=["Gross Sales"],
+        inplace=True
+    )
+
+    grouped.sort_values(
+        "Net Sales",
+        ascending=False,
+        inplace=True
+    )
+
+    return grouped
+
+
+def _gs_bucket_analysis(
+    filtered_df,
+    bucket_col
+):
+
+    data = filtered_df.copy()
+
+    if "Store Type" in data.columns:
+
+        data = data[
+            data["Store Type"].str.upper()
+            == "COCO"
+        ]
+
+    if data.empty:
+
+        return pd.DataFrame()
+
+    total_sales = data["Net Sales"].sum()
+
+    rows = []
+
+    for bucket in sorted(
+        data[bucket_col]
+        .dropna()
+        .astype(str)
+        .unique()
+    ):
+
+        sub = data[
+            data[bucket_col].astype(str)
+            == bucket
+        ]
+
+        overall = sub["Net Sales"].sum()
+
+        instore = sub[
+            sub["Source"].str.lower()
+            == "in store"
+        ]["Net Sales"].sum()
+
+        swiggy = sub[
+            sub["Source"].str.lower()
+            == "swiggy"
+        ]["Net Sales"].sum()
+
+        zomato = sub[
+            sub["Source"].str.lower()
+            == "zomato"
+        ]["Net Sales"].sum()
+
+        rows.append({
+            bucket_col: bucket,
+            "Overall Contrib%": (
+                overall / total_sales * 100
+                if total_sales > 0
+                else 0
+            ),
+            "In Store Contrib%": (
+                instore / total_sales * 100
+                if total_sales > 0
+                else 0
+            ),
+            "Swiggy Contrib%": (
+                swiggy / total_sales * 100
+                if total_sales > 0
+                else 0
+            ),
+            "Zomato Contrib%": (
+                zomato / total_sales * 100
+                if total_sales > 0
+                else 0
+            )
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _gs_day_level(
+    filtered_df
+):
+
+    data = filtered_df.copy()
+
+    data = data[
+        data["Store Type"].str.upper()
+        == "COCO"
+    ]
+
+    if data.empty:
+
+        return pd.DataFrame()
+
+    dates = sorted(
+        data["Date"].dt.date.unique()
+    )
+
+    rows = []
+
+    for date_value in dates:
+
+        sub = data[
+            data["Date"].dt.date
+            == date_value
+        ]
+
+        m = _gs_metrics(sub)
+
+        rows.append({
+            "Date": date_value.strftime(
+                "%d-%b-%Y"
+            ),
+            "Net Sales": m["net_sales"],
+            "Discount": m["discount"],
+            "Orders": m["orders"],
+            "Quantity": m["quantity"],
+            "Dis%": m["dis_pct"],
+            "AOV": m["aov"]
+        })
+
+    return pd.DataFrame(rows)
+
+
+def _gs_top_bottom_stores(
+    filtered_df
+):
+
+    data = filtered_df.copy()
+
+    data = data[
+        data["Store Type"].str.upper()
+        == "COCO"
+    ]
+
+    if data.empty:
+
+        return pd.DataFrame(), pd.DataFrame()
+
+    grouped = []
+
+    for branch, branch_df in data.groupby(
+        "Branch"
+    ):
+
+        m = _gs_metrics(branch_df)
+
+        grouped.append({
+            "Branch": branch,
+            "Net Sales": m["net_sales"],
+            "Orders": m["orders"],
+            "Quantity": m["quantity"],
+            "Dis%": m["dis_pct"],
+            "Offline%": m["offline_pct"],
+            "Online%": m["online_pct"]
+        })
+
+    summary = pd.DataFrame(grouped)
+
+    summary.sort_values(
+        "Net Sales",
+        ascending=False,
+        inplace=True
+    )
+
+    top10 = summary.head(10).copy()
+
+    bottom10 = (
+        summary
+        .tail(10)
+        .sort_values(
+            "Net Sales",
+            ascending=True
+        )
+        .copy()
+    )
+
+    return top10, bottom10
+
+
+def _gs_write_section(
+    worksheet,
+    title,
+    dataframe,
+    start_row
+):
+
+    """
+    Write one DSR section into Google Sheets.
+    """
+
+    worksheet.update(
+        f"A{start_row}",
+        [[title]]
+    )
+
+    if dataframe is None or dataframe.empty:
+
+        worksheet.update(
+            f"A{start_row + 1}",
+            [["No data available"]]
+        )
+
+        return start_row + 3
+
+    headers = list(dataframe.columns)
+
+    values = _gs_clean_dataframe(
+        dataframe
+    )
+
+    output = [headers] + values
+
+    end_row = (
+        start_row
+        + len(output)
+        - 1
+    )
+
+    end_col = _gs_col_letter(
+        len(headers)
+    )
+
+    worksheet.update(
+        f"A{start_row + 1}:"
+        f"{end_col}{end_row}",
+        output
+    )
+
+    # Header formatting
+    worksheet.format(
+        f"A{start_row + 1}:{end_col}{start_row + 1}",
+        {
+            "textFormat": {
+                "bold": True
+            }
+        }
+    )
+
+    # Section title formatting
+    worksheet.format(
+        f"A{start_row}",
+        {
+            "textFormat": {
+                "bold": True,
+                "fontSize": 12
+            }
+        }
+    )
+
+    return end_row + 3
+
+
+def update_google_sheet(self):
+
+    """
+    Main Google Sheet Dashboard updater.
+
+    This function runs AFTER Email and Telegram.
+    """
+
+    try:
+
+        logger.info(
+            "Starting Google Sheets Dashboard update..."
+        )
+
+        # ====================================================
+        # GOOGLE AUTH
+        # ====================================================
+
+        credentials_json = os.getenv(
+            "GOOGLE_CREDENTIALS"
+        )
+
+        if not credentials_json:
+
+            logger.error(
+                "❌ GOOGLE_CREDENTIALS not found."
+            )
+
+            return False
+
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds_dict = json.loads(
+            credentials_json
+        )
+
+        creds = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=scopes
+        )
+
+        client = gspread.authorize(
+            creds
+        )
+
+        spreadsheet = client.open_by_key(
+            GOOGLE_SHEET_ID
+        )
+
+        worksheet = spreadsheet.worksheet(
+            GOOGLE_SHEET_TAB
+        )
+
+        logger.info(
+            "✓ Connected to Google Sheet Dashboard"
+        )
+
+        # ====================================================
+        # READ FILTERS
+        # ====================================================
+
+        filters = _gs_get_filters(
+            worksheet,
+            self
+        )
+
+        logger.info(
+            f"Dashboard filters: {filters}"
+        )
+
+        # ====================================================
+        # APPLY FILTERS
+        # ====================================================
+
+        filtered_df = _gs_apply_filters(
+            self,
+            filters
+        )
+
+        logger.info(
+            f"✓ Filtered rows: {len(filtered_df):,}"
+        )
+
+        # ====================================================
+        # CLEAR ONLY REPORT AREA
+        # ====================================================
+
+        worksheet.batch_clear([
+            "A5:Z1000"
+        ])
+
+        # ====================================================
+        # FILTER DISPLAY
+        # ====================================================
+
+        filter_display = [
+            [
+                "Mode",
+                filters["mode"],
+                "From Date",
+                filters["from_date"],
+                "To Date",
+                filters["to_date"],
+                "Region",
+                filters["region"],
+                "Store Type",
+                filters["store_type"],
+                "Source",
+                filters["source"]
+            ]
+        ]
+
+        worksheet.update(
+            "A4",
+            filter_display
+        )
+
+        # ====================================================
+        # TITLE
+        # ====================================================
+
+        worksheet.update(
+            "A5",
+            [["📊 Daily Sales Report (DSR) Dashboard"]]
+        )
+
+        worksheet.format(
+            "A5",
+            {
+                "textFormat": {
+                    "bold": True,
+                    "fontSize": 16
+                }
+            }
+        )
+
+        # ====================================================
+        # MAIN PERIOD ANALYSIS
+        # ====================================================
+
+        current_row = 7
+
+        period_analysis = _gs_period_comparison(
+            self,
+            filtered_df,
+            filters
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "1. Overall Sales Summary",
+            period_analysis,
+            current_row
+        )
+
+        # ====================================================
+        # COCO SUMMARY
+        # ====================================================
+
+        coco_df = filtered_df[
+            filtered_df["Store Type"]
+            .str.upper()
+            == "COCO"
+        ].copy()
+
+        coco_metrics = _gs_metrics(
+            coco_df
+        )
+
+        coco_summary = pd.DataFrame([
+            {
+                "Metric": "Net Sales",
+                "Value": coco_metrics["net_sales"]
+            },
+            {
+                "Metric": "Discount",
+                "Value": coco_metrics["discount"]
+            },
+            {
+                "Metric": "Orders",
+                "Value": coco_metrics["orders"]
+            },
+            {
+                "Metric": "Quantity",
+                "Value": coco_metrics["quantity"]
+            },
+            {
+                "Metric": "Dis%",
+                "Value": coco_metrics["dis_pct"]
+            },
+            {
+                "Metric": "AOV",
+                "Value": coco_metrics["aov"]
+            },
+            {
+                "Metric": "Offline%",
+                "Value": coco_metrics["offline_pct"]
+            },
+            {
+                "Metric": "Online%",
+                "Value": coco_metrics["online_pct"]
+            }
+        ])
+
+        current_row = _gs_write_section(
+            worksheet,
+            "2. COCO Sales Summary",
+            coco_summary,
+            current_row
+        )
+
+        # ====================================================
+        # BRAND
+        # ====================================================
+
+        brand_summary = _gs_dimension_summary(
+            filtered_df,
+            "Brand Name",
+            coco_only=True
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "3. Brand Sales Summary (COCO)",
+            brand_summary,
+            current_row
+        )
+
+        # ====================================================
+        # REGION
+        # ====================================================
+
+        region_summary = _gs_dimension_summary(
+            filtered_df,
+            "Region",
+            coco_only=True
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "4. Region Sales Summary (COCO)",
+            region_summary,
+            current_row
+        )
+
+        # ====================================================
+        # SOURCE
+        # ====================================================
+
+        source_summary = _gs_dimension_summary(
+            filtered_df,
+            "Source",
+            coco_only=True
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "5. Source Sales Summary (COCO)",
+            source_summary,
+            current_row
+        )
+
+        # ====================================================
+        # SESSION
+        # ====================================================
+
+        session_summary = _gs_dimension_summary(
+            filtered_df,
+            "Session",
+            coco_only=True
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "6. Session Sales Summary (COCO)",
+            session_summary,
+            current_row
+        )
+
+        # ====================================================
+        # DISCOUNT BUCKET
+        # ====================================================
+
+        discount_bucket = _gs_bucket_analysis(
+            filtered_df,
+            "Discount Bucket"
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "7. Discount Bucket Breakdown (COCO)",
+            discount_bucket,
+            current_row
+        )
+
+        # ====================================================
+        # AOV BUCKET
+        # ====================================================
+
+        aov_bucket = _gs_bucket_analysis(
+            filtered_df,
+            "AOV Bucket"
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "8. AOV Bucket Breakdown (COCO)",
+            aov_bucket,
+            current_row
+        )
+
+        # ====================================================
+        # DAY LEVEL
+        # ====================================================
+
+        day_level = _gs_day_level(
+            filtered_df
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "9. Day Level Performance (COCO)",
+            day_level,
+            current_row
+        )
+
+        # ====================================================
+        # TOP / BOTTOM STORES
+        # ====================================================
+
+        top10, bottom10 = _gs_top_bottom_stores(
+            filtered_df
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "10. Top 10 Branches (COCO)",
+            top10,
+            current_row
+        )
+
+        current_row = _gs_write_section(
+            worksheet,
+            "11. Bottom 10 Stores (COCO)",
+            bottom10,
+            current_row
+        )
+
+        # ====================================================
+        # NUMBER FORMATTING
+        # ====================================================
+
+        try:
+
+            # Freeze filter rows
+            worksheet.freeze(rows=4)
+
+            # Resize columns
+            worksheet.columns_auto_resize(
+                0,
+                min(15, worksheet.col_count)
+            )
+
+        except Exception as format_error:
+
+            logger.warning(
+                f"⚠️ Sheet formatting warning: "
+                f"{format_error}"
+            )
+
+        logger.info(
+            "✅ Google Sheets DSR Dashboard updated successfully!"
+        )
+
+        return True
+
+    except Exception as e:
+
+        logger.exception(
+            f"❌ Google Sheets Dashboard update failed: {e}"
+        )
+
+        return False
+
+
+# Attach function to DSRDashboard class
+DSRDashboard.update_google_sheet = update_google_sheet
