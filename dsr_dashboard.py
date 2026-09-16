@@ -164,7 +164,7 @@ class DSRDashboard:
         
         mtd_start = target_day.replace(day=1)
         
-        last_month_same_day = (target_day - pd.DateOffset(months=1)).date()
+        last_month_same_day = target_day - timedelta(days=28)
         lmtd_end = last_month_same_day
         lmtd_start = lmtd_end.replace(day=1)
         
@@ -220,7 +220,7 @@ class DSRDashboard:
         
         target_day = self.today
         last_week_day = target_day - timedelta(days=7)
-        last_month_same_day = (target_day - pd.DateOffset(months=1)).date()
+        last_month_same_day = target_day - timedelta(days=28)
         
         mtd_start = target_day.replace(day=1)
         lmtd_end = last_month_same_day
