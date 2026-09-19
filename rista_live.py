@@ -4104,7 +4104,7 @@ def send_telegram_live():
         brand_lines.append(
             f"{emoji} {brand}: "
             f"{fmt_lakh(today_rev)} "
-            f"| LW GW%: {fmt_pct(growth)} "
+            f"| LW%: {fmt_pct(growth)} "
             f"· {discount:.0f}% dis"
         )
 
@@ -4171,7 +4171,7 @@ def send_telegram_live():
         source_lines.append(
             f"{emoji} {source}: "
             f"{fmt_lakh(today_rev)} "
-            f"| LW GW%: {fmt_pct(growth)} "
+            f"| LW%: {fmt_pct(growth)} "
             f"· {discount:.0f}% dis"
         )
 
@@ -4263,7 +4263,7 @@ def send_telegram_live():
                 source_brand_lines.append(
                     f"  {brand_emoji} {brand}: "
                     f"{fmt_lakh(today_rev)} "
-                    f"| LW GW%: {fmt_pct(growth)}"
+                    f"| LW%: {fmt_pct(growth)}"
                 )
 
     source_brand_text = (
@@ -4356,7 +4356,7 @@ def send_telegram_live():
             f"{medal} {r['Region']}: "
             f"{fmt_lakh(r['Today Rev'])} "
             f"| {r['Transactions']:,} Txn "
-            f"| LW GW%: {fmt_pct(r['Growth'])} "
+            f"| LW%: {fmt_pct(r['Growth'])} "
             f"· {r['Discount']:.0f}% dis"
         )
 
@@ -4401,7 +4401,7 @@ def send_telegram_live():
             f"{fmt_lakh(hourly_today)}\n"
             f"📊 Same Hour LW: "
             f"{fmt_lakh(hourly_lw)}\n"
-            f"📈 LW GW%: "
+            f"📈 LW%: "
             f"{fmt_pct(hourly_growth)}"
         )
 
@@ -4488,16 +4488,16 @@ def send_telegram_live():
 💰 BUSINESS OVERVIEW
 
 💵 Net Revenue: {fmt_lakh(net_today)}
-📈 LW GW%: {fmt_pct(net_growth)}
+📈 LW%: {fmt_pct(net_growth)}
 
 💵 Gross Sales: {fmt_lakh(gross_today)}
-📈 LW GW%: {fmt_pct(gross_growth)}
+📈 LW%: {fmt_pct(gross_growth)}
 
 🧾 Transactions: {txn_today:,}
-📈 LW GW%: {fmt_pct(txn_growth)}
+📈 LW%: {fmt_pct(txn_growth)}
 
 🧺 AOV: ₹{aov_today:,.0f}
-📈 LW GW%: {fmt_pct(aov_growth)}
+📈 LW%: {fmt_pct(aov_growth)}
 
 📉 Discount: {discount_today:.0f}%
 
