@@ -5293,20 +5293,32 @@ def test_send():
 # ============================================================
 # DSR DASHBOARD REFRESH ENDPOINT
 # ============================================================
+from flask import Flask, request, jsonify
 import gc
 
-@app.route("/refresh-dsr", methods=["POST", "GET"])
-def refresh_dsr():
+@app.route("/get-dsr-html", methods=["POST"])
+def get_dsr_html():
     try:
+        data = request.json or {}
         from dsr_dashboard import DSRDashboard
-        dashboard = DSRDashboard()
-        success = dashboard.update_google_sheet()
         
-        # Clear memory immediately after calculation
+        # Initialize dashboard with filters sent from Web App
+        dashboard = DSRDashboard()
+        
+        # Generate the full HTML report string (all 11 tables)
+        html_content = dashboard.generate_html_report(
+            from_date=data.get("fromDate"),
+            to_date=data.get("toDate"),
+            region=data.get("region"),
+            store_type=data.get("storeType"),
+            source=data.get("source")
+        )
+        
+        # Clean up memory
         del dashboard
         gc.collect()
 
-        return jsonify({"status": "success", "message": "Updated Google Sheet"}), 200
+        return jsonify({"status": "success", "html": html_content}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
