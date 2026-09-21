@@ -67,26 +67,16 @@ EMAIL_CONFIG = {
     'sender_password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
     'email_to': os.getenv(
         'EMAIL_TO',
-        'vivek@frozenbottle.in, '
-        'mis2@frozenbottle.in, '
-        'mis3@frozenbottle.in, '
-        'bhaskar@eatfit.in, '
-        'scm@frozenbottle.in, '
-        'prasanth.a@frozenbottle.in, '
-        'sandeep.ss@eatfit.in, '
-        'sonal.raj@curefoods.in, '
-        'Ops.all@frozenbottle.in, '
-        'mayank.agarwal@curefoods.in'
+        'mis2@frozenbottle.in'
     ),
     'email_cc': os.getenv(
         'EMAIL_CC',
-        'pranshul@frozenbottle.in, '
-        'arun.k@frozenbottle.in, '
-        'samir.pandey@frozenbottle.in'
+        'mis2@frozenbottle.in'
     ),
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587
 }
+
 
 
 # ============================================================
@@ -1001,7 +991,7 @@ DSRDashboard.send_telegram_summary = send_telegram_summary
 
 
 # ============================================================
-# GOOGLE SHEETS DSR DASHBOARD
+# GOOGLE SHEETS DSR DASHBOARD (UPDATED & FIXED)
 # ============================================================
 
 GOOGLE_SHEET_ID = "1gryf29pAcBUQ9YN5igXklWvhbSASzL_3a7Cqdt9vrC0"
@@ -1045,38 +1035,29 @@ def _gs_clean_dataframe(df):
 
 
 def _gs_get_filters(worksheet, dashboard):
-    values = worksheet.get("A2:G2")
-    if not values:
-        values = [[]]
+    """
+    Reads dynamic filters directly from Row 4 based on the sheet layout:
+    D4: From Date | F4: To Date | H4: Region | J4: Store Type | L4: Source
+    """
+    try:
+        from_date = str(worksheet.acell("D4").value or "").strip()
+        to_date = str(worksheet.acell("F4").value or "").strip()
+        region = str(worksheet.acell("H4").value or "ALL").strip()
+        store_type = str(worksheet.acell("J4").value or "ALL").strip()
+        source = str(worksheet.acell("L4").value or "ALL").strip()
+    except Exception:
+        from_date, to_date, region, store_type, source = "", "", "ALL", "ALL", "ALL"
 
-    row = values[0]
-    while len(row) < 7:
-        row.append("")
-
-    from_date = str(row[0]).strip()
-    to_date = str(row[1]).strip()
-    from_month = str(row[2]).strip()
-    to_month = str(row[3]).strip()
-    region = str(row[4]).strip() or "ALL"
-    store_type = str(row[5]).strip() or "ALL"
-    source = str(row[6]).strip() or "ALL"
-
-    if from_date and to_date:
-        mode = "DATE"
-    elif from_month and to_month:
-        mode = "MONTH"
-    else:
-        default_date = dashboard.today.strftime("%d-%b-%Y")
+    default_date = dashboard.today.strftime("%d-%b-%Y")
+    if not from_date:
         from_date = default_date
+    if not to_date:
         to_date = default_date
-        mode = "DATE"
 
     return {
-        "mode": mode,
+        "mode": "DATE",
         "from_date": from_date,
         "to_date": to_date,
-        "from_month": from_month,
-        "to_month": to_month,
         "region": region,
         "store_type": store_type,
         "source": source
@@ -1090,35 +1071,22 @@ def _gs_apply_filters(dashboard, filters):
         if col in df.columns:
             df[col] = df[col].fillna("").astype(str).str.strip()
 
-    if filters["mode"] == "DATE":
-        from_date = pd.to_datetime(filters["from_date"], dayfirst=True, errors="coerce")
-        to_date = pd.to_datetime(filters["to_date"], dayfirst=True, errors="coerce")
+    # Parse dates safely
+    from_date = pd.to_datetime(filters["from_date"], dayfirst=True, errors="coerce")
+    to_date = pd.to_datetime(filters["to_date"], dayfirst=True, errors="coerce")
 
-        if pd.isna(from_date) or pd.isna(to_date):
-            raise ValueError("Invalid From Date / To Date in Dashboard.")
+    if pd.isna(from_date) or pd.isna(to_date):
+        # Fallback to today's date if spreadsheet value is unparseable
+        today_dt = pd.to_datetime(dashboard.today).normalize()
+        from_date, to_date = today_dt, today_dt
 
-        from_date = from_date.normalize()
-        to_date = to_date.normalize()
+    from_date = from_date.normalize()
+    to_date = to_date.normalize()
 
-        df = df[
-            (df["Date"].dt.normalize() >= from_date) &
-            (df["Date"].dt.normalize() <= to_date)
-        ].copy()
-    else:
-        from_month = pd.to_datetime(filters["from_month"], errors="coerce")
-        to_month = pd.to_datetime(filters["to_month"], errors="coerce")
-
-        if pd.isna(from_month) or pd.isna(to_month):
-            raise ValueError("Invalid From Month / To Month in Dashboard.")
-
-        from_period = from_month.to_period("M")
-        to_period = to_month.to_period("M")
-
-        if from_period > to_period:
-            raise ValueError("From Month cannot be greater than To Month.")
-
-        df_period = df["Date"].dt.to_period("M")
-        df = df[(df_period >= from_period) & (df_period <= to_period)].copy()
+    df = df[
+        (df["Date"].dt.normalize() >= from_date) &
+        (df["Date"].dt.normalize() <= to_date)
+    ].copy()
 
     if filters["region"] and filters["region"].upper() != "ALL":
         df = df[df["Region"].str.lower() == filters["region"].strip().lower()].copy()
@@ -1140,8 +1108,8 @@ def _gs_metrics(data):
         }
 
     net_sales = data["Net Sales"].sum()
-    discount = data["Discount"].sum()
-    orders = data["Orders"].sum()
+    discount = data["Discount"].sum() if "Discount" in data.columns else 0
+    orders = data["Orders"].sum() if "Orders" in data.columns else len(data)
 
     gross_sales = (
         data["Gross Sales"].sum()
@@ -1172,95 +1140,76 @@ def _gs_calculate_growth(current, previous):
 
 def _gs_period_comparison(dashboard, filtered_df, filters):
     rows = []
+    from_date = pd.to_datetime(filters["from_date"], dayfirst=True, errors="coerce")
+    to_date = pd.to_datetime(filters["to_date"], dayfirst=True, errors="coerce")
 
-    if filters["mode"] == "DATE":
-        from_date = pd.to_datetime(filters["from_date"], dayfirst=True).normalize()
-        to_date = pd.to_datetime(filters["to_date"], dayfirst=True).normalize()
-        period_days = (to_date - from_date).days + 1
+    if pd.isna(from_date) or pd.isna(to_date):
+        from_date = pd.to_datetime(dashboard.today).normalize()
+        to_date = from_date
 
-        current = filtered_df[
-            (filtered_df["Date"].dt.normalize() >= from_date) &
-            (filtered_df["Date"].dt.normalize() <= to_date)
-        ]
+    period_days = (to_date - from_date).days + 1
 
-        previous_week_start = from_date - timedelta(days=7)
-        previous_week_end = to_date - timedelta(days=7)
+    current = filtered_df[
+        (filtered_df["Date"].dt.normalize() >= from_date) &
+        (filtered_df["Date"].dt.normalize() <= to_date)
+    ]
 
-        previous_month_end = from_date - timedelta(days=1)
-        previous_month_start = previous_month_end - timedelta(days=period_days - 1)
+    previous_week_start = from_date - timedelta(days=7)
+    previous_week_end = to_date - timedelta(days=7)
 
-        previous_year_start = from_date - pd.DateOffset(years=1)
-        previous_year_end = to_date - pd.DateOffset(years=1)
+    previous_month_end = from_date - timedelta(days=1)
+    previous_month_start = previous_month_end - timedelta(days=period_days - 1)
 
-        previous_week = filtered_df[
-            (filtered_df["Date"].dt.normalize() >= previous_week_start) &
-            (filtered_df["Date"].dt.normalize() <= previous_week_end)
-        ]
+    previous_year_start = from_date - pd.DateOffset(years=1)
+    previous_year_end = to_date - pd.DateOffset(years=1)
 
-        previous_month = filtered_df[
-            (filtered_df["Date"].dt.normalize() >= previous_month_start) &
-            (filtered_df["Date"].dt.normalize() <= previous_month_end)
-        ]
+    previous_week = dashboard.df[
+        (dashboard.df["Date"].dt.normalize() >= previous_week_start) &
+        (dashboard.df["Date"].dt.normalize() <= previous_week_end)
+    ]
 
-        previous_year = filtered_df[
-            (filtered_df["Date"].dt.normalize() >= previous_year_start) &
-            (filtered_df["Date"].dt.normalize() <= previous_year_end)
-        ]
+    previous_month = dashboard.df[
+        (dashboard.df["Date"].dt.normalize() >= previous_month_start) &
+        (dashboard.df["Date"].dt.normalize() <= previous_month_end)
+    ]
 
-        datasets = {
-            "Selected Period": current,
-            "Previous Week": previous_week,
-            "Previous Month": previous_month,
-            "Previous Year": previous_year
-        }
+    previous_year = dashboard.df[
+        (dashboard.df["Date"].dt.normalize() >= previous_year_start) &
+        (dashboard.df["Date"].dt.normalize() <= previous_year_end)
+    ]
 
-        metric_map = {
-            "Net Sales": "net_sales", "Discount": "discount", "Orders": "orders",
-            "Dis%": "dis_pct", "AOV": "aov", "Offline %": "offline_pct", "Online %": "online_pct"
-        }
+    datasets = {
+        "Selected Period": current,
+        "Previous Week": previous_week,
+        "Previous Month": previous_month,
+        "Previous Year": previous_year
+    }
 
-        metric_values = {label: _gs_metrics(data) for label, data in datasets.items()}
+    metric_map = {
+        "Net Sales": "net_sales", "Discount": "discount", "Orders": "orders",
+        "Dis%": "dis_pct", "AOV": "aov", "Offline %": "offline_pct", "Online %": "online_pct"
+    }
 
-        for metric, key in metric_map.items():
-            current_value = metric_values["Selected Period"][key]
-            week_value = metric_values["Previous Week"][key]
-            month_value = metric_values["Previous Month"][key]
-            year_value = metric_values["Previous Year"][key]
+    metric_values = {label: _gs_metrics(data) for label, data in datasets.items()}
 
-            rows.append({
-                "Metrics": metric,
-                "Selected Period": current_value,
-                "Previous Week": week_value,
-                "Growth % (PW)": _gs_calculate_growth(current_value, week_value),
-                "Previous Month": month_value,
-                "Growth % (PM)": _gs_calculate_growth(current_value, month_value),
-                "Previous Year": year_value,
-                "Growth % (PY)": _gs_calculate_growth(current_value, year_value)
-            })
+    for metric, key in metric_map.items():
+        current_value = metric_values["Selected Period"][key]
+        week_value = metric_values["Previous Week"][key]
+        month_value = metric_values["Previous Month"][key]
+        year_value = metric_values["Previous Year"][key]
 
-        return pd.DataFrame(rows)
-
-    from_month = pd.to_datetime(filters["from_month"]).to_period("M")
-    to_month = pd.to_datetime(filters["to_month"]).to_period("M")
-    months = pd.period_range(from_month, to_month, freq="M")
-
-    month_rows = []
-    for month in months:
-        data = filtered_df[filtered_df["Date"].dt.to_period("M") == month]
-        m = _gs_metrics(data)
-        month_rows.append({
-            "Month": month.strftime("%b-%Y"),
-            "Net Sales": m["net_sales"],
-            "Discount": m["discount"],
-            "Orders": m["orders"],
-            "Quantity": m["quantity"],
-            "Dis%": m["dis_pct"],
-            "AOV": m["aov"],
-            "Offline %": m["offline_pct"],
-            "Online %": m["online_pct"]
+        rows.append({
+            "Metrics": metric,
+            "Selected Period": round(current_value, 2),
+            "Previous Week": round(week_value, 2),
+            "Growth % (PW)": round(_gs_calculate_growth(current_value, week_value), 2),
+            "Previous Month": round(month_value, 2),
+            "Growth % (PM)": round(_gs_calculate_growth(current_value, month_value), 2),
+            "Previous Year": round(year_value, 2),
+            "Growth % (PY)": round(_gs_calculate_growth(current_value, year_value), 2)
         })
 
-    return pd.DataFrame(month_rows)
+    return pd.DataFrame(rows)
 
 
 def _gs_dimension_summary(filtered_df, dimension, coco_only=True):
@@ -1277,35 +1226,42 @@ def _gs_dimension_summary(filtered_df, dimension, coco_only=True):
         data.groupby(dimension, dropna=False)
         .agg({
             "Net Sales": "sum",
-            "Orders": "sum",
-            "Quantity": "sum",
-            "Discount": "sum",
-            "Gross Sales": "sum"
+            "Orders": "sum" if "Orders" in data.columns else "count",
+            "Quantity": "sum" if "Quantity" in data.columns else "count",
+            "Discount": "sum" if "Discount" in data.columns else "count",
+            "Gross Sales": "sum" if "Gross Sales" in data.columns else "sum"
         })
         .reset_index()
     )
 
-    grouped["Dis%"] = np.where(
-        grouped["Gross Sales"] > 0,
-        grouped["Discount"] / grouped["Gross Sales"] * 100, 0
-    )
+    if "Gross Sales" in grouped.columns:
+        grouped["Dis%"] = np.where(
+            grouped["Gross Sales"] > 0,
+            grouped["Discount"] / grouped["Gross Sales"] * 100, 0
+        )
+        grouped.drop(columns=["Gross Sales"], inplace=True)
+    else:
+        grouped["Dis%"] = 0.0
+
     grouped["AOV"] = np.where(
         grouped["Orders"] > 0,
         grouped["Net Sales"] / grouped["Orders"], 0
     )
 
-    grouped.drop(columns=["Gross Sales"], inplace=True)
     grouped.sort_values("Net Sales", ascending=False, inplace=True)
-
     return grouped
 
 
 def _gs_bucket_analysis(filtered_df, bucket_col):
+    """
+    Computes Contribution % along with total Orders summed for each bucket.
+    Output Format: Contrib% | Orders (e.g. 17.26% | 25)
+    """
     data = filtered_df.copy()
     if "Store Type" in data.columns:
         data = data[data["Store Type"].str.upper() == "COCO"]
 
-    if data.empty:
+    if data.empty or bucket_col not in data.columns:
         return pd.DataFrame()
 
     total_sales = data["Net Sales"].sum()
@@ -1314,23 +1270,32 @@ def _gs_bucket_analysis(filtered_df, bucket_col):
     zomato_total = data[data["Source"].str.lower() == "zomato"]["Net Sales"].sum()
     ownly_total = data[data["Source"].str.lower() == "ownly"]["Net Sales"].sum()
 
+    def get_orders(df_sub):
+        if "Orders" in df_sub.columns:
+            return int(df_sub["Orders"].sum())
+        return len(df_sub)
+
+    def fmt(sales, total, df_sub):
+        pct = (sales / total * 100) if total > 0 else 0.0
+        orders = get_orders(df_sub)
+        return f"{pct:.2f}% | {orders:,}"
+
     rows = []
     for bucket in sorted(data[bucket_col].dropna().astype(str).unique()):
         sub = data[data[bucket_col].astype(str) == bucket]
 
-        overall = sub["Net Sales"].sum()
-        instore = sub[sub["Source"].str.lower() == "in store"]["Net Sales"].sum()
-        swiggy = sub[sub["Source"].str.lower() == "swiggy"]["Net Sales"].sum()
-        zomato = sub[sub["Source"].str.lower() == "zomato"]["Net Sales"].sum()
-        ownly = sub[sub["Source"].str.lower() == "ownly"]["Net Sales"].sum()
+        sub_instore = sub[sub["Source"].str.lower() == "in store"]
+        sub_swiggy  = sub[sub["Source"].str.lower() == "swiggy"]
+        sub_zomato  = sub[sub["Source"].str.lower() == "zomato"]
+        sub_ownly   = sub[sub["Source"].str.lower() == "ownly"]
 
         rows.append({
             bucket_col: bucket,
-            "Overall Contrib%": (overall / total_sales * 100) if total_sales > 0 else 0,
-            "In Store Contrib%": (instore / instore_total * 100) if instore_total > 0 else 0,
-            "Swiggy Contrib%": (swiggy / swiggy_total * 100) if swiggy_total > 0 else 0,
-            "Zomato Contrib%": (zomato / zomato_total * 100) if zomato_total > 0 else 0,
-            "Ownly Contrib%": (ownly / ownly_total * 100) if ownly_total > 0 else 0
+            "Overall Contrib%": fmt(sub["Net Sales"].sum(), total_sales, sub),
+            "In Store Contrib%": fmt(sub_instore["Net Sales"].sum(), instore_total, sub_instore),
+            "Swiggy Contrib%": fmt(sub_swiggy["Net Sales"].sum(), swiggy_total, sub_swiggy),
+            "Zomato Contrib%": fmt(sub_zomato["Net Sales"].sum(), zomato_total, sub_zomato),
+            "Ownly Contrib%": fmt(sub_ownly["Net Sales"].sum(), ownly_total, sub_ownly)
         })
 
     return pd.DataFrame(rows)
@@ -1338,7 +1303,8 @@ def _gs_bucket_analysis(filtered_df, bucket_col):
 
 def _gs_day_level(filtered_df):
     data = filtered_df.copy()
-    data = data[data["Store Type"].str.upper() == "COCO"]
+    if "Store Type" in data.columns:
+        data = data[data["Store Type"].str.upper() == "COCO"]
 
     if data.empty:
         return pd.DataFrame()
@@ -1352,12 +1318,12 @@ def _gs_day_level(filtered_df):
 
         rows.append({
             "Date": date_value.strftime("%d-%b-%Y"),
-            "Net Sales": m["net_sales"],
-            "Discount": m["discount"],
-            "Orders": m["orders"],
-            "Quantity": m["quantity"],
-            "Dis%": m["dis_pct"],
-            "AOV": m["aov"]
+            "Net Sales": round(m["net_sales"], 2),
+            "Discount": round(m["discount"], 2),
+            "Orders": int(m["orders"]),
+            "Quantity": int(m["quantity"]),
+            "Dis%": round(m["dis_pct"], 2),
+            "AOV": round(m["aov"], 2)
         })
 
     return pd.DataFrame(rows)
@@ -1365,7 +1331,8 @@ def _gs_day_level(filtered_df):
 
 def _gs_top_bottom_stores(filtered_df):
     data = filtered_df.copy()
-    data = data[data["Store Type"].str.upper() == "COCO"]
+    if "Store Type" in data.columns:
+        data = data[data["Store Type"].str.upper() == "COCO"]
 
     if data.empty:
         return pd.DataFrame(), pd.DataFrame()
@@ -1376,12 +1343,12 @@ def _gs_top_bottom_stores(filtered_df):
 
         grouped.append({
             "Branch": branch,
-            "Net Sales": m["net_sales"],
-            "Orders": m["orders"],
-            "Quantity": m["quantity"],
-            "Dis%": m["dis_pct"],
-            "Offline%": m["offline_pct"],
-            "Online%": m["online_pct"]
+            "Net Sales": round(m["net_sales"], 2),
+            "Orders": int(m["orders"]),
+            "Quantity": int(m["quantity"]),
+            "Dis%": round(m["dis_pct"], 2),
+            "Offline%": round(m["offline_pct"], 2),
+            "Online%": round(m["online_pct"], 2)
         })
 
     summary = pd.DataFrame(grouped).sort_values("Net Sales", ascending=False)
@@ -1407,9 +1374,10 @@ def _gs_write_section(worksheet, title, dataframe, start_row):
 
     worksheet.update(f"A{start_row + 1}:{end_col}{end_row}", output)
 
+    # Format Section Header Title & Table Column Headers
     worksheet.format(
         f"A{start_row + 1}:{end_col}{start_row + 1}",
-        {"textFormat": {"bold": True}}
+        {"textFormat": {"bold": True}, "backgroundColor": {"red": 0.9, "green": 0.95, "blue": 1.0}}
     )
 
     worksheet.format(
@@ -1418,6 +1386,55 @@ def _gs_write_section(worksheet, title, dataframe, start_row):
     )
 
     return end_row + 3
+
+
+def setup_sheet_dropdowns(spreadsheet, worksheet, df):
+    """
+    Creates dynamic drop-down lists in Row 4 for Region, Store Type, and Source
+    by generating a hidden 'Lists' worksheet.
+    """
+    try:
+        try:
+            lists_ws = spreadsheet.worksheet("Lists")
+        except Exception:
+            lists_ws = spreadsheet.add_worksheet(title="Lists", rows="100", cols="10")
+
+        regions = ["ALL"] + sorted([str(x) for x in df["Region"].dropna().unique() if str(x).strip()]) if "Region" in df.columns else ["ALL"]
+        store_types = ["ALL"] + sorted([str(x) for x in df["Store Type"].dropna().unique() if str(x).strip()]) if "Store Type" in df.columns else ["ALL"]
+        sources = ["ALL"] + sorted([str(x) for x in df["Source"].dropna().unique() if str(x).strip()]) if "Source" in df.columns else ["ALL"]
+
+        lists_ws.clear()
+        lists_ws.update("A1", [["Regions"], *[[r] for r in regions]])
+        lists_ws.update("B1", [["Store Types"], *[[s] for s in store_types]])
+        lists_ws.update("C1", [["Sources"], *[[src] for src in sources]])
+
+        # Add Data Validation Rules via Google Sheets API
+        sheet_id = worksheet.id
+        body = {
+            "requests": [
+                {
+                    "setDataValidation": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 7, "endColumnIndex": 8},
+                        "rule": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Lists!$A$2:$A$50"}]}, "showCustomUi": True}
+                    }
+                },
+                {
+                    "setDataValidation": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 9, "endColumnIndex": 10},
+                        "rule": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Lists!$B$2:$B$50"}]}, "showCustomUi": True}
+                    }
+                },
+                {
+                    "setDataValidation": {
+                        "range": {"sheetId": sheet_id, "startRowIndex": 3, "endRowIndex": 4, "startColumnIndex": 11, "endColumnIndex": 12},
+                        "rule": {"condition": {"type": "ONE_OF_RANGE", "values": [{"userEnteredValue": "=Lists!$C$2:$C$50"}]}, "showCustomUi": True}
+                    }
+                }
+            ]
+        }
+        spreadsheet.batch_update(body)
+    except Exception as e:
+        logger.warning(f"Dropdown creation skipped: {e}")
 
 
 def update_google_sheet(self):
@@ -1447,45 +1464,46 @@ def update_google_sheet(self):
 
         logger.info("✓ Connected to Google Sheet Dashboard")
 
+        # 1. Setup Data Validation Dropdowns
+        setup_sheet_dropdowns(spreadsheet, worksheet, self.df)
+
+        # 2. Extract Filters from Row 4
         filters = _gs_get_filters(worksheet, self)
         logger.info(f"Dashboard filters: {filters}")
 
+        # 3. Filter DataFrame
         filtered_df = _gs_apply_filters(self, filters)
         logger.info(f"✓ Filtered rows: {len(filtered_df):,}")
 
-        worksheet.batch_clear(["A5:Z1000"])
+        # Clear workspace below header area (A7 downwards)
+        worksheet.batch_clear(["A7:Z1000"])
 
-        filter_display = [[
-            "Mode", filters["mode"],
-            "From Date", filters["from_date"],
-            "To Date", filters["to_date"],
-            "Region", filters["region"],
-            "Store Type", filters["store_type"],
-            "Source", filters["source"]
-        ]]
-
-        worksheet.update("A4", filter_display)
+        # Format Header Row Controls
+        filter_display = [
+            ["DATE", "From Date", filters["from_date"], "To Date", filters["to_date"], "Region", filters["region"], "Store Type", filters["store_type"], "Source", filters["source"]]
+        ]
+        worksheet.update("B4:L4", filter_display)
         worksheet.update("A5", [["📊 Daily Sales Report (DSR) Dashboard"]])
-
         worksheet.format("A5", {"textFormat": {"bold": True, "fontSize": 16}})
 
         current_row = 7
 
+        # 4. Generate & Append Tables Sequentially
         period_analysis = _gs_period_comparison(self, filtered_df, filters)
         current_row = _gs_write_section(worksheet, "1. Overall Sales Summary", period_analysis, current_row)
 
-        coco_df = filtered_df[filtered_df["Store Type"].str.upper() == "COCO"].copy()
+        coco_df = filtered_df[filtered_df["Store Type"].str.upper() == "COCO"].copy() if "Store Type" in filtered_df.columns else filtered_df.copy()
         coco_metrics = _gs_metrics(coco_df)
 
         coco_summary = pd.DataFrame([
-            {"Metric": "Net Sales", "Value": coco_metrics["net_sales"]},
-            {"Metric": "Discount", "Value": coco_metrics["discount"]},
-            {"Metric": "Orders", "Value": coco_metrics["orders"]},
-            {"Metric": "Quantity", "Value": coco_metrics["quantity"]},
-            {"Metric": "Dis%", "Value": coco_metrics["dis_pct"]},
-            {"Metric": "AOV", "Value": coco_metrics["aov"]},
-            {"Metric": "Offline%", "Value": coco_metrics["offline_pct"]},
-            {"Metric": "Online%", "Value": coco_metrics["online_pct"]}
+            {"Metric": "Net Sales", "Value": round(coco_metrics["net_sales"], 2)},
+            {"Metric": "Discount", "Value": round(coco_metrics["discount"], 2)},
+            {"Metric": "Orders", "Value": int(coco_metrics["orders"])},
+            {"Metric": "Quantity", "Value": int(coco_metrics["quantity"])},
+            {"Metric": "Dis%", "Value": round(coco_metrics["dis_pct"], 2)},
+            {"Metric": "AOV", "Value": round(coco_metrics["aov"], 2)},
+            {"Metric": "Offline%", "Value": round(coco_metrics["offline_pct"], 2)},
+            {"Metric": "Online%", "Value": round(coco_metrics["online_pct"], 2)}
         ])
 
         current_row = _gs_write_section(worksheet, "2. COCO Sales Summary", coco_summary, current_row)
@@ -1514,12 +1532,6 @@ def update_google_sheet(self):
         top10, bottom10 = _gs_top_bottom_stores(filtered_df)
         current_row = _gs_write_section(worksheet, "10. Top 10 Branches (COCO)", top10, current_row)
         current_row = _gs_write_section(worksheet, "11. Bottom 10 Stores (COCO)", bottom10, current_row)
-
-        try:
-            worksheet.freeze(rows=4)
-            worksheet.columns_auto_resize(0, min(15, worksheet.col_count))
-        except Exception as format_error:
-            logger.warning(f"⚠️ Sheet formatting warning: {format_error}")
 
         logger.info("✅ Google Sheets DSR Dashboard updated successfully!")
         return True
