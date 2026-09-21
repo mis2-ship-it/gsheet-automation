@@ -5290,6 +5290,36 @@ def test_send():
         "results": results,
     }), 200
 
+# ============================================================
+# DSR DASHBOARD REFRESH ENDPOINT
+# ============================================================
+@app.route("/refresh-dsr", methods=["GET", "POST"])
+def refresh_dsr():
+    if request.method == "GET":
+        return jsonify({"status": "active", "message": "DSR Refresh Endpoint is active!"}), 200
+
+    # Authorization Check
+    webhook_secret = os.getenv("WEBHOOK_SECRET", "DSR_Secret_Pass_998877")
+    auth_header = request.headers.get("Authorization")
+    
+    if auth_header != f"Bearer {webhook_secret}":
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    try:
+        # Import your DSR Dashboard logic class
+        from dsr_dashboard import DSRDashboard  # Ensure this file exists in the repo
+        
+        dashboard = DSRDashboard()
+        success = dashboard.update_google_sheet()
+
+        if success:
+            return jsonify({"status": "success", "message": "Dashboard updated successfully!"}), 200
+        else:
+            return jsonify({"status": "error", "message": "Failed to update Google Sheet."}), 500
+
+    except Exception as e:
+        app.logger.exception("Error updating DSR Dashboard")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # =========================================================
 # 🚀 LOCAL RUN
