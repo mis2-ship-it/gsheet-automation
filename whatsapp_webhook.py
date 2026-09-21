@@ -5293,12 +5293,13 @@ def test_send():
 # ============================================================
 # DSR DASHBOARD REFRESH ENDPOINT
 # ============================================================
+import traceback
+
 @app.route("/refresh-dsr", methods=["GET", "POST"])
 def refresh_dsr():
     if request.method == "GET":
-        return jsonify({"status": "active", "message": "DSR Refresh Endpoint is active!"}), 200
+        return jsonify({"status": "active", "message": "DSR Refresh Endpoint is live!"}), 200
 
-    # Authorization Check
     webhook_secret = os.getenv("WEBHOOK_SECRET", "DSR_Secret_Pass_998877")
     auth_header = request.headers.get("Authorization")
     
@@ -5306,8 +5307,7 @@ def refresh_dsr():
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
     try:
-        # Import your DSR Dashboard logic class
-        from dsr_dashboard import DSRDashboard  # Ensure this file exists in the repo
+        from dsr_dashboard import DSRDashboard
         
         dashboard = DSRDashboard()
         success = dashboard.update_google_sheet()
@@ -5318,8 +5318,16 @@ def refresh_dsr():
             return jsonify({"status": "error", "message": "Failed to update Google Sheet."}), 500
 
     except Exception as e:
-        app.logger.exception("Error updating DSR Dashboard")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        error_details = traceback.format_exc()
+        print("=== DSR REFRESH CRASH LOG ===")
+        print(error_details)
+        print("=============================")
+        # Returns the error directly to Apps Script log instead of crashing Gunicorn
+        return jsonify({
+            "status": "error", 
+            "message": str(e),
+            "traceback": error_details
+        }), 500
 
 # =========================================================
 # 🚀 LOCAL RUN
