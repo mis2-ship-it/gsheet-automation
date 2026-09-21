@@ -10,24 +10,17 @@ logger = logging.getLogger(__name__)
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "DSR_Secret_Pass_998877")
 
 # Root route (to verify server health)
-@app.route("/", methods=["GET", "HEAD"])
-def index():
-    return "AI MIS WhatsApp Webhook Service is Running!", 200
-
-# Add this endpoint inside your primary Flask webhook file
-
-@app.route("/refresh-dsr", methods=["POST", "GET"])
+@app.route("/refresh-dsr", methods=["GET", "POST"])
 def refresh_dsr():
-    # Fetch secret from Environment Variables (or default fallback)
     webhook_secret = os.getenv("WEBHOOK_SECRET", "DSR_Secret_Pass_998877")
     
+    # Verify Authorization
     auth_header = request.headers.get("Authorization")
     if auth_header != f"Bearer {webhook_secret}":
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
 
     try:
-        # Import your DSR Dashboard logic
-        from dsr_dashboard import DSRDashboard  # Ensure filename matches your project
+        from dsr_dashboard import DSRDashboard  # Ensure filename matches
         
         dashboard = DSRDashboard()
         success = dashboard.update_google_sheet()
