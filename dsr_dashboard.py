@@ -533,11 +533,17 @@ class DSRDashboard:
         return pd.DataFrame(rows)
 
     # ========================================================
-    # BUCKET ANALYSIS (UPDATED TO 100% COLUMN TOTALS & OWNLY)
+    # BUCKET ANALYSIS (UPDATED WITH SUM OF ORDERS COLUMN)
     # ========================================================
 
     def get_bucket_analysis(self, bucket_col: str) -> pd.DataFrame:
         data = self.df[self.df['Store Type'] == 'COCO'].copy()
+
+        # Helper function to get sum of Orders column
+        def get_order_count(df_sub):
+            if 'Orders' in df_sub.columns:
+                return int(df_sub['Orders'].sum())
+            return len(df_sub)
 
         # FTD
         ftd_data = data[data['Date'].dt.date == self.today]
@@ -549,11 +555,11 @@ class DSRDashboard:
             (data['Date'].dt.date <= self.today)
         ]
 
-        # Overall Totals
+        # Overall Sales Totals
         ftd_total = ftd_data['Net Sales'].sum()
         mtd_total = mtd_data['Net Sales'].sum()
 
-        # Source Specific Totals for 100% Column Totaling
+        # Source Specific Sales Totals
         f_instore_total = ftd_data[ftd_data['Source'].str.lower() == 'in store']['Net Sales'].sum()
         f_swiggy_total = ftd_data[ftd_data['Source'].str.lower() == 'swiggy']['Net Sales'].sum()
         f_zomato_total = ftd_data[ftd_data['Source'].str.lower() == 'zomato']['Net Sales'].sum()
@@ -567,36 +573,41 @@ class DSRDashboard:
         buckets = sorted(list(data[bucket_col].dropna().unique()))
         rows = []
 
+        # Helper formatter for "Contrib% | Orders"
+        def format_val(sales, total_sales, df_sub):
+            pct = (sales / total_sales * 100) if total_sales > 0 else 0.0
+            orders = get_order_count(df_sub)
+            return f"{pct:.2f}% | {orders:,}"
+
         for b in buckets:
             f_b = ftd_data[ftd_data[bucket_col] == b]
             m_b = mtd_data[mtd_data[bucket_col] == b]
 
-            # FTD values
-            f_overall = f_b['Net Sales'].sum()
-            f_instore = f_b[f_b['Source'].str.lower() == 'in store']['Net Sales'].sum()
-            f_swiggy = f_b[f_b['Source'].str.lower() == 'swiggy']['Net Sales'].sum()
-            f_zomato = f_b[f_b['Source'].str.lower() == 'zomato']['Net Sales'].sum()
-            f_ownly = f_b[f_b['Source'].str.lower() == 'ownly']['Net Sales'].sum()
+            # FTD Subset Filtered by Source
+            f_b_instore = f_b[f_b['Source'].str.lower() == 'in store']
+            f_b_swiggy  = f_b[f_b['Source'].str.lower() == 'swiggy']
+            f_b_zomato  = f_b[f_b['Source'].str.lower() == 'zomato']
+            f_b_ownly   = f_b[f_b['Source'].str.lower() == 'ownly']
 
-            # MTD values
-            m_overall = m_b['Net Sales'].sum()
-            m_instore = m_b[m_b['Source'].str.lower() == 'in store']['Net Sales'].sum()
-            m_swiggy = m_b[m_b['Source'].str.lower() == 'swiggy']['Net Sales'].sum()
-            m_zomato = m_b[m_b['Source'].str.lower() == 'zomato']['Net Sales'].sum()
-            m_ownly = m_b[m_b['Source'].str.lower() == 'ownly']['Net Sales'].sum()
+            # MTD Subset Filtered by Source
+            m_b_instore = m_b[m_b['Source'].str.lower() == 'in store']
+            m_b_swiggy  = m_b[m_b['Source'].str.lower() == 'swiggy']
+            m_b_zomato  = m_b[m_b['Source'].str.lower() == 'zomato']
+            m_b_ownly   = m_b[m_b['Source'].str.lower() == 'ownly']
 
             rows.append({
                 bucket_col: b,
-                'FTD Overall Contrib%': (f_overall / ftd_total * 100) if ftd_total > 0 else 0,
-                'FTD In Store Contrib%': (f_instore / f_instore_total * 100) if f_instore_total > 0 else 0,
-                'FTD Swiggy Contrib%': (f_swiggy / f_swiggy_total * 100) if f_swiggy_total > 0 else 0,
-                'FTD Zomato Contrib%': (f_zomato / f_zomato_total * 100) if f_zomato_total > 0 else 0,
-                'FTD Ownly Contrib%': (f_ownly / f_ownly_total * 100) if f_ownly_total > 0 else 0,
-                'MTD Overall Contrib%': (m_overall / mtd_total * 100) if mtd_total > 0 else 0,
-                'MTD In Store Contrib%': (m_instore / m_instore_total * 100) if m_instore_total > 0 else 0,
-                'MTD Swiggy Contrib%': (m_swiggy / m_swiggy_total * 100) if m_swiggy_total > 0 else 0,
-                'MTD Zomato Contrib%': (m_zomato / m_zomato_total * 100) if m_zomato_total > 0 else 0,
-                'MTD Ownly Contrib%': (m_ownly / m_ownly_total * 100) if m_ownly_total > 0 else 0
+                'FTD Overall Contrib%': format_val(f_b['Net Sales'].sum(), ftd_total, f_b),
+                'FTD In Store Contrib%': format_val(f_b_instore['Net Sales'].sum(), f_instore_total, f_b_instore),
+                'FTD Swiggy Contrib%': format_val(f_b_swiggy['Net Sales'].sum(), f_swiggy_total, f_b_swiggy),
+                'FTD Zomato Contrib%': format_val(f_b_zomato['Net Sales'].sum(), f_zomato_total, f_b_zomato),
+                'FTD Ownly Contrib%': format_val(f_b_ownly['Net Sales'].sum(), f_ownly_total, f_b_ownly),
+                
+                'MTD Overall Contrib%': format_val(m_b['Net Sales'].sum(), mtd_total, m_b),
+                'MTD In Store Contrib%': format_val(m_b_instore['Net Sales'].sum(), m_instore_total, m_b_instore),
+                'MTD Swiggy Contrib%': format_val(m_b_swiggy['Net Sales'].sum(), m_swiggy_total, m_b_swiggy),
+                'MTD Zomato Contrib%': format_val(m_b_zomato['Net Sales'].sum(), m_zomato_total, m_b_zomato),
+                'MTD Ownly Contrib%': format_val(m_b_ownly['Net Sales'].sum(), m_ownly_total, m_b_ownly)
             })
 
         return pd.DataFrame(rows)
