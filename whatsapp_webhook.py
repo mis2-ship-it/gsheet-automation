@@ -5293,29 +5293,22 @@ def test_send():
 # ============================================================
 # DSR DASHBOARD REFRESH ENDPOINT
 # ============================================================
-import traceback
+import gc
 
-@app.route("/refresh-dsr", methods=["GET", "POST"])
+@app.route("/refresh-dsr", methods=["POST", "GET"])
 def refresh_dsr():
-    if request.method == "GET":
-        return jsonify({"status": "active", "message": "DSR Refresh Endpoint is live!"}), 200
-
-    webhook_secret = os.getenv("WEBHOOK_SECRET", "DSR_Secret_Pass_998877")
-    auth_header = request.headers.get("Authorization")
-    
-    if auth_header != f"Bearer {webhook_secret}":
-        return jsonify({"status": "error", "message": "Unauthorized"}), 401
-
     try:
         from dsr_dashboard import DSRDashboard
-        
         dashboard = DSRDashboard()
         success = dashboard.update_google_sheet()
+        
+        # Clear memory immediately after calculation
+        del dashboard
+        gc.collect()
 
-        if success:
-            return jsonify({"status": "success", "message": "Dashboard updated successfully!"}), 200
-        else:
-            return jsonify({"status": "error", "message": "Failed to update Google Sheet."}), 500
+        return jsonify({"status": "success", "message": "Updated Google Sheet"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
     except Exception as e:
         error_details = traceback.format_exc()
