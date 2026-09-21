@@ -67,22 +67,11 @@ EMAIL_CONFIG = {
     'sender_password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
     'email_to': os.getenv(
         'EMAIL_TO',
-        'vivek@frozenbottle.in, '
-        'mis2@frozenbottle.in, '
-        'mis3@frozenbottle.in, '
-        'bhaskar@eatfit.in, '
-        'scm@frozenbottle.in, '
-        'prasanth.a@frozenbottle.in, '
-        'sandeep.ss@eatfit.in, '
-        'sonal.raj@curefoods.in, '
-        'Ops.all@frozenbottle.in, '
-        'mayank.agarwal@curefoods.in'
+        'mis2@frozenbottle.in'
     ),
     'email_cc': os.getenv(
         'EMAIL_CC',
-        'pranshul@frozenbottle.in, '
-        'arun.k@frozenbottle.in, '
-        'samir.pandey@frozenbottle.in'
+        'mis2@frozenbottle.in'
     ),
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587
