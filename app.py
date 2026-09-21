@@ -10,7 +10,7 @@ app = Flask(__name__)
 logger = logging.getLogger(__name__)
 
 # Secret key to prevent unauthorized access
-WEBHOOK_SECRET = "MY_SECURE_DSR_SECRET_123"
+WEBHOOK_SECRET = "DSR_Secret_Pass_998877"
 
 @app.route("/refresh-dsr", methods=["POST"])
 def refresh_dsr():
