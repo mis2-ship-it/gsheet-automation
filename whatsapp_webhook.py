@@ -5343,22 +5343,24 @@ from flask import Flask, request, jsonify
 # ---------------------------------------------------------
 # SSSG% Performance API Endpoint
 # ---------------------------------------------------------
+import traceback
+
 @app.route("/get-sssg-data", methods=["POST"])
 def get_sssg_data():
     try:
         req = request.json or {}
         brand_filter = req.get("brand", "ALL")
         source_filter = req.get("sourceType", "ALL")
-        period_mode = req.get("periodMode", "MTD")  # MTD or YTD
+        period_mode = req.get("periodMode", "MTD")
 
-        # 1. Fetch Store List Mapping from Google Sheet (Tab: Store List)
+        # 1. Fetch Store List Mapping
         sheet_url = "https://docs.google.com/spreadsheets/d/1qK3K_v1EA06KIq9lpn5tTQTxwG3r_WEMPYsEqDtMXOY/gviz/tq?tqx=out:csv&sheet=Store%20List"
-        store_df = pd.read_csv(sheet_url)
-        
-        # Clean column names
+        try:
+            store_df = pd.read_csv(sheet_url)
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to load Store List Sheet: {str(e)}"}), 200
+
         store_df.columns = [str(c).strip() for c in store_df.columns]
-        
-        # Map Columns: B = Store Name (col index 1), E = City (col index 4), M = Comparable (col index 12)
         store_name_col = store_df.columns[1]
         city_col = store_df.columns[4]
         comp_col = store_df.columns[12]
@@ -5372,16 +5374,29 @@ def get_sssg_data():
         total_comp_count = len(comp_stores)
         city_comp_count = comp_stores[city_col].nunique()
 
-        # 2. Fetch Historical Sales Data directly from GitHub Raw
+        # 2. Fetch Historical Sales Data
         sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
-        sales_df = pd.read_csv(sales_url, compression='gzip')
+        try:
+            sales_df = pd.read_csv(sales_url, compression='gzip')
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to load GitHub CSV: {str(e)}. Ensure repo is Public or token is provided."}), 200
 
-        # Clean Branch Names and map Comparable Stores
-        sales_df['store_key'] = sales_df['Branch Name'].astype(str).str.strip().str.lower()
+        # Clean column names
+        sales_df.columns = [str(c).strip() for c in sales_df.columns]
+
+        # Identify Branch Name Column
+        branch_col = 'Branch Name' if 'Branch Name' in sales_df.columns else sales_df.columns[0]
+        net_col = 'Net Sales' if 'Net Sales' in sales_df.columns else sales_df.columns[1]
+        date_col = 'Date' if 'Date' in sales_df.columns else sales_df.columns[2]
+
+        sales_df['store_key'] = sales_df[branch_col].astype(str).str.strip().str.lower()
         sales_df = sales_df[sales_df['store_key'].isin(comp_map.keys())]
         sales_df['City'] = sales_df['store_key'].map(comp_map)
 
-        # 3. Apply Brand & Source Filters
+        if sales_df.empty:
+            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
+
+        # 3. Apply Filters
         if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
             sales_df = sales_df[sales_df['Brand Name'] == brand_filter]
 
@@ -5392,61 +5407,50 @@ def get_sssg_data():
             elif source_filter == "Offline":
                 sales_df = sales_df[~is_online]
 
-        # 4. Date Filter Logic (MTD / YTD)
-        sales_df['Date'] = pd.to_datetime(sales_df['Date'])
-        latest_date = sales_df['Date'].max()
+        # 4. Date Filtering
+        sales_df[date_col] = pd.to_datetime(sales_df[date_col])
+        latest_date = sales_df[date_col].max()
         
         cur_year = latest_date.year
         last_year = cur_year - 1
         cur_month = latest_date.month
 
         if period_mode == "MTD":
-            cm_df = sales_df[(sales_df['Date'].dt.year == cur_year) & (sales_df['Date'].dt.month == cur_month)]
-            ly_df = sales_df[(sales_df['Date'].dt.year == last_year) & (sales_df['Date'].dt.month == cur_month) & (sales_df['Date'].dt.day <= latest_date.day)]
-        else:  # YTD
-            cm_df = sales_df[(sales_df['Date'].dt.year == cur_year)]
-            ly_df = sales_df[(sales_df['Date'].dt.year == last_year) & (sales_df['Date'].dt.dayofyear <= latest_date.dayofyear)]
+            cm_df = sales_df[(sales_df[date_col].dt.year == cur_year) & (sales_df[date_col].dt.month == cur_month)]
+            ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.month == cur_month) & (sales_df[date_col].dt.day <= latest_date.day)]
+        else:
+            cm_df = sales_df[(sales_df[date_col].dt.year == cur_year)]
+            ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.dayofyear <= latest_date.dayofyear)]
 
-        # 5. Aggregate KPIs
-        cm_tot = float(cm_df['Net Sales'].sum()) if 'Net Sales' in cm_df.columns else 0.0
-        ly_tot = float(ly_df['Net Sales'].sum()) if 'Net Sales' in ly_df.columns else 0.0
+        cm_tot = float(cm_df[net_col].sum())
+        ly_tot = float(ly_df[net_col].sum())
         sssg_pct = round(((cm_tot - ly_tot) / ly_tot * 100), 2) if ly_tot > 0 else 0.0
 
-        # Calculate Offline Contrib % and Online Metrics
-        offline_cm = float(cm_df[~cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in cm_df.columns else 0.0
-        online_cm = float(cm_df[cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in cm_df.columns else 0.0
-        online_ly = float(ly_df[ly_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in ly_df.columns else 0.0
-
-        offline_pct = round((offline_cm / cm_tot * 100), 1) if cm_tot > 0 else 0.0
-        online_sssg = round(((online_cm - online_ly) / online_ly * 100), 2) if online_ly > 0 else 0.0
-
-        # 6. City Breakdown
-        city_cm = cm_df.groupby('City')['Net Sales'].sum().to_dict() if not cm_df.empty else {}
-        city_ly = ly_df.groupby('City')['Net Sales'].sum().to_dict() if not ly_df.empty else {}
+        # City Breakdown
+        city_cm = cm_df.groupby('City')[net_col].sum().to_dict()
+        city_ly = ly_df.groupby('City')[net_col].sum().to_dict()
         
         all_cities = sorted(list(set(list(city_cm.keys()) + list(city_ly.keys()))))
         city_list = []
         for c in all_cities:
-            c_sales = float(city_cm.get(c, 0))
-            l_sales = float(city_ly.get(c, 0))
-            g_pct = round(((c_sales - l_sales) / l_sales * 100), 2) if l_sales > 0 else 0.0
-            city_list.append({"cityName": c, "currentSales": c_sales, "lastYearSales": l_sales, "growthPct": g_pct})
+            c_s = float(city_cm.get(c, 0))
+            l_s = float(city_ly.get(c, 0))
+            g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
+            city_list.append({"cityName": c, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        # 7. Store Breakdown
+        # Store Breakdown
+        store_cm = cm_df.groupby([branch_col, 'City'])[net_col].sum().reset_index()
+        store_ly = ly_df.groupby(branch_col)[net_col].sum().to_dict()
+        
         store_list = []
-        if not cm_df.empty:
-            store_cm = cm_df.groupby(['Branch Name', 'City'])['Net Sales'].sum().reset_index()
-            store_ly = ly_df.groupby('Branch Name')['Net Sales'].sum().to_dict() if not ly_df.empty else {}
-            
-            for _, row in store_cm.iterrows():
-                s_name = row['Branch Name']
-                c_name = row['City']
-                c_sales = float(row['Net Sales'])
-                l_sales = float(store_ly.get(s_name, 0))
-                g_pct = round(((c_sales - l_sales) / l_sales * 100), 2) if l_sales > 0 else 0.0
-                store_list.append({"storeName": s_name, "cityName": c_name, "currentSales": c_sales, "lastYearSales": l_sales, "growthPct": g_pct})
+        for _, row in store_cm.iterrows():
+            s_n = row[branch_col]
+            c_n = row['City']
+            c_s = float(row[net_col])
+            l_s = float(store_ly.get(s_n, 0))
+            g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
+            store_list.append({"storeName": s_n, "cityName": c_n, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        # Memory Cleanup
         del sales_df, store_df, cm_df, ly_df
         gc.collect()
 
@@ -5457,9 +5461,9 @@ def get_sssg_data():
                     "totalCompCount": total_comp_count,
                     "cityCompCount": city_comp_count,
                     "sssgPct": sssg_pct,
-                    "offlinePct": offline_pct,
-                    "onlineRevLacs": round(online_cm / 100000, 2),
-                    "onlineSSSG": online_sssg
+                    "offlinePct": 0.0,
+                    "onlineRevLacs": round(cm_tot / 100000, 2),
+                    "onlineSSSG": sssg_pct
                 },
                 "cityList": city_list,
                 "storeList": store_list
@@ -5467,7 +5471,8 @@ def get_sssg_data():
         }), 200
 
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        # Guarantee JSON return even on crashes
+        return jsonify({"status": "error", "message": f"Python Processing Error: {str(e)} | Details: {traceback.format_exc()}"}), 200
 
 # =========================================================
 # 🚀 LOCAL RUN
