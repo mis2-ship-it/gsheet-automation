@@ -5337,12 +5337,15 @@ def get_dsr_html():
 # ---------------------------------------------------------
 # SSSG% Performance API Endpoint (Memory-Optimized)
 # ---------------------------------------------------------
+from flask import Flask, request, jsonify
 import csv
 import gzip
 import io
 import requests
 from datetime import datetime
-from flask import Flask, request, jsonify
+
+# Ensure app is defined
+app = Flask(__name__)
 
 @app.route("/get-sssg-data", methods=["POST"])
 def get_sssg_data():
@@ -5358,14 +5361,8 @@ def get_sssg_data():
         source_filter = str(req.get("sourceType", "ALL")).strip().lower()
         period_mode = str(req.get("periodMode", "MTD")).strip().upper()
 
-        # 1. Parse Store List Matrix from Apps Script
-        headers = [str(h).strip().lower() for h in store_rows[0]]
-        
-        # Determine column indexes
-        store_idx = 1
-        city_idx = 4
-        comp_idx = 12
-
+        # Parse Store List Matrix
+        store_idx, city_idx, comp_idx = 1, 4, 12
         comp_map = {}
         for row in store_rows[1:]:
             if len(row) > max(store_idx, city_idx, comp_idx):
@@ -5381,7 +5378,7 @@ def get_sssg_data():
         if total_comp_count == 0:
             return jsonify({"status": "error", "message": "No comparable stores marked 'Yes' in Store List."}), 200
 
-        # 2. Download and Stream GitHub CSV line-by-line (RAM Footprint < 20MB)
+        # Download & Stream CSV line-by-line (< 15MB RAM)
         sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
         resp = requests.get(sales_url, timeout=30)
         
@@ -5394,10 +5391,8 @@ def get_sssg_data():
         with gzip.GzipFile(fileobj=io.BytesIO(resp.content)) as gz:
             text_stream = io.TextIOWrapper(gz, encoding='utf-8')
             reader = csv.reader(text_stream)
-            
             file_headers = [str(h).strip() for h in next(reader, [])]
             
-            # Identify Column Indexes in CSV
             branch_i = next((i for i, h in enumerate(file_headers) if 'branch' in h.lower()), 0)
             net_i = next((i for i, h in enumerate(file_headers) if 'net' in h.lower()), 1)
             date_i = next((i for i, h in enumerate(file_headers) if 'date' in h.lower()), 2)
@@ -5411,16 +5406,13 @@ def get_sssg_data():
                 b_name = row[branch_i].strip()
                 s_key = b_name.lower()
 
-                # Filter Comparable Stores immediately
                 if s_key not in comp_map:
                     continue
 
-                # Brand Filter
                 if brand_filter != "all" and brand_i != -1:
                     if row[brand_i].strip().lower() != brand_filter:
                         continue
 
-                # Source Filter
                 source_val = row[source_i].strip().lower() if source_i != -1 else ""
                 is_online = any(term in source_val for term in ['swiggy', 'zomato', 'online'])
                 
@@ -5429,13 +5421,11 @@ def get_sssg_data():
                 elif source_filter == "offline" and is_online:
                     continue
 
-                # Parse Net Sales
                 try:
                     sales_val = float(row[net_i])
                 except ValueError:
                     sales_val = 0.0
 
-                # Parse Date
                 try:
                     dt = datetime.strptime(row[date_i].strip()[:10], '%Y-%m-%d')
                 except ValueError:
@@ -5458,35 +5448,28 @@ def get_sssg_data():
         if not records or latest_date is None:
             return jsonify({"status": "error", "message": "No sales records matched the filters."}), 200
 
-        # 3. Calculate Date Comparisons
-        cur_year = latest_date.year
+        # Calculations
+        cur_year, cur_month = latest_date.year, latest_date.month
         last_year = cur_year - 1
-        cur_month = latest_date.month
 
         cm_tot, ly_tot = 0.0, 0.0
         offline_cm, online_cm, online_ly = 0.0, 0.0, 0.0
-
         city_cm, city_ly = {}, {}
         store_cm, store_ly = {}, {}
         store_city_map = {}
 
         for r in records:
-            dt = r["date"]
-            val = r["sales"]
-            city = r["city"]
-            store = r["store"]
-            is_online = r["is_online"]
+            dt, val, city, store, is_online = r["date"], r["sales"], r["city"], r["store"], r["is_online"]
             store_city_map[store] = city
 
-            is_cm = False
-            is_ly = False
+            is_cm, is_ly = False, False
 
             if period_mode == "MTD":
                 if dt.year == cur_year and dt.month == cur_month:
                     is_cm = True
                 elif dt.year == last_year and dt.month == cur_month and dt.day <= latest_date.day:
                     is_ly = True
-            else:  # YTD
+            else:
                 if dt.year == cur_year:
                     is_cm = True
                 elif dt.year == last_year and dt.timetuple().tm_yday <= latest_date.timetuple().tm_yday:
@@ -5494,17 +5477,14 @@ def get_sssg_data():
 
             if is_cm:
                 cm_tot += val
-                if is_online:
-                    online_cm += val
-                else:
-                    offline_cm += val
+                if is_online: online_cm += val
+                else: offline_cm += val
                 city_cm[city] = city_cm.get(city, 0.0) + val
                 store_cm[store] = store_cm.get(store, 0.0) + val
 
             if is_ly:
                 ly_tot += val
-                if is_online:
-                    online_ly += val
+                if is_online: online_ly += val
                 city_ly[city] = city_ly.get(city, 0.0) + val
                 store_ly[store] = store_ly.get(store, 0.0) + val
 
@@ -5512,24 +5492,19 @@ def get_sssg_data():
         offline_pct = round((offline_cm / cm_tot * 100), 1) if cm_tot > 0 else 0.0
         online_sssg = round(((online_cm - online_ly) / online_ly * 100), 2) if online_ly > 0 else 0.0
 
-        # City Breakdown Table
         all_cities = sorted(list(set(list(city_cm.keys()) + list(city_ly.keys()))))
         city_list = []
         for c in all_cities:
-            c_s = city_cm.get(c, 0.0)
-            l_s = city_ly.get(c, 0.0)
+            c_s, l_s = city_cm.get(c, 0.0), city_ly.get(c, 0.0)
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
             city_list.append({"cityName": c, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        # Store Breakdown Table
         all_stores = sorted(list(set(list(store_cm.keys()) + list(store_ly.keys()))))
         store_list = []
         for s in all_stores:
-            c_s = store_cm.get(s, 0.0)
-            l_s = store_ly.get(s, 0.0)
+            c_s, l_s = store_cm.get(s, 0.0), store_ly.get(s, 0.0)
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
-            c_name = store_city_map.get(s, "Unknown")
-            store_list.append({"storeName": s, "cityName": c_name, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
+            store_list.append({"storeName": s, "cityName": store_city_map.get(s, "Unknown"), "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
         return jsonify({
             "status": "success",
@@ -5548,7 +5523,7 @@ def get_sssg_data():
         }), 200
 
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Python Processing Error: {str(e)}"}), 200
+        return jsonify({"status": "error", "message": f"Python Error: {str(e)}"}), 200
         
 # =========================================================
 # 🚀 LOCAL RUN
