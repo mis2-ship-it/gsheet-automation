@@ -5339,10 +5339,8 @@ def get_dsr_html():
 # ---------------------------------------------------------
 import pandas as pd
 import numpy as np
-import requests
 import traceback
 import gc
-import os
 from flask import Flask, request, jsonify
 
 @app.route("/get-sssg-data", methods=["POST"])
@@ -5359,11 +5357,10 @@ def get_sssg_data():
         source_filter = req.get("sourceType", "ALL")
         period_mode = req.get("periodMode", "MTD")
 
-        # 1. Process Store List Array from Google Apps Script
+        # 1. Process Store Mapping
         store_df = pd.DataFrame(store_rows[1:], columns=store_rows[0])
         store_df.columns = [str(c).strip() for c in store_df.columns]
 
-        # Col B (index 1) = Store Name, Col E (index 4) = City, Col M (index 12) = Comparable
         store_name_col = store_df.columns[1]
         city_col = store_df.columns[4]
         comp_col = store_df.columns[12]
@@ -5380,37 +5377,41 @@ def get_sssg_data():
         del store_df
         gc.collect()
 
-        # 2. Fetch Sales Data from GitHub Raw (Stream & Read Necessary Columns Only)
+        # 2. Chunk-based stream reader to prevent memory timeouts on Render
         sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
         
-        # Optimize memory usage by specifying dtypes and essential columns
-        try:
-            sales_df = pd.read_csv(
-                sales_url, 
-                compression='gzip',
-                usecols=lambda c: c.strip() in ['Branch Name', 'Net Sales', 'Date', 'Source', 'Brand Name']
-            )
-        except Exception:
-            # Fallback if column names differ
-            sales_df = pd.read_csv(sales_url, compression='gzip')
+        filtered_chunks = []
+        chunk_size = 50000
 
-        sales_df.columns = [str(c).strip() for c in sales_df.columns]
+        for chunk in pd.read_csv(sales_url, compression='gzip', chunksize=chunk_size, low_memory=False):
+            chunk.columns = [str(c).strip() for c in chunk.columns]
+            
+            branch_col = 'Branch Name' if 'Branch Name' in chunk.columns else chunk.columns[0]
+            net_col = 'Net Sales' if 'Net Sales' in chunk.columns else chunk.columns[1]
+            date_col = 'Date' if 'Date' in chunk.columns else chunk.columns[2]
+
+            chunk['store_key'] = chunk[branch_col].astype(str).str.strip().str.lower()
+            
+            # Filter comparable stores immediately per chunk
+            chunk = chunk[chunk['store_key'].isin(comp_map.keys())]
+            
+            if not chunk.empty:
+                chunk['City'] = chunk['store_key'].map(comp_map)
+                chunk[net_col] = pd.to_numeric(chunk[net_col], errors='coerce').fillna(0)
+                filtered_chunks.append(chunk[[branch_col, net_col, date_col, 'City'] + ([c for c in ['Source', 'Brand Name'] if c in chunk.columns])])
+
+        if not filtered_chunks:
+            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
+
+        sales_df = pd.concat(filtered_chunks, ignore_index=True)
+        del filtered_chunks
+        gc.collect()
 
         branch_col = 'Branch Name' if 'Branch Name' in sales_df.columns else sales_df.columns[0]
         net_col = 'Net Sales' if 'Net Sales' in sales_df.columns else sales_df.columns[1]
         date_col = 'Date' if 'Date' in sales_df.columns else sales_df.columns[2]
 
-        # Downcast Net Sales to float32 to conserve RAM
-        sales_df[net_col] = pd.to_numeric(sales_df[net_col], errors='coerce').fillna(0).astype('float32')
-
-        sales_df['store_key'] = sales_df[branch_col].astype(str).str.strip().str.lower()
-        sales_df = sales_df[sales_df['store_key'].isin(comp_map.keys())]
-        sales_df['City'] = sales_df['store_key'].map(comp_map)
-
-        if sales_df.empty:
-            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
-
-        # 3. Apply Filters
+        # 3. Apply Brand & Source Filters
         if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
             sales_df = sales_df[sales_df['Brand Name'] == brand_filter]
 
@@ -5440,7 +5441,6 @@ def get_sssg_data():
         ly_tot = float(ly_df[net_col].sum())
         sssg_pct = round(((cm_tot - ly_tot) / ly_tot * 100), 2) if ly_tot > 0 else 0.0
 
-        # Channel contribution metrics
         offline_cm = float(cm_df[~cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in cm_df.columns else 0.0
         online_cm = float(cm_df[cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in cm_df.columns else 0.0
         online_ly = float(ly_df[ly_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in ly_df.columns else 0.0
