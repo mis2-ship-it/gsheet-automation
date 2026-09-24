@@ -5354,7 +5354,7 @@ def get_sssg_data():
         period_mode = req.get("periodMode", "MTD")
 
         # 1. Fetch Store List Mapping
-        sheet_url = "https://docs.google.com/spreadsheets/d/1qK3K_v1EA06KIq9lpn5tTQTxwG3r_WEMPYsEqDtMXOY/gviz/tq?tqx=out:csv&sheet=Store%20List"
+        sheet_url = "https://docs.google.com/spreadsheets/d/1qK3K_v1EA06KIq9lpn5tTQTxwG3r_WEMPYsEqDtMXOY/edit?gid=1890073566#gid=1890073566"
         try:
             store_df = pd.read_csv(sheet_url)
         except Exception as e:
