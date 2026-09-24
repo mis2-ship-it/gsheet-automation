@@ -5335,7 +5335,7 @@ def get_dsr_html():
         }), 500
 
 # ---------------------------------------------------------
-# SSSG% Performance API Endpoint
+# SSSG% Performance API Endpoint (Memory-Optimized)
 # ---------------------------------------------------------
 import pandas as pd
 import numpy as np
@@ -5359,11 +5359,11 @@ def get_sssg_data():
         source_filter = req.get("sourceType", "ALL")
         period_mode = req.get("periodMode", "MTD")
 
-        # 1. Process Store List directly from Apps Script Array (No pd.read_csv needed)
+        # 1. Process Store List Array from Google Apps Script
         store_df = pd.DataFrame(store_rows[1:], columns=store_rows[0])
         store_df.columns = [str(c).strip() for c in store_df.columns]
 
-        # Map Columns: Col B (index 1) = Store Name, Col E (index 4) = City, Col M (index 12) = Comparable
+        # Col B (index 1) = Store Name, Col E (index 4) = City, Col M (index 12) = Comparable
         store_name_col = store_df.columns[1]
         city_col = store_df.columns[4]
         comp_col = store_df.columns[12]
@@ -5377,27 +5377,38 @@ def get_sssg_data():
         total_comp_count = len(comp_stores)
         city_comp_count = comp_stores[city_col].nunique()
 
-        # 2. Fetch Historical Sales Data from GitHub Raw
-        sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
-        try:
-            sales_df = pd.read_csv(sales_url, compression='gzip')
-        except Exception as e:
-            return jsonify({"status": "error", "message": f"Failed to load GitHub CSV: {str(e)}"}), 200
+        del store_df
+        gc.collect()
 
-        # Clean column names
+        # 2. Fetch Sales Data from GitHub Raw (Stream & Read Necessary Columns Only)
+        sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
+        
+        # Optimize memory usage by specifying dtypes and essential columns
+        try:
+            sales_df = pd.read_csv(
+                sales_url, 
+                compression='gzip',
+                usecols=lambda c: c.strip() in ['Branch Name', 'Net Sales', 'Date', 'Source', 'Brand Name']
+            )
+        except Exception:
+            # Fallback if column names differ
+            sales_df = pd.read_csv(sales_url, compression='gzip')
+
         sales_df.columns = [str(c).strip() for c in sales_df.columns]
 
-        # Identify Column Names dynamically
         branch_col = 'Branch Name' if 'Branch Name' in sales_df.columns else sales_df.columns[0]
         net_col = 'Net Sales' if 'Net Sales' in sales_df.columns else sales_df.columns[1]
         date_col = 'Date' if 'Date' in sales_df.columns else sales_df.columns[2]
+
+        # Downcast Net Sales to float32 to conserve RAM
+        sales_df[net_col] = pd.to_numeric(sales_df[net_col], errors='coerce').fillna(0).astype('float32')
 
         sales_df['store_key'] = sales_df[branch_col].astype(str).str.strip().str.lower()
         sales_df = sales_df[sales_df['store_key'].isin(comp_map.keys())]
         sales_df['City'] = sales_df['store_key'].map(comp_map)
 
         if sales_df.empty:
-            return jsonify({"status": "error", "message": "No matching comparable store sales found in historical dataset."}), 200
+            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
 
         # 3. Apply Filters
         if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
@@ -5421,7 +5432,7 @@ def get_sssg_data():
         if period_mode == "MTD":
             cm_df = sales_df[(sales_df[date_col].dt.year == cur_year) & (sales_df[date_col].dt.month == cur_month)]
             ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.month == cur_month) & (sales_df[date_col].dt.day <= latest_date.day)]
-        else:  # YTD
+        else:
             cm_df = sales_df[(sales_df[date_col].dt.year == cur_year)]
             ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.dayofyear <= latest_date.dayofyear)]
 
@@ -5462,7 +5473,7 @@ def get_sssg_data():
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
             store_list.append({"storeName": s_n, "cityName": c_n, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        del sales_df, store_df, cm_df, ly_df
+        del sales_df, cm_df, ly_df
         gc.collect()
 
         return jsonify({
@@ -5482,7 +5493,7 @@ def get_sssg_data():
         }), 200
 
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Python Processing Error: {str(e)} | Details: {traceback.format_exc()}"}), 200
+        return jsonify({"status": "error", "message": f"Python Error: {str(e)} | Details: {traceback.format_exc()}"}), 200
 
 # =========================================================
 # 🚀 LOCAL RUN
