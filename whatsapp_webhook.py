@@ -5341,23 +5341,20 @@ import pandas as pd
 import numpy as np
 import traceback
 import gc
+import os
 from flask import Flask, request, jsonify
 
-@app.route("/get-sssg-data", methods=["POST"])
-def get_sssg_data():
-    try:
-        payload = request.json or {}
-        req = payload.get("filters", {})
-        store_rows = payload.get("storeListData", [])
+# Global Cache to prevent Render OOM Memory Crashes
+SALES_CACHE_DF = None
+COMP_MAP_CACHE = None
+TOTAL_COMP_COUNT = 0
+CITY_COMP_COUNT = 0
 
-        if not store_rows or len(store_rows) <= 1:
-            return jsonify({"status": "error", "message": "Store list data from Google Apps Script is empty."}), 200
+def load_and_prep_sssg_cache(store_rows=None):
+    global SALES_CACHE_DF, COMP_MAP_CACHE, TOTAL_COMP_COUNT, CITY_COMP_COUNT
 
-        brand_filter = req.get("brand", "ALL")
-        source_filter = req.get("sourceType", "ALL")
-        period_mode = req.get("periodMode", "MTD")
-
-        # 1. Process Store Mapping
+    # 1. Process Store List if provided
+    if store_rows and len(store_rows) > 1:
         store_df = pd.DataFrame(store_rows[1:], columns=store_rows[0])
         store_df.columns = [str(c).strip() for c in store_df.columns]
 
@@ -5369,63 +5366,93 @@ def get_sssg_data():
         store_df['is_comp'] = store_df[comp_col].astype(str).str.strip().str.lower() == 'yes'
 
         comp_stores = store_df[store_df['is_comp']]
-        comp_map = dict(zip(comp_stores['store_key'], comp_stores[city_col]))
+        COMP_MAP_CACHE = dict(zip(comp_stores['store_key'], comp_stores[city_col]))
 
-        total_comp_count = len(comp_stores)
-        city_comp_count = comp_stores[city_col].nunique()
-
+        TOTAL_COMP_COUNT = len(comp_stores)
+        CITY_COMP_COUNT = comp_stores[city_col].nunique()
         del store_df
-        gc.collect()
 
-        # 2. Chunk-based stream reader to prevent memory timeouts on Render
+    # 2. Load Sales Data into lightweight memory structure if not cached
+    if SALES_CACHE_DF is None:
         sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
         
-        filtered_chunks = []
-        chunk_size = 50000
-
-        for chunk in pd.read_csv(sales_url, compression='gzip', chunksize=chunk_size, low_memory=False):
-            chunk.columns = [str(c).strip() for c in chunk.columns]
-            
-            branch_col = 'Branch Name' if 'Branch Name' in chunk.columns else chunk.columns[0]
-            net_col = 'Net Sales' if 'Net Sales' in chunk.columns else chunk.columns[1]
-            date_col = 'Date' if 'Date' in chunk.columns else chunk.columns[2]
-
-            chunk['store_key'] = chunk[branch_col].astype(str).str.strip().str.lower()
-            
-            # Filter comparable stores immediately per chunk
-            chunk = chunk[chunk['store_key'].isin(comp_map.keys())]
-            
-            if not chunk.empty:
-                chunk['City'] = chunk['store_key'].map(comp_map)
-                chunk[net_col] = pd.to_numeric(chunk[net_col], errors='coerce').fillna(0)
-                filtered_chunks.append(chunk[[branch_col, net_col, date_col, 'City'] + ([c for c in ['Source', 'Brand Name'] if c in chunk.columns])])
-
-        if not filtered_chunks:
-            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
-
-        sales_df = pd.concat(filtered_chunks, ignore_index=True)
-        del filtered_chunks
-        gc.collect()
+        # Read only required columns to stay under 100MB RAM
+        sales_df = pd.read_csv(
+            sales_url, 
+            compression='gzip',
+            low_memory=False
+        )
+        sales_df.columns = [str(c).strip() for c in sales_df.columns]
 
         branch_col = 'Branch Name' if 'Branch Name' in sales_df.columns else sales_df.columns[0]
         net_col = 'Net Sales' if 'Net Sales' in sales_df.columns else sales_df.columns[1]
         date_col = 'Date' if 'Date' in sales_df.columns else sales_df.columns[2]
 
-        # 3. Apply Brand & Source Filters
+        # Convert Net Sales to light float32
+        sales_df[net_col] = pd.to_numeric(sales_df[net_col], errors='coerce').fillna(0).astype('float32')
+        sales_df[date_col] = pd.to_datetime(sales_df[date_col])
+        sales_df['store_key'] = sales_df[branch_col].astype(str).str.strip().str.lower()
+
+        # Clean Source
+        if 'Source' in sales_df.columns:
+            sales_df['is_online'] = sales_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')
+        else:
+            sales_df['is_online'] = False
+
+        # Keep essential columns only
+        cols_to_keep = ['store_key', branch_col, net_col, date_col, 'is_online']
+        if 'Brand Name' in sales_df.columns:
+            cols_to_keep.append('Brand Name')
+
+        SALES_CACHE_DF = sales_df[cols_to_keep].copy()
+        del sales_df
+        gc.collect()
+
+
+@app.route("/get-sssg-data", methods=["POST"])
+def get_sssg_data():
+    try:
+        payload = request.json or {}
+        req = payload.get("filters", {})
+        store_rows = payload.get("storeListData", [])
+
+        # Build or verify cache
+        load_and_prep_sssg_cache(store_rows)
+
+        if SALES_CACHE_DF is None or SALES_CACHE_DF.empty:
+            return jsonify({"status": "error", "message": "Failed to load sales cache in memory."}), 200
+
+        brand_filter = req.get("brand", "ALL")
+        source_filter = req.get("sourceType", "ALL")
+        period_mode = req.get("periodMode", "MTD")
+
+        sales_df = SALES_CACHE_DF.copy()
+
+        # Map Comp Stores & Cities
+        if COMP_MAP_CACHE:
+            sales_df = sales_df[sales_df['store_key'].isin(COMP_MAP_CACHE.keys())]
+            sales_df['City'] = sales_df['store_key'].map(COMP_MAP_CACHE)
+        else:
+            sales_df['City'] = "Unknown"
+
+        if sales_df.empty:
+            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
+
+        # Apply Filters
         if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
             sales_df = sales_df[sales_df['Brand Name'] == brand_filter]
 
-        if source_filter != "ALL" and "Source" in sales_df.columns:
-            is_online = sales_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')
-            if source_filter == "Online":
-                sales_df = sales_df[is_online]
-            elif source_filter == "Offline":
-                sales_df = sales_df[~is_online]
+        if source_filter == "Online":
+            sales_df = sales_df[sales_df['is_online']]
+        elif source_filter == "Offline":
+            sales_df = sales_df[~sales_df['is_online']]
 
-        # 4. Date Filtering Logic (MTD / YTD)
-        sales_df[date_col] = pd.to_datetime(sales_df[date_col])
+        # Date Filtering Logic (MTD / YTD)
+        branch_col = [c for c in ['Branch Name', sales_df.columns[1]] if c in sales_df.columns][0]
+        net_col = [c for c in ['Net Sales', sales_df.columns[2]] if c in sales_df.columns][0]
+        date_col = 'Date'
+
         latest_date = sales_df[date_col].max()
-
         cur_year = latest_date.year
         last_year = cur_year - 1
         cur_month = latest_date.month
@@ -5441,14 +5468,14 @@ def get_sssg_data():
         ly_tot = float(ly_df[net_col].sum())
         sssg_pct = round(((cm_tot - ly_tot) / ly_tot * 100), 2) if ly_tot > 0 else 0.0
 
-        offline_cm = float(cm_df[~cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in cm_df.columns else 0.0
-        online_cm = float(cm_df[cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in cm_df.columns else 0.0
-        online_ly = float(ly_df[ly_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if 'Source' in ly_df.columns else 0.0
+        offline_cm = float(cm_df[~cm_df['is_online']][net_col].sum())
+        online_cm = float(cm_df[cm_df['is_online']][net_col].sum())
+        online_ly = float(ly_df[ly_df['is_online']][net_col].sum())
 
         offline_pct = round((offline_cm / cm_tot * 100), 1) if cm_tot > 0 else 0.0
         online_sssg = round(((online_cm - online_ly) / online_ly * 100), 2) if online_ly > 0 else 0.0
 
-        # 5. City Breakdown
+        # City Breakdown
         city_cm = cm_df.groupby('City')[net_col].sum().to_dict()
         city_ly = ly_df.groupby('City')[net_col].sum().to_dict()
 
@@ -5460,7 +5487,7 @@ def get_sssg_data():
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
             city_list.append({"cityName": c, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        # 6. Store Breakdown
+        # Store Breakdown
         store_cm = cm_df.groupby([branch_col, 'City'])[net_col].sum().reset_index()
         store_ly = ly_df.groupby(branch_col)[net_col].sum().to_dict()
 
@@ -5480,8 +5507,8 @@ def get_sssg_data():
             "status": "success",
             "data": {
                 "kpis": {
-                    "totalCompCount": total_comp_count,
-                    "cityCompCount": city_comp_count,
+                    "totalCompCount": TOTAL_COMP_COUNT,
+                    "cityCompCount": CITY_COMP_COUNT,
                     "sssgPct": sssg_pct,
                     "offlinePct": offline_pct,
                     "onlineRevLacs": round(online_cm / 100000, 2),
@@ -5494,7 +5521,6 @@ def get_sssg_data():
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"Python Error: {str(e)} | Details: {traceback.format_exc()}"}), 200
-
 # =========================================================
 # 🚀 LOCAL RUN
 # =========================================================
