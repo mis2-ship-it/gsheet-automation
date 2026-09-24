@@ -5337,13 +5337,11 @@ def get_dsr_html():
 # ---------------------------------------------------------
 # SSSG% Performance API Endpoint (Memory-Optimized)
 # ---------------------------------------------------------
-import pandas as pd
-import numpy as np
-import requests
-import io
+import csv
 import gzip
-import gc
-import traceback
+import io
+import requests
+from datetime import datetime
 from flask import Flask, request, jsonify
 
 @app.route("/get-sssg-data", methods=["POST"])
@@ -5354,125 +5352,184 @@ def get_sssg_data():
         store_rows = payload.get("storeListData", [])
 
         if not store_rows or len(store_rows) <= 1:
-            return jsonify({"status": "error", "message": "Store list data from Google Apps Script is empty."}), 200
+            return jsonify({"status": "error", "message": "Store list data is empty."}), 200
 
-        brand_filter = req.get("brand", "ALL")
-        source_filter = req.get("sourceType", "ALL")
-        period_mode = req.get("periodMode", "MTD")
+        brand_filter = str(req.get("brand", "ALL")).strip().lower()
+        source_filter = str(req.get("sourceType", "ALL")).strip().lower()
+        period_mode = str(req.get("periodMode", "MTD")).strip().upper()
 
-        # 1. Process Store Mapping directly from Google Apps Script Array
-        store_df = pd.DataFrame(store_rows[1:], columns=store_rows[0])
-        store_df.columns = [str(c).strip() for c in store_df.columns]
-
-        store_name_col = store_df.columns[1]  # Col B
-        city_col = store_df.columns[4]        # Col E
-        comp_col = store_df.columns[12]       # Col M
-
-        store_df['store_key'] = store_df[store_name_col].astype(str).str.strip().str.lower()
-        store_df['is_comp'] = store_df[comp_col].astype(str).str.strip().str.lower() == 'yes'
-
-        comp_stores = store_df[store_df['is_comp']]
-        comp_map = dict(zip(comp_stores['store_key'], comp_stores[city_col]))
-
-        total_comp_count = len(comp_stores)
-        city_comp_count = comp_stores[city_col].nunique()
-
-        del store_df
-        gc.collect()
-
-        # 2. Fetch Historical Sales Data with Low RAM Footprint
-        sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
+        # 1. Parse Store List Matrix from Apps Script
+        headers = [str(h).strip().lower() for h in store_rows[0]]
         
-        # Download gzipped bytes directly
-        response = requests.get(sales_url, timeout=30)
-        if response.status_code != 200:
-            return jsonify({"status": "error", "message": f"Failed to fetch CSV from GitHub. HTTP Status: {response.status_code}"}), 200
+        # Determine column indexes
+        store_idx = 1
+        city_idx = 4
+        comp_idx = 12
 
-        # Read directly from decompressed byte stream
-        with gzip.GzipFile(fileobj=io.BytesIO(response.content)) as gz:
-            sales_df = pd.read_csv(gz, low_memory=False)
+        comp_map = {}
+        for row in store_rows[1:]:
+            if len(row) > max(store_idx, city_idx, comp_idx):
+                store_name = str(row[store_idx]).strip().lower()
+                city = str(row[city_idx]).strip()
+                is_comp = str(row[comp_idx]).strip().lower() == 'yes'
+                if is_comp and store_name:
+                    comp_map[store_name] = city
 
-        sales_df.columns = [str(c).strip() for c in sales_df.columns]
+        total_comp_count = len(comp_map)
+        city_comp_count = len(set(comp_map.values()))
 
-        branch_col = 'Branch Name' if 'Branch Name' in sales_df.columns else sales_df.columns[0]
-        net_col = 'Net Sales' if 'Net Sales' in sales_df.columns else sales_df.columns[1]
-        date_col = 'Date' if 'Date' in sales_df.columns else sales_df.columns[2]
+        if total_comp_count == 0:
+            return jsonify({"status": "error", "message": "No comparable stores marked 'Yes' in Store List."}), 200
 
-        # Filter Store Keys FIRST to drop unneeded rows and save RAM immediately
-        sales_df['store_key'] = sales_df[branch_col].astype(str).str.strip().str.lower()
-        sales_df = sales_df[sales_df['store_key'].isin(comp_map.keys())].copy()
+        # 2. Download and Stream GitHub CSV line-by-line (RAM Footprint < 20MB)
+        sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
+        resp = requests.get(sales_url, timeout=30)
+        
+        if resp.status_code != 200:
+            return jsonify({"status": "error", "message": f"GitHub download failed with HTTP {resp.status_code}"}), 200
 
-        if sales_df.empty:
-            return jsonify({"status": "error", "message": "No matching comparable store sales found in dataset."}), 200
+        records = []
+        latest_date = None
 
-        sales_df['City'] = sales_df['store_key'].map(comp_map)
-        sales_df[net_col] = pd.to_numeric(sales_df[net_col], errors='coerce').fillna(0).astype('float32')
-        sales_df[date_col] = pd.to_datetime(sales_df[date_col])
+        with gzip.GzipFile(fileobj=io.BytesIO(resp.content)) as gz:
+            text_stream = io.TextIOWrapper(gz, encoding='utf-8')
+            reader = csv.reader(text_stream)
+            
+            file_headers = [str(h).strip() for h in next(reader, [])]
+            
+            # Identify Column Indexes in CSV
+            branch_i = next((i for i, h in enumerate(file_headers) if 'branch' in h.lower()), 0)
+            net_i = next((i for i, h in enumerate(file_headers) if 'net' in h.lower()), 1)
+            date_i = next((i for i, h in enumerate(file_headers) if 'date' in h.lower()), 2)
+            source_i = next((i for i, h in enumerate(file_headers) if 'source' in h.lower()), -1)
+            brand_i = next((i for i, h in enumerate(file_headers) if 'brand' in h.lower()), -1)
 
-        # 3. Apply Filters
-        if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
-            sales_df = sales_df[sales_df['Brand Name'] == brand_filter]
+            for row in reader:
+                if len(row) <= max(branch_i, net_i, date_i):
+                    continue
 
-        if source_filter != "ALL" and "Source" in sales_df.columns:
-            is_online = sales_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')
-            if source_filter == "Online":
-                sales_df = sales_df[is_online]
-            elif source_filter == "Offline":
-                sales_df = sales_df[~is_online]
+                b_name = row[branch_i].strip()
+                s_key = b_name.lower()
 
-        # 4. Date Filtering Logic (MTD / YTD)
-        latest_date = sales_df[date_col].max()
+                # Filter Comparable Stores immediately
+                if s_key not in comp_map:
+                    continue
+
+                # Brand Filter
+                if brand_filter != "all" and brand_i != -1:
+                    if row[brand_i].strip().lower() != brand_filter:
+                        continue
+
+                # Source Filter
+                source_val = row[source_i].strip().lower() if source_i != -1 else ""
+                is_online = any(term in source_val for term in ['swiggy', 'zomato', 'online'])
+                
+                if source_filter == "online" and not is_online:
+                    continue
+                elif source_filter == "offline" and is_online:
+                    continue
+
+                # Parse Net Sales
+                try:
+                    sales_val = float(row[net_i])
+                except ValueError:
+                    sales_val = 0.0
+
+                # Parse Date
+                try:
+                    dt = datetime.strptime(row[date_i].strip()[:10], '%Y-%m-%d')
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(row[date_i].strip()[:10], '%d-%m-%Y')
+                    except ValueError:
+                        continue
+
+                if latest_date is None or dt > latest_date:
+                    latest_date = dt
+
+                records.append({
+                    "store": b_name,
+                    "city": comp_map[s_key],
+                    "sales": sales_val,
+                    "date": dt,
+                    "is_online": is_online
+                })
+
+        if not records or latest_date is None:
+            return jsonify({"status": "error", "message": "No sales records matched the filters."}), 200
+
+        # 3. Calculate Date Comparisons
         cur_year = latest_date.year
         last_year = cur_year - 1
         cur_month = latest_date.month
 
-        if period_mode == "MTD":
-            cm_df = sales_df[(sales_df[date_col].dt.year == cur_year) & (sales_df[date_col].dt.month == cur_month)]
-            ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.month == cur_month) & (sales_df[date_col].dt.day <= latest_date.day)]
-        else:
-            cm_df = sales_df[(sales_df[date_col].dt.year == cur_year)]
-            ly_df = sales_df[(sales_df[date_col].dt.year == last_year) & (sales_df[date_col].dt.dayofyear <= latest_date.dayofyear)]
+        cm_tot, ly_tot = 0.0, 0.0
+        offline_cm, online_cm, online_ly = 0.0, 0.0, 0.0
 
-        cm_tot = float(cm_df[net_col].sum())
-        ly_tot = float(ly_df[net_col].sum())
+        city_cm, city_ly = {}, {}
+        store_cm, store_ly = {}, {}
+        store_city_map = {}
+
+        for r in records:
+            dt = r["date"]
+            val = r["sales"]
+            city = r["city"]
+            store = r["store"]
+            is_online = r["is_online"]
+            store_city_map[store] = city
+
+            is_cm = False
+            is_ly = False
+
+            if period_mode == "MTD":
+                if dt.year == cur_year and dt.month == cur_month:
+                    is_cm = True
+                elif dt.year == last_year and dt.month == cur_month and dt.day <= latest_date.day:
+                    is_ly = True
+            else:  # YTD
+                if dt.year == cur_year:
+                    is_cm = True
+                elif dt.year == last_year and dt.timetuple().tm_yday <= latest_date.timetuple().tm_yday:
+                    is_ly = True
+
+            if is_cm:
+                cm_tot += val
+                if is_online:
+                    online_cm += val
+                else:
+                    offline_cm += val
+                city_cm[city] = city_cm.get(city, 0.0) + val
+                store_cm[store] = store_cm.get(store, 0.0) + val
+
+            if is_ly:
+                ly_tot += val
+                if is_online:
+                    online_ly += val
+                city_ly[city] = city_ly.get(city, 0.0) + val
+                store_ly[store] = store_ly.get(store, 0.0) + val
+
         sssg_pct = round(((cm_tot - ly_tot) / ly_tot * 100), 2) if ly_tot > 0 else 0.0
-
-        # Channel contribution
-        has_source = 'Source' in cm_df.columns
-        offline_cm = float(cm_df[~cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if has_source else 0.0
-        online_cm = float(cm_df[cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if has_source else 0.0
-        online_ly = float(ly_df[ly_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')][net_col].sum()) if has_source else 0.0
-
         offline_pct = round((offline_cm / cm_tot * 100), 1) if cm_tot > 0 else 0.0
         online_sssg = round(((online_cm - online_ly) / online_ly * 100), 2) if online_ly > 0 else 0.0
 
-        # 5. City Breakdown
-        city_cm = cm_df.groupby('City')[net_col].sum().to_dict()
-        city_ly = ly_df.groupby('City')[net_col].sum().to_dict()
-
+        # City Breakdown Table
         all_cities = sorted(list(set(list(city_cm.keys()) + list(city_ly.keys()))))
         city_list = []
         for c in all_cities:
-            c_s = float(city_cm.get(c, 0))
-            l_s = float(city_ly.get(c, 0))
+            c_s = city_cm.get(c, 0.0)
+            l_s = city_ly.get(c, 0.0)
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
             city_list.append({"cityName": c, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
-        # 6. Store Breakdown
-        store_cm = cm_df.groupby([branch_col, 'City'])[net_col].sum().reset_index()
-        store_ly = ly_df.groupby(branch_col)[net_col].sum().to_dict()
-
+        # Store Breakdown Table
+        all_stores = sorted(list(set(list(store_cm.keys()) + list(store_ly.keys()))))
         store_list = []
-        for _, row in store_cm.iterrows():
-            s_n = row[branch_col]
-            c_n = row['City']
-            c_s = float(row[net_col])
-            l_s = float(store_ly.get(s_n, 0))
+        for s in all_stores:
+            c_s = store_cm.get(s, 0.0)
+            l_s = store_ly.get(s, 0.0)
             g_p = round(((c_s - l_s) / l_s * 100), 2) if l_s > 0 else 0.0
-            store_list.append({"storeName": s_n, "cityName": c_n, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
-
-        del sales_df, cm_df, ly_df
-        gc.collect()
+            c_name = store_city_map.get(s, "Unknown")
+            store_list.append({"storeName": s, "cityName": c_name, "currentSales": c_s, "lastYearSales": l_s, "growthPct": g_p})
 
         return jsonify({
             "status": "success",
@@ -5491,7 +5548,8 @@ def get_sssg_data():
         }), 200
 
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Python Error: {str(e)} | Details: {traceback.format_exc()}"}), 500
+        return jsonify({"status": "error", "message": f"Python Processing Error: {str(e)}"}), 200
+        
 # =========================================================
 # 🚀 LOCAL RUN
 # =========================================================
