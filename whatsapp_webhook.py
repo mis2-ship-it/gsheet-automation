@@ -5334,6 +5334,141 @@ def get_dsr_html():
             "traceback": error_details
         }), 500
 
+import pandas as pd
+import numpy as np
+import requests
+import gc
+from flask import Flask, request, jsonify
+
+# ---------------------------------------------------------
+# SSSG% Performance API Endpoint
+# ---------------------------------------------------------
+@app.route("/get-sssg-data", methods=["POST"])
+def get_sssg_data():
+    try:
+        req = request.json or {}
+        brand_filter = req.get("brand", "ALL")
+        source_filter = req.get("sourceType", "ALL")
+        period_mode = req.get("periodMode", "MTD")  # MTD or YTD
+
+        # 1. Fetch Store List Mapping from Google Sheet (Tab: Store List)
+        sheet_url = "https://docs.google.com/spreadsheets/d/1qK3K_v1EA06KIq9lpn5tTQTxwG3r_WEMPYsEqDtMXOY/gviz/tq?tqx=out:csv&sheet=Store%20List"
+        store_df = pd.read_csv(sheet_url)
+        
+        # Clean column names
+        store_df.columns = [str(c).strip() for c in store_df.columns]
+        
+        # Map Columns: B = Store Name (col index 1), E = City (col index 4), M = Comparable (col index 12)
+        store_name_col = store_df.columns[1]
+        city_col = store_df.columns[4]
+        comp_col = store_df.columns[12]
+
+        store_df['store_key'] = store_df[store_name_col].astype(str).str.strip().str.lower()
+        store_df['is_comp'] = store_df[comp_col].astype(str).str.strip().str.lower() == 'yes'
+        
+        comp_stores = store_df[store_df['is_comp']]
+        comp_map = dict(zip(comp_stores['store_key'], comp_stores[city_col]))
+        
+        total_comp_count = len(comp_stores)
+        city_comp_count = comp_stores[city_col].nunique()
+
+        # 2. Fetch Historical Sales Data directly from GitHub Raw
+        sales_url = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales.csv.gz"
+        sales_df = pd.read_csv(sales_url, compression='gzip')
+
+        # Clean Branch Names and map Comparable Stores
+        sales_df['store_key'] = sales_df['Branch Name'].astype(str).str.strip().str.lower()
+        sales_df = sales_df[sales_df['store_key'].isin(comp_map.keys())]
+        sales_df['City'] = sales_df['store_key'].map(comp_map)
+
+        # 3. Apply Brand & Source Filters
+        if brand_filter != "ALL" and "Brand Name" in sales_df.columns:
+            sales_df = sales_df[sales_df['Brand Name'] == brand_filter]
+
+        if source_filter != "ALL" and "Source" in sales_df.columns:
+            is_online = sales_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')
+            if source_filter == "Online":
+                sales_df = sales_df[is_online]
+            elif source_filter == "Offline":
+                sales_df = sales_df[~is_online]
+
+        # 4. Date Filter Logic (MTD / YTD)
+        sales_df['Date'] = pd.to_datetime(sales_df['Date'])
+        latest_date = sales_df['Date'].max()
+        
+        cur_year = latest_date.year
+        last_year = cur_year - 1
+        cur_month = latest_date.month
+
+        if period_mode == "MTD":
+            cm_df = sales_df[(sales_df['Date'].dt.year == cur_year) & (sales_df['Date'].dt.month == cur_month)]
+            ly_df = sales_df[(sales_df['Date'].dt.year == last_year) & (sales_df['Date'].dt.month == cur_month) & (sales_df['Date'].dt.day <= latest_date.day)]
+        else:  # YTD
+            cm_df = sales_df[(sales_df['Date'].dt.year == cur_year)]
+            ly_df = sales_df[(sales_df['Date'].dt.year == last_year) & (sales_df['Date'].dt.dayofyear <= latest_date.dayofyear)]
+
+        # 5. Aggregate KPIs
+        cm_tot = float(cm_df['Net Sales'].sum()) if 'Net Sales' in cm_df.columns else 0.0
+        ly_tot = float(ly_df['Net Sales'].sum()) if 'Net Sales' in ly_df.columns else 0.0
+        sssg_pct = round(((cm_tot - ly_tot) / ly_tot * 100), 2) if ly_tot > 0 else 0.0
+
+        # Calculate Offline Contrib % and Online Metrics
+        offline_cm = float(cm_df[~cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in cm_df.columns else 0.0
+        online_cm = float(cm_df[cm_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in cm_df.columns else 0.0
+        online_ly = float(ly_df[ly_df['Source'].astype(str).str.lower().str.contains('swiggy|zomato|online')]['Net Sales'].sum()) if 'Source' in ly_df.columns else 0.0
+
+        offline_pct = round((offline_cm / cm_tot * 100), 1) if cm_tot > 0 else 0.0
+        online_sssg = round(((online_cm - online_ly) / online_ly * 100), 2) if online_ly > 0 else 0.0
+
+        # 6. City Breakdown
+        city_cm = cm_df.groupby('City')['Net Sales'].sum().to_dict() if not cm_df.empty else {}
+        city_ly = ly_df.groupby('City')['Net Sales'].sum().to_dict() if not ly_df.empty else {}
+        
+        all_cities = sorted(list(set(list(city_cm.keys()) + list(city_ly.keys()))))
+        city_list = []
+        for c in all_cities:
+            c_sales = float(city_cm.get(c, 0))
+            l_sales = float(city_ly.get(c, 0))
+            g_pct = round(((c_sales - l_sales) / l_sales * 100), 2) if l_sales > 0 else 0.0
+            city_list.append({"cityName": c, "currentSales": c_sales, "lastYearSales": l_sales, "growthPct": g_pct})
+
+        # 7. Store Breakdown
+        store_list = []
+        if not cm_df.empty:
+            store_cm = cm_df.groupby(['Branch Name', 'City'])['Net Sales'].sum().reset_index()
+            store_ly = ly_df.groupby('Branch Name')['Net Sales'].sum().to_dict() if not ly_df.empty else {}
+            
+            for _, row in store_cm.iterrows():
+                s_name = row['Branch Name']
+                c_name = row['City']
+                c_sales = float(row['Net Sales'])
+                l_sales = float(store_ly.get(s_name, 0))
+                g_pct = round(((c_sales - l_sales) / l_sales * 100), 2) if l_sales > 0 else 0.0
+                store_list.append({"storeName": s_name, "cityName": c_name, "currentSales": c_sales, "lastYearSales": l_sales, "growthPct": g_pct})
+
+        # Memory Cleanup
+        del sales_df, store_df, cm_df, ly_df
+        gc.collect()
+
+        return jsonify({
+            "status": "success",
+            "data": {
+                "kpis": {
+                    "totalCompCount": total_comp_count,
+                    "cityCompCount": city_comp_count,
+                    "sssgPct": sssg_pct,
+                    "offlinePct": offline_pct,
+                    "onlineRevLacs": round(online_cm / 100000, 2),
+                    "onlineSSSG": online_sssg
+                },
+                "cityList": city_list,
+                "storeList": store_list
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 # =========================================================
 # 🚀 LOCAL RUN
 # =========================================================
