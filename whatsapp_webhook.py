@@ -5337,7 +5337,13 @@ def get_dsr_html():
 # ---------------------------------------------------------
 # SSSG% Performance API Endpoint
 # ---------------------------------------------------------
+import pandas as pd
+import numpy as np
+import requests
 import traceback
+import gc
+import os
+from flask import Flask, request, jsonify
 
 @app.route("/get-sssg-data", methods=["POST"])
 def get_sssg_data():
