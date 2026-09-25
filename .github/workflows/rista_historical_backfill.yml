@@ -1,7 +1,7 @@
-name: Rista Historical Backfill
+name: Rista Historical Backfill & Daily Refresh
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:     # Allows manual trigger from GitHub UI anytime
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
           pip install pandas numpy requests PyJWT gspread google-auth
 
       # =====================================================
-      # RUN HISTORICAL BACKFILL
+      # RUN HISTORICAL BACKFILL & SUMMARY GENERATION
       # =====================================================
 
       - name: Run Rista Historical Backfill
@@ -49,29 +49,32 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           echo "=========================================="
-          echo "Running Rista Historical Backfill..."
+          echo "Running Rista Historical Backfill & Summary Generation..."
           echo "=========================================="
 
           python rista_historical_backfill.py
 
       # =====================================================
-      # COMMIT GENERATED CSV FILES
+      # COMMIT GENERATED CSV & SUMMARY FILES
       # =====================================================
 
-      - name: Commit Historical CSV Files
+      - name: Commit Historical CSV & Summary Files
         run: |
 
-          git config user.name "github-actions"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Stage monthly files, full compressed data, and the dashboard summary CSV
           git add monthly_data/
+          git add historical_data/historical_sales.csv.gz
+          git add historical_data/historical_sales_summary.csv
 
           if git diff --cached --quiet; then
             echo "No CSV changes to commit."
             exit 0
           fi
 
-          git commit -m "Backfill historical Rista monthly CSV data"
+          git commit -m "Auto-update daily historical sales data and summary CSV"
 
           # =================================================
           # SYNC WITH REMOTE BEFORE PUSH
@@ -80,7 +83,7 @@ jobs:
           git pull --rebase origin main
 
           # =================================================
-          # PUSH CSV FILES
+          # PUSH CHANGES
           # =================================================
 
           git push origin main
