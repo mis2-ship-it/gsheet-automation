@@ -1475,3 +1475,20 @@ else:
     print(
         "\n🎉 All requested historical months completed."
     )
+
+
+import pandas as pd
+
+# Assume 'df' is your final combined DataFrame before saving to .gz
+# -----------------------------------------------------------------
+
+# 1. Group by key dimensions to keep the summary lightweight
+summary_cols = ['branch_name', 'date', 'source', 'brand_name']  # Adjust column names as per your dataset
+net_sales_col = 'net_amount'                                   # Adjust to your net sales column name
+
+summary_df = df.groupby(summary_cols, as_index=False)[net_sales_col].sum()
+
+# 2. Save the lightweight summary CSV
+summary_csv_path = "historical_data/historical_sales_summary.csv"
+summary_df.to_csv(summary_csv_path, index=False)
+print(f"Successfully updated summary CSV at: {summary_csv_path}")
