@@ -292,6 +292,44 @@ if (
     print(f"🚫 Duplicate removed: {before_count - after_count}")
 
 # =========================================================
+# 🚨 ALERT-ELIGIBLE CANCELLATIONS
+# =========================================================
+
+ALERT_KEYWORDS = [
+    "reject",
+    "closed",
+    "unavailable",
+    "out of stock"
+]
+
+def is_alert_reason(reason):
+    reason = str(reason).strip().lower()
+
+    return any(
+        keyword in reason
+        for keyword in ALERT_KEYWORDS
+    )
+
+# Check Reason column
+if "Reason" in final_df.columns:
+
+    final_df["alertEligible"] = final_df["Reason"].apply(
+        is_alert_reason
+    )
+
+    alert_df = final_df[
+        final_df["alertEligible"] == True
+    ].copy()
+
+else:
+    print("⚠️ Reason column not found")
+    alert_df = pd.DataFrame()
+
+print(f"🚨 Total cancellations: {len(final_df)}")
+print(f"📧 Alert eligible cancellations: {len(alert_df)}")
+print(f"⏭️ Alerts skipped due to reason: {len(final_df) - len(alert_df)}")
+
+# =========================================================
 # ✅ FINAL CHECK
 # =========================================================
 if cancel_df.empty:
