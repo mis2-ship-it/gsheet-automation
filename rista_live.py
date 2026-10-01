@@ -2525,21 +2525,6 @@ def send_email():
 
         <br><br>
 
-        <h2>🏷️ Brand Source Analysis</h2>
-        {styled_html(brand_source_analysis)}
-
-        <br><br>
-
-        <h2>📦 Source × Brand Analysis</h2>
-        {styled_html(source_brand_analysis)}
-
-        <br><br>
-
-        <h2>🌍 Region Source Analysis</h2>
-        {styled_html(region_source_analysis)}
-
-        <br><br>
-
         <h2>🍽️ Brand Session Analysis</h2>
         {styled_html(brand_session)}
 
@@ -2552,6 +2537,21 @@ def send_email():
 
         <h2>🌍 Source Session Analysis</h2>
         {styled_html(source_session)}
+
+        <br><br>
+
+        <h2>🏷️ Brand Source Analysis</h2>
+        {styled_html(brand_source_analysis)}
+
+        <br><br>
+
+        <h2>📦 Source × Brand Analysis</h2>
+        {styled_html(source_brand_analysis)}
+
+        <br><br>
+
+        <h2>🌍 Region Source Analysis</h2>
+        {styled_html(region_source_analysis)}
 
         <br><br>
 
