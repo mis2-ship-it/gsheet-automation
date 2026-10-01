@@ -19,8 +19,6 @@ from openpyxl.utils import get_column_letter
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-from pptx.chart.data import CategoryChartData
 
 # Logging setup
 logging.basicConfig(level=logging.INFO)
@@ -121,7 +119,6 @@ def generate_random_password(length=8):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 def send_access_email(user_email: str, passcode: str) -> bool:
-    """Sends HTML passcode email via SMTP."""
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_email = os.environ.get("SMTP_EMAIL", "mis2@frozenbottle.in")
@@ -142,7 +139,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
           <h2 style="color: #1F4E78; text-align: center;">Frozen Bottle Analytics</h2>
           <p>Hello,</p>
-          <p>Your single-use passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
+          <p>Your passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
           <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
             <span style="font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #1F4E78;">{passcode}</span>
           </div>
@@ -177,25 +174,27 @@ def send_access_email(user_email: str, passcode: str) -> bool:
 # ---------------------------------------------------------
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales_summary.csv"
 
-def optimize_and_cache_data():
-    """Fetches real-time CSV data from GitHub + local directory files including September 2026."""
+GLOBAL_DF = None
+
+def fetch_data():
+    """Fetches sales data dynamically from GitHub and local files."""
     dfs = []
 
-    # 1. Read Remote GitHub Summary File
+    # 1. Fetch Remote Summary CSV from GitHub
     try:
-        resp = requests.get(GITHUB_CSV_URL, timeout=10)
+        resp = requests.get(GITHUB_CSV_URL, timeout=12)
         if resp.status_code == 200:
             gh_df = pd.read_csv(io.StringIO(resp.text))
             dfs.append(gh_df)
-            logger.info("Successfully fetched live GitHub sales summary CSV.")
+            logger.info("Successfully loaded GitHub historical summary CSV.")
     except Exception as e:
-        logger.warning(f"Could not load GitHub CSV: {e}")
+        logger.warning(f"Could not fetch GitHub CSV: {e}")
 
-    # 2. Read Local Directory CSV Files
-    all_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
+    # 2. Fetch Local Monthly CSV Files
+    local_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/runner/work/**/*.csv", recursive=True))))
     target_cols = ['Date', 'date', 'Brand Name', 'Brand', 'brand', 'Branch', 'Store', 'branch', 'Store Type', 'Region', 'Source', 'source', 'Session', 'Net Sales', 'net_sales', 'net_amount', 'Orders', 'Discount', 'Gross Sales']
 
-    for f in all_csvs:
+    for f in local_csvs:
         try:
             s_df = pd.read_csv(f, nrows=1)
             v_cols = [c for c in target_cols if c in s_df.columns]
@@ -206,11 +205,11 @@ def optimize_and_cache_data():
             continue
 
     if not dfs:
-        raise FileNotFoundError("No sales dataset found locally or on GitHub.")
+        logger.error("No sales datasets available.")
+        return pd.DataFrame()
 
     df = pd.concat(dfs, ignore_index=True)
 
-    # Standardize Column Names
     col_map = {
         'date': 'Date',
         'branch': 'Branch',
@@ -227,18 +226,16 @@ def optimize_and_cache_data():
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df = df.dropna(subset=['Date'])
 
-    # Category Formats
-    df['Brand Name'] = df.get('Brand Name', 'Frozen Bottle').astype(str).astype('category')
-    df['Branch'] = df.get('Branch', 'Unknown').astype(str).astype('category')
-    df['Source'] = df.get('Source', 'Unknown').astype(str).astype('category')
-    if 'Store Type' in df: df['Store Type'] = df['Store Type'].astype(str).astype('category')
-    if 'Region' in df: df['Region'] = df['Region'].astype(str).astype('category')
-    if 'Session' in df: df['Session'] = df['Session'].astype(str).astype('category')
+    df['Brand Name'] = df.get('Brand Name', 'Frozen Bottle').astype(str).str.strip()
+    df['Branch'] = df.get('Branch', 'Unknown').astype(str).str.strip()
+    df['Source'] = df.get('Source', 'Unknown').astype(str).str.strip()
+    if 'Store Type' in df: df['Store Type'] = df['Store Type'].astype(str).str.strip()
+    if 'Region' in df: df['Region'] = df['Region'].astype(str).str.strip()
+    if 'Session' in df: df['Session'] = df['Session'].astype(str).str.strip()
 
     for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
         if num_col in df:
             df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0).astype('float32')
-            # Standardize raw rupees into Lacs
             if df[num_col].max() > 10000:
                 df[num_col] = df[num_col] / 100000.0
 
@@ -246,19 +243,24 @@ def optimize_and_cache_data():
         df['Orders'] = 1
     df['Orders'] = pd.to_numeric(df['Orders'], errors='coerce').fillna(1).astype('int32')
 
-    df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
-    df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
+    df['YearMonth'] = df['Date'].dt.strftime('%Y-%m')
+    df['MonthLabel'] = df['Date'].dt.strftime('%b %Y')
 
     raw_sales_inr = df['Net Sales'] * 100000.0
     df['Calc_AOV'] = np.where(df['Orders'] > 0, raw_sales_inr / df['Orders'], 0.0).astype('float32')
     df['Calc_Disc_Pct'] = np.where(df.get('Gross Sales', 0) > 0, (df.get('Discount', 0) / df.get('Gross Sales', 1)) * 100, 0.0).astype('float32')
 
-    df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=[-np.inf, 200, 400, 600, 800, np.inf], labels=['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800'])
-    df['Discount Bucket'] = pd.cut(df['Calc_Disc_Pct'], bins=[-np.inf, 5, 15, 25, 35, np.inf], labels=['0 - 5%', '5 - 15%', '15 - 25%', '25 - 35%', '> 35%'])
+    df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=[-np.inf, 200, 400, 600, 800, np.inf], labels=['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800']).astype(str)
+    df['Discount Bucket'] = pd.cut(df['Calc_Disc_Pct'], bins=[-np.inf, 5, 15, 25, 35, np.inf], labels=['0 - 5%', '5 - 15%', '15 - 25%', '25 - 35%', '> 35%']).astype(str)
 
     return df
 
-GLOBAL_DF = optimize_and_cache_data()
+def refresh_global_data():
+    global GLOBAL_DF
+    GLOBAL_DF = fetch_data()
+    return GLOBAL_DF
+
+GLOBAL_DF = refresh_global_data()
 
 DIM_COL_MAP = {
     'Brand': 'Brand Name',
@@ -270,31 +272,13 @@ DIM_COL_MAP = {
     'Discount Bucket': 'Discount Bucket'
 }
 
-def generate_pivot(df_filtered, dim_col, months):
-    df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
-    if df_eval.empty or dim_col not in df_eval.columns:
-        return pd.DataFrame()
-        
-    piv = pd.pivot_table(df_eval, index=dim_col, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
-    
-    if len(piv.columns) >= 2:
-        c1, c2 = piv.columns[-2], piv.columns[-1]
-        piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
-    piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
-    
-    return piv.sort_values(by='Total Sales (Lacs)', ascending=False)
-
 def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='Store'):
     df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
     if df_eval.empty:
         return pd.DataFrame()
 
     is_store_prim = primary_dim in ['Store', 'Branch']
-
-    if is_store_prim and sec_dim_col != 'Branch':
-        idx_cols = ['Branch', sec_dim_col]
-    else:
-        idx_cols = [sec_dim_col]
+    idx_cols = ['Branch', sec_dim_col] if is_store_prim and sec_dim_col != 'Branch' else [sec_dim_col]
 
     piv = pd.pivot_table(df_eval, index=idx_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
     
@@ -309,22 +293,28 @@ def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='St
     return piv.sort_values(by=['Total Sales (Lacs)'], ascending=False)
 
 def get_filtered_data(filters_dict, timeframe, user_config):
-    df = GLOBAL_DF.copy()
+    df = refresh_global_data()
+
+    if df.empty:
+        return pd.DataFrame(), pd.DataFrame(), []
 
     allowed_stores = user_config.get('allowed_stores', 'ALL')
     if allowed_stores != 'ALL':
-        df = df[df['Branch'].isin(allowed_stores)]
+        allowed_clean = [str(s).strip().lower() for s in allowed_stores]
+        df = df[df['Branch'].str.strip().str.lower().isin(allowed_clean)]
 
     if filters_dict.get('Store Type') and filters_dict['Store Type'] != 'ALL':
-        df = df[df['Store Type'] == filters_dict['Store Type']]
+        df = df[df['Store Type'].str.strip().str.lower() == filters_dict['Store Type'].strip().lower()]
+
     for k, col in DIM_COL_MAP.items():
         sel = filters_dict.get(k, set())
         if sel and 'ALL' not in sel and col in df.columns:
-            df = df[df[col].isin(list(sel))]
+            sel_clean = [str(s).strip().lower() for s in sel]
+            df = df[df[col].astype(str).str.strip().str.lower().isin(sel_clean)]
     
     avail = sorted(df['YearMonth'].dropna().unique().tolist())
     if not avail:
-        return df, df, []
+        return df, pd.DataFrame(), []
 
     if timeframe == "Current Month":
         months = [avail[-1]]
@@ -344,7 +334,7 @@ def get_filtered_data(filters_dict, timeframe, user_config):
 
 def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     if df_eval.empty or dim_col not in df_eval.columns:
-        return "No data available for the selected parameters."
+        return "⚠️ **No data available for the selected parameters.**"
 
     df_calc = df_eval.copy()
     grouped = df_calc.groupby(dim_col).agg({
@@ -358,7 +348,7 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     lines.append("`" + f"{dim_name[:12]:<12} | Net Sales (Lacs)`")
     lines.append("`" + "-"*32 + "`")
 
-    for _, r in grouped.head(8).iterrows():
+    for _, r in grouped.head(10).iterrows():
         name = str(r[dim_col])[:12]
         sales = f"₹{r['Net Sales']:.2f}L"
         lines.append(f"`{name:<12} | {sales:<10}`")
@@ -385,8 +375,6 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
 
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True)
-    thin = Side(border_style="thin", color="CCCCCC")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     for sheet_title, dim_col in sections:
         piv = generate_store_split_pivot(df_filtered, dim_col, months, primary_dim)
@@ -465,7 +453,7 @@ def build_pptx(df_filtered, months, primary_dim, timeframe):
     out.seek(0)
     return out
 
-# UI Menus
+# UI Menus with "BACK" buttons at every step
 def get_main_menu():
     kb = [
         [InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")],
@@ -479,21 +467,14 @@ def get_store_type_menu():
     kb = [
         [InlineKeyboardButton("🌐 ALL Types", callback_data="st_ALL")],
         [InlineKeyboardButton("🏬 FOFO", callback_data="st_FOFO"), InlineKeyboardButton("🏢 COCO", callback_data="st_COCO")],
-        [InlineKeyboardButton("🤝 Partner", callback_data="st_Partner")]
-    ]
-    return InlineKeyboardMarkup(kb)
-
-def get_timeframe_menu():
-    kb = [
-        [InlineKeyboardButton("📅 Current Month", callback_data="tf_Current Month"), InlineKeyboardButton("📅 Last Month", callback_data="tf_Last Month")],
-        [InlineKeyboardButton("📊 Last 2 Months", callback_data="tf_Last 2 Months"), InlineKeyboardButton("📈 Quarterly", callback_data="tf_Quarterly")],
-        [InlineKeyboardButton("📉 Half-Yearly", callback_data="tf_Half-Yearly"), InlineKeyboardButton("📅 Yearly", callback_data="tf_Yearly")]
+        [InlineKeyboardButton("🤝 Partner", callback_data="st_Partner")],
+        [InlineKeyboardButton("🔙 Back to Dimensions", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(kb)
 
 def get_filter_menu(dim_name, selected_set):
     col = DIM_COL_MAP[dim_name]
-    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist()) if col in GLOBAL_DF.columns else []
+    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist()) if GLOBAL_DF is not None and col in GLOBAL_DF.columns else []
     kb = []
     
     all_mark = "✅ " if "ALL" in selected_set or not selected_set else ""
@@ -509,7 +490,19 @@ def get_filter_menu(dim_name, selected_set):
     if row:
         kb.append(row)
         
-    kb.append([InlineKeyboardButton("➡️ Continue to Timeframe", callback_data="step_timeframe")])
+    kb.append([
+        InlineKeyboardButton("🔙 Back to Store Type", callback_data="back_to_store_type"),
+        InlineKeyboardButton("➡️ Continue to Timeframe", callback_data="step_timeframe")
+    ])
+    return InlineKeyboardMarkup(kb)
+
+def get_timeframe_menu():
+    kb = [
+        [InlineKeyboardButton("📅 Current Month", callback_data="tf_Current Month"), InlineKeyboardButton("📅 Last Month", callback_data="tf_Last Month")],
+        [InlineKeyboardButton("📊 Last 2 Months", callback_data="tf_Last 2 Months"), InlineKeyboardButton("📈 Quarterly", callback_data="tf_Quarterly")],
+        [InlineKeyboardButton("📉 Half-Yearly", callback_data="tf_Half-Yearly"), InlineKeyboardButton("📅 Yearly", callback_data="tf_Yearly")],
+        [InlineKeyboardButton("🔙 Back to Filters", callback_data="back_to_filters")]
+    ]
     return InlineKeyboardMarkup(kb)
 
 # ---------------------------------------------------------
@@ -581,7 +574,6 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
         return
 
-    # Stage 1: Email Check
     if stage == 'AWAITING_EMAIL' or "@" in text:
         email = text.lower()
         if email not in AUTHORIZED_USERS:
@@ -616,7 +608,6 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['login_stage'] = 'AWAITING_PASSWORD'
         return
 
-    # Stage 2: Passcode Validation
     if stage == 'AWAITING_PASSWORD':
         email = c.user_data.get('pending_email')
         if not email or email not in USER_PASSWORDS:
@@ -657,16 +648,29 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     data = q.data
     user_config = SESSION_CACHE[user_id]
     
+    # STEP 1: PRIMARY DIMENSION
     if data.startswith("p_"):
         c.user_data['prim'] = data.split("_")[1]
+        c.user_data['filters'] = {}
         await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
         
+    # BACK BUTTON: BACK TO MAIN DIMENSIONS
+    elif data == "back_to_main":
+        await q.edit_message_text("Select Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
+
+    # STEP 2: STORE TYPE
     elif data.startswith("st_"):
         c.user_data['filters']['Store Type'] = data.split("_")[1]
         dims = [d for d in ['Brand', 'Region', 'Source', 'Session'] if d != c.user_data.get('prim')]
         first_dim = dims[0]
+        c.user_data['active_filter_dim'] = first_dim
         await q.edit_message_text(f"🔍 **Filter by {first_dim}:**", reply_markup=get_filter_menu(first_dim, set()), parse_mode="Markdown")
 
+    # BACK BUTTON: BACK TO STORE TYPE
+    elif data == "back_to_store_type":
+        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
+
+    # STEP 3: FILTER SELECTION
     elif data.startswith("fl_"):
         _, dim, val = data.split("_", 2)
         if dim not in c.user_data['filters']:
@@ -683,15 +687,23 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 
         await q.edit_message_reply_markup(reply_markup=get_filter_menu(dim, c.user_data['filters'][dim]))
 
+    # STEP 4: TIMEFRAME
     elif data == "step_timeframe":
         await q.edit_message_text("📅 **Select Timeframe:**", reply_markup=get_timeframe_menu(), parse_mode="Markdown")
 
+    # BACK BUTTON: BACK TO FILTERS
+    elif data == "back_to_filters":
+        active_dim = c.user_data.get('active_filter_dim', 'Brand')
+        curr_filters = c.user_data['filters'].get(active_dim, set())
+        await q.edit_message_text(f"🔍 **Filter by {active_dim}:**", reply_markup=get_filter_menu(active_dim, curr_filters), parse_mode="Markdown")
+
+    # STEP 5: EXECUTE AND DISPLAY SUMMARY
     elif data.startswith("tf_"):
         tf = data.split("_")[1]
         c.user_data['timeframe'] = tf
         
         df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
-        prim_dim_name = c.user_data['prim']
+        prim_dim_name = c.user_data.get('prim', 'Store')
         prim_col = DIM_COL_MAP[prim_dim_name]
         
         c.user_data['df_eval'] = df_eval
@@ -699,7 +711,8 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         
         summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
         kb = [
-            [InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]
+            [InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")],
+            [InlineKeyboardButton("🔙 Change Parameters", callback_data="step_timeframe"), InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
         ]
         
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
