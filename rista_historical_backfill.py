@@ -1,23 +1,16 @@
 # =========================================================
-# RISTA HISTORICAL BACKFILL
+# RISTA HISTORICAL BACKFILL & DAILY INCREMENTAL SYNC
 # =========================================================
 # Purpose:
-#   Fetch historical Rista sales and create standardized monthly
-#   CSV files for:
-#       2025-01 through 2025-12
-#       2026-01 through 2026-06
+#   Fetch historical & daily Rista sales, apply Business Hours
+#   rollover (08:00 AM to Next Day 05:30 AM), and create/update
+#   standardized CSV files under monthly_data/YYYY/
 #
-# Existing files such as:
-#       MTD_July_26.csv
-#       MTD_Aug_26.csv
-# are NOT touched.
-#
-# Output format is the same 14-column structure used by the
-# corrected rista_mtd_report.py:
-#
+# Output format is the exact 18-column structure:
 # Brand Name | Date | Week | Branch | Source | Session |
 # Store Type | Region | Net Sales | Discount | Taxes |
-# Gross Sales | Quantity | Orders
+# Gross Sales | Quantity | Orders | Dis % | AOV |
+# AOV Bucket | Discount Bucket
 # =========================================================
 
 from pathlib import Path
@@ -59,47 +52,18 @@ MAX_WORKERS = 8
 MAX_RETRIES = 5
 RETRY_BASE_SECONDS = 2
 
-# =========================================================
-# MONTHS TO FETCH
-# =========================================================
-#
-# Add only the months that you want to fetch/rebuild.
-#
-# Examples:
-#
-# (2026, 7)       = July 2026
-# (2026, 8)       = August 2026
-# (2026, 9)       = September 2026
-#
-# Multiple months:
-# [(2026, 7), (2026, 8), (2026, 9)]
-#
-# Full 2025:
-# [(2025, month) for month in range(1, 13)]
-#
-# =========================================================
-
-BACKFILL_MONTHS = [
-    (2026, 9)
-]
-
 
 # =========================================================
-# START
+# START LOGGING
 # =========================================================
 
 print("=" * 80)
-print("🚀 RISTA HISTORICAL BACKFILL STARTED")
+print("🚀 RISTA HISTORICAL BACKFILL & DAILY SYNC STARTED")
 print("=" * 80)
 
 print("API KEY EXISTS   :", bool(API_KEY))
 print("SECRET KEY EXISTS:", bool(SECRET_KEY))
 print("Workers          :", MAX_WORKERS)
-
-print("\nMonths to create:")
-
-for year, month in BACKFILL_MONTHS:
-    print(f"  - {year}-{month:02d}")
 
 
 # =========================================================
@@ -563,7 +527,7 @@ def fetch_day(day):
 
 
 # =========================================================
-# BUILD STANDARDIZED MONTH DATA
+# BUILD STANDARDIZED DATA
 # =========================================================
 
 def standardize_month(raw_df):
@@ -704,10 +668,10 @@ def standardize_month(raw_df):
     ].copy()
 
     # -----------------------------------------------------
-    # Business Date
+    # Business Hours Rollover: 08:00 AM to Next Day 05:30 AM
     #
-    # Same business-date logic as current MTD script:
-    # before / at 5:30 AM belongs to previous business day.
+    # Transactions at or before 5:30 AM belong to the
+    # previous calendar day's Business Date.
     # -----------------------------------------------------
 
     df["Hour"] = (
@@ -775,7 +739,7 @@ def standardize_month(raw_df):
         )
 
     # -----------------------------------------------------
-    # Group to same standard format
+    # Group to standard format
     # -----------------------------------------------------
 
     group_columns = [
@@ -789,7 +753,6 @@ def standardize_month(raw_df):
         "Region"
     ]
 
-    # invoiceNumber may not exist in unusual API responses.
     if "invoiceNumber" in df.columns:
 
         summary = (
@@ -1019,476 +982,128 @@ def standardize_month(raw_df):
 
 
 # =========================================================
-# MONTH DATE RANGE
+# INCREMENTAL DAILY / MONTHLY BACKFILL ENGINE
 # =========================================================
 
-def month_dates(year, month):
-
-    first_day = date(
-        year,
-        month,
-        1
-    )
-
-    if month == 12:
-
-        next_month = date(
-            year + 1,
-            1,
-            1
-        )
-
-    else:
-
-        next_month = date(
-            year,
-            month + 1,
-            1
-        )
-
-    last_day = (
-        next_month
-        - timedelta(days=1)
-    )
-
-    current = first_day
-
-    while current <= last_day:
-
-        yield current
-
-        current += timedelta(
-            days=1
-        )
-
-
-# =========================================================
-# PROCESS ONE MONTH
-# =========================================================
-
-def process_month(year, month):
-
-    month_name = datetime(
-        year,
-        month,
-        1
-    ).strftime("%b")
-
-    output_dir = (
-        Path("monthly_data")
-        / str(year)
-    )
-
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True
-    )
-
-    output_file = (
-        output_dir
-        / f"MTD_{month_name}_{str(year)[-2:]}.csv"
-    )
+def process_dynamic_range():
+    today = date.today()
+    yesterday = today - timedelta(days=1)
 
     print("\n" + "=" * 80)
-    print(
-        f"📅 PROCESSING {month_name.upper()} {year}"
-    )
-    print(
-        f"📄 OUTPUT: {output_file}"
-    )
+    print(f"📅 CHECKING DATES TO UPDATE UP TO YESTERDAY ({yesterday})")
+    print("=" * 80)
+
+    # Default start month: September 2026
+    start_year = 2026
+    start_month = 9
+    start_date = date(start_year, start_month, 1)
+
+    # Scan existing monthly data to find max fetched date
+    month_dir = Path("monthly_data") / str(start_year)
+    month_name = start_date.strftime("%b")
+    mtd_file = month_dir / f"MTD_{month_name}_{str(start_year)[-2:]}.csv"
+
+    existing_df = pd.DataFrame()
+
+    if mtd_file.exists():
+        try:
+            existing_df = pd.read_csv(mtd_file, low_memory=False)
+            if not existing_df.empty and "Date" in existing_df.columns:
+                existing_df["Date_dt"] = pd.to_datetime(existing_df["Date"])
+                max_date = existing_df["Date_dt"].max().date()
+                print(f"ℹ️ Found existing MTD file. Max recorded date: {max_date}")
+                
+                # Fetch starting from last available date (rewind 1 day to ensure full close)
+                start_date = max_date - timedelta(days=1)
+                existing_df = existing_df.drop(columns=["Date_dt"])
+        except Exception as err:
+            print(f"⚠️ Could not parse existing CSV: {err}")
+
+    if start_date > yesterday:
+        print("✅ All data is up to date! No missing days to fetch.")
+        return True
+
+    # Generate daily list
+    days_to_fetch = []
+    curr = start_date
+    while curr <= yesterday:
+        days_to_fetch.append(curr)
+        curr += timedelta(days=1)
+
+    print(f"📥 Dates to Fetch ({len(days_to_fetch)} days): {days_to_fetch[0]} → {days_to_fetch[-1]}")
+
+    monthly_raw = []
+    for day in days_to_fetch:
+        day_df = fetch_day(day)
+        if day_df is not None and not day_df.empty:
+            monthly_raw.append(day_df)
+
+    if not monthly_raw:
+        print("⚠️ No raw data returned for selected date range.")
+        return False
+
+    raw_combined = pd.concat(monthly_raw, ignore_index=True)
+    new_summary = standardize_month(raw_combined)
+
+    if new_summary.empty:
+        print("⚠️ No CLOSED orders found for selected date range.")
+        return False
+
+    # Merge with existing file if available
+    if not existing_df.empty:
+        combined_df = pd.concat([existing_df, new_summary], ignore_index=True)
+        dedup_cols = ["Brand Name", "Date", "Branch", "Source", "Session"]
+        final_df = combined_df.drop_duplicates(subset=dedup_cols, keep="last")
+    else:
+        final_df = new_summary
+
+    final_df = final_df.sort_values(["Date", "Branch", "Brand Name"]).reset_index(drop=True)
+
+    # Ensure output directory exists
+    month_dir.mkdir(parents=True, exist_ok=True)
+    final_df.to_csv(mtd_file, index=False)
+
+    print("\n" + "=" * 80)
+    print("✅ FILE UPDATED SUCCESSFULLY:", mtd_file)
+    print("Total Rows:", len(final_df))
+    print("Date Range:", final_df["Date"].min(), "→", final_df["Date"].max())
+    print("Total Net Sales:", round(pd.to_numeric(final_df["Net Sales"], errors="coerce").sum(), 2))
     print("=" * 80)
 
     # -----------------------------------------------------
-    # Fetch a one-day buffer on both sides.
-    #
-    # Business day is:
-    #   08:00 AM -> next day 05:30 AM
-    #
-    # Therefore:
-    #   - Month-start business data can contain
-    #     transactions from the previous calendar day
-    #     between 00:00 and 05:30.
-    #   - Month-end business data can contain
-    #     transactions from the next calendar day
-    #     between 00:00 and 05:30.
-    #
-    # Example:
-    #   Aug-31 business day requires Sep-01 00:00-05:30.
+    # ALSO UPDATE LIGHTWEIGHT SUMMARY CSV
     # -----------------------------------------------------
+    summary_path = Path("historical_data/historical_sales_summary.csv")
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
 
-    monthly_raw = []
+    summary_cols = ["Branch", "Date", "Source", "Brand Name"]
+    new_summary_light = final_df.groupby(summary_cols, as_index=False)["Net Sales"].sum()
 
-    first_day = date(
-        year,
-        month,
-        1
-    )
-
-    if month == 12:
-        next_month_first = date(
-            year + 1,
-            1,
-            1
-        )
+    if summary_path.exists():
+        try:
+            old_summary = pd.read_csv(summary_path)
+            full_summary = pd.concat([old_summary, new_summary_light], ignore_index=True)
+            full_summary = full_summary.drop_duplicates(subset=summary_cols, keep="last")
+        except Exception:
+            full_summary = new_summary_light
     else:
-        next_month_first = date(
-            year,
-            month + 1,
-            1
-        )
+        full_summary = new_summary_light
 
-    last_day = (
-        next_month_first
-        - timedelta(days=1)
-    )
-
-    fetch_start = (
-        first_day
-        - timedelta(days=1)
-    )
-
-    fetch_end = (
-        last_day
-        + timedelta(days=1)
-    )
-
-    days = []
-
-    current = fetch_start
-
-    while current <= fetch_end:
-        days.append(current)
-        current += timedelta(days=1)
-
-    print(
-        "Business Month :",
-        first_day,
-        "→",
-        last_day
-    )
-
-    print(
-        "API Fetch Range:",
-        fetch_start,
-        "→",
-        fetch_end
-    )
-
-    print(
-        "Days to fetch:",
-        len(days)
-    )
-
-    for day_index, day in enumerate(
-        days,
-        start=1
-    ):
-
-        print(
-            f"\n[{day_index}/{len(days)}] "
-            f"{day}"
-        )
-
-        day_df = fetch_day(
-            day
-        )
-
-        if (
-            day_df is not None
-            and not day_df.empty
-        ):
-
-            monthly_raw.append(
-                day_df
-            )
-
-    if not monthly_raw:
-
-        print(
-            f"⚠️ No data returned for "
-            f"{month_name} {year}"
-        )
-
-        return False
-
-    raw_month_df = pd.concat(
-        monthly_raw,
-        ignore_index=True
-    )
-
-    print(
-        "\n📦 Raw monthly rows:",
-        len(raw_month_df)
-    )
-
-    # -----------------------------------------------------
-    # Standardize
-    # -----------------------------------------------------
-
-    monthly_df = standardize_month(
-        raw_month_df
-    )
-
-    if monthly_df.empty:
-
-        print(
-            f"⚠️ No CLOSED data for "
-            f"{month_name} {year}"
-        )
-
-        return False
-
-    # -----------------------------------------------------
-    # Keep only business dates belonging to this month.
-    #
-    # This prevents the 00:00–05:30 business-date rollover
-    # from placing a transaction into the previous month file
-    # incorrectly.
-    # -----------------------------------------------------
-
-    monthly_df["_Date"] = pd.to_datetime(
-        monthly_df["Date"]
-    )
-
-    monthly_df = monthly_df[
-        (
-            monthly_df["_Date"].dt.year
-            == year
-        )
-        &
-        (
-            monthly_df["_Date"].dt.month
-            == month
-        )
-    ].copy()
-
-    monthly_df = monthly_df.drop(
-        columns="_Date"
-    )
-
-    # -----------------------------------------------------
-    # Remove duplicates
-    # -----------------------------------------------------
-
-    monthly_df = (
-        monthly_df
-        .drop_duplicates()
-        .reset_index(drop=True)
-    )
-
-    # -----------------------------------------------------
-    # Save
-    # -----------------------------------------------------
-
-    monthly_df.to_csv(
-        output_file,
-        index=False
-    )
-
-    # -----------------------------------------------------
-    # Verification
-    # -----------------------------------------------------
-
-    check_df = pd.read_csv(
-        output_file,
-        low_memory=False
-    )
-
-    expected_columns = [
-        "Brand Name",
-        "Date",
-        "Week",
-        "Branch",
-        "Source",
-        "Session",
-        "Store Type",
-        "Region",
-        "Net Sales",
-        "Discount",
-        "Taxes",
-        "Gross Sales",
-        "Quantity",
-        "Orders",
-        "Dis %",
-        "AOV",
-        "AOV Bucket",
-        "Discount Bucket"
-    ]
-
-    if check_df.columns.tolist() != expected_columns:
-
-        raise RuntimeError(
-            f"❌ Column structure mismatch in "
-            f"{output_file}\n"
-            f"Expected: {expected_columns}\n"
-            f"Actual: {check_df.columns.tolist()}"
-        )
-
-    print(
-        "\n✅ MONTH SAVED:",
-        output_file
-    )
-
-    print(
-        "Rows:",
-        len(check_df)
-    )
-
-    print(
-        "Date:",
-        check_df["Date"].min(),
-        "→",
-        check_df["Date"].max()
-    )
-
-    print(
-        "Net Sales:",
-        round(
-            pd.to_numeric(
-                check_df["Net Sales"],
-                errors="coerce"
-            ).sum(),
-            2
-        )
-    )
-
-    print(
-        "Quantity:",
-        round(
-            pd.to_numeric(
-                check_df["Quantity"],
-                errors="coerce"
-            ).sum(),
-            2
-        )
-    )
-
-    print(
-        "Orders:",
-        round(
-            pd.to_numeric(
-                check_df["Orders"],
-                errors="coerce"
-            ).sum(),
-            2
-        )
-    )
+    full_summary.to_csv(summary_path, index=False)
+    print(f"✅ Updated lightweight summary CSV at: {summary_path}")
 
     return True
 
 
 # =========================================================
-# MAIN
+# MAIN EXECUTION
 # =========================================================
 
-success = []
-failed = []
-
-for year, month in BACKFILL_MONTHS:
-
+if __name__ == "__main__":
     try:
-
-        result = process_month(
-            year,
-            month
-        )
-
-        if result:
-            success.append(
-                f"{year}-{month:02d}"
-            )
-        else:
-            failed.append(
-                f"{year}-{month:02d}"
-            )
-
+        success = process_dynamic_range()
+        print("\n" + "=" * 80)
+        print("🏁 PROCESS COMPLETED SUCCESSFULLY")
+        print("=" * 80)
     except Exception as exc:
-
-        print(
-            "\n❌ MONTH FAILED:",
-            f"{year}-{month:02d}"
-        )
-
-        print(
-            "Reason:",
-            repr(exc)
-        )
-
-        failed.append(
-            f"{year}-{month:02d}"
-        )
-
-        # Continue to the next month rather than losing
-        # the complete backfill because of one month.
-        continue
-
-
-# =========================================================
-# FINAL REPORT
-# =========================================================
-
-print("\n" + "=" * 80)
-print("🏁 HISTORICAL BACKFILL COMPLETED")
-print("=" * 80)
-
-print("\n✅ Successful Months:")
-
-for month in success:
-    print(
-        "   ",
-        month
-    )
-
-print("\n❌ Failed / Empty Months:")
-
-if failed:
-
-    for month in failed:
-        print(
-            "   ",
-            month
-        )
-
-else:
-
-    print(
-        "    None"
-    )
-
-print("\n📂 CSV folders created under:")
-print("    monthly_data/2025/")
-print("    monthly_data/2026/")
-
-print("\n📌 Requested months were fetched/rebuilt:")
-for year, month in BACKFILL_MONTHS:
-    print(f"    {year}-{month:02d}")
-print("=" * 80)
-
-if failed:
-
-    print(
-        "\n⚠️ Backfill finished with failed months."
-        " Review the logs and rerun only those months."
-    )
-else:
-
-    print(
-        "\n🎉 All requested historical months completed."
-    )
-
-
-import pandas as pd
-
-# Assume 'df' is your final combined DataFrame before saving to .gz
-# -----------------------------------------------------------------
-
-# 1. Group by key dimensions to keep the summary lightweight
-summary_cols = ['branch_name', 'date', 'source', 'brand_name']  # Adjust column names as per your dataset
-net_sales_col = 'net_amount'                                   # Adjust to your net sales column name
-
-summary_df = df.groupby(summary_cols, as_index=False)[net_sales_col].sum()
-
-# 2. Save the lightweight summary CSV
-summary_csv_path = "historical_data/historical_sales_summary.csv"
-summary_df.to_csv(summary_csv_path, index=False)
-print(f"Successfully updated summary CSV at: {summary_csv_path}")
+        print("\n❌ EXECUTION FAILED:", repr(exc))
