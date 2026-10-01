@@ -36,16 +36,14 @@ def run_flask():
     flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 # ---------------------------------------------------------
-# AUTHORIZED USERS DIRECTORY & SECURITY DATABASE
+# AUTHORIZED USERS DIRECTORY
 # ---------------------------------------------------------
 AUTHORIZED_USERS = {
-    # Full Admin Access
     "mis2@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
     "mis3@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
     "faraz@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
     "vivek@frozenbottle.in": {"role": "admin", "allowed_stores": "ALL"},
 
-    # Area Managers & Territory Managers
     "am.chennai@frozenbottle.in": {
         "role": "area_manager",
         "allowed_stores": ["Guduvanchery", "Mudichur", "OMR", "Pallikaranai", "Thoraipakkam", "Urapakkam CK", "Velachery"]
@@ -180,7 +178,6 @@ def fetch_data():
     """Fetches sales data dynamically from GitHub and local files."""
     dfs = []
 
-    # 1. Fetch Remote Summary CSV from GitHub
     try:
         resp = requests.get(GITHUB_CSV_URL, timeout=12)
         if resp.status_code == 200:
@@ -190,7 +187,6 @@ def fetch_data():
     except Exception as e:
         logger.warning(f"Could not fetch GitHub CSV: {e}")
 
-    # 2. Fetch Local Monthly CSV Files
     local_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/runner/work/**/*.csv", recursive=True))))
     target_cols = ['Date', 'date', 'Brand Name', 'Brand', 'brand', 'Branch', 'Store', 'branch', 'Store Type', 'Region', 'Source', 'source', 'Session', 'Net Sales', 'net_sales', 'net_amount', 'Orders', 'Discount', 'Gross Sales']
 
@@ -229,9 +225,9 @@ def fetch_data():
     df['Brand Name'] = df.get('Brand Name', 'Frozen Bottle').astype(str).str.strip()
     df['Branch'] = df.get('Branch', 'Unknown').astype(str).str.strip()
     df['Source'] = df.get('Source', 'Unknown').astype(str).str.strip()
-    if 'Store Type' in df: df['Store Type'] = df['Store Type'].astype(str).str.strip()
-    if 'Region' in df: df['Region'] = df['Region'].astype(str).str.strip()
-    if 'Session' in df: df['Session'] = df['Session'].astype(str).str.strip()
+    df['Store Type'] = df.get('Store Type', 'COCO').astype(str).str.strip()
+    df['Region'] = df.get('Region', 'General').astype(str).str.strip()
+    df['Session'] = df.get('Session', 'All Day').astype(str).str.strip()
 
     for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
         if num_col in df:
@@ -272,26 +268,6 @@ DIM_COL_MAP = {
     'Discount Bucket': 'Discount Bucket'
 }
 
-def generate_store_split_pivot(df_filtered, sec_dim_col, months, primary_dim='Store'):
-    df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
-    if df_eval.empty:
-        return pd.DataFrame()
-
-    is_store_prim = primary_dim in ['Store', 'Branch']
-    idx_cols = ['Branch', sec_dim_col] if is_store_prim and sec_dim_col != 'Branch' else [sec_dim_col]
-
-    piv = pd.pivot_table(df_eval, index=idx_cols, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
-    
-    if len(piv.columns) >= 2:
-        c1, c2 = piv.columns[-2], piv.columns[-1]
-        piv['MoM Growth %'] = np.where(piv[c1] > 0, ((piv[c2] - piv[c1]) / piv[c1]) * 100, 0.0)
-        
-    piv['Total Sales (Lacs)'] = piv[[c for c in piv.columns if c != 'MoM Growth %']].sum(axis=1)
-    
-    if is_store_prim and sec_dim_col != 'Branch':
-        return piv.sort_values(by=['Branch', 'Total Sales (Lacs)'], ascending=[True, False])
-    return piv.sort_values(by=['Total Sales (Lacs)'], ascending=False)
-
 def get_filtered_data(filters_dict, timeframe, user_config):
     df = refresh_global_data()
 
@@ -303,15 +279,29 @@ def get_filtered_data(filters_dict, timeframe, user_config):
         allowed_clean = [str(s).strip().lower() for s in allowed_stores]
         df = df[df['Branch'].str.strip().str.lower().isin(allowed_clean)]
 
-    if filters_dict.get('Store Type') and filters_dict['Store Type'] != 'ALL':
-        df = df[df['Store Type'].str.strip().str.lower() == filters_dict['Store Type'].strip().lower()]
+    # Store Type Filter
+    st_val = filters_dict.get('Store Type')
+    if st_val and st_val != 'ALL':
+        df = df[df['Store Type'].str.strip().str.lower() == st_val.strip().lower()]
 
-    for k, col in DIM_COL_MAP.items():
-        sel = filters_dict.get(k, set())
-        if sel and 'ALL' not in sel and col in df.columns:
-            sel_clean = [str(s).strip().lower() for s in sel]
-            df = df[df[col].astype(str).str.strip().str.lower().isin(sel_clean)]
-    
+    # Region Filter
+    reg_set = filters_dict.get('Region', set())
+    if reg_set and 'ALL' not in reg_set:
+        reg_clean = [str(r).strip().lower() for r in reg_set]
+        df = df[df['Region'].str.strip().str.lower().isin(reg_clean)]
+
+    # Store Filter
+    store_set = filters_dict.get('Store', set())
+    if store_set and 'ALL' not in store_set:
+        st_clean = [str(s).strip().lower() for s in store_set]
+        df = df[df['Branch'].str.strip().str.lower().isin(st_clean)]
+
+    # Brand Filter
+    brand_set = filters_dict.get('Brand', set())
+    if brand_set and 'ALL' not in brand_set:
+        b_clean = [str(b).strip().lower() for b in brand_set]
+        df = df[df['Brand Name'].str.strip().str.lower().isin(b_clean)]
+
     avail = sorted(df['YearMonth'].dropna().unique().tolist())
     if not avail:
         return df, pd.DataFrame(), []
@@ -332,61 +322,101 @@ def get_filtered_data(filters_dict, timeframe, user_config):
     
     return df, df[df['YearMonth'].isin(months)].copy(), months
 
-def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
-    if df_eval.empty or dim_col not in df_eval.columns:
+# ---------------------------------------------------------
+# COMPREHENSIVE SUMMARY DASHBOARD BUILDER
+# ---------------------------------------------------------
+def build_comprehensive_summary(df_eval, timeframe):
+    if df_eval.empty:
         return "⚠️ **No data available for the selected parameters.**"
 
-    df_calc = df_eval.copy()
-    grouped = df_calc.groupby(dim_col).agg({
-        'Net Sales': 'sum',
-        'Orders': 'sum'
-    }).reset_index()
+    # Overall Metrics
+    net_sales = df_eval['Net Sales'].sum()
+    gross_sales = df_eval.get('Gross Sales', df_eval['Net Sales']).sum()
+    discount = df_eval.get('Discount', 0).sum()
+    disc_pct = (discount / gross_sales * 100) if gross_sales > 0 else 0.0
+    orders = df_eval['Orders'].sum()
+    aov = (net_sales * 100000.0 / orders) if orders > 0 else 0.0
 
-    grouped = grouped.sort_values(by='Net Sales', ascending=False)
+    lines = []
+    lines.append(f"📊 **SALES PERFORMANCE SUMMARY ({timeframe})**")
+    lines.append("="*34)
+    lines.append(f"💰 **Total Net Sales:** ₹{net_sales:,.2f} Lacs")
+    lines.append(f"🏷️ **Gross Sales:** ₹{gross_sales:,.2f} Lacs")
+    lines.append(f"🔴 **Discount:** ₹{discount:,.2f} Lacs ({disc_pct:.1f}%)")
+    lines.append(f"🛒 **Total Orders:** {orders:,}")
+    lines.append(f"💵 **AOV:** ₹{aov:,.2f}")
+    lines.append("")
 
-    lines = [f"📊 **Performance Summary in Lacs ({dim_name} | {timeframe})**\n"]
-    lines.append("`" + f"{dim_name[:12]:<12} | Net Sales (Lacs)`")
-    lines.append("`" + "-"*32 + "`")
+    # 1. Top Stores Summary
+    if 'Branch' in df_eval.columns:
+        st_grp = df_eval.groupby('Branch')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
+        lines.append("🏬 **Top Stores (Net Sales in Lacs):**")
+        for _, r in st_grp.head(5).iterrows():
+            lines.append(f" • `{r['Branch'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
+        lines.append("")
 
-    for _, r in grouped.head(10).iterrows():
-        name = str(r[dim_col])[:12]
-        sales = f"₹{r['Net Sales']:.2f}L"
-        lines.append(f"`{name:<12} | {sales:<10}`")
+    # 2. Region Summary
+    if 'Region' in df_eval.columns:
+        reg_grp = df_eval.groupby('Region')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
+        lines.append("🗺️️ **Region Breakdown:**")
+        for _, r in reg_grp.iterrows():
+            lines.append(f" • `{r['Region'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
+        lines.append("")
 
-    tot_sales = grouped['Net Sales'].sum()
-    lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f} Lacs")
+    # 3. Brand Summary
+    if 'Brand Name' in df_eval.columns:
+        b_grp = df_eval.groupby('Brand Name')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
+        lines.append("🏷️ **Brand Breakdown:**")
+        for _, r in b_grp.iterrows():
+            lines.append(f" • `{r['Brand Name'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
+        lines.append("")
+
+    # 4. Source Summary
+    if 'Source' in df_eval.columns:
+        src_grp = df_eval.groupby('Source')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
+        lines.append("🌐 **Source / Channel Summary:**")
+        for _, r in src_grp.iterrows():
+            lines.append(f" • `{r['Source'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
+        lines.append("")
+
+    # 5. Session Summary
+    if 'Session' in df_eval.columns:
+        ses_grp = df_eval.groupby('Session')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
+        lines.append("🕒 **Session Summary:**")
+        for _, r in ses_grp.iterrows():
+            lines.append(f" • `{r['Session'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
+
     return "\n".join(lines)
 
-def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
+def build_multi_sheet_excel(df_filtered, months):
     out = BytesIO()
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
-    is_store_prim = primary_dim in ['Store', 'Branch']
-
     sections = [
         ("Store Summary", "Branch"),
+        ("Region Summary", "Region"),
         ("Brand Summary", "Brand Name"),
         ("Source Summary", "Source"),
-        ("Session Summary", "Session"),
-        ("AOV Bucket Summary", "AOV Bucket"),
-        ("Discount Bucket Summary", "Discount Bucket")
+        ("Session Summary", "Session")
     ]
 
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True)
 
     for sheet_title, dim_col in sections:
-        piv = generate_store_split_pivot(df_filtered, dim_col, months, primary_dim)
+        if df_filtered.empty or dim_col not in df_filtered.columns:
+            continue
+
+        df_eval = df_filtered[df_filtered['YearMonth'].isin(months)].copy()
+        piv = pd.pivot_table(df_eval, index=dim_col, columns='YearMonth', values='Net Sales', aggfunc='sum', fill_value=0)
+        piv['Total Sales (Lacs)'] = piv.sum(axis=1)
+        piv = piv.sort_values(by='Total Sales (Lacs)', ascending=False)
+
         ws = wb.create_sheet(title=sheet_title)
-        
         ws.append([f"{sheet_title} Report (in ₹ Lacs)"])
         ws.cell(1, 1).font = Font(size=14, bold=True, color="1F4E78")
         ws.append([])
-
-        if piv.empty:
-            ws.append(["No data available"])
-            continue
 
         reset_piv = piv.reset_index()
         headers = list(reset_piv.columns)
@@ -399,24 +429,7 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
             cell.alignment = Alignment(horizontal="center")
 
         for r in reset_piv.values:
-            row_vals = []
-            for val in r:
-                if isinstance(val, (float, np.floating, int, np.integer)):
-                    row_vals.append(round(float(val), 2))
-                else:
-                    row_vals.append(val)
-            ws.append(row_vals)
-
-        sum_row = ["Total Summary (Lacs)"]
-        if is_store_prim and dim_col != 'Branch':
-            sum_row.append("")
-
-        for c in piv.columns:
-            if c == 'MoM Growth %':
-                sum_row.append("-")
-            else:
-                sum_row.append(round(float(piv[c].sum()), 2))
-        ws.append(sum_row)
+            ws.append([round(float(v), 2) if isinstance(v, (float, np.floating, int, np.integer)) else v for v in r])
 
         for col in ws.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
@@ -426,40 +439,14 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
     out.seek(0)
     return out
 
-def build_pptx(df_filtered, months, primary_dim, timeframe):
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
-    blank_layout = prs.slide_layouts[6]
-    
-    s1 = prs.slides.add_slide(blank_layout)
-    bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
-    bg1.fill.solid()
-    bg1.fill.fore_color.rgb = RGBColor(31, 78, 120)
-    
-    tb = s1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
-    p = tb.text_frame.paragraphs[0]
-    p.text = "Executive Performance Overview"
-    p.font.size = Pt(40)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(255, 255, 255)
-    
-    p2 = tb.text_frame.add_paragraph()
-    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Figures in ₹ Lacs"
-    p2.font.size = Pt(20)
-    p2.font.color.rgb = RGBColor(200, 220, 240)
-
-    out = BytesIO()
-    prs.save(out)
-    out.seek(0)
-    return out
-
-# UI Menus with "BACK" buttons at every step
+# ---------------------------------------------------------
+# DYNAMIC UI MENUS WITH STEP-BY-STEP BACK BUTTONS
+# ---------------------------------------------------------
 def get_main_menu():
     kb = [
         [InlineKeyboardButton("🏷️ Brand", callback_data="p_Brand"), InlineKeyboardButton("🏬 Store", callback_data="p_Store")],
         [InlineKeyboardButton("🗺️ Region", callback_data="p_Region"), InlineKeyboardButton("🌐 Source", callback_data="p_Source")],
-        [InlineKeyboardButton("🕒 Session", callback_data="p_Session"), InlineKeyboardButton("💰 AOV Bucket", callback_data="p_AOV Bucket")],
-        [InlineKeyboardButton("🏷️ Discount Bucket", callback_data="p_Discount Bucket")]
+        [InlineKeyboardButton("🕒 Session", callback_data="p_Session"), InlineKeyboardButton("💰 AOV Bucket", callback_data="p_AOV Bucket")]
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -472,27 +459,76 @@ def get_store_type_menu():
     ]
     return InlineKeyboardMarkup(kb)
 
-def get_filter_menu(dim_name, selected_set):
-    col = DIM_COL_MAP[dim_name]
-    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist()) if GLOBAL_DF is not None and col in GLOBAL_DF.columns else []
+def get_region_menu(selected_regions):
+    regions = sorted(GLOBAL_DF['Region'].dropna().unique().tolist()) if GLOBAL_DF is not None else []
     kb = []
     
-    all_mark = "✅ " if "ALL" in selected_set or not selected_set else ""
-    kb.append([InlineKeyboardButton(f"{all_mark}ALL Options", callback_data=f"fl_{dim_name}_ALL")])
+    all_mark = "✅ " if "ALL" in selected_regions or not selected_regions else ""
+    kb.append([InlineKeyboardButton(f"{all_mark}ALL Regions", callback_data="reg_ALL")])
     
     row = []
-    for opt in opts[:10]:
-        mark = "✅ " if opt in selected_set else ""
-        row.append(InlineKeyboardButton(f"{mark}{opt}", callback_data=f"fl_{dim_name}_{opt}"))
+    for r in regions:
+        mark = "✅ " if r in selected_regions else ""
+        row.append(InlineKeyboardButton(f"{mark}{r}", callback_data=f"reg_{r}"))
         if len(row) == 2:
             kb.append(row)
             row = []
     if row:
         kb.append(row)
-        
+
     kb.append([
         InlineKeyboardButton("🔙 Back to Store Type", callback_data="back_to_store_type"),
-        InlineKeyboardButton("➡️ Continue to Timeframe", callback_data="step_timeframe")
+        InlineKeyboardButton("➡️ Select Store List", callback_data="step_store_list")
+    ])
+    return InlineKeyboardMarkup(kb)
+
+def get_store_list_menu(selected_regions, selected_stores):
+    df_temp = GLOBAL_DF.copy() if GLOBAL_DF is not None else pd.DataFrame()
+    if selected_regions and "ALL" not in selected_regions and 'Region' in df_temp.columns:
+        df_temp = df_temp[df_temp['Region'].isin(selected_regions)]
+
+    stores = sorted(df_temp['Branch'].dropna().unique().tolist()) if not df_temp.empty else []
+    kb = []
+
+    all_mark = "✅ " if "ALL" in selected_stores or not selected_stores else ""
+    kb.append([InlineKeyboardButton(f"{all_mark}ALL Stores in Region", callback_data="str_ALL")])
+
+    row = []
+    for s in stores[:14]:  # Show top stores
+        mark = "✅ " if s in selected_stores else ""
+        row.append(InlineKeyboardButton(f"{mark}{s[:14]}", callback_data=f"str_{s}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+
+    kb.append([
+        InlineKeyboardButton("🔙 Back to Region", callback_data="back_to_region"),
+        InlineKeyboardButton("➡️ Select Brand Filters", callback_data="step_brand_filter")
+    ])
+    return InlineKeyboardMarkup(kb)
+
+def get_brand_menu(selected_brands):
+    brands = sorted(GLOBAL_DF['Brand Name'].dropna().unique().tolist()) if GLOBAL_DF is not None else []
+    kb = []
+
+    all_mark = "✅ " if "ALL" in selected_brands or not selected_brands else ""
+    kb.append([InlineKeyboardButton(f"{all_mark}ALL Brands", callback_data="brd_ALL")])
+
+    row = []
+    for b in brands:
+        mark = "✅ " if b in selected_brands else ""
+        row.append(InlineKeyboardButton(f"{mark}{b}", callback_data=f"brd_{b}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+
+    kb.append([
+        InlineKeyboardButton("🔙 Back to Store List", callback_data="step_store_list"),
+        InlineKeyboardButton("➡️ Select Timeframe", callback_data="step_timeframe")
     ])
     return InlineKeyboardMarkup(kb)
 
@@ -501,12 +537,12 @@ def get_timeframe_menu():
         [InlineKeyboardButton("📅 Current Month", callback_data="tf_Current Month"), InlineKeyboardButton("📅 Last Month", callback_data="tf_Last Month")],
         [InlineKeyboardButton("📊 Last 2 Months", callback_data="tf_Last 2 Months"), InlineKeyboardButton("📈 Quarterly", callback_data="tf_Quarterly")],
         [InlineKeyboardButton("📉 Half-Yearly", callback_data="tf_Half-Yearly"), InlineKeyboardButton("📅 Yearly", callback_data="tf_Yearly")],
-        [InlineKeyboardButton("🔙 Back to Filters", callback_data="back_to_filters")]
+        [InlineKeyboardButton("🔙 Back to Brands", callback_data="step_brand_filter")]
     ]
     return InlineKeyboardMarkup(kb)
 
 # ---------------------------------------------------------
-# Telegram Handlers
+# TELEGRAM HANDLERS & NAVIGATION ROUTING
 # ---------------------------------------------------------
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
@@ -520,7 +556,11 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    c.user_data['filters'] = {}
+    c.user_data['filters'] = {
+        'Region': set(),
+        'Store': set(),
+        'Brand': set()
+    }
     user_config = SESSION_CACHE[user_id]
     
     store_info = "All Stores" if user_config['allowed_stores'] == "ALL" else ", ".join(user_config['allowed_stores'])
@@ -534,36 +574,115 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    user_id = u.effective_user.id
-    user_email = SESSION_CACHE.get(user_id, {}).get('email') or c.user_data.get('pending_email')
-
-    if not user_email:
-        await u.message.reply_text("Please send your registered email ID first using /start.")
+async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
+    q = u.callback_query
+    await q.answer()
+    user_id = q.from_user.id
+    
+    if user_id not in SESSION_CACHE or not SESSION_CACHE[user_id].get("authenticated"):
+        await q.message.reply_text("🔒 **Access Denied.** Please log in using /start.")
         return
 
-    new_passcode = generate_random_password(8)
-    USER_PASSWORDS[user_email] = {
-        "hash": hash_pass(new_passcode),
-        "plain": new_passcode
-    }
-    
-    status_msg = await u.message.reply_text("🔄 Resending passcode to your email...")
-    email_sent = await asyncio.to_thread(send_access_email, user_email, new_passcode)
+    data = q.data
+    user_config = SESSION_CACHE[user_id]
 
-    if email_sent:
-        await status_msg.edit_text(
-            f"🔑 **New Passcode Sent!**\n\n"
-            f"A fresh code has been sent to `{user_email}`.\n"
-            f"Please check your inbox/spam folder and enter it here:",
-            parse_mode="Markdown"
-        )
-    else:
-        await status_msg.edit_text(
-            f"⚠️ **Email Delivery Failed**\n\n"
-            f"Passcode generated: `{new_passcode}`",
-            parse_mode="Markdown"
-        )
+    if 'filters' not in c.user_data:
+        c.user_data['filters'] = {'Region': set(), 'Store': set(), 'Brand': set()}
+
+    # STEP 1: DIMENSION SELECTION
+    if data.startswith("p_"):
+        c.user_data['prim'] = data.split("_")[1]
+        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
+
+    elif data == "back_to_main":
+        await q.edit_message_text("Select Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
+
+    # STEP 2: STORE TYPE SELECTION
+    elif data.startswith("st_"):
+        c.user_data['filters']['Store Type'] = data.split("_")[1]
+        curr_regs = c.user_data['filters'].get('Region', set())
+        await q.edit_message_text("🗺️ **Select Region(s):**", reply_markup=get_region_menu(curr_regs), parse_mode="Markdown")
+
+    elif data == "back_to_store_type":
+        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
+
+    # STEP 3: REGION SELECTION
+    elif data.startswith("reg_"):
+        val = data.split("_", 1)[1]
+        if val == "ALL":
+            c.user_data['filters']['Region'] = {"ALL"}
+        else:
+            c.user_data['filters']['Region'].discard("ALL")
+            if val in c.user_data['filters']['Region']:
+                c.user_data['filters']['Region'].remove(val)
+            else:
+                c.user_data['filters']['Region'].add(val)
+        await q.edit_message_reply_markup(reply_markup=get_region_menu(c.user_data['filters']['Region']))
+
+    elif data == "step_store_list":
+        curr_stores = c.user_data['filters'].get('Store', set())
+        curr_regs = c.user_data['filters'].get('Region', set())
+        await q.edit_message_text("🏬 **Select Stores related to Selected Region(s):**", reply_markup=get_store_list_menu(curr_regs, curr_stores), parse_mode="Markdown")
+
+    elif data == "back_to_region":
+        curr_regs = c.user_data['filters'].get('Region', set())
+        await q.edit_message_text("🗺️ **Select Region(s):**", reply_markup=get_region_menu(curr_regs), parse_mode="Markdown")
+
+    # STEP 4: STORE SELECTION
+    elif data.startswith("str_"):
+        val = data.split("_", 1)[1]
+        if val == "ALL":
+            c.user_data['filters']['Store'] = {"ALL"}
+        else:
+            c.user_data['filters']['Store'].discard("ALL")
+            if val in c.user_data['filters']['Store']:
+                c.user_data['filters']['Store'].remove(val)
+            else:
+                c.user_data['filters']['Store'].add(val)
+        curr_regs = c.user_data['filters'].get('Region', set())
+        await q.edit_message_reply_markup(reply_markup=get_store_list_menu(curr_regs, c.user_data['filters']['Store']))
+
+    # STEP 5: BRAND SELECTION
+    elif data == "step_brand_filter":
+        curr_brands = c.user_data['filters'].get('Brand', set())
+        await q.edit_message_text("🏷️ **Select Brand Filter:**", reply_markup=get_brand_menu(curr_brands), parse_mode="Markdown")
+
+    elif data.startswith("brd_"):
+        val = data.split("_", 1)[1]
+        if val == "ALL":
+            c.user_data['filters']['Brand'] = {"ALL"}
+        else:
+            c.user_data['filters']['Brand'].discard("ALL")
+            if val in c.user_data['filters']['Brand']:
+                c.user_data['filters']['Brand'].remove(val)
+            else:
+                c.user_data['filters']['Brand'].add(val)
+        await q.edit_message_reply_markup(reply_markup=get_brand_menu(c.user_data['filters']['Brand']))
+
+    # STEP 6: TIMEFRAME SELECTION
+    elif data == "step_timeframe":
+        await q.edit_message_text("📅 **Select Timeframe:**", reply_markup=get_timeframe_menu(), parse_mode="Markdown")
+
+    # STEP 7: SUMMARY & EXPORT SCREEN
+    elif data.startswith("tf_"):
+        tf = data.split("_")[1]
+        c.user_data['timeframe'] = tf
+
+        df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
+        c.user_data['df_eval'] = df_eval
+        c.user_data['months'] = months
+
+        summary_text = build_comprehensive_summary(df_eval, tf)
+        kb = [
+            [InlineKeyboardButton("📄 Download Excel", callback_data="dl_xls")],
+            [InlineKeyboardButton("🔙 Change Parameters", callback_data="step_timeframe"), InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
+        ]
+
+        await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+    elif data == "dl_xls":
+        doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"FrozenBottle_Sales_Summary.xlsx")
 
 async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
@@ -577,7 +696,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if stage == 'AWAITING_EMAIL' or "@" in text:
         email = text.lower()
         if email not in AUTHORIZED_USERS:
-            await u.message.reply_text("⛔ **Access Denied:** Email address is not authorized. Contact your Operations Lead.")
+            await u.message.reply_text("⛔ **Access Denied:** Email address is not authorized.")
             return
 
         c.user_data['pending_email'] = email
@@ -627,7 +746,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
             await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.", parse_mode="Markdown")
             await start(u, c)
         else:
-            await u.message.reply_text("❌ **Incorrect Passcode.** Please check your email and try again or use /forgotpassword.", parse_mode="Markdown")
+            await u.message.reply_text("❌ **Incorrect Passcode.** Please check your email and try again.", parse_mode="Markdown")
         return
 
     await u.message.reply_text(
@@ -635,100 +754,6 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         "Please enter your **registered corporate email address** to continue:",
         parse_mode="Markdown"
     )
-
-async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
-    q = u.callback_query
-    await q.answer()
-    user_id = q.from_user.id
-    
-    if user_id not in SESSION_CACHE or not SESSION_CACHE[user_id].get("authenticated"):
-        await q.message.reply_text("🔒 **Access Denied.** Please log in using /start.")
-        return
-
-    data = q.data
-    user_config = SESSION_CACHE[user_id]
-    
-    # STEP 1: PRIMARY DIMENSION
-    if data.startswith("p_"):
-        c.user_data['prim'] = data.split("_")[1]
-        c.user_data['filters'] = {}
-        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
-        
-    # BACK BUTTON: BACK TO MAIN DIMENSIONS
-    elif data == "back_to_main":
-        await q.edit_message_text("Select Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
-
-    # STEP 2: STORE TYPE
-    elif data.startswith("st_"):
-        c.user_data['filters']['Store Type'] = data.split("_")[1]
-        dims = [d for d in ['Brand', 'Region', 'Source', 'Session'] if d != c.user_data.get('prim')]
-        first_dim = dims[0]
-        c.user_data['active_filter_dim'] = first_dim
-        await q.edit_message_text(f"🔍 **Filter by {first_dim}:**", reply_markup=get_filter_menu(first_dim, set()), parse_mode="Markdown")
-
-    # BACK BUTTON: BACK TO STORE TYPE
-    elif data == "back_to_store_type":
-        await q.edit_message_text("🏬 **Select Store Type:**", reply_markup=get_store_type_menu(), parse_mode="Markdown")
-
-    # STEP 3: FILTER SELECTION
-    elif data.startswith("fl_"):
-        _, dim, val = data.split("_", 2)
-        if dim not in c.user_data['filters']:
-            c.user_data['filters'][dim] = set()
-            
-        if val == "ALL":
-            c.user_data['filters'][dim] = {"ALL"}
-        else:
-            c.user_data['filters'][dim].discard("ALL")
-            if val in c.user_data['filters'][dim]:
-                c.user_data['filters'][dim].remove(val)
-            else:
-                c.user_data['filters'][dim].add(val)
-                
-        await q.edit_message_reply_markup(reply_markup=get_filter_menu(dim, c.user_data['filters'][dim]))
-
-    # STEP 4: TIMEFRAME
-    elif data == "step_timeframe":
-        await q.edit_message_text("📅 **Select Timeframe:**", reply_markup=get_timeframe_menu(), parse_mode="Markdown")
-
-    # BACK BUTTON: BACK TO FILTERS
-    elif data == "back_to_filters":
-        active_dim = c.user_data.get('active_filter_dim', 'Brand')
-        curr_filters = c.user_data['filters'].get(active_dim, set())
-        await q.edit_message_text(f"🔍 **Filter by {active_dim}:**", reply_markup=get_filter_menu(active_dim, curr_filters), parse_mode="Markdown")
-
-    # STEP 5: EXECUTE AND DISPLAY SUMMARY
-    elif data.startswith("tf_"):
-        tf = data.split("_")[1]
-        c.user_data['timeframe'] = tf
-        
-        df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
-        prim_dim_name = c.user_data.get('prim', 'Store')
-        prim_col = DIM_COL_MAP[prim_dim_name]
-        
-        c.user_data['df_eval'] = df_eval
-        c.user_data['months'] = months
-        
-        summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
-        kb = [
-            [InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")],
-            [InlineKeyboardButton("🔙 Change Parameters", callback_data="step_timeframe"), InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
-        ]
-        
-        await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-        
-    elif data == "dl_xls":
-        doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'])
-        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Store_Split_Report.xlsx")
-
-    elif data == "dl_ppt":
-        doc = build_pptx(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'], c.user_data['timeframe'])
-        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Presentation.pptx")
-
-async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
-    if "Conflict" in str(c.error):
-        return
-    logger.error("Error encountered:", exc_info=c.error)
 
 if __name__ == '__main__':
     threading.Thread(target=run_flask, daemon=True).start()
@@ -740,16 +765,8 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(token).build()
     
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("forgotpassword", forgot_password_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
-    app.add_error_handler(error_handler)
 
-    print("📊 Password-Protected Analytics Bot Online...")
-    
-    app.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES,
-        poll_interval=1.0,
-        timeout=30
-    )
+    print("📊 Analytics Bot Online...")
+    app.run_polling(drop_pending_updates=True, poll_interval=1.0)
