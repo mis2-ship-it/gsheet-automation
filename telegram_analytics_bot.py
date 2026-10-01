@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime, timedelta
+from io import BytesIO
 from email.message import EmailMessage
 from flask import Flask
 
@@ -25,7 +26,7 @@ from pptx.chart.data import CategoryChartData
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask Web Server for Health Check
+# Flask Web Server
 flask_app = Flask(__name__)
 @flask_app.route('/')
 @flask_app.route('/health')
@@ -141,7 +142,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
           <h2 style="color: #1F4E78; text-align: center;">Frozen Bottle Analytics</h2>
           <p>Hello,</p>
-          <p>Your passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
+          <p>Your single-use passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
           <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
             <span style="font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #1F4E78;">{passcode}</span>
           </div>
@@ -172,29 +173,29 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         return False
 
 # ---------------------------------------------------------
-# Dynamic Remote GitHub & Local Parquet Data Loader
+# Dynamic Remote GitHub & Local Dataset Loader
 # ---------------------------------------------------------
 GITHUB_CSV_URL = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales_summary.csv"
 
-def fetch_and_optimize_data():
-    """Fetch live data from GitHub CSV summary + local CSV files to guarantee newest months."""
+def optimize_and_cache_data():
+    """Fetches real-time CSV data from GitHub + local directory files including September 2026."""
     dfs = []
 
-    # 1. Fetch Remote Sales Summary from GitHub
+    # 1. Read Remote GitHub Summary File
     try:
-        resp = requests.get(GITHUB_CSV_URL, timeout=12)
+        resp = requests.get(GITHUB_CSV_URL, timeout=10)
         if resp.status_code == 200:
             gh_df = pd.read_csv(io.StringIO(resp.text))
             dfs.append(gh_df)
-            logger.info("Successfully loaded GitHub historical summary CSV.")
+            logger.info("Successfully fetched live GitHub sales summary CSV.")
     except Exception as e:
         logger.warning(f"Could not load GitHub CSV: {e}")
 
-    # 2. Fetch Local CSV Files
-    local_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
+    # 2. Read Local Directory CSV Files
+    all_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
     target_cols = ['Date', 'date', 'Brand Name', 'Brand', 'brand', 'Branch', 'Store', 'branch', 'Store Type', 'Region', 'Source', 'source', 'Session', 'Net Sales', 'net_sales', 'net_amount', 'Orders', 'Discount', 'Gross Sales']
 
-    for f in local_csvs:
+    for f in all_csvs:
         try:
             s_df = pd.read_csv(f, nrows=1)
             v_cols = [c for c in target_cols if c in s_df.columns]
@@ -205,13 +206,12 @@ def fetch_and_optimize_data():
             continue
 
     if not dfs:
-        raise ValueError("No sales data available from GitHub or local storage.")
+        raise FileNotFoundError("No sales dataset found locally or on GitHub.")
 
-    # Combine and Normalize
     df = pd.concat(dfs, ignore_index=True)
 
-    # Column Mapping Standardization
-    col_rename = {
+    # Standardize Column Names
+    col_map = {
         'date': 'Date',
         'branch': 'Branch',
         'store': 'Branch',
@@ -222,17 +222,12 @@ def fetch_and_optimize_data():
         'net_sales': 'Net Sales',
         'net_amount': 'Net Sales'
     }
-    df.rename(columns=col_rename, inplace=True)
+    df.rename(columns=col_map, inplace=True)
 
-    # Parse Dates
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
     df = df.dropna(subset=['Date'])
 
-    # Cut off data at Yesterday to keep reporting accurate
-    yesterday = datetime.now() - timedelta(days=1)
-    df = df[df['Date'] <= yesterday]
-
-    # Category Conversions
+    # Category Formats
     df['Brand Name'] = df.get('Brand Name', 'Frozen Bottle').astype(str).astype('category')
     df['Branch'] = df.get('Branch', 'Unknown').astype(str).astype('category')
     df['Source'] = df.get('Source', 'Unknown').astype(str).astype('category')
@@ -243,7 +238,7 @@ def fetch_and_optimize_data():
     for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
         if num_col in df:
             df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0).astype('float32')
-            # Normalize to Lacs if raw rupees
+            # Standardize raw rupees into Lacs
             if df[num_col].max() > 10000:
                 df[num_col] = df[num_col] / 100000.0
 
@@ -263,7 +258,7 @@ def fetch_and_optimize_data():
 
     return df
 
-GLOBAL_DF = fetch_and_optimize_data()
+GLOBAL_DF = optimize_and_cache_data()
 
 DIM_COL_MAP = {
     'Brand': 'Brand Name',
@@ -352,8 +347,6 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
         return "No data available for the selected parameters."
 
     df_calc = df_eval.copy()
-    df_calc['Is_Offline'] = df_calc['Source'].astype(str).str.lower().isin(['in store', 'pos', 'offline'])
-
     grouped = df_calc.groupby(dim_col).agg({
         'Net Sales': 'sum',
         'Orders': 'sum'
@@ -365,7 +358,7 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     lines.append("`" + f"{dim_name[:12]:<12} | Net Sales (Lacs)`")
     lines.append("`" + "-"*32 + "`")
 
-    for _, r in grouped.head(10).iterrows():
+    for _, r in grouped.head(8).iterrows():
         name = str(r[dim_col])[:12]
         sales = f"₹{r['Net Sales']:.2f}L"
         lines.append(f"`{name:<12} | {sales:<10}`")
@@ -375,7 +368,7 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
     return "\n".join(lines)
 
 def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
-    out = io.BytesIO()
+    out = BytesIO()
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -442,6 +435,33 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 14)
 
     wb.save(out)
+    out.seek(0)
+    return out
+
+def build_pptx(df_filtered, months, primary_dim, timeframe):
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
+    blank_layout = prs.slide_layouts[6]
+    
+    s1 = prs.slides.add_slide(blank_layout)
+    bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
+    bg1.fill.solid()
+    bg1.fill.fore_color.rgb = RGBColor(31, 78, 120)
+    
+    tb = s1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
+    p = tb.text_frame.paragraphs[0]
+    p.text = "Executive Performance Overview"
+    p.font.size = Pt(40)
+    p.font.bold = True
+    p.font.color.rgb = RGBColor(255, 255, 255)
+    
+    p2 = tb.text_frame.add_paragraph()
+    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Figures in ₹ Lacs"
+    p2.font.size = Pt(20)
+    p2.font.color.rgb = RGBColor(200, 220, 240)
+
+    out = BytesIO()
+    prs.save(out)
     out.seek(0)
     return out
 
@@ -548,7 +568,7 @@ async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     else:
         await status_msg.edit_text(
             f"⚠️ **Email Delivery Failed**\n\n"
-            f"Testing passcode: `{new_passcode}`",
+            f"Passcode generated: `{new_passcode}`",
             parse_mode="Markdown"
         )
 
@@ -561,7 +581,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await start(u, c)
         return
 
-    # Stage 1: Check Email
+    # Stage 1: Email Check
     if stage == 'AWAITING_EMAIL' or "@" in text:
         email = text.lower()
         if email not in AUTHORIZED_USERS:
@@ -596,7 +616,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['login_stage'] = 'AWAITING_PASSWORD'
         return
 
-    # Stage 2: Validate Passcode
+    # Stage 2: Passcode Validation
     if stage == 'AWAITING_PASSWORD':
         email = c.user_data.get('pending_email')
         if not email or email not in USER_PASSWORDS:
@@ -678,13 +698,19 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         c.user_data['months'] = months
         
         summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
-        kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls")]]
+        kb = [
+            [InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]
+        ]
         
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         
     elif data == "dl_xls":
         doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'])
         await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Store_Split_Report.xlsx")
+
+    elif data == "dl_ppt":
+        doc = build_pptx(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'], c.user_data['timeframe'])
+        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Presentation.pptx")
 
 async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
     if "Conflict" in str(c.error):
