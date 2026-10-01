@@ -1,8 +1,8 @@
-import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib, asyncio
+import glob, os, gc, threading, logging, re, secrets, hashlib, smtplib, asyncio, io
 import pandas as pd
 import numpy as np
-from datetime import datetime
-from io import BytesIO
+import requests
+from datetime import datetime, timedelta
 from email.message import EmailMessage
 from flask import Flask
 
@@ -25,7 +25,7 @@ from pptx.chart.data import CategoryChartData
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask Web Server
+# Flask Web Server for Health Check
 flask_app = Flask(__name__)
 @flask_app.route('/')
 @flask_app.route('/health')
@@ -120,15 +120,11 @@ def generate_random_password(length=8):
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 def send_access_email(user_email: str, passcode: str) -> bool:
-    """Sends HTML passcode email via SMTP_SSL (Port 465)."""
-    # Use SSL Port 465 as default for higher reliability on cloud hosters
+    """Sends HTML passcode email via SMTP."""
     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", 587))
     smtp_email = os.environ.get("SMTP_EMAIL", "mis2@frozenbottle.in")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "nfyx nyqp dpyb hlig")
-
-    # Strip spaces from App Passwords just in case
-    smtp_password = smtp_password.replace(" ", "")
+    smtp_password = os.environ.get("SMTP_PASSWORD", "nfyx nyqp dpyb hlig").replace(" ", "")
 
     if not all([smtp_email, smtp_password]):
         logger.warning("SMTP credentials missing.")
@@ -145,7 +141,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         <div style="max-width: 500px; margin: auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
           <h2 style="color: #1F4E78; text-align: center;">Frozen Bottle Analytics</h2>
           <p>Hello,</p>
-          <p>Your single-use passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
+          <p>Your passcode for the <strong>Analytics Telegram Bot</strong> is:</p>
           <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 6px; margin: 20px 0;">
             <span style="font-size: 26px; font-weight: bold; letter-spacing: 4px; color: #1F4E78;">{passcode}</span>
           </div>
@@ -158,7 +154,7 @@ def send_access_email(user_email: str, passcode: str) -> bool:
     msg.add_alternative(html_content, subtype='html')
 
     try:
-        if smtp_port == 587:
+        if smtp_port == 465:
             with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=15) as server:
                 server.login(smtp_email, smtp_password)
                 server.send_message(msg)
@@ -176,70 +172,99 @@ def send_access_email(user_email: str, passcode: str) -> bool:
         return False
 
 # ---------------------------------------------------------
-# Parquet Data Loader & Memory Optimization
+# Dynamic Remote GitHub & Local Parquet Data Loader
 # ---------------------------------------------------------
-DB_CACHE_FILE = "cached_dataset.parquet"
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/mis2-ship-it/gsheet-automation/main/historical_data/historical_sales_summary.csv"
 
-def optimize_and_cache_data():
-    if os.path.exists(DB_CACHE_FILE):
-        return pd.read_parquet(DB_CACHE_FILE)
+def fetch_and_optimize_data():
+    """Fetch live data from GitHub CSV summary + local CSV files to guarantee newest months."""
+    dfs = []
 
-    all_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
-    if not all_csvs: 
-        raise FileNotFoundError("No historical CSV files found!")
+    # 1. Fetch Remote Sales Summary from GitHub
+    try:
+        resp = requests.get(GITHUB_CSV_URL, timeout=12)
+        if resp.status_code == 200:
+            gh_df = pd.read_csv(io.StringIO(resp.text))
+            dfs.append(gh_df)
+            logger.info("Successfully loaded GitHub historical summary CSV.")
+    except Exception as e:
+        logger.warning(f"Could not load GitHub CSV: {e}")
 
-    target_cols = ['Date', 'Brand Name', 'Brand', 'Branch', 'Store', 'Store Type', 'Region', 'Source', 'Session', 'Net Sales', 'Orders', 'Discount', 'Gross Sales']
-    
-    parquet_parts = []
-    for f in all_csvs:
+    # 2. Fetch Local CSV Files
+    local_csvs = sorted(list(set(glob.glob("**/*.csv", recursive=True) + glob.glob("/home/RaviMallappa/**/*.csv", recursive=True))))
+    target_cols = ['Date', 'date', 'Brand Name', 'Brand', 'brand', 'Branch', 'Store', 'branch', 'Store Type', 'Region', 'Source', 'source', 'Session', 'Net Sales', 'net_sales', 'net_amount', 'Orders', 'Discount', 'Gross Sales']
+
+    for f in local_csvs:
         try:
             s_df = pd.read_csv(f, nrows=1)
             v_cols = [c for c in target_cols if c in s_df.columns]
-            df_part = pd.read_csv(f, usecols=v_cols, low_memory=True)
-
-            df_part['Date'] = pd.to_datetime(df_part['Date'], errors='coerce')
-            df_part = df_part.dropna(subset=['Date'])
-            if df_part.empty:
-                continue
-
-            df_part['Brand Name'] = df_part.get('Brand Name', df_part.get('Brand', 'Unknown')).astype(str).astype('category')
-            df_part['Branch'] = df_part.get('Branch', df_part.get('Store', 'Unknown')).astype(str).astype('category')
-            df_part['Source'] = df_part.get('Source', 'Unknown').astype(str).astype('category')
-            if 'Store Type' in df_part: df_part['Store Type'] = df_part['Store Type'].astype(str).astype('category')
-            if 'Region' in df_part: df_part['Region'] = df_part['Region'].astype(str).astype('category')
-            if 'Session' in df_part: df_part['Session'] = df_part['Session'].astype(str).astype('category')
-
-            for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
-                df_part[num_col] = (pd.to_numeric(df_part.get(num_col, 0), errors='coerce').fillna(0.0) / 100000.0).astype('float32')
-            df_part['Orders'] = pd.to_numeric(df_part.get('Orders', 0), errors='coerce').fillna(0).astype('int32')
-
-            parquet_parts.append(df_part)
-            del df_part
-            gc.collect()
+            if v_cols:
+                df_part = pd.read_csv(f, usecols=v_cols, low_memory=False)
+                dfs.append(df_part)
         except Exception:
             continue
 
-    if not parquet_parts:
-        raise ValueError("No valid data could be processed from CSVs.")
+    if not dfs:
+        raise ValueError("No sales data available from GitHub or local storage.")
 
-    df = pd.concat(parquet_parts, ignore_index=True)
-    del parquet_parts
-    gc.collect()
+    # Combine and Normalize
+    df = pd.concat(dfs, ignore_index=True)
+
+    # Column Mapping Standardization
+    col_rename = {
+        'date': 'Date',
+        'branch': 'Branch',
+        'store': 'Branch',
+        'Store': 'Branch',
+        'brand': 'Brand Name',
+        'Brand': 'Brand Name',
+        'source': 'Source',
+        'net_sales': 'Net Sales',
+        'net_amount': 'Net Sales'
+    }
+    df.rename(columns=col_rename, inplace=True)
+
+    # Parse Dates
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df = df.dropna(subset=['Date'])
+
+    # Cut off data at Yesterday to keep reporting accurate
+    yesterday = datetime.now() - timedelta(days=1)
+    df = df[df['Date'] <= yesterday]
+
+    # Category Conversions
+    df['Brand Name'] = df.get('Brand Name', 'Frozen Bottle').astype(str).astype('category')
+    df['Branch'] = df.get('Branch', 'Unknown').astype(str).astype('category')
+    df['Source'] = df.get('Source', 'Unknown').astype(str).astype('category')
+    if 'Store Type' in df: df['Store Type'] = df['Store Type'].astype(str).astype('category')
+    if 'Region' in df: df['Region'] = df['Region'].astype(str).astype('category')
+    if 'Session' in df: df['Session'] = df['Session'].astype(str).astype('category')
+
+    for num_col in ['Net Sales', 'Gross Sales', 'Discount']:
+        if num_col in df:
+            df[num_col] = pd.to_numeric(df[num_col], errors='coerce').fillna(0.0).astype('float32')
+            # Normalize to Lacs if raw rupees
+            if df[num_col].max() > 10000:
+                df[num_col] = df[num_col] / 100000.0
+
+    if 'Orders' not in df:
+        df['Orders'] = 1
+    df['Orders'] = pd.to_numeric(df['Orders'], errors='coerce').fillna(1).astype('int32')
 
     df['YearMonth'] = df['Date'].dt.strftime('%Y-%m').astype('category')
     df['MonthLabel'] = df['Date'].dt.strftime('%b %Y').astype('category')
 
     raw_sales_inr = df['Net Sales'] * 100000.0
     df['Calc_AOV'] = np.where(df['Orders'] > 0, raw_sales_inr / df['Orders'], 0.0).astype('float32')
-    df['Calc_Disc_Pct'] = np.where(df['Gross Sales'] > 0, (df['Discount'] / df['Gross Sales']) * 100, 0.0).astype('float32')
+    df['Calc_Disc_Pct'] = np.where(df.get('Gross Sales', 0) > 0, (df.get('Discount', 0) / df.get('Gross Sales', 1)) * 100, 0.0).astype('float32')
 
     df['AOV Bucket'] = pd.cut(df['Calc_AOV'], bins=[-np.inf, 200, 400, 600, 800, np.inf], labels=['< ₹200', '₹200 - ₹400', '₹400 - ₹600', '₹600 - ₹800', '> ₹800'])
     df['Discount Bucket'] = pd.cut(df['Calc_Disc_Pct'], bins=[-np.inf, 5, 15, 25, 35, np.inf], labels=['0 - 5%', '5 - 15%', '15 - 25%', '25 - 35%', '> 35%'])
 
-    df.to_parquet(DB_CACHE_FILE, compression='snappy')
     return df
 
-GLOBAL_DF = optimize_and_cache_data()
+GLOBAL_DF = fetch_and_optimize_data()
+
 DIM_COL_MAP = {
     'Brand': 'Brand Name',
     'Region': 'Region',
@@ -311,7 +336,6 @@ def get_filtered_data(filters_dict, timeframe, user_config):
     elif timeframe == "Last Month":
         months = [avail[-2]] if len(avail) >= 2 else [avail[-1]]
     else:
-        completed_months = avail[:-1] if len(avail) > 1 else avail
         tf_map = {
             "Last 2 Months": 2,
             "Quarterly": 3,
@@ -319,7 +343,7 @@ def get_filtered_data(filters_dict, timeframe, user_config):
             "Yearly": 12
         }
         count = tf_map.get(timeframe, 3)
-        months = completed_months[-count:]
+        months = avail[-count:]
     
     return df, df[df['YearMonth'].isin(months)].copy(), months
 
@@ -328,45 +352,30 @@ def build_telegram_summary(df_eval, dim_col, dim_name, timeframe):
         return "No data available for the selected parameters."
 
     df_calc = df_eval.copy()
-    df_calc['Is_Offline'] = df_calc['Source'] == 'In Store'
+    df_calc['Is_Offline'] = df_calc['Source'].astype(str).str.lower().isin(['in store', 'pos', 'offline'])
 
     grouped = df_calc.groupby(dim_col).agg({
         'Net Sales': 'sum',
-        'Gross Sales': 'sum',
-        'Discount': 'sum',
         'Orders': 'sum'
     }).reset_index()
-
-    offline_grp = df_calc[df_calc['Is_Offline']].groupby(dim_col)['Orders'].sum().rename('Offline_Orders')
-    online_grp = df_calc[~df_calc['Is_Offline']].groupby(dim_col)['Orders'].sum().rename('Online_Orders')
-
-    grouped = grouped.merge(offline_grp, on=dim_col, how='left').fillna({'Offline_Orders': 0})
-    grouped = grouped.merge(online_grp, on=dim_col, how='left').fillna({'Online_Orders': 0})
-
-    grouped['Disc%'] = np.where(grouped['Gross Sales'] > 0, (grouped['Discount'] / grouped['Gross Sales']) * 100, 0.0)
-    grouped['Offline%'] = np.where(grouped['Orders'] > 0, (grouped['Offline_Orders'] / grouped['Orders']) * 100, 0.0)
-    grouped['Online%'] = np.where(grouped['Orders'] > 0, (grouped['Online_Orders'] / grouped['Orders']) * 100, 0.0)
 
     grouped = grouped.sort_values(by='Net Sales', ascending=False)
 
     lines = [f"📊 **Performance Summary in Lacs ({dim_name} | {timeframe})**\n"]
-    lines.append("`" + f"{dim_name[:10]:<10} | Sales  | Disc% | Off%  | On%`")
-    lines.append("`" + "-"*42 + "`")
+    lines.append("`" + f"{dim_name[:12]:<12} | Net Sales (Lacs)`")
+    lines.append("`" + "-"*32 + "`")
 
-    for _, r in grouped.head(8).iterrows():
-        name = str(r[dim_col])[:10]
+    for _, r in grouped.head(10).iterrows():
+        name = str(r[dim_col])[:12]
         sales = f"₹{r['Net Sales']:.2f}L"
-        disc = f"{r['Disc%']:.1f}%"
-        off = f"{r['Offline%']:.0f}%"
-        on = f"{r['Online%']:.0f}%"
-        lines.append(f"`{name:<10} | {sales:<6} | {disc:<5} | {off:<4} | {on:<4}`")
+        lines.append(f"`{name:<12} | {sales:<10}`")
 
     tot_sales = grouped['Net Sales'].sum()
     lines.append("\n" + f"💰 **Total Period Net Sales:** ₹{tot_sales:,.2f} Lacs")
     return "\n".join(lines)
 
 def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
-    out = BytesIO()
+    out = io.BytesIO()
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
 
@@ -428,137 +437,11 @@ def build_multi_sheet_excel(df_filtered, months, primary_dim='Store'):
                 sum_row.append(round(float(piv[c].sum()), 2))
         ws.append(sum_row)
 
-        mom_col_idx = headers.index('MoM Growth %') + 1 if 'MoM Growth %' in headers else None
-
-        for r_idx, row in enumerate(ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=len(headers)), start=4):
-            for c_idx, cell in enumerate(row, start=1):
-                cell.border = border
-                if isinstance(cell.value, (int, float)):
-                    if mom_col_idx and c_idx == mom_col_idx:
-                        cell.number_format = '0.0"%"'
-                    else:
-                        cell.number_format = '₹#,##0.00'
-
         for col in ws.columns:
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max(max_len + 3, 14)
 
-    ws_raw = wb.create_sheet(title="Raw Data (Sales in Lacs)")
-    ws_raw.append(list(df_filtered.columns))
-    for r in df_filtered.head(5000).values:
-        ws_raw.append([str(x) if isinstance(x, pd.Timestamp) else x for x in r])
-
     wb.save(out)
-    out.seek(0)
-    return out
-
-def add_analysis_slide(prs, title, piv, dim_name):
-    if piv.empty:
-        return
-        
-    blank_layout = prs.slide_layouts[6]
-    slide = prs.slides.add_slide(blank_layout)
-    
-    tb_title = slide.shapes.add_textbox(Inches(0.6), Inches(0.4), Inches(12), Inches(0.6))
-    p_title = tb_title.text_frame.paragraphs[0]
-    p_title.text = f"{title} (in ₹ Lacs)"
-    p_title.font.size = Pt(24)
-    p_title.font.bold = True
-    p_title.font.color.rgb = RGBColor(31, 78, 120)
-
-    chart_data = CategoryChartData()
-    categories = list(piv.head(6).index.astype(str))
-    chart_data.categories = categories
-
-    month_cols = [c for c in piv.columns if c not in ['MoM Growth %', 'Total Sales (Lacs)']]
-    for m in month_cols:
-        series_vals = [round(float(v), 2) for v in piv.head(6)[m]]
-        chart_data.add_series(str(m), series_vals)
-
-    x, y, cx, cy = Inches(0.6), Inches(1.2), Inches(7.5), Inches(5.5)
-    chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, x, y, cx, cy, chart_data).chart
-    chart.has_legend = True
-    chart.legend.position = XL_LEGEND_POSITION.TOP
-    chart.plots[0].has_data_labels = True
-    
-    for series in chart.series:
-        for point in series.points:
-            dl = point.data_label
-            dl.font.size = Pt(8)
-            dl.number_format = '0.00'
-
-    tb_insight = slide.shapes.add_textbox(Inches(8.3), Inches(1.2), Inches(4.5), Inches(5.5))
-    tf = tb_insight.text_frame
-    tf.word_wrap = True
-    
-    p = tf.paragraphs[0]
-    p.text = "📌 Key Insights & Performance"
-    p.font.size = Pt(16)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(31, 78, 120)
-    
-    top_performer = piv.index[0]
-    top_sales = piv.iloc[0]['Total Sales (Lacs)']
-    p1 = tf.add_paragraph()
-    p1.text = f"• Top Contributor: {top_performer} with ₹{top_sales:.2f} Lacs net sales."
-    p1.font.size = Pt(12)
-    
-    if 'MoM Growth %' in piv.columns:
-        valid_growth = piv.dropna(subset=['MoM Growth %'])
-        if not valid_growth.empty:
-            highest_growth = valid_growth.sort_values(by='MoM Growth %', ascending=False).iloc[0]
-            lowest_growth = valid_growth.sort_values(by='MoM Growth %', ascending=True).iloc[0]
-            
-            p2 = tf.add_paragraph()
-            p2.text = f"• Highest Growth: {highest_growth.name} ({highest_growth['MoM Growth %']:+.1f}% MoM)."
-            p2.font.size = Pt(12)
-            
-            p3 = tf.add_paragraph()
-            p3.text = f"• Drop/Lagging Area: {lowest_growth.name} ({lowest_growth['MoM Growth %']:+.1f}% MoM)."
-            p3.font.size = Pt(12)
-
-    total_sales = piv['Total Sales (Lacs)'].sum()
-    top_3_contrib = (piv.head(3)['Total Sales (Lacs)'].sum() / total_sales * 100) if total_sales > 0 else 0
-    p4 = tf.add_paragraph()
-    p4.text = f"• Concentration: Top 3 {dim_name}s drive {top_3_contrib:.1f}% of total sales."
-    p4.font.size = Pt(12)
-
-def build_pptx(df_filtered, months, primary_dim, timeframe):
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.33), Inches(7.5)
-    blank_layout = prs.slide_layouts[6]
-    
-    s1 = prs.slides.add_slide(blank_layout)
-    bg1 = s1.shapes.add_shape(1, 0, 0, Inches(13.33), Inches(7.5))
-    bg1.fill.solid()
-    bg1.fill.fore_color.rgb = RGBColor(31, 78, 120)
-    
-    tb = s1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11.33), Inches(2))
-    p = tb.text_frame.paragraphs[0]
-    p.text = "Executive Performance Overview"
-    p.font.size = Pt(40)
-    p.font.bold = True
-    p.font.color.rgb = RGBColor(255, 255, 255)
-    
-    p2 = tb.text_frame.add_paragraph()
-    p2.text = f"Primary Focus: {primary_dim} | Timeframe: {timeframe} | Figures in ₹ Lacs"
-    p2.font.size = Pt(20)
-    p2.font.color.rgb = RGBColor(200, 220, 240)
-
-    dimensions = [
-        ("Brand Breakdown & Insights", "Brand Name", "Brand"),
-        ("Source Contribution & Insights", "Source", "Source"),
-        ("Session Performance & Insights", "Session", "Session"),
-        ("AOV Bucket Distribution", "AOV Bucket", "AOV Bucket"),
-        ("Discount Bucket Distribution", "Discount Bucket", "Discount Bucket")
-    ]
-
-    for title, dim_col, dim_name in dimensions:
-        piv = generate_pivot(df_filtered, dim_col, months)
-        add_analysis_slide(prs, title, piv, dim_name)
-
-    out = BytesIO()
-    prs.save(out)
     out.seek(0)
     return out
 
@@ -590,7 +473,7 @@ def get_timeframe_menu():
 
 def get_filter_menu(dim_name, selected_set):
     col = DIM_COL_MAP[dim_name]
-    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist())
+    opts = sorted(GLOBAL_DF[col].dropna().unique().tolist()) if col in GLOBAL_DF.columns else []
     kb = []
     
     all_mark = "✅ " if "ALL" in selected_set or not selected_set else ""
@@ -646,7 +529,6 @@ async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
         await u.message.reply_text("Please send your registered email ID first using /start.")
         return
 
-    # Generate fresh passcode
     new_passcode = generate_random_password(8)
     USER_PASSWORDS[user_email] = {
         "hash": hash_pass(new_passcode),
@@ -666,7 +548,7 @@ async def forgot_password_command(u: Update, c: ContextTypes.DEFAULT_TYPE):
     else:
         await status_msg.edit_text(
             f"⚠️ **Email Delivery Failed**\n\n"
-            f"Check SMTP settings. Testing code: `{new_passcode}`",
+            f"Testing passcode: `{new_passcode}`",
             parse_mode="Markdown"
         )
 
@@ -688,7 +570,6 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
 
         c.user_data['pending_email'] = email
 
-        # ALWAYS generate a fresh code upon entering an email
         generated_pwd = generate_random_password(8)
         USER_PASSWORDS[email] = {
             "hash": hash_pass(generated_pwd),
@@ -696,8 +577,6 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         }
         
         status_msg = await u.message.reply_text("📧 Sending access code to your email...")
-        
-        # Async non-blocking email dispatch
         email_sent = await asyncio.to_thread(send_access_email, email, generated_pwd)
 
         if email_sent:
@@ -710,7 +589,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         else:
             await status_msg.edit_text(
                 f"⚠️ **Passcode Generated (Email Delivery Failed)**\n\n"
-                f"Could not reach SMTP server. Use this code to log in: `{generated_pwd}`",
+                f"Use this code to log in: `{generated_pwd}`",
                 parse_mode="Markdown"
             )
 
@@ -794,24 +673,18 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         df_all, df_eval, months = get_filtered_data(c.user_data['filters'], tf, user_config)
         prim_dim_name = c.user_data['prim']
         prim_col = DIM_COL_MAP[prim_dim_name]
-        piv = generate_pivot(df_all, prim_col, months)
         
-        c.user_data['piv'] = piv
         c.user_data['df_eval'] = df_eval
         c.user_data['months'] = months
         
         summary_text = build_telegram_summary(df_eval, prim_col, prim_dim_name, tf)
-        kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls"), InlineKeyboardButton("📊 Export PPT", callback_data="dl_ppt")]]
+        kb = [[InlineKeyboardButton("📄 Export Excel", callback_data="dl_xls")]]
         
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
         
     elif data == "dl_xls":
         doc = build_multi_sheet_excel(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'])
         await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Store_Split_Report.xlsx")
-        
-    elif data == "dl_ppt":
-        doc = build_pptx(c.user_data['df_eval'], c.user_data['months'], c.user_data['prim'], c.user_data['timeframe'])
-        await c.bot.send_document(q.message.chat_id, doc, filename=f"Analytics_Presentation.pptx")
 
 async def error_handler(u: object, c: ContextTypes.DEFAULT_TYPE):
     if "Conflict" in str(c.error):
