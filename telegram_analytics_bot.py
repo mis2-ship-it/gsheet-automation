@@ -323,13 +323,12 @@ def get_filtered_data(filters_dict, timeframe, user_config):
     return df, df[df['YearMonth'].isin(months)].copy(), months
 
 # ---------------------------------------------------------
-# COMPREHENSIVE SUMMARY DASHBOARD BUILDER
+# SUMMARY DASHBOARD BUILDER
 # ---------------------------------------------------------
 def build_comprehensive_summary(df_eval, timeframe):
     if df_eval.empty:
         return "⚠️ **No data available for the selected parameters.**"
 
-    # Overall Metrics
     net_sales = df_eval['Net Sales'].sum()
     gross_sales = df_eval.get('Gross Sales', df_eval['Net Sales']).sum()
     discount = df_eval.get('Discount', 0).sum()
@@ -347,7 +346,6 @@ def build_comprehensive_summary(df_eval, timeframe):
     lines.append(f"💵 **AOV:** ₹{aov:,.2f}")
     lines.append("")
 
-    # 1. Top Stores Summary
     if 'Branch' in df_eval.columns:
         st_grp = df_eval.groupby('Branch')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
         lines.append("🏬 **Top Stores (Net Sales in Lacs):**")
@@ -355,15 +353,13 @@ def build_comprehensive_summary(df_eval, timeframe):
             lines.append(f" • `{r['Branch'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
         lines.append("")
 
-    # 2. Region Summary
     if 'Region' in df_eval.columns:
         reg_grp = df_eval.groupby('Region')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
-        lines.append("🗺️️ **Region Breakdown:**")
+        lines.append("🗺 **Region Breakdown:**")
         for _, r in reg_grp.iterrows():
             lines.append(f" • `{r['Region'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
         lines.append("")
 
-    # 3. Brand Summary
     if 'Brand Name' in df_eval.columns:
         b_grp = df_eval.groupby('Brand Name')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
         lines.append("🏷️ **Brand Breakdown:**")
@@ -371,15 +367,13 @@ def build_comprehensive_summary(df_eval, timeframe):
             lines.append(f" • `{r['Brand Name'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
         lines.append("")
 
-    # 4. Source Summary
     if 'Source' in df_eval.columns:
         src_grp = df_eval.groupby('Source')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
-        lines.append("🌐 **Source / Channel Summary:**")
+        lines.append("🌐 **Source Summary:**")
         for _, r in src_grp.iterrows():
             lines.append(f" • `{r['Source'][:15]:<15} : ₹{r['Net Sales']:.2f}L`")
         lines.append("")
 
-    # 5. Session Summary
     if 'Session' in df_eval.columns:
         ses_grp = df_eval.groupby('Session')['Net Sales'].sum().reset_index().sort_values(by='Net Sales', ascending=False)
         lines.append("🕒 **Session Summary:**")
@@ -440,7 +434,7 @@ def build_multi_sheet_excel(df_filtered, months):
     return out
 
 # ---------------------------------------------------------
-# DYNAMIC UI MENUS WITH STEP-BY-STEP BACK BUTTONS
+# STEP-BY-STEP MENUS WITH CLEAR BACK BUTTONS
 # ---------------------------------------------------------
 def get_main_menu():
     kb = [
@@ -455,7 +449,7 @@ def get_store_type_menu():
         [InlineKeyboardButton("🌐 ALL Types", callback_data="st_ALL")],
         [InlineKeyboardButton("🏬 FOFO", callback_data="st_FOFO"), InlineKeyboardButton("🏢 COCO", callback_data="st_COCO")],
         [InlineKeyboardButton("🤝 Partner", callback_data="st_Partner")],
-        [InlineKeyboardButton("🔙 Back to Dimensions", callback_data="back_to_main")]
+        [InlineKeyboardButton("🔙 Back to Main Menu", callback_data="back_to_main")]
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -494,7 +488,7 @@ def get_store_list_menu(selected_regions, selected_stores):
     kb.append([InlineKeyboardButton(f"{all_mark}ALL Stores in Region", callback_data="str_ALL")])
 
     row = []
-    for s in stores[:14]:  # Show top stores
+    for s in stores[:14]:
         mark = "✅ " if s in selected_stores else ""
         row.append(InlineKeyboardButton(f"{mark}{s[:14]}", callback_data=f"str_{s}"))
         if len(row) == 2:
@@ -537,13 +531,25 @@ def get_timeframe_menu():
         [InlineKeyboardButton("📅 Current Month", callback_data="tf_Current Month"), InlineKeyboardButton("📅 Last Month", callback_data="tf_Last Month")],
         [InlineKeyboardButton("📊 Last 2 Months", callback_data="tf_Last 2 Months"), InlineKeyboardButton("📈 Quarterly", callback_data="tf_Quarterly")],
         [InlineKeyboardButton("📉 Half-Yearly", callback_data="tf_Half-Yearly"), InlineKeyboardButton("📅 Yearly", callback_data="tf_Yearly")],
-        [InlineKeyboardButton("🔙 Back to Brands", callback_data="step_brand_filter")]
+        [InlineKeyboardButton("🔙 Back to Brand Filters", callback_data="step_brand_filter")]
     ]
     return InlineKeyboardMarkup(kb)
 
 # ---------------------------------------------------------
-# TELEGRAM HANDLERS & NAVIGATION ROUTING
+# TELEGRAM COMMANDS & CALLBACK ROUTING
 # ---------------------------------------------------------
+async def show_dimension_menu(message, user_config):
+    store_info = "All Stores" if user_config['allowed_stores'] == "ALL" else ", ".join(user_config['allowed_stores'])
+    await message.reply_text(
+        f"👋 **Welcome ({user_config['email']})**\n"
+        f"🔑 **Role:** `{user_config['role']}`\n"
+        f"🏬 **Scope:** `{store_info}`\n"
+        f"💰 **Figures:** `Values in ₹ Lacs`\n\n"
+        f"Select Primary Dimension:", 
+        reply_markup=get_main_menu(), 
+        parse_mode="Markdown"
+    )
+
 async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
     user_id = u.effective_user.id
     
@@ -556,23 +562,8 @@ async def start(u: Update, c: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    c.user_data['filters'] = {
-        'Region': set(),
-        'Store': set(),
-        'Brand': set()
-    }
-    user_config = SESSION_CACHE[user_id]
-    
-    store_info = "All Stores" if user_config['allowed_stores'] == "ALL" else ", ".join(user_config['allowed_stores'])
-    await u.message.reply_text(
-        f"👋 **Welcome ({user_config['email']})**\n"
-        f"🔑 **Role:** `{user_config['role']}`\n"
-        f"🏬 **Scope:** `{store_info}`\n"
-        f"💰 **Figures:** `Values in ₹ Lacs`\n\n"
-        f"Select Primary Dimension:", 
-        reply_markup=get_main_menu(), 
-        parse_mode="Markdown"
-    )
+    c.user_data['filters'] = {'Region': set(), 'Store': set(), 'Brand': set()}
+    await show_dimension_menu(u.message, SESSION_CACHE[user_id])
 
 async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     q = u.callback_query
@@ -597,7 +588,7 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
     elif data == "back_to_main":
         await q.edit_message_text("Select Primary Dimension:", reply_markup=get_main_menu(), parse_mode="Markdown")
 
-    # STEP 2: STORE TYPE SELECTION
+    # STEP 2: STORE TYPE
     elif data.startswith("st_"):
         c.user_data['filters']['Store Type'] = data.split("_")[1]
         curr_regs = c.user_data['filters'].get('Region', set())
@@ -659,11 +650,11 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
                 c.user_data['filters']['Brand'].add(val)
         await q.edit_message_reply_markup(reply_markup=get_brand_menu(c.user_data['filters']['Brand']))
 
-    # STEP 6: TIMEFRAME SELECTION
+    # STEP 6: TIMEFRAME
     elif data == "step_timeframe":
         await q.edit_message_text("📅 **Select Timeframe:**", reply_markup=get_timeframe_menu(), parse_mode="Markdown")
 
-    # STEP 7: SUMMARY & EXPORT SCREEN
+    # STEP 7: EXECUTE & DISPLAY
     elif data.startswith("tf_"):
         tf = data.split("_")[1]
         c.user_data['timeframe'] = tf
@@ -675,7 +666,7 @@ async def handle_callback(u: Update, c: ContextTypes.DEFAULT_TYPE):
         summary_text = build_comprehensive_summary(df_eval, tf)
         kb = [
             [InlineKeyboardButton("📄 Download Excel", callback_data="dl_xls")],
-            [InlineKeyboardButton("🔙 Change Parameters", callback_data="step_timeframe"), InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔙 Change Timeframe", callback_data="step_timeframe"), InlineKeyboardButton("🏠 Main Menu", callback_data="back_to_main")]
         ]
 
         await q.edit_message_text(f"{summary_text}\n\nChoose export format:", reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
@@ -720,7 +711,7 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
         else:
             await status_msg.edit_text(
                 f"⚠️ **Passcode Generated (Email Delivery Failed)**\n\n"
-                f"Use this code to log in: `{generated_pwd}`",
+                f"Could not reach SMTP server. Use this code to log in: `{generated_pwd}`",
                 parse_mode="Markdown"
             )
 
@@ -743,8 +734,8 @@ async def handle_text_messages(u: Update, c: ContextTypes.DEFAULT_TYPE):
             SESSION_CACHE[user_id]['authenticated'] = True
             c.user_data['login_stage'] = None
 
-            await u.message.reply_text("🔓 **Authentication Successful!** Access Granted.", parse_mode="Markdown")
-            await start(u, c)
+            await u.message.reply_text("🔓 **Authentication Successful! Access Granted.**", parse_mode="Markdown")
+            await show_dimension_menu(u.message, SESSION_CACHE[user_id])
         else:
             await u.message.reply_text("❌ **Incorrect Passcode.** Please check your email and try again.", parse_mode="Markdown")
         return
@@ -768,5 +759,5 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
 
-    print("📊 Analytics Bot Online...")
+    print("📊 Password-Protected Analytics Bot Online...")
     app.run_polling(drop_pending_updates=True, poll_interval=1.0)
