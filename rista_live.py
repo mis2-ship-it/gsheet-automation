@@ -4676,3 +4676,40 @@ except Exception as e:
 print(
     "🎉 TELEGRAM LIVE SALES PROCESS COMPLETED"
 )
+
+
+# =========================================================
+# 💾 EXPORT DASHBOARD JSON FOR VERCEL WEB PORTAL
+# =========================================================
+import json
+
+dashboard_payload = {
+    "timestamp": now.strftime("%d-%b-%Y %I:%M %p"),
+    "date": today,
+    "kpis": {
+        "todayNet": float(today_cut["Net Sales"].sum()),
+        "todayGross": float(today_cut["grossAmount"].sum()),
+        "todayDisc": float(today_cut["discountAmount"].sum()),
+        "todayTxn": int(len(today_cut)),
+        "lwNet": float(lastweek_cut["Net Sales"].sum()),
+        "lwGross": float(lastweek_cut["grossAmount"].sum()),
+        "lwDisc": float(lastweek_cut["discountAmount"].sum()),
+        "lwTxn": int(len(lastweek_cut)),
+        "l2wNet": float(last2week_cut["Net Sales"].sum()),
+        "momNet": float(month_on_month_cut["Net Sales"].sum()),
+        "lyNet": float(lastyear_cut["Net Sales"].sum())
+    },
+    "brandSummary": brand_summary.to_dict(orient="records"),
+    "sourceSummary": source_summary.to_dict(orient="records"),
+    "topStores": top_stores.to_dict(orient="records"),
+    "bottomStores": bottom_stores.to_dict(orient="records"),
+    "hourly": hourly_analysis.to_dict(orient="records"),
+    "dailyTrend": [
+        # You can append Oct MTD daily actuals here
+    ]
+}
+
+with open("live_sales_summary.json", "w") as f:
+    json.dump(dashboard_payload, f, indent=2)
+
+print("✅ live_sales_summary.json created successfully")
