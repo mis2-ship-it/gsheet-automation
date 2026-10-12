@@ -28,6 +28,14 @@ jobs:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
 
+      - name: Commit and push summary
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add live_sales_summary.json
+          git commit -m "Auto-update live sales summary" || exit 0
+          git push
+          
       - name: Install deps
         run: |
           pip install -r requirements.txt
