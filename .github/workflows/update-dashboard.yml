@@ -3,7 +3,7 @@ name: Update sales dashboard
 on:
   schedule:
     - cron: "0 */2 * * *"    # every 2 hours: live sales and ratings (use "*/30 * * * *" if the repo stays public)
-    - cron: "30 1 * * *"     # 07:00 IST every day: completed days (saved to the repo)
+    - cron: "30 1 * * *"     # 07:00 IST every day: completed days and hourly rows
   workflow_dispatch:
     inputs:
       mode:
@@ -12,7 +12,7 @@ on:
         required: false
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: dashboard
@@ -33,21 +33,32 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install pandas requests pyjwt gspread google-auth pillow
+        run: pip install pandas numpy requests pyjwt gspread google-auth pillow
+
+      # The daily and hourly files are kept in GitHub's cache, not in the repo, so the repo does not grow every night.
+      - name: Restore the saved sales files
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/new_sales.csv.gz
+            data/new_hourly.csv.gz
+          key: sales-data-${{ github.run_id }}
+          restore-keys: |
+            sales-data-
 
       - name: Completed days from Rista (nightly only)
         id: nightly
         if: github.event.schedule == '30 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'nightly')
-        run: python sync_sales.py --mode nightly --since 2026-09-01 --out data/new_sales.csv.gz
+        run: python sync_sales.py --mode nightly --since 2026-09-01 --out data/new_sales.csv.gz --hourly-out data/new_hourly.csv.gz
 
-      - name: Save completed days to the repo (nightly only)
+      - name: Save the sales files for later runs (nightly only)
         if: steps.nightly.outcome == 'success'
-        run: |
-          git config user.name "dashboard-bot"
-          git config user.email "dashboard-bot@users.noreply.github.com"
-          git add data/new_sales.csv.gz
-          git commit -m "Completed sales days up to yesterday" || echo "nothing to commit"
-          git push
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/new_sales.csv.gz
+            data/new_hourly.csv.gz
+          key: sales-data-${{ github.run_id }}
 
       - name: Today so far from Rista
         run: python sync_sales.py --mode live --out data/live_sales.csv
@@ -58,7 +69,8 @@ jobs:
       - name: Build dashboard data
         run: |
           EXTRA=""
-          if [ -f data/new_sales.csv.gz ]; then EXTRA="--new data/new_sales.csv.gz"; fi
+          if [ -f data/new_sales.csv.gz ]; then EXTRA="$EXTRA --new data/new_sales.csv.gz"; fi
+          if [ -f data/new_hourly.csv.gz ]; then EXTRA="$EXTRA --new-hourly data/new_hourly.csv.gz"; fi
           python build_site.py --history historical_data/historical_sales.csv.gz $EXTRA \
             --live data/live_sales.csv --ratings data/ratings.csv --out site/data
 
