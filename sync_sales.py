@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 
 import jwt
 import pandas as pd
-import requests
+import requests from zoneinfo import ZoneInfo
 
 RISTA = "https://api.ristaapps.com/v1"
 OUT_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region",
@@ -205,7 +205,7 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
     today_bd = business_day_now(now)
     if args.mode == "live":
         days = [today_bd.strftime("%Y-%m-%d")]
