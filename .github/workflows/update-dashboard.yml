@@ -2,8 +2,8 @@ name: Update sales dashboard
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # every 30 minutes: live sales and ratings
-    - cron: "30 1 * * *"     # 07:00 IST every day: completed days (also commits them)
+    - cron: "0 */2 * * *"    # every 2 hours: live sales and ratings (use "*/30 * * * *" if the repo stays public)
+    - cron: "30 1 * * *"     # 07:00 IST every day: completed days (saved to the repo)
   workflow_dispatch:
     inputs:
       mode:
@@ -33,15 +33,14 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install pandas requests pyjwt gspread google-auth
+        run: pip install pandas requests pyjwt gspread google-auth pillow
 
       - name: Completed days from Rista (nightly only)
         id: nightly
         if: github.event.schedule == '30 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'nightly')
-        run: |
-          python scripts/sync_sales.py --mode nightly --since 2026-09-01 --out data/new_sales.csv.gz
+        run: python sync_sales.py --mode nightly --since 2026-09-01 --out data/new_sales.csv.gz
 
-      - name: Commit completed days (nightly only)
+      - name: Save completed days to the repo (nightly only)
         if: steps.nightly.outcome == 'success'
         run: |
           git config user.name "dashboard-bot"
@@ -60,7 +59,7 @@ jobs:
         run: |
           EXTRA=""
           if [ -f data/new_sales.csv.gz ]; then EXTRA="--new data/new_sales.csv.gz"; fi
-          python scripts/build_site.py --history data/historical_sales.csv.gz $EXTRA \
+          python build_site.py --history historical_data/historical_sales.csv.gz $EXTRA \
             --live data/live_sales.csv --ratings data/ratings.csv --out site/data
 
       - name: Deploy to app.frozenbottle.com
