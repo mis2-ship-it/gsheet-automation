@@ -81,7 +81,8 @@ main { padding: 0 16px; }
 
 .block { padding: 20px 0 6px; border-bottom: 1px solid var(--line); }
 .block:last-child { border-bottom: 0; }
-h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.sub { color: var(--ink-2); font-size: 12px; margin-bottom: 10px; }
 .muted { color: var(--ink-2); font-size: 13px; }
 .chart { display: block; width: 100%; height: auto; }
 .axis { display: flex; justify-content: space-between; margin-top: 6px; color: var(--ink-2); font-size: 12px; }
@@ -89,20 +90,15 @@ h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
 
+.scroll { overflow-x: auto; margin: 0 -2px 8px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th, .tbl td { padding: 7px 6px; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl th { color: var(--ink-2); font-weight: 600; font-size: 11.5px; border-top: 0; padding-bottom: 6px; }
+.tbl td:first-child, .tbl th:first-child { text-align: left; }
+.tbl td:first-child, .tbl th:first-child { position: sticky; left: 0; background: var(--bg); z-index: 1; }
+.tbl tr.tot td { font-weight: 600; }
 .srow { padding: 12px 0; }
 .srow + .srow { border-top: 1px solid var(--line); }
-.sh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.sname { font-weight: 600; }
-.snet { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
-.smet { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 8px; font-size: 13px; color: var(--ink-2); }
-.mc i { display: block; font-style: normal; font-size: 12px; }
-.smet b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.share { height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 8px; }
-.share span { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
-
-.table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.table td { padding: 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
-.table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 
 .empty { margin-top: 16px; padding: 18px; border-radius: 14px; border: 1px dashed var(--line); }
 .empty p + p { margin-top: 8px; }
@@ -132,16 +128,17 @@ const SUBS = {
   rating: [["swiggy", "Swiggy"], ["zomato", "Zomato"], ["google", "Google"]]
 };
 const KIND_NAME = { daily: "Day", weekly: "Week", monthly: "Month" };
-const SRC_COLOR = ["#1F4E5A", "#E07A3F", "#C4413B", "#9AA7A4"];
+const SRC_COLOR = ["#1F4E5A", "#E07A3F", "#C4413B", "#9AA7A4", "#6B5B95"];
 const CHART_N = { daily: 30, weekly: 26, monthly: 12 };
 
 /* Row layouts (see scripts/build_site.py) */
-// sales: [day, store, brand, type, region, source, session, net_paise, gross_paise, disc_paise, orders]
+// sales:   [day, store, brand, type, region, source, session, net_paise, gross_paise, disc_paise, orders]
+// buckets: [day, brand, type, region, source, bucket, orders, net_paise]
 // ratings: [day, store, brand, type, region, platform, rated, rating_sum_x100, orders]
 
 /* ============ State ============ */
 const S = { top: "sales", sub: "daily", rkind: "daily", type: "all", brand: "all", region: "all", source: "all", session: "all", store: "all", sel: null };
-let M = null, ROLL = null, LIVE = null, RAT = null;
+let M = null, ROLL = null, LIVE = null, RAT = null, AOVB = null, DISCB = null;
 const STORE_ROWS = new Map();
 let DAY_WK = null, DAY_MON = null;
 
@@ -169,14 +166,22 @@ async function ensureStore(i) {
 const EPOCH = Date.UTC(2025, 0, 1);
 const DAY = 86400000;
 const toDate = i => new Date(EPOCH + i * DAY);
+const dayOf = ms => Math.round((ms - EPOCH) / DAY);
 const fmtDay = i => toDate(i).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
 const fmtLong = i => toDate(i).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-const monStart = k => Math.round((Date.UTC(2025, k, 1) - EPOCH) / DAY);
-const monEnd = k => Math.round((Date.UTC(2025, k + 1, 0) - EPOCH) / DAY);
+const monStart = k => dayOf(Date.UTC(2025, k, 1));
+const monEnd = k => dayOf(Date.UTC(2025, k + 1, 0));
 const monLong = k => new Date(Date.UTC(2025, k, 1)).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" });
-const monShort = k => new Date(Date.UTC(2025, k, 1)).toLocaleDateString("en-IN", { month: "short", year: "2-digit", timeZone: "UTC" });
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monShort = k => `${MON[k % 12]} ${String(2025 + Math.floor(k / 12)).slice(2)}`;
 const mondayOf = d => d - ((toDate(d).getUTCDay() + 6) % 7);
-
+// Same date, n months earlier (n negative). Feb 29 and 31st dates move to the month's last day.
+function shiftMonths(i, n) {
+  const dt = toDate(i);
+  const y = dt.getUTCFullYear(), m = dt.getUTCMonth() + n, d = dt.getUTCDate();
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return dayOf(Date.UTC(y, m, Math.min(d, last)));
+}
 function buildDayTables() {
   const N = 1400;
   DAY_WK = new Int32Array(N);
@@ -188,19 +193,12 @@ function buildDayTables() {
   }
 }
 const periodKey = (kind, d) => (kind === "daily" ? d : kind === "weekly" ? DAY_WK[d] : DAY_MON[d]);
-function windowOf(kind, k) {
-  if (kind === "daily") return [k, k];
-  if (kind === "weekly") return [k, k + 6];
-  return [monStart(k), monEnd(k)];
-}
-const prevKey = (kind, k) => (kind === "weekly" ? k - 7 : k - 1);
+const windowOf = (kind, k) => (kind === "daily" ? [k, k] : kind === "weekly" ? [k, k + 6] : [monStart(k), monEnd(k)]);
 const periodLabel = (kind, k) => (kind === "daily" ? fmtLong(k) : kind === "weekly" ? `${fmtDay(k)} to ${fmtDay(k + 6)}` : monLong(k));
-const cmpText = kind => (kind === "daily" ? "vs previous day" : kind === "weekly" ? "vs previous week" : "MoM, vs previous month");
-
 function periodKeys(kind, last = M.last_day) {
   const keys = [];
   if (kind === "daily") { for (let d = 0; d <= last; d++) keys.push(d); }
-  else if (kind === "weekly") { for (let m = 5; m + 6 <= last; m += 7) keys.push(m); }   // 5 = Mon 6 Jan 2025, first full week
+  else if (kind === "weekly") { for (let m = 5; m + 6 <= last; m += 7) keys.push(m); }   // 5 = Mon 6 Jan 2025
   else { for (let k = 0; monEnd(k) <= last; k++) keys.push(k); }
   return keys;
 }
@@ -225,7 +223,31 @@ function ratingPass(r, platform) {
 }
 const baseSales = () => (S.store === "all" ? ROLL.rows : (STORE_ROWS.get(+S.store) || []));
 
+/* Dropdowns follow each other: a store list shows only stores in the chosen region, brand and type. */
+function eligible(skip) {
+  return M.stores.filter(s =>
+    (skip === "region" || S.region === "all" || s.region === M.regions[+S.region]) &&
+    (skip === "brand" || S.brand === "all" || s.brands.includes(+S.brand)) &&
+    (skip === "type" || S.type === "all" || s.type === M.types[+S.type]) &&
+    (skip === "store" || S.store === "all" || s.i === +S.store));
+}
+function optionSets() {
+  const brands = new Set();
+  eligible("brand").forEach(s => s.brands.forEach(b => brands.add(b)));
+  const regions = new Set(eligible("region").map(s => s.region));
+  return { brands, regions, stores: eligible("store") };
+}
+function sanitize() {
+  for (let pass = 0; pass < 2; pass++) {
+    const o = optionSets();
+    if (S.brand !== "all" && !o.brands.has(+S.brand)) S.brand = "all";
+    if (S.region !== "all" && !o.regions.has(M.regions[+S.region])) S.region = "all";
+    if (S.store !== "all" && !o.stores.some(s => s.i === +S.store)) S.store = "all";
+  }
+}
+
 /* ============ Aggregation ============ */
+const EMPTY_A = { net: 0, gross: 0, disc: 0, orders: 0, netIn: 0 };
 function aggFor(rows, from, to, pass) {
   const a = { net: 0, gross: 0, disc: 0, orders: 0, netIn: 0 };
   for (const r of rows) {
@@ -284,27 +306,132 @@ const dlt = (v, unit, good, digits = 1) => {
   const arrow = v > 0 ? "▲" : v < 0 ? "▼" : "•";
   return `<span class="d ${cls}">(${arrow} ${Math.abs(v).toFixed(digits)}${unit})</span>`;
 };
-const salesMetrics = a => ({
+const metrics = a => ({
+  gross: a.gross / 100,
+  disc: a.disc / 100,
   net: a.net / 100,
-  orders: a.orders,
+  txn: a.orders,
   aov: a.orders ? a.net / 100 / a.orders : 0,
-  disc: a.gross ? (a.disc / a.gross) * 100 : 0,
-  off: a.net ? (a.netIn / a.net) * 100 : 0,
-  on: a.net ? 100 - (a.netIn / a.net) * 100 : 0
+  discPct: a.gross ? (a.disc / a.gross) * 100 : 0,
+  offPct: a.net ? (a.netIn / a.net) * 100 : 0,
+  onPct: a.net ? 100 - (a.netIn / a.net) * 100 : 0
 });
 
-/* ============ Sales KPI cards ============ */
-function salesKpis(cur, prev) {
-  const c = salesMetrics(cur), p = prev.net || prev.orders ? salesMetrics(prev) : null;
-  const card = (label, value, delta) => `<div class="kpi"><div class="kl">${label}</div><div class="kv">${value}</div><div class="cmp">${delta}</div></div>`;
-  return `<div class="kgrid">
-    ${card("Net sales", inr(c.net), p ? dlt(rel(c.net, p.net), "%", true) : "")}
-    ${card("Orders", num(c.orders), p ? dlt(rel(c.orders, p.orders), "%", true) : "")}
-    ${card("Discount", c.disc.toFixed(1) + "%", p ? dlt(pts(c.disc, p.disc), " pts", false) : "")}
-    ${card("Average order value", inr(c.aov), p ? dlt(rel(c.aov, p.aov), "%", true) : "")}
-    ${card("Offline", c.off.toFixed(1) + "%", p ? dlt(pts(c.off, p.off), " pts", null) : "")}
-    ${card("Online", c.on.toFixed(1) + "%", p ? dlt(pts(c.on, p.on), " pts", null) : "")}
-  </div>`;
+/* ============ Overall table (same layout as the daily/weekly/monthly KPI sheet) ============ */
+function overallCols(kind, key) {
+  if (kind === "daily" || kind === "weekly") {
+    const starts = [key, key - 7, key - 14, shiftMonths(key, -1), shiftMonths(key, -12)];
+    const len = kind === "daily" ? 0 : 6;
+    return {
+      heads: kind === "daily" ? ["Today", "Last Week", "Last 2 Week", "Last Month", "Last Year"]
+                              : ["This Week", "Last Week", "Last 2 Week", "Last Month", "Last Year"],
+      wins: starts.map(s => [s, s + len]),
+      growth: ["LW GW %", "L2W %", "MoM %", "LY %"]
+    };
+  }
+  return {
+    heads: ["This Month", "Last Month", "2 Months Back", "Last Year"],
+    wins: [key, key - 1, key - 2, key - 12].map(k => [monStart(k), monEnd(k)]),
+    growth: ["vs Last Month", "vs 2 Months", "vs Last Year"]
+  };
+}
+function overallTable(kind, key) {
+  const c = overallCols(kind, key);
+  const rows = baseSales();
+  const ms = c.wins.map(([f, t]) => (f < 0 || t > M.last_day ? null : metrics(aggFor(rows, f, t, salesPass))));
+  const defs = [
+    ["Gross (₹)", m => m.gross, true, "money"],
+    ["Discount (₹)", m => m.disc, false, "money"],
+    ["Net (₹)", m => m.net, true, "money"],
+    ["Txn", m => m.txn, true, "count"],
+    ["AOV (₹)", m => m.aov, true, "money"],
+    ["Discount %", m => m.discPct, false, "pct"],
+    ["Offline %", m => m.offPct, null, "pct"],
+    ["Online %", m => m.onPct, null, "pct"]
+  ];
+  const body = defs.map(([label, get, good, type]) => {
+    const vals = ms.map(m => (m ? get(m) : null));
+    const cells = vals.map(v => `<td>${v === null ? "—" : type === "pct" ? v.toFixed(1) + "%" : num(v)}</td>`).join("");
+    const grow = c.growth.map((_, j) => {
+      const cur = vals[0], other = vals[j + 1];
+      if (cur === null || other === null) return "<td>—</td>";
+      const g = type === "pct" ? pts(cur, other) : rel(cur, other);
+      const unit = type === "pct" ? " pts" : "%";
+      return `<td>${g === null ? "—" : dlt(g, unit, good)}</td>`;
+    }).join("");
+    return `<tr><td>${label}</td>${cells}${grow}</tr>`;
+  }).join("");
+  return `<div class="scroll"><table class="tbl">
+    <thead><tr><th>Parameters</th>${c.heads.map(h => `<th>${h}</th>`).join("")}${c.growth.map(g => `<th>${g}</th>`).join("")}</tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+/* ============ Summary tables by brand, region, source, session ============ */
+function sumWins(kind, key) {
+  if (kind === "daily") return { cur: [key, key], prev: [key - 7, key - 7], c: "Today", p: "LW" };
+  if (kind === "weekly") return { cur: [key, key + 6], prev: [key - 7, key - 1], c: "This Week", p: "LW" };
+  return { cur: [monStart(key), monEnd(key)], prev: [monStart(key - 1), monEnd(key - 1)], c: "This Month", p: "LM" };
+}
+function nameOf(pos, k) {
+  if (pos === 2) return M.brands[k];
+  if (pos === 4) return M.regions[k];
+  if (pos === 5) return M.sources[k] === "In Store" ? "Offline (in store)" : M.sources[k];
+  if (pos === 6) return M.sessions[k];
+  return String(k);
+}
+function summaryTable(kind, key, pos) {
+  const w = sumWins(kind, key);
+  const rows = baseSales();
+  const cur = aggByDim(rows, w.cur[0], w.cur[1], pos, salesPass);
+  const prev = aggByDim(rows, w.prev[0], w.prev[1], pos, salesPass);
+  const keysAll = [...new Set([...cur.keys(), ...prev.keys()])]
+    .filter(k => (cur.get(k) || EMPTY_A).net || (prev.get(k) || EMPTY_A).net)
+    .sort((a, b) => (cur.get(b) || EMPTY_A).net - (cur.get(a) || EMPTY_A).net);
+  const line = (name, c, p, cls) => {
+    const cm = metrics(c), pm = metrics(p);
+    return `<tr class="${cls || ""}"><td>${name}</td><td>${num(cm.net)}</td><td>${num(pm.net)}</td>
+      <td>${dlt(rel(cm.net, pm.net), "%", true)}</td><td>${cm.discPct.toFixed(1)}%</td><td>${pm.discPct.toFixed(1)}%</td>
+      <td>${dlt(pts(cm.discPct, pm.discPct), " pts", false)}</td></tr>`;
+  };
+  const total = line("Total", aggFor(rows, w.cur[0], w.cur[1], salesPass), aggFor(rows, w.prev[0], w.prev[1], salesPass), "tot");
+  const body = total + keysAll.map(k => line(nameOf(pos, k), cur.get(k) || EMPTY_A, prev.get(k) || EMPTY_A)).join("");
+  return `<div class="scroll"><table class="tbl">
+    <thead><tr><th></th><th>${w.c} Rev</th><th>${w.p} Rev</th><th>Growth %</th><th>${w.c} Dis %</th><th>${w.p} Dis %</th><th>Dis Change %</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+function summaryBlock(kind, key, title, pos) {
+  return `<section class="block"><h2>By ${title}</h2><p class="sub">Revenue in ₹. Brackets show change against ${sumWins(kind, key).p}.</p>${summaryTable(kind, key, pos)}</section>`;
+}
+
+/* ============ AOV and discount buckets: order contribution | orders ============ */
+function bucketTable(kind, key, which) {
+  const data = which === "aov" ? AOVB : DISCB;
+  const labels = which === "aov" ? M.aov_labels : M.disc_labels;
+  const [from, to] = windowOf(kind, key);
+  const cols = S.source === "all" ? M.sources.map((_, j) => j) : [+S.source];
+  const totals = {}, cells = {};
+  for (const r of data.rows) {
+    if (r[0] < from || r[0] > to) continue;
+    if (S.brand !== "all" && r[1] !== +S.brand) continue;
+    if (S.type !== "all" && r[2] !== +S.type) continue;
+    if (S.region !== "all" && r[3] !== +S.region) continue;
+    totals[r[4]] = (totals[r[4]] || 0) + r[6];
+    cells[r[5]] = cells[r[5]] || {};
+    cells[r[5]][r[4]] = (cells[r[5]][r[4]] || 0) + r[6];
+  }
+  const head = cols.map(j => `<th>${M.sources[j] === "In Store" ? "Offline" : M.sources[j]}</th>`).join("");
+  const body = labels.map((lab, bk) => `<tr><td>${lab}</td>${cols.map(j => {
+    const o = (cells[bk] || {})[j] || 0, t = totals[j] || 0;
+    return `<td>${t ? (o / t * 100).toFixed(1) + "%" : "—"} <span class="muted">(${num(o)})</span></td>`;
+  }).join("")}</tr>`).join("");
+  const tot = `<tr class="tot"><td>Total</td>${cols.map(j => `<td>100% <span class="muted">(${num(totals[j] || 0)})</span></td>`).join("")}</tr>`;
+  return `<div class="scroll"><table class="tbl"><thead><tr><th>${which === "aov" ? "AOV ₹" : "Discount"}</th>${head}</tr></thead>
+    <tbody>${body}${tot}</tbody></table></div>`;
+}
+function bucketBlock(kind, key, which) {
+  const title = which === "aov" ? "AOV bucket" : "Discount bucket";
+  if (!AOVB || !DISCB) return `<section class="block"><h2>${title}</h2><p class="muted">Bucket data is not loaded yet.</p></section>`;
+  return `<section class="block"><h2>${title}</h2><p class="sub">Each cell shows the share of that source's orders, and the number of orders. Follows brand, region, store type and the selected period.</p>${bucketTable(kind, key, which)}</section>`;
 }
 
 /* ============ Trend chart ============ */
@@ -312,7 +439,7 @@ function trendBlock(kind, keys, idx, rows, pass) {
   const N = CHART_N[kind];
   const ck = keys.slice(Math.max(0, idx - N + 1), idx + 1);
   const lo = windowOf(kind, ck[0])[0], hi = windowOf(kind, ck[ck.length - 1])[1];
-  const m = new Map(ck.map(k => [k, { net: 0, src: [0, 0, 0, 0] }]));
+  const m = new Map(ck.map(k => [k, { net: 0, src: [0, 0, 0, 0, 0] }]));
   for (const r of rows) {
     if (r[0] < lo || r[0] > hi || !pass(r)) continue;
     const a = m.get(periodKey(kind, r[0]));
@@ -345,83 +472,42 @@ function trendBlock(kind, keys, idx, rows, pass) {
   </section>`;
 }
 
-/* ============ Summary blocks ============ */
-function nameOf(pos, k) {
-  if (pos === 2) return M.brands[k];
-  if (pos === 4) return M.regions[k];
-  if (pos === 5) return M.sources[k] === "In Store" ? "Offline (in store)" : M.sources[k];
-  if (pos === 6) return M.sessions[k];
-  if (pos === 1) return M.stores[k] ? M.stores[k].name : `Store ${k}`;
-  return String(k);
-}
-function summaryBlock(title, pos, rowsCur, rowsPrev, curWin, prevWin, pass) {
-  const cur = aggByDim(rowsCur, curWin[0], curWin[1], pos, pass);
-  const prev = aggByDim(rowsPrev, prevWin[0], prevWin[1], pos, pass);
-  const keys = [...new Set([...cur.keys(), ...prev.keys()])]
-    .filter(k => (cur.get(k) || {}).net || (prev.get(k) || {}).net)
-    .sort((a, b) => ((cur.get(b) || {}).net || 0) - ((cur.get(a) || {}).net || 0));
-  const total = [...cur.values()].reduce((s, a) => s + a.net, 0) || 1;
-  if (!keys.length) return `<section class="block"><h2>${title}</h2><p class="muted">No sales in this period for the selected filters.</p></section>`;
-  const rowsHtml = keys.map(k => {
-    const c = cur.get(k) || { net: 0, orders: 0, gross: 0, disc: 0, netIn: 0 };
-    const p = prev.get(k) || { net: 0, orders: 0, gross: 0, disc: 0, netIn: 0 };
-    const cm = salesMetrics(c), pm = salesMetrics(p);
-    const share = (c.net / total) * 100;
-    return `<div class="srow">
-      <div class="sh"><span class="sname">${nameOf(pos, k)}</span><span class="snet">${inr(cm.net)} ${dlt(rel(cm.net, pm.net), "%", true)}</span></div>
-      <div class="share"><span style="width:${share.toFixed(1)}%"></span></div>
-      <div class="smet">
-        <div class="mc"><i>Orders</i><b>${num(cm.orders)}</b> ${dlt(rel(cm.orders, pm.orders), "%", true)}</div>
-        <div class="mc"><i>Average order value</i><b>${inr(cm.aov)}</b> ${dlt(rel(cm.aov, pm.aov), "%", true)}</div>
-        <div class="mc"><i>Discount</i><b>${cm.disc.toFixed(1)}%</b> ${dlt(pts(cm.disc, pm.disc), " pts", false)}</div>
-        <div class="mc"><i>Offline</i><b>${cm.off.toFixed(1)}%</b> ${dlt(pts(cm.off, pm.off), " pts", null)}</div>
-      </div>
-    </div>`;
-  }).join("");
-  return `<section class="block"><h2>By ${title}</h2>${rowsHtml}</section>`;
-}
-
 /* ============ Sales views ============ */
 function salesPeriodView(kind) {
   const keys = periodKeys(kind);
   const key = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
   const idx = keys.indexOf(key);
-  const cw = windowOf(kind, key), pw = windowOf(kind, prevKey(kind, key));
-  const rows = baseSales();
-  const cur = aggFor(rows, cw[0], cw[1], salesPass);
-  const prev = aggFor(rows, pw[0], pw[1], salesPass);
-  const sums = [
-    summaryBlock("brand", 2, rows, rows, cw, pw, salesPass),
-    summaryBlock("region", 4, rows, rows, cw, pw, salesPass),
-    summaryBlock("source", 5, rows, rows, cw, pw, salesPass),
-    summaryBlock("session", 6, rows, rows, cw, pw, salesPass)
-  ].join("");
   setPeriodBar(kind, key, keys);
-  return salesKpis(cur, prev) + trendBlock(kind, keys, idx, rows, salesPass) + sums;
+  return `
+    <section class="block"><h2>Overall</h2><p class="sub">Values in ₹ except Txn and %. Brackets show the change against the column named in the heading.</p>${overallTable(kind, key)}</section>
+    ${trendBlock(kind, keys, idx, baseSales(), salesPass)}
+    ${summaryBlock(kind, key, "brand", 2)}
+    ${summaryBlock(kind, key, "region", 4)}
+    ${summaryBlock(kind, key, "source", 5)}
+    ${summaryBlock(kind, key, "session", 6)}
+    ${bucketBlock(kind, key, "aov")}
+    ${bucketBlock(kind, key, "disc")}`;
 }
-
 function salesLiveView() {
+  setPeriodBar("live", null, null);
   if (!M.has_live || !LIVE) {
     return `<section class="empty"><h2>Live sales</h2>
-      <p>Live sales are not connected yet. Once the live sync runs, today's business day (9 AM to 6 AM) appears here with the same filters.</p>
+      <p>Live sales are not connected yet. Once the live sync runs, today's business day appears here with the same filters.</p>
       <p class="muted">Until then, use the Daily tab for completed days.</p></section>`;
   }
   const d = M.live_day;
-  const cw = [d, d], pw = [d - 7, d - 7];
-  const cur = aggFor(LIVE.rows, cw[0], cw[1], salesPass);
-  const prev = aggFor(baseSales(), pw[0], pw[1], salesPass);
-  setPeriodBar("live", d, null);
-  const sums = [
-    summaryBlock("brand", 2, LIVE.rows, baseSales(), cw, pw, salesPass),
-    summaryBlock("region", 4, LIVE.rows, baseSales(), cw, pw, salesPass),
-    summaryBlock("source", 5, LIVE.rows, baseSales(), cw, pw, salesPass),
-    summaryBlock("session", 6, LIVE.rows, baseSales(), cw, pw, salesPass)
-  ].join("");
-  return `<p class="muted" style="margin-top:14px">Partial day so far, compared with the same day last week.</p>` +
-    salesKpis(cur, prev) + sums;
+  const m = metrics(aggFor(LIVE.rows, d, d, salesPass));
+  return `<section class="block"><h2>Live, so far today</h2>
+    <p class="sub">Partial day, from 9 AM to now. The same-hour comparison and the forecast to 5 AM come in the next update.</p>
+    <div class="kgrid">
+      <div class="kpi"><div class="kl">Net sales</div><div class="kv">${inr(m.net)}</div></div>
+      <div class="kpi"><div class="kl">Txn</div><div class="kv">${num(m.txn)}</div></div>
+      <div class="kpi"><div class="kl">AOV</div><div class="kv">${inr(m.aov)}</div></div>
+      <div class="kpi"><div class="kl">Discount</div><div class="kv">${m.discPct.toFixed(1)}%</div></div>
+    </div></section>`;
 }
 
-/* ============ Ratings view ============ */
+/* ============ Ratings view (unchanged this phase) ============ */
 function ratingView(platformName) {
   const platform = M.platforms.indexOf(platformName);
   const kind = S.rkind;
@@ -434,7 +520,7 @@ function ratingView(platformName) {
   const keys = periodKeys(kind, M.ratings_last_day ?? M.last_day);
   const key = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
   const idx = keys.indexOf(key);
-  const cw = windowOf(kind, key), pw = windowOf(kind, prevKey(kind, key));
+  const cw = windowOf(kind, key), pw = windowOf(kind, kind === "weekly" ? key - 7 : key - 1);
   const pass = r => ratingPass(r, platform);
   setPeriodBar(kind, key, keys, true);
   const c = ratingAgg(RAT.rows, cw[0], cw[1], pass);
@@ -473,9 +559,9 @@ function ratingView(platformName) {
 }
 
 /* ============ Shell ============ */
-let PERIOD = { kind: "daily", key: null, keys: null, show: false, ratingMode: false };
+let PERIOD = { kind: "daily", key: null, keys: null, ratingMode: false };
 function setPeriodBar(kind, key, keys, ratingMode = false) {
-  PERIOD = { kind, key, keys, show: keys !== null, ratingMode };
+  PERIOD = { kind, key, keys, ratingMode };
 }
 function renderPeriodBar() {
   const wrap = document.getElementById("periodwrap");
@@ -499,38 +585,39 @@ function renderHeader() {
     `<button data-sub="${id}" ${S.sub === id ? 'aria-current="page"' : ""}>${label}</button>`).join("");
 }
 function renderFilters() {
-  const typeBtns = [["all", "All"]].concat(M.types.map((t, i) => [String(i), t]).filter(([, t]) => t !== "Unmapped" && t !== "Unknown"));
-  document.getElementById("types").innerHTML = typeBtns.map(([v, label]) =>
-    `<button data-type="${v}" aria-pressed="${S.type === v}">${label}</button>`).join("");
+  const o = optionSets();
+  document.getElementById("types").innerHTML = [["all", "All"]].concat(M.types.map((t, i) => [String(i), t]).filter(([, t]) => t !== "Unmapped"))
+    .map(([v, label]) => `<button data-type="${v}" aria-pressed="${S.type === v}">${label}</button>`).join("");
   const opt = (v, label, cur) => `<option value="${v}" ${String(cur) === String(v) ? "selected" : ""}>${label}</option>`;
-  const brandOpts = [opt("all", "All brands", S.brand)].concat(M.brands.map((b, i) => opt(i, b, S.brand))).join("");
-  const regionOpts = [opt("all", "All regions", S.region)].concat(M.regions.map((r, i) => opt(i, r, S.region))).join("");
-  const storeOpts = [opt("all", "All stores", S.store)].concat(M.stores.map(s => opt(s.i, s.name, S.store))).join("");
-  const isSales = S.top === "sales";
-  const sourceOpts = [opt("all", "All sources", S.source)].concat(M.sources.map((s, i) => opt(i, s === "In Store" ? "Offline (in store)" : s, S.source))).join("");
-  const sessionOpts = [opt("all", "All sessions", S.session)].concat(M.sessions.map((s, i) => opt(i, s, S.session))).join("");
+  const brandOpts = [opt("all", "All brands", S.brand)].concat(M.brands.map((b, i) => (o.brands.has(i) ? opt(i, b, S.brand) : ""))).join("");
+  const regionOpts = [opt("all", "All regions", S.region)].concat(M.regions.map((r, i) => (o.regions.has(r) ? opt(i, r, S.region) : ""))).join("");
+  const storeOpts = [opt("all", "All stores", S.store)].concat(o.stores.slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => opt(s.i, s.name, S.store))).join("");
   let html = `
     <label class="field">Brand<select data-filter="brand">${brandOpts}</select></label>
-    <label class="field">Region<select data-filter="region">${regionOpts}</select></label>
-    ${isSales ? `<label class="field">Source<select data-filter="source">${sourceOpts}</select></label>
-    <label class="field">Session<select data-filter="session">${sessionOpts}</select></label>` : ""}
-    <label class="field wide">Store name<select data-filter="store">${storeOpts}</select></label>`;
+    <label class="field">Region<select data-filter="region">${regionOpts}</select></label>`;
+  if (S.top === "sales") {
+    const sourceOpts = [opt("all", "All sources", S.source)].concat(M.sources.map((s, i) => opt(i, s === "In Store" ? "Offline (in store)" : s, S.source))).join("");
+    const sessionOpts = [opt("all", "All sessions", S.session)].concat(M.sessions.map((s, i) => opt(i, s, S.session))).join("");
+    html += `<label class="field">Source<select data-filter="source">${sourceOpts}</select></label>
+    <label class="field">Session<select data-filter="session">${sessionOpts}</select></label>`;
+  }
+  html += `<label class="field wide">Store name<select data-filter="store">${storeOpts}</select></label>`;
   document.getElementById("fields").innerHTML = html;
 }
 function renderNote() {
   const st = M.stats;
   document.getElementById("note").textContent =
-    `COCO means company-owned and FOFO means franchise. Online is Swiggy, Zomato and Others. Changes in brackets compare with the previous day, week or month. Store-type tags are missing for ${st.unmapped_store_type_share_2026_pct}% of 2026 sales; those rows count under All only.`;
+    `COCO means company-owned and FOFO means franchise. Online is Swiggy, Zomato, Ownly and Others. ` +
+    `Store-type tags are missing for ${st.unmapped_store_type_share_2026_pct}% of 2026 sales; those rows count under All only. ` +
+    `Buckets follow brand, region, store type and period; they do not follow store or session.`;
 }
-
 function render() {
   if (!M) return;
   renderHeader();
   renderFilters();
   let html;
   if (S.top === "sales") {
-    if (S.sub === "live") { setPeriodBar("live", null, null); html = salesLiveView(); }
-    else html = salesPeriodView(S.sub);
+    html = S.sub === "live" ? salesLiveView() : salesPeriodView(S.sub);
   } else {
     html = ratingView({ swiggy: "Swiggy", zomato: "Zomato", google: "Google" }[S.sub]);
   }
@@ -546,7 +633,7 @@ document.addEventListener("click", async e => {
   const d = el.dataset;
   if (d.top) { S.top = d.top; S.sub = d.top === "sales" ? "daily" : "swiggy"; S.sel = null; }
   if (d.sub) { S.sub = d.sub; S.sel = null; }
-  if (d.type !== undefined) { S.type = d.type; }
+  if (d.type !== undefined) { S.type = d.type; sanitize(); }
   if (d.rkind) { S.rkind = d.rkind; S.sel = null; }
   if (d.k !== undefined) { S.sel = +d.k; }
   if (d.nav !== undefined) {
@@ -567,7 +654,8 @@ document.addEventListener("change", async e => {
   if (!f) return;
   S[f] = e.target.value;
   S.sel = null;
-  if (f === "store" && S.store !== "all") await ensureStore(+S.store);
+  sanitize();
+  if (S.store !== "all") await ensureStore(+S.store);
   render();
 });
 
@@ -577,6 +665,8 @@ document.addEventListener("change", async e => {
     M = await loadJson("data/manifest.json");
     buildDayTables();
     ROLL = await loadGz("data/rollup.json.gz");
+    AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
+    DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
     LIVE = M.has_live ? await loadJson("data/live.json") : null;
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
     render();
