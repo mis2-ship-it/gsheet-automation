@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """
-Pull sales from Rista and write rows in the historical file's layout.
+Pull sales from Rista for the Frozen Bottle dashboard.
+
+Business day: 9 AM to 5 AM the next morning. An invoice before 5 AM belongs to the day before.
+Business hour: 0 = 9 AM, 1 = 10 AM ... 14 = 11 PM, 15 = 12 AM ... 19 = 4 AM.
 
   --mode nightly  completed business days from --since up to the last completed day
-                  -> data/new_sales.csv.gz   (commit this file; the live run reads it)
-  --mode live     today's business day so far (09:00 to now)
-                  -> data/live_sales.csv
+                  -> --out         daily rows (data/new_sales.csv.gz)
+                  -> --hourly-out  hourly rows for the last 14 business days (data/new_hourly.csv.gz)
+  --mode live     today's business day so far (9 AM to now)
+                  -> --out         hourly rows for today (data/live_sales.csv)
+                  -> live_meta.json beside it: the business day and the time of the pull
 
 Uses the same API calls as rista_live.py:
   - Rista: branch/list and sales/summary (JWT auth with API_KEY and SECRET_KEY)
   - POS_Master_Dashboard sheet, tab 'Region_Help_Sheet': branch -> region and store type (A:C),
     channel -> source group and brand (D:F)
   - Net sales = netAmount + chargeAmount, closed invoices only (as in rista_live.py)
-  - Business day cut-off at 05:00 for each invoice (as in prepare_dates)
 
 Failed branch-days are listed in data/sync_errors.csv and make the job exit with an error,
 so a missing store is never silently dropped.
@@ -24,20 +28,23 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import jwt
 import pandas as pd
 import requests
-from zoneinfo import ZoneInfo
 
 RISTA = "https://api.ristaapps.com/v1"
 MASTER_SHEET_ID = "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"   # POS_Master_Dashboard
 MASTER_TAB = "Region_Help_Sheet"
-# Source Group names in the sheet -> the four sources used on the dashboard.
-# Ownly, Website, Magicpin and HOGR Dine-In count as Others, which is the online group.
-SOURCE_FIX = {"Ownly": "Others", "Website": "Others", "Magicpin": "Others", "HOGR": "Others"}
+# Source Group names in the sheet -> the sources used on the dashboard.
+# Website, Magicpin and HOGR Dine-In count as Others (online). Ownly stays as its own source.
+SOURCE_FIX = {"Website": "Others", "Magicpin": "Others", "HOGR": "Others"}
 OUT_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region",
             "Net Sales", "Discount", "Gross Sales", "Orders"]
+HOURLY_COLS = OUT_COLS + ["Hour"]
+KEY_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region"]
+HISTORY_DAYS = 14   # hourly rows kept in the repo, for same-hour comparisons
 
 
 def session_for_hour(h):
@@ -50,8 +57,8 @@ def session_for_hour(h):
 
 
 def business_day_now(now):
-    """The business day in progress: before 06:00 it is still yesterday's."""
-    return (now - timedelta(hours=6)).date()
+    """The business day in progress. Until 05:00 it is still the previous day's."""
+    return (now - timedelta(hours=5)).date()
 
 
 def headers():
@@ -131,9 +138,9 @@ def load_maps():
 
 
 def transform_invoices(inv, store_type, region, source, brand):
-    """Turn Rista invoices into rows in the historical file's layout (one row per group)."""
+    """Turn Rista invoices into hourly rows: one row per group and business hour."""
     if inv.empty:
-        return pd.DataFrame(columns=OUT_COLS)
+        return pd.DataFrame(columns=HOURLY_COLS)
     for c in ["netAmount", "chargeAmount", "grossAmount", "discountAmount"]:
         if c not in inv.columns:
             inv[c] = 0
@@ -143,7 +150,7 @@ def transform_invoices(inv, store_type, region, source, brand):
             inv[c] = ""
     inv = inv[inv["status"] == "Closed"].copy()
     if inv.empty:
-        return pd.DataFrame(columns=OUT_COLS)
+        return pd.DataFrame(columns=HOURLY_COLS)
 
     dt = pd.to_datetime(inv["invoiceDate"], errors="coerce").dt.tz_localize(None)
     hour = dt.dt.hour
@@ -168,15 +175,23 @@ def transform_invoices(inv, store_type, region, source, brand):
         "Session": hour.apply(session_for_hour),
         "Store Type": branch.map(store_type).fillna("Unmapped"),
         "Region": branch.map(region).fillna("Unmapped"),
+        "Hour": (hour - 9) % 24,
         "Net Sales": inv["netAmount"] + inv["chargeAmount"],
         "Discount": inv["discountAmount"],
         "Gross Sales": inv["grossAmount"],
         "Orders": 1,
     })
-    out = out.dropna(subset=["Brand Name"])        # unknown channels, as rows without a brand
-    out = out.groupby(["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region"],
-                      as_index=False).sum(numeric_only=True)
-    return out[OUT_COLS]
+    out = out.dropna(subset=["Brand Name"])
+    out = out.groupby(KEY_COLS + ["Hour"], as_index=False).sum(numeric_only=True)
+    return out[HOURLY_COLS]
+
+
+def daily_from_hourly(h):
+    """Daily rows (the layout of the historical file) from the hourly rows."""
+    if h.empty:
+        return pd.DataFrame(columns=OUT_COLS)
+    d = h.drop(columns=["Hour"]).groupby(KEY_COLS, as_index=False).sum(numeric_only=True)
+    return d[OUT_COLS]
 
 
 def run_days(days, branches, maps, workers=8):
@@ -197,7 +212,7 @@ def run_days(days, branches, maps, workers=8):
 
 
 def read_existing(path):
-    """Rows already saved by earlier nightly runs, or None if there are none yet."""
+    """Rows already saved by earlier runs, or None if there are none yet."""
     if not os.path.exists(path):
         return None
     old = pd.read_csv(path, compression="infer", low_memory=False)
@@ -226,33 +241,50 @@ def main():
     ap.add_argument("--mode", choices=["nightly", "live"], required=True)
     ap.add_argument("--since", default="2026-09-01", help="first day to pull in nightly mode")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--hourly-out", default="data/new_hourly.csv.gz")
     args = ap.parse_args()
 
     now = datetime.now(ZoneInfo("Asia/Kolkata"))   # GitHub runners use UTC; the business day is in India time
     today_bd = business_day_now(now)
+    out_dir = os.path.dirname(args.out) or "."
     if args.mode == "live":
         days = [today_bd.strftime("%Y-%m-%d")]
-        existing = None
     else:
         start = nightly_start(args.since, args.out)
         end = today_bd - timedelta(days=1)
         days = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((end - start).days + 1)]
-        existing = read_existing(args.out)
     if not days:
         print("Nothing to pull.")
         return 0
 
     branches = active_branches()
     maps = load_maps()
-    out, errors = run_days(days, branches, maps)
-    if existing is not None:
-        out = merge_with_existing(existing, out, days[0])
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    compression = "gzip" if args.out.endswith(".gz") else None
-    out.to_csv(args.out, index=False, compression=compression)
-    print(f"{args.mode}: {len(days)} day(s), {len(branches)} branches, {len(out)} rows -> {args.out}")
+    hourly, errors = run_days(days, branches, maps)
+    os.makedirs(out_dir, exist_ok=True)
 
-    err_path = os.path.join(os.path.dirname(args.out) or ".", "sync_errors.csv")
+    if args.mode == "live":
+        hourly.to_csv(args.out, index=False)
+        meta = {"business_day": today_bd.strftime("%Y-%m-%d"), "as_of": now.isoformat(timespec="minutes")}
+        with open(os.path.join(out_dir, "live_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta, f)
+        print(f"live: business day {today_bd}, {len(branches)} branches, {len(hourly)} hourly rows -> {args.out}")
+    else:
+        daily = daily_from_hourly(hourly)
+        existing = read_existing(args.out)
+        if existing is not None:
+            daily = merge_with_existing(existing, daily, days[0])
+        daily.to_csv(args.out, index=False, compression="gzip" if args.out.endswith(".gz") else None)
+
+        old_h = read_existing(args.hourly_out)
+        all_h = merge_with_existing(old_h, hourly, days[0]) if old_h is not None else hourly
+        keep_from = (today_bd - timedelta(days=HISTORY_DAYS)).strftime("%Y-%m-%d")
+        all_h = all_h[all_h["Date"].astype(str).str[:10] >= keep_from]
+        all_h.to_csv(args.hourly_out, index=False,
+                     compression="gzip" if args.hourly_out.endswith(".gz") else None)
+        print(f"nightly: {len(days)} day(s), {len(branches)} branches, {len(daily)} daily rows -> {args.out}; "
+              f"{len(all_h)} hourly rows kept -> {args.hourly_out}")
+
+    err_path = os.path.join(out_dir, "sync_errors.csv")
     if errors:
         pd.DataFrame(errors).to_csv(err_path, index=False)
         print(f"{len(errors)} branch-day pulls failed, see {err_path}")
