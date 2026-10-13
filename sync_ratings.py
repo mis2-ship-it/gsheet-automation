@@ -3,16 +3,21 @@
 Read the Swiggy, Zomato and Google rating sheets and write data/ratings.csv.
 
 Needs GOOGLE_CREDENTIALS (service account JSON, same secret as rista_live.py).
-The three sheets are shared 'anyone with the link'; the service account can read them.
+The three sheets are shared with the service account (Viewer or Editor).
+
+Columns are found by name. Matching ignores case and punctuation. An exact name is tried
+first, then a name the header contains. The log prints the column chosen for each field,
+so a wrong pick is easy to spot.
 
 Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type,
 Region, Orders, Rated Orders, Avg Rating. build_site.py turns this into the ratings file.
 
-Usage: python scripts/sync_ratings.py --out data/ratings.csv
+Usage: python sync_ratings.py --out data/ratings.csv
 """
 import argparse
 import json
 import os
+import re
 import sys
 
 import pandas as pd
@@ -25,6 +30,39 @@ SHEETS = {
 # The sheets display dates month-first: 10-11-2026 is 11 October 2026
 # (Week 41 and Month "October-26" on the same row confirm it).
 DATE_FORMATS = ["%m-%d-%Y", "%Y-%m-%d"]
+
+# field: (exact names tried first, words the header may contain)
+FIELD_NAMES = {
+    "date": (["date"], ["date"]),
+    "store": (["store name"], ["store name"]),
+    "brand": (["brand name", "location name"], ["brand", "location"]),
+    "store_type": (["store type"], ["store type"]),
+    "region": (["region"], ["region"]),
+    "orders": (["orders count"], ["orders count"]),
+    "rated": (["rated orders"], ["rated order", "rated"]),
+    "rating": (["avg rating", "rating"], ["avg rating", "rating"]),
+}
+GOOGLE_OPTIONAL = {"orders", "rated"}   # Google reviews have one rating per row and no order count
+
+
+def norm(text):
+    return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
+
+
+def find_column(head, field, required=True):
+    exact, words = FIELD_NAMES[field]
+    normed = [norm(h) for h in head]
+    for name in exact:
+        if name in normed:
+            return head[normed.index(name)]
+    for word in words:
+        for i, h in enumerate(normed):
+            if h and word in h:
+                return head[i]
+    if required:
+        names = [h for h in head if h]
+        raise KeyError(f"No column found for '{field}'. Column names in this sheet: {names}")
+    return None
 
 
 def parse_dates(series):
@@ -40,14 +78,12 @@ def num(series):
 
 
 def unique_headers(head):
-    """Some sheets have two columns with the same header. Rename repeats (the first one is used)."""
+    """Sheets can repeat a header or leave it blank. Rename repeats so each name is unique."""
     seen, out = {}, []
     for h in head:
         if h in seen:
             seen[h] += 1
-            new = f"{h} ({seen[h]})"
-            print(f"Warning: duplicate column '{h}' renamed to '{new}'. The first one is used.")
-            out.append(new)
+            out.append(f"{h} ({seen[h]})")
         else:
             seen[h] = 1
             out.append(h)
@@ -57,32 +93,48 @@ def unique_headers(head):
 def parse_platform(platform, values, header_row):
     """values = the sheet as a list of rows (get_all_values output)."""
     head = unique_headers([h.strip() for h in values[header_row - 1]])
-    df = pd.DataFrame(values[header_row:], columns=head)
+    width = len(head)
+    rows = [(list(r) + [""] * width)[:width] for r in values[header_row:]]
+    df = pd.DataFrame(rows, columns=head)
+
+    cols = {}
+    for field in FIELD_NAMES:
+        required = not (platform == "Google" and field in GOOGLE_OPTIONAL)
+        cols[field] = find_column(head, field, required=required)
+    print(f"{platform} columns used: " + ", ".join(f"{f} = '{c}'" for f, c in cols.items() if c))
+
+    def text(field):
+        return df[cols[field]].astype(str).str.strip()
+
     if platform == "Google":
         out = pd.DataFrame({
-            "Date": parse_dates(df["Date"]),
+            "Date": parse_dates(df[cols["date"]]),
             "Platform": "Google",
-            "Store Name": df["Store Name"].str.strip(),
-            "Brand Name": df["Location Name"].str.strip(),
-            "Store Type": df["Store Type"].str.strip(),
-            "Region": df["Region"].str.strip(),
+            "Store Name": text("store"),
+            "Brand Name": text("brand"),
+            "Store Type": text("store_type"),
+            "Region": text("region"),
             "Orders": 0,
             "Rated Orders": 1,
-            "Avg Rating": num(df["Rating"]),
+            "Avg Rating": num(df[cols["rating"]]),
         })
     else:
         out = pd.DataFrame({
-            "Date": parse_dates(df["Date"]),
+            "Date": parse_dates(df[cols["date"]]),
             "Platform": platform,
-            "Store Name": df["Store Name"].str.strip(),
-            "Brand Name": df["Brand Name"].str.strip(),
-            "Store Type": df["Store Type"].str.strip(),
-            "Region": df["Region"].str.strip(),
-            "Orders": num(df["Orders Count"]),
-            "Rated Orders": num(df["Rated Orders"]),
-            "Avg Rating": num(df["Avg. Rating"]),
+            "Store Name": text("store"),
+            "Brand Name": text("brand"),
+            "Store Type": text("store_type"),
+            "Region": text("region"),
+            "Orders": num(df[cols["orders"]]),
+            "Rated Orders": num(df[cols["rated"]]),
+            "Avg Rating": num(df[cols["rating"]]),
         })
+    bad_dates = int(out["Date"].isna().sum())
+    if bad_dates:
+        print(f"{platform}: {bad_dates} row(s) with no readable date were left out.")
     out = out.dropna(subset=["Date", "Store Name"])
+    out = out[out["Store Name"] != ""]
     out["Orders"] = out["Orders"].fillna(0)
     out["Rated Orders"] = out["Rated Orders"].fillna(0)
     out["Avg Rating"] = out["Avg Rating"].fillna(0)
