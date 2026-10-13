@@ -111,7 +111,7 @@ def load_maps():
     store_type, region = {}, {}
     for row in ws.get("A:C")[1:]:
         row = row + ["", "", ""]
-        name = row[0].strip()
+        name = " ".join(row[0].split())
         if name:
             region[name] = row[1].strip() or "Unmapped"
             store_type[name] = row[2].strip() or "Unmapped"
@@ -120,7 +120,7 @@ def load_maps():
     source, brand = {}, {}
     for row in ws.get("D:F")[1:]:
         row = row + ["", "", ""]
-        channel = row[0].strip()
+        channel = " ".join(row[0].split())
         if channel:
             group = row[1].strip() or "Others"
             source[channel] = SOURCE_FIX.get(group, group)
@@ -148,8 +148,8 @@ def transform_invoices(inv, store_type, region, source, brand):
     dt = pd.to_datetime(inv["invoiceDate"], errors="coerce").dt.tz_localize(None)
     hour = dt.dt.hour
     biz = dt.apply(lambda x: (x - pd.Timedelta(days=1)).date() if x.hour < 5 else x.date())
-    branch = inv["branchName"].astype(str).str.strip()
-    channel = inv["channel"].astype(str).str.strip()
+    branch = inv["branchName"].astype(str).str.split().str.join(" ")
+    channel = inv["channel"].astype(str).str.split().str.join(" ")
 
     unknown_branches = sorted(set(branch) - set(store_type))
     if unknown_branches:
