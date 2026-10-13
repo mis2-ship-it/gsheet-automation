@@ -230,13 +230,24 @@ def main():
         dump(os.path.join(args.out, "stores", f"{i}.json.gz"), {"rows": grp.values.tolist() if grp is not None else []})
         per_store += 1
 
-    # Bucket tables: each branch-day-session row is placed in one AOV band and one discount band.
+    # Bucket tables: every original row gets one AOV band and one discount band, as the history file labels them.
     base_cols = ["d", "b", "t", "r", "s"]
-    rb = all_rows[all_rows["orders"] > 0].copy()
+    orig = pd.DataFrame({
+        "d": (sales["Date"] - BASE).dt.days.values,
+        "b": sales["Brand Name"].map(bidx).values,
+        "t": sales["Store Type"].map(tidx).values,
+        "r": sales["Region"].map(ridx).values,
+        "s": sales["Source"].map(soidx).values,
+        "net": (sales["Net Sales"] * 100).round().astype("int64").values,
+        "gross": (sales["Gross Sales"] * 100).round().astype("int64").values,
+        "disc": (sales["Discount"] * 100).round().astype("int64").values,
+        "orders": sales["Orders"].round().astype("int64").values,
+    })
+    rb = orig[orig["orders"] > 0].copy()
     rb["bk"] = np.searchsorted(AOV_EDGES, (rb["net"] / 100 / rb["orders"]).values, side="left")
     aov_out = rb.groupby(base_cols + ["bk"], as_index=False)[["orders", "net"]].sum()
     dump(os.path.join(args.out, "aov_buckets.json.gz"), {"rows": aov_out.values.tolist()})
-    rg = all_rows[all_rows["gross"] > 0].copy()
+    rg = orig[orig["gross"] > 0].copy()
     dis = (rg["disc"] / rg["gross"] * 100).values
     rg["bk"] = np.where(dis == 0, 0, np.searchsorted(DISC_EDGES, dis, side="left") + 1)
     disc_out = rg.groupby(base_cols + ["bk"], as_index=False)[["orders", "net"]].sum()
