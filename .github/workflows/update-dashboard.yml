@@ -51,10 +51,10 @@ jobs:
           git push
 
       - name: Today so far from Rista
-        run: python scripts/sync_sales.py --mode live --out data/live_sales.csv
+        run: python sync_sales.py --mode live --out data/live_sales.csv
 
       - name: Ratings from the three sheets
-        run: python scripts/sync_ratings.py --out data/ratings.csv
+        run: python sync_ratings.py --out data/ratings.csv
 
       - name: Build dashboard data
         run: |
