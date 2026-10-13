@@ -98,7 +98,7 @@ def load_maps():
         json.loads(os.environ["GOOGLE_CREDENTIALS"]),
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
     gc = gspread.authorize(creds)
-    help_ws = gc.open_by_key("1CVUS-BSBfDIoQI4Yk2GB4_Zp1CIJRF-9YRfpvCih-FM").worksheet("Help Sheet")
+    help_ws = gc.open_by_key("1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY").worksheet("Region_Help_Sheet")
 
     gh = help_ws.get("G:M")
     branch_master = pd.DataFrame(gh[1:], columns=gh[0])
