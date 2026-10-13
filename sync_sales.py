@@ -7,9 +7,10 @@ Pull sales from Rista and write rows in the historical file's layout.
   --mode live     today's business day so far (09:00 to now)
                   -> data/live_sales.csv
 
-Uses the same API calls and mapping as rista_live.py:
+Uses the same API calls as rista_live.py:
   - Rista: branch/list and sales/summary (JWT auth with API_KEY and SECRET_KEY)
-  - Sales Dashboard sheet, tab 'Help Sheet': store type and region (G:M), channel -> source and brand (D:F)
+  - POS_Master_Dashboard sheet, tab 'Region_Help_Sheet': branch -> region and store type (A:C),
+    channel -> source group and brand (D:F)
   - Net sales = netAmount + chargeAmount, closed invoices only (as in rista_live.py)
   - Business day cut-off at 05:00 for each invoice (as in prepare_dates)
 
@@ -26,9 +27,15 @@ from datetime import datetime, timedelta
 
 import jwt
 import pandas as pd
-import requests from zoneinfo import ZoneInfo
+import requests
+from zoneinfo import ZoneInfo
 
 RISTA = "https://api.ristaapps.com/v1"
+MASTER_SHEET_ID = "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"   # POS_Master_Dashboard
+MASTER_TAB = "Region_Help_Sheet"
+# Source Group names in the sheet -> the four sources used on the dashboard.
+# Ownly, Website and Magicpin count as Others, as in the history. HOGR Dine-In counts as In Store.
+SOURCE_FIX = {"Ownly": "Others", "Website": "Others", "Magicpin": "Others", "HOGR": "In Store"}
 OUT_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region",
             "Net Sales", "Discount", "Gross Sales", "Orders"]
 
@@ -98,21 +105,28 @@ def load_maps():
         json.loads(os.environ["GOOGLE_CREDENTIALS"]),
         scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"])
     gc = gspread.authorize(creds)
-    help_ws = gc.open_by_key("1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY").worksheet("Region_Help_Sheet")
+    ws = gc.open_by_key(MASTER_SHEET_ID).worksheet(MASTER_TAB)
 
-    gh = help_ws.get("G:M")
-    branch_master = pd.DataFrame(gh[1:], columns=gh[0])
-    for c in ["Store Name", "Ownership", "Region"]:
-        branch_master[c] = branch_master[c].astype(str).str.strip()
-    store_type = dict(zip(branch_master["Store Name"], branch_master["Ownership"]))
-    region = dict(zip(branch_master["Store Name"], branch_master["Region"]))
+    # Store master, columns A:C = Branch, Region, Store Type (COCO or FOFO)
+    store_type, region = {}, {}
+    for row in ws.get("A:C")[1:]:
+        row = row + ["", "", ""]
+        name = row[0].strip()
+        if name:
+            region[name] = row[1].strip() or "Unmapped"
+            store_type[name] = row[2].strip() or "Unmapped"
 
-    sm = help_ws.get("D:F")
-    source_master = pd.DataFrame(sm[1:], columns=sm[0])
-    for c in ["Channel", "Source Group", "Brand"]:
-        source_master[c] = source_master[c].astype(str).str.strip()
-    source = dict(zip(source_master["Channel"], source_master["Source Group"]))
-    brand = dict(zip(source_master["Channel"], source_master["Brand"]))
+    # Channel master, columns D:F = Channel, Source Group, Brand
+    source, brand = {}, {}
+    for row in ws.get("D:F")[1:]:
+        row = row + ["", "", ""]
+        channel = row[0].strip()
+        if channel:
+            group = row[1].strip() or "Others"
+            source[channel] = SOURCE_FIX.get(group, group)
+            brand[channel] = row[2].strip()
+
+    print(f"Master sheet: {len(store_type)} branches, {len(brand)} channels.")
     return store_type, region, source, brand
 
 
@@ -136,6 +150,15 @@ def transform_invoices(inv, store_type, region, source, brand):
     biz = dt.apply(lambda x: (x - pd.Timedelta(days=1)).date() if x.hour < 5 else x.date())
     branch = inv["branchName"].astype(str).str.strip()
     channel = inv["channel"].astype(str).str.strip()
+
+    unknown_branches = sorted(set(branch) - set(store_type))
+    if unknown_branches:
+        print(f"Warning: {len(unknown_branches)} branch(es) not in the master sheet, saved as Unmapped: "
+              + ", ".join(unknown_branches))
+    no_brand = channel.map(brand).isna()
+    if no_brand.any():
+        print(f"Warning: {int(no_brand.sum())} invoice(s) from channels not in the master sheet were left out: "
+              + ", ".join(sorted(set(channel[no_brand]))))
 
     out = pd.DataFrame({
         "Brand Name": channel.map(brand),
@@ -205,7 +228,7 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
-    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))   # GitHub runners use UTC; the business day is in India time
     today_bd = business_day_now(now)
     if args.mode == "live":
         days = [today_bd.strftime("%Y-%m-%d")]
