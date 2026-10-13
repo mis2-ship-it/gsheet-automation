@@ -25,11 +25,12 @@ import json
 import os
 from datetime import datetime, timezone
 
+import numpy as np
 import pandas as pd
 
 BASE = pd.Timestamp("2025-01-01")
 BRAND_ORDER = ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
-SOURCE_ORDER = ["In Store", "Swiggy", "Zomato", "Others"]
+SOURCE_ORDER = ["In Store", "Swiggy", "Zomato", "Others", "Ownly"]
 SESSION_ORDER = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner", "Not tagged"]
 # Late Night and Closing in the history are the same session as Post Dinner in the live script.
 SESSION_ALIASES = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
@@ -50,7 +51,7 @@ def clean_sales(df):
     df["Brand Name"] = df["Brand Name"].astype(str).str.strip()
     df = df.dropna(subset=["Brand Name", "Source"])
     df = df[df["Brand Name"].isin(BRAND_ORDER)]
-    df["Source"] = df["Source"].astype(str).str.strip().replace({"Ownly": "Others"})
+    df["Source"] = df["Source"].astype(str).str.strip()
     df["Session"] = df["Session"].fillna("Not tagged").astype(str).str.strip()
     df["Session"] = df["Session"].replace(SESSION_ALIASES)
     df["Store Type"] = df["Store Type"].fillna("Unmapped").astype(str).str.strip()
@@ -182,6 +183,24 @@ def main():
         dump(os.path.join(args.out, "stores", f"{i}.json.gz"), {"rows": rows})
         per_store += 1
 
+    # Bucket tables use the same bands as the history file, applied to each branch-day-session row.
+    AOV_LABELS = ["0-100", "100-200", "200-300", "300-400", "400-500", "500-600", "600-900", ">900"]
+    AOV_EDGES = [100, 200, 300, 400, 500, 600, 900]
+    DISC_LABELS = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-60%",
+                   "60%-70%", "70%-80%", "80%-90%", "90%-100%"]
+    DISC_EDGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    base_cols = ["d", "b", "t", "r", "s"]
+    rb = all_rows[all_rows["orders"] > 0].copy()
+    rb["bk"] = np.searchsorted(AOV_EDGES, (rb["net"] / 100 / rb["orders"]).values, side="left")
+    aov_out = rb.groupby(base_cols + ["bk"], as_index=False)[["orders", "net"]].sum()
+    dump(os.path.join(args.out, "aov_buckets.json.gz"), {"rows": aov_out.values.tolist()})
+    rg = all_rows[all_rows["gross"] > 0].copy()
+    dis = (rg["disc"] / rg["gross"] * 100).values
+    rg["bk"] = np.where(dis == 0, 0, np.searchsorted(DISC_EDGES, dis, side="left") + 1)
+    disc_out = rg.groupby(base_cols + ["bk"], as_index=False)[["orders", "net"]].sum()
+    dump(os.path.join(args.out, "disc_buckets.json.gz"), {"rows": disc_out.values.tolist()})
+    store_brands = {int(k): sorted(int(x) for x in v) for k, v in all_rows.groupby("st")["b"].unique().items()}
+
     has_live = False
     live_day = None
     if live is not None:
@@ -224,7 +243,10 @@ def main():
         "sources": sources,
         "sessions": sessions,
         "platforms": PLATFORMS,
-        "stores": [{"i": sidx[s], "name": s, "type": store_attr[s][0], "region": store_attr[s][1]} for s in stores],
+        "aov_labels": AOV_LABELS,
+        "disc_labels": DISC_LABELS,
+        "stores": [{"i": sidx[s], "name": s, "type": store_attr[s][0], "region": store_attr[s][1],
+                    "brands": store_brands.get(sidx[s], [])} for s in stores],
         "has_live": has_live,
         "has_ratings": has_ratings,
         "stats": {
