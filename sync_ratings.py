@@ -38,10 +38,22 @@ def parse_dates(series):
 def num(series):
     return pd.to_numeric(series.astype(str).str.replace(",", "").str.strip(), errors="coerce")
 
-
-def parse_platform(platform, values, header_row):
+def unique_headers(head):
+    """Some sheets have two columns with the same header. Rename repeats (the first one is used)."""
+    seen, out = {}, []
+    for h in head:
+        if h in seen:
+            seen[h] += 1
+            new = f"{h} ({seen[h]})"
+            print(f"Warning: duplicate column '{h}' renamed to '{new}'. The first one is used.")
+            out.append(new)
+        else:
+            seen[h] = 1
+            out.append(h)
+    return out
+    
     """values = the sheet as a list of rows (get_all_values output)."""
-    head = [h.strip() for h in values[header_row - 1]]
+    head = unique_headers([h.strip() for h in values[header_row - 1]])
     df = pd.DataFrame(values[header_row:], columns=head)
     if platform == "Google":
         out = pd.DataFrame({
