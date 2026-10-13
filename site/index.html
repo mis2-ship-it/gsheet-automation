@@ -667,7 +667,7 @@ document.addEventListener("change", async e => {
     ROLL = await loadGz("data/rollup.json.gz");
     AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
     DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
-    LIVE = M.has_live ? await loadJson("data/live.json") : null;
+    LIVE = null;
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
     render();
   } catch (err) {
