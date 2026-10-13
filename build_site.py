@@ -30,7 +30,9 @@ import pandas as pd
 BASE = pd.Timestamp("2025-01-01")
 BRAND_ORDER = ["Frozen Bottle", "Madno", "Boba Bar", "Lubov"]
 SOURCE_ORDER = ["In Store", "Swiggy", "Zomato", "Others"]
-SESSION_ORDER = ["Breakfast", "Lunch", "Snacks", "Dinner", "Late Night", "Closing", "Post Dinner", "Not tagged"]
+SESSION_ORDER = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner", "Not tagged"]
+# Late Night and Closing in the history are the same session as Post Dinner in the live script.
+SESSION_ALIASES = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
 TYPE_ORDER = ["COCO", "FOFO", "Unmapped"]
 PLATFORMS = ["Swiggy", "Zomato", "Google"]
 
@@ -50,11 +52,34 @@ def clean_sales(df):
     df = df[df["Brand Name"].isin(BRAND_ORDER)]
     df["Source"] = df["Source"].astype(str).str.strip().replace({"Ownly": "Others"})
     df["Session"] = df["Session"].fillna("Not tagged").astype(str).str.strip()
+    df["Session"] = df["Session"].replace(SESSION_ALIASES)
     df["Store Type"] = df["Store Type"].fillna("Unmapped").astype(str).str.strip()
     df["Region"] = df["Region"].fillna("Unmapped").astype(str).str.strip()
     for c in ["Net Sales", "Gross Sales", "Discount", "Orders"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
+
+
+def make_icons(site_dir):
+    """Draw the home-screen icons, so only text files need uploading. Needs Pillow."""
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        print("Pillow not installed: skipping app icons")
+        return
+    teal = (45, 106, 110)
+    for name, size in [("icon-192.png", 192), ("icon-512.png", 512), ("apple-touch-icon.png", 180)]:
+        img = Image.new("RGB", (size, size), teal)
+        draw = ImageDraw.Draw(img)
+        left, right, base = 0.27 * size, 0.73 * size, 0.70 * size
+        w = (right - left) / 5
+        bars = zip([0.20, 0.32, 0.44], [(191, 227, 224), (255, 255, 255), (191, 227, 224)])
+        for i, (h, colour) in enumerate(bars):
+            x0 = left + i * (w * 1.67)
+            x1 = x0 + w * 1.2
+            top = base - h * size * 1.05
+            draw.rounded_rectangle([x0, top, x1, base], radius=int(size * 0.03), fill=colour)
+        img.save(os.path.join(site_dir, name), "PNG")
 
 
 def main():
@@ -212,6 +237,7 @@ def main():
     }
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=1)
+    make_icons(os.path.dirname(os.path.normpath(args.out)))
     print(f"sales rows {len(sales)}, rollup rows {len(rollup)}, store files {per_store}, "
           f"live {has_live}, ratings {has_ratings}, last day {manifest['last_day']}")
 
