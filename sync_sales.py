@@ -34,8 +34,8 @@ RISTA = "https://api.ristaapps.com/v1"
 MASTER_SHEET_ID = "1g4vuRZPy7qsUvDzF5yYM60VKWTL2r0VSDvtvNl06hiY"   # POS_Master_Dashboard
 MASTER_TAB = "Region_Help_Sheet"
 # Source Group names in the sheet -> the four sources used on the dashboard.
-# Ownly, Website and Magicpin count as Others, as in the history. HOGR Dine-In counts as In Store.
-SOURCE_FIX = {"Ownly": "Others", "Website": "Others", "Magicpin": "Others", "HOGR": "In Store"}
+# Ownly, Website, Magicpin and HOGR Dine-In count as Others, which is the online group.
+SOURCE_FIX = {"Ownly": "Others", "Website": "Others", "Magicpin": "Others", "HOGR": "Others"}
 OUT_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region",
             "Net Sales", "Discount", "Gross Sales", "Orders"]
 
