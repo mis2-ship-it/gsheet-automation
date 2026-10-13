@@ -29,10 +29,6 @@ import pandas as pd
 import requests
 
 RISTA = "https://api.ristaapps.com/v1"
-# Session names in the live script are Breakfast, Lunch, Snacks, Dinner and Post Dinner.
-# The historical file uses Late Night and Closing. Post Dinner is mapped to Late Night here
-# until the business confirms the historical rule.
-SESSION_MAP = {"Post Dinner": "Late Night"}
 OUT_COLS = ["Brand Name", "Date", "Branch", "Source", "Session", "Store Type", "Region",
             "Net Sales", "Discount", "Gross Sales", "Orders"]
 
@@ -43,7 +39,7 @@ def session_for_hour(h):
     elif 16 <= h <= 19: name = "Snacks"
     elif 20 <= h <= 23: name = "Dinner"
     else: name = "Post Dinner"
-    return SESSION_MAP.get(name, name)
+    return name   # Late Night and Closing in the history are merged into Post Dinner in build_site.py
 
 
 def business_day_now(now):
@@ -177,6 +173,31 @@ def run_days(days, branches, maps, workers=8):
     return transform_invoices(inv, *maps), errors
 
 
+def read_existing(path):
+    """Rows already saved by earlier nightly runs, or None if there are none yet."""
+    if not os.path.exists(path):
+        return None
+    old = pd.read_csv(path, compression="infer", low_memory=False)
+    return old if not old.empty else None
+
+
+def nightly_start(since, path):
+    """First day to pull: the --since date, or the last saved day if that is later.
+    The last saved day is pulled again in case it was incomplete."""
+    start = datetime.strptime(since, "%Y-%m-%d").date()
+    old = read_existing(path)
+    if old is not None:
+        last = datetime.strptime(str(old["Date"].max())[:10], "%Y-%m-%d").date()
+        start = max(start, last)
+    return start
+
+
+def merge_with_existing(old, new, first_day):
+    """Keep saved days before first_day and replace everything from first_day onwards."""
+    keep = old[old["Date"].astype(str).str[:10] < first_day]
+    return pd.concat([keep, new], ignore_index=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["nightly", "live"], required=True)
@@ -188,10 +209,12 @@ def main():
     today_bd = business_day_now(now)
     if args.mode == "live":
         days = [today_bd.strftime("%Y-%m-%d")]
+        existing = None
     else:
-        start = datetime.strptime(args.since, "%Y-%m-%d").date()
+        start = nightly_start(args.since, args.out)
         end = today_bd - timedelta(days=1)
         days = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((end - start).days + 1)]
+        existing = read_existing(args.out)
     if not days:
         print("Nothing to pull.")
         return 0
@@ -199,6 +222,8 @@ def main():
     branches = active_branches()
     maps = load_maps()
     out, errors = run_days(days, branches, maps)
+    if existing is not None:
+        out = merge_with_existing(existing, out, days[0])
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     compression = "gzip" if args.out.endswith(".gz") else None
     out.to_csv(args.out, index=False, compression=compression)
