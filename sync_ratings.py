@@ -27,9 +27,11 @@ SHEETS = {
     "Zomato": {"id": "1V-tFd3I9CRxDUWSrU9Zc6ODW9Qhbs4C0SXZq4mW6tsg", "tab": "Raw Data", "header_row": 2},
     "Google": {"id": "1HlYNDNXig3PCjIFpQdI8B1lEzubsttUEPj_57DgpJoE", "tab": "Complaints", "header_row": 1},
 }
-# The sheets display dates month-first: 10-11-2026 is 11 October 2026
+# Swiggy and Zomato show dates month-first: 10-11-2026 is 11 October 2026
 # (Week 41 and Month "October-26" on the same row confirm it).
 DATE_FORMATS = ["%m-%d-%Y", "%Y-%m-%d"]
+# Google's Date column is day-first: 11-10-2026 is 11 October 2026 (Month "Oct-26", Week 41).
+GOOGLE_DATE_FORMATS = ["%d-%m-%Y", "%Y-%m-%d"]
 
 # field: (exact names tried first, words the header may contain)
 FIELD_NAMES = {
@@ -49,6 +51,11 @@ def norm(text):
     return re.sub(r"[^a-z0-9]+", " ", str(text).lower()).strip()
 
 
+def clean_name(value):
+    """Collapse repeated spaces so 'Hyderabad  Warehouse' matches 'Hyderabad Warehouse'."""
+    return " ".join(str(value).split())
+
+
 def find_column(head, field, required=True):
     exact, words = FIELD_NAMES[field]
     normed = [norm(h) for h in head]
@@ -65,11 +72,11 @@ def find_column(head, field, required=True):
     return None
 
 
-def parse_dates(series):
-    out = pd.Series(pd.NaT, index=series.index)
-    for fmt in DATE_FORMATS:
+def parse_dates(text_series, formats):
+    out = pd.Series(pd.NaT, index=text_series.index)
+    for fmt in formats:
         todo = out.isna()
-        out[todo] = pd.to_datetime(series[todo], format=fmt, errors="coerce")
+        out[todo] = pd.to_datetime(text_series[todo], format=fmt, errors="coerce")
     return out
 
 
@@ -104,11 +111,21 @@ def parse_platform(platform, values, header_row):
     print(f"{platform} columns used: " + ", ".join(f"{f} = '{c}'" for f, c in cols.items() if c))
 
     def text(field):
-        return df[cols[field]].astype(str).str.strip()
+        return df[cols[field]].astype(str).map(clean_name)
+
+    # Parse dates from the text, using the order this sheet uses.
+    date_text = df[cols["date"]].astype(str).str.strip()
+    formats = GOOGLE_DATE_FORMATS if platform == "Google" else DATE_FORMATS
+    dates = parse_dates(date_text, formats)
+    unreadable = (date_text != "") & dates.isna()
+    if unreadable.any():
+        examples = sorted(set(date_text[unreadable]))[:5]
+        print(f"Warning: {platform}: {int(unreadable.sum())} row(s) have a date that could not be read "
+              f"and were left out. Examples: {examples}")
 
     if platform == "Google":
         out = pd.DataFrame({
-            "Date": parse_dates(df[cols["date"]]),
+            "Date": dates,
             "Platform": "Google",
             "Store Name": text("store"),
             "Brand Name": text("brand"),
@@ -120,7 +137,7 @@ def parse_platform(platform, values, header_row):
         })
     else:
         out = pd.DataFrame({
-            "Date": parse_dates(df[cols["date"]]),
+            "Date": dates,
             "Platform": platform,
             "Store Name": text("store"),
             "Brand Name": text("brand"),
@@ -130,9 +147,6 @@ def parse_platform(platform, values, header_row):
             "Rated Orders": num(df[cols["rated"]]),
             "Avg Rating": num(df[cols["rating"]]),
         })
-    bad_dates = int(out["Date"].isna().sum())
-    if bad_dates:
-        print(f"{platform}: {bad_dates} row(s) with no readable date were left out.")
     out = out.dropna(subset=["Date", "Store Name"])
     out = out[out["Store Name"] != ""]
     out["Orders"] = out["Orders"].fillna(0)
