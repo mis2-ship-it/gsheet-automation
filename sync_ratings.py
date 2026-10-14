@@ -11,7 +11,8 @@ so a wrong pick is easy to spot.
 
 Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type, Region,
 Orders (Orders Count), Rated Orders (1 when the row has a rating, else 0), Avg Rating,
-Comments Group (the issue, blank when there is none). build_site.py turns this into the ratings file.
+Comments Group (the issue, blank when there is none), Item Name, Category Name and Review Text
+(the customer comment). build_site.py turns this into the ratings file.
 
 Usage: python sync_ratings.py --out data/ratings.csv
 """
@@ -45,9 +46,12 @@ FIELD_NAMES = {
     "rated": (["rated orders"], ["rated order", "rated"]),
     "rating": (["avg rating", "rating"], ["avg rating", "rating"]),
     "comments": (["comments group", "group comments"], ["comments group", "group comments"]),
+    "item": (["item name"], ["item name"]),
+    "category": (["category name", "category"], ["category name"]),
+    "review": (["customer comments", "comments", "review"], ["customer comments", "review"]),
 }
 GOOGLE_OPTIONAL = {"orders", "rated", "comments"}   # Google reviews: one rating per row, no order count or comment group
-OPTIONAL_ALL = {"comments"}
+OPTIONAL_ALL = {"comments", "item", "category", "review"}
 
 
 def norm(text):
@@ -117,6 +121,9 @@ def parse_platform(platform, values, header_row):
         return df[cols[field]].astype(str).map(clean_name)
 
     comments = text("comments") if cols["comments"] else pd.Series("", index=df.index)
+    items = text("item") if cols["item"] else pd.Series("", index=df.index)
+    categories = text("category") if cols["category"] else pd.Series("", index=df.index)
+    reviews = df[cols["review"]].astype(str).map(clean_name) if cols["review"] else pd.Series("", index=df.index)
     date_text = df[cols["date"]].astype(str).str.strip()
     formats = GOOGLE_DATE_FORMATS if platform == "Google" else DATE_FORMATS
     dates = parse_dates(date_text, formats)
@@ -138,6 +145,9 @@ def parse_platform(platform, values, header_row):
             "Rated Orders": 1,
             "Avg Rating": num(df[cols["rating"]]),
             "Comments Group": comments,
+            "Item Name": items,
+            "Category Name": categories,
+            "Review Text": reviews,
         })
     else:
         out = pd.DataFrame({
@@ -151,6 +161,9 @@ def parse_platform(platform, values, header_row):
             "Rated Orders": num(df[cols["rated"]]),
             "Avg Rating": num(df[cols["rating"]]),
             "Comments Group": comments,
+            "Item Name": items,
+            "Category Name": categories,
+            "Review Text": reviews,
         })
     out = out.dropna(subset=["Date", "Store Name"])
     out = out[out["Store Name"] != ""]
@@ -158,6 +171,8 @@ def parse_platform(platform, values, header_row):
     out["Rated Orders"] = out["Rated Orders"].fillna(0)
     out["Avg Rating"] = out["Avg Rating"].fillna(0)
     out["Comments Group"] = out["Comments Group"].fillna("").astype(str)
+    for c in ["Item Name", "Category Name", "Review Text"]:
+        out[c] = out[c].fillna("").astype(str)
     out["Date"] = out["Date"].dt.strftime("%Y-%m-%d")
     return out
 
