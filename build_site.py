@@ -84,6 +84,22 @@ def read_if_present(path):
     return None
 
 
+ISSUE_ORDER = ["quantity", "quality", "packing", "melt", "wrong", "missing"]
+
+
+def issue_index(text):
+    """Map a Comments Group value to one of the six hygiene issues (0-5), or -1 for other issues."""
+    t = str(text).lower()
+    for i, key in enumerate(ISSUE_ORDER):
+        if key in t:
+            return i
+    if "ice" in t:
+        return 3
+    if "pack" in t:
+        return 2
+    return -1
+
+
 def make_icons(site_dir):
     """Draw the home-screen icons, so only text files need uploading. Needs Pillow."""
     try:
@@ -271,20 +287,37 @@ def main():
 
     has_ratings = False
     if ratings is not None:
-        r = pd.DataFrame({
-            "d": (ratings["Date"] - BASE).dt.days,
-            "st": ratings["Store Name"].map(sidx),
-            "b": ratings["Brand Name"].map(bidx),
-            "t": ratings["Store Type"].map(tidx),
-            "r": ratings["Region"].map(ridx),
-            "p": ratings["Platform"].map(PLATFORMS.index),
-            "rated": pd.to_numeric(ratings["Rated Orders"], errors="coerce").fillna(0).round().astype("int64"),
-            "rsum": (pd.to_numeric(ratings["Avg Rating"], errors="coerce").fillna(0)
-                     * pd.to_numeric(ratings["Rated Orders"], errors="coerce").fillna(0) * 100).round().astype("int64"),
-            "orders": pd.to_numeric(ratings["Orders"], errors="coerce").fillna(0).round().astype("int64"),
+        rt = ratings
+        rated_flag = (pd.to_numeric(rt["Rated Orders"], errors="coerce").fillna(0).values > 0) & \
+                     (pd.to_numeric(rt["Avg Rating"], errors="coerce").fillna(0).values > 0)
+        orders_n = pd.to_numeric(rt["Orders"], errors="coerce").fillna(0).values
+        rating = pd.to_numeric(rt["Avg Rating"], errors="coerce").fillna(0).values
+        w = np.where(rated_flag, orders_n, 0.0)          # rated orders = Orders Count of rows that have a rating
+        star = np.clip(np.round(rating), 1, 5).astype(int)
+        comm = rt["Comments Group"].fillna("").astype(str).str.strip().values if "Comments Group" in rt.columns \
+            else np.array([""] * len(rt))
+        issue = rated_flag & (comm != "")
+        cat = np.array([issue_index(c) if c else -1 for c in comm])
+        rf = pd.DataFrame({
+            "d": (rt["Date"] - BASE).dt.days.values,
+            "st": rt["Store Name"].map(sidx).values,
+            "b": rt["Brand Name"].map(bidx).values,
+            "t": rt["Store Type"].map(tidx).values,
+            "r": rt["Region"].map(ridx).values,
+            "p": rt["Platform"].map(PLATFORMS.index).values,
+            "rated": w.astype("int64"),
+            "rsum": np.round(rating * w * 100).astype("int64"),
+            "orders": orders_n.round().astype("int64"),
         })
-        r = r.groupby(["d", "st", "b", "t", "r", "p"], as_index=False).sum()
-        dump(os.path.join(args.out, "ratings.json.gz"), {"rows": r.values.tolist()})
+        for k in range(1, 6):
+            rf[f"s{k}"] = (w * (star == k)).astype("int64")
+        rf["iss"] = (w * issue).astype("int64")
+        for j in range(6):
+            rf[f"c{j}"] = (w * (issue & (cat == j))).astype("int64")
+        keys = ["d", "st", "b", "t", "r", "p"]
+        rf = rf.groupby(keys, as_index=False).sum()
+        rcols = ["rated", "rsum", "orders", "s1", "s2", "s3", "s4", "s5", "iss", "c0", "c1", "c2", "c3", "c4", "c5"]
+        dump(os.path.join(args.out, "ratings.json.gz"), {"rows": rf[keys + rcols].values.tolist()})
         has_ratings = True
 
     s26 = sales[sales["Date"].dt.year == 2026]
