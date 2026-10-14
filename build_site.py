@@ -68,6 +68,7 @@ def clean_sales(df):
     df["Session"] = df["Session"].replace(SESSION_ALIASES)
     df["Store Type"] = df["Store Type"].fillna("Unmapped").astype(str).str.strip()
     df["Region"] = df["Region"].fillna("Unmapped").astype(str).str.strip()
+    df["Discount"] = pd.to_numeric(df["Discount"], errors="coerce").fillna(0).abs()   # Rista sends discounts as negatives
     for c in ["Net Sales", "Gross Sales", "Discount", "Orders"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     return df
