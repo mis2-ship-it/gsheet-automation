@@ -18,6 +18,8 @@ Outputs (in --out, normally site/data):
   disc_buckets.json.gz   orders by discount band
   hourly.json.gz         hourly rows: the last 14 business days and today
   ratings.json.gz        ratings rows (when --ratings is given)
+  products.json.gz       monthly item and category rows (Swiggy and Zomato)
+  comments.json.gz       recent customer comments by platform, star and month
 
 Daily row:   [day, store, brand, store_type, region, source, session, net_paise, gross_paise, discount_paise, orders]
 Hourly row:  [day, store, brand, store_type, region, source, session, hour, net_paise, gross_paise, discount_paise, orders]
@@ -320,6 +322,56 @@ def main():
         dump(os.path.join(args.out, "ratings.json.gz"), {"rows": rf[keys + rcols].values.tolist()})
         has_ratings = True
 
+        # Product level (monthly): items and categories, by platform, brand and region.
+        mon = ((rt["Date"].dt.year - 2025) * 12 + rt["Date"].dt.month - 1).values
+        item_txt = rt["Item Name"].fillna("").astype(str).str.strip().values if "Item Name" in rt.columns else np.array([""] * len(rt))
+        cat_txt = rt["Category Name"].fillna("").astype(str).str.strip().values if "Category Name" in rt.columns else np.array([""] * len(rt))
+        review = rt["Review Text"].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.slice(0, 220).values \
+            if "Review Text" in rt.columns else np.array([""] * len(rt))
+        prod_names, prod_id = [], {}
+
+        def name_id(text):
+            if not text:
+                return -1
+            if text not in prod_id:
+                prod_id[text] = len(prod_names)
+                prod_names.append(text)
+            return prod_id[text]
+
+        base = pd.DataFrame({
+            "m": mon, "p": rt["Platform"].map(PLATFORMS.index).values,
+            "b": rt["Brand Name"].map(bidx).values, "r": rt["Region"].map(ridx).values,
+            "rated": w.astype("int64"), "rsum": np.round(rating * w * 100).astype("int64"),
+            "orders": orders_n.round().astype("int64"),
+        })
+        for k in range(1, 6):
+            base[f"s{k}"] = (w * (star == k)).astype("int64")
+        prod_rows = []
+        for kind, txt in [(0, item_txt), (1, cat_txt)]:
+            sub = base.copy()
+            sub["n"] = [name_id(t) for t in txt]
+            sub = sub[sub["n"] >= 0]
+            if sub.empty:
+                continue
+            g = sub.groupby(["m", "p", "b", "r", "n"], as_index=False).sum()
+            g["kind"] = kind
+            prod_rows += g[["m", "p", "b", "r", "kind", "n", "rated", "rsum", "orders", "s1", "s2", "s3", "s4", "s5"]].values.tolist()
+        dump(os.path.join(args.out, "products.json.gz"), {"names": prod_names, "rows": prod_rows})
+
+        # Customer comments: the 200 most recent with text, per platform, star and month.
+        cdf = pd.DataFrame({
+            "d": (rt["Date"] - BASE).dt.days.values, "m": mon,
+            "p": rt["Platform"].map(PLATFORMS.index).values, "star": star,
+            "b": rt["Brand Name"].map(bidx).values, "r": rt["Region"].map(ridx).values,
+            "st": rt["Store Name"].map(sidx).values,
+            "item": [name_id(t) for t in item_txt], "cat": [name_id(t) for t in cat_txt],
+            "text": review,
+        })
+        cdf = cdf[(review != "") & (rating > 0)]
+        cdf = cdf.sort_values("d", ascending=False).groupby(["p", "star", "m"]).head(200)
+        comm_rows = cdf[["d", "p", "star", "b", "r", "st", "item", "cat", "text"]].values.tolist()
+        dump(os.path.join(args.out, "comments.json.gz"), {"rows": comm_rows})
+
     s26 = sales[sales["Date"].dt.year == 2026]
     manifest = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -341,6 +393,7 @@ def main():
         "has_live": live_meta is not None,
         "has_hourly": bool(hourly_values),
         "has_ratings": has_ratings,
+        "has_products": has_ratings and bool(prod_rows),
         "stats": {
             "sales_rows": int(len(sales)),
             "unmapped_store_type_share_2026_pct": round(
