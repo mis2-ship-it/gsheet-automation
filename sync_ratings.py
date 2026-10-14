@@ -9,8 +9,9 @@ Columns are found by name. Matching ignores case and punctuation. An exact name 
 first, then a name the header contains. The log prints the column chosen for each field,
 so a wrong pick is easy to spot.
 
-Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type,
-Region, Orders, Rated Orders, Avg Rating. build_site.py turns this into the ratings file.
+Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type, Region,
+Orders (Orders Count), Rated Orders (1 when the row has a rating, else 0), Avg Rating,
+Comments Group (the issue, blank when there is none). build_site.py turns this into the ratings file.
 
 Usage: python sync_ratings.py --out data/ratings.csv
 """
@@ -43,8 +44,10 @@ FIELD_NAMES = {
     "orders": (["orders count"], ["orders count"]),
     "rated": (["rated orders"], ["rated order", "rated"]),
     "rating": (["avg rating", "rating"], ["avg rating", "rating"]),
+    "comments": (["comments group", "group comments"], ["comments group", "group comments"]),
 }
-GOOGLE_OPTIONAL = {"orders", "rated"}   # Google reviews have one rating per row and no order count
+GOOGLE_OPTIONAL = {"orders", "rated", "comments"}   # Google reviews: one rating per row, no order count or comment group
+OPTIONAL_ALL = {"comments"}
 
 
 def norm(text):
@@ -106,14 +109,14 @@ def parse_platform(platform, values, header_row):
 
     cols = {}
     for field in FIELD_NAMES:
-        required = not (platform == "Google" and field in GOOGLE_OPTIONAL)
-        cols[field] = find_column(head, field, required=required)
+        optional = field in OPTIONAL_ALL or (platform == "Google" and field in GOOGLE_OPTIONAL)
+        cols[field] = find_column(head, field, required=not optional)
     print(f"{platform} columns used: " + ", ".join(f"{f} = '{c}'" for f, c in cols.items() if c))
 
     def text(field):
         return df[cols[field]].astype(str).map(clean_name)
 
-    # Parse dates from the text, using the order this sheet uses.
+    comments = text("comments") if cols["comments"] else pd.Series("", index=df.index)
     date_text = df[cols["date"]].astype(str).str.strip()
     formats = GOOGLE_DATE_FORMATS if platform == "Google" else DATE_FORMATS
     dates = parse_dates(date_text, formats)
@@ -131,9 +134,10 @@ def parse_platform(platform, values, header_row):
             "Brand Name": text("brand"),
             "Store Type": text("store_type"),
             "Region": text("region"),
-            "Orders": 0,
+            "Orders": 1,
             "Rated Orders": 1,
             "Avg Rating": num(df[cols["rating"]]),
+            "Comments Group": comments,
         })
     else:
         out = pd.DataFrame({
@@ -146,12 +150,14 @@ def parse_platform(platform, values, header_row):
             "Orders": num(df[cols["orders"]]),
             "Rated Orders": num(df[cols["rated"]]),
             "Avg Rating": num(df[cols["rating"]]),
+            "Comments Group": comments,
         })
     out = out.dropna(subset=["Date", "Store Name"])
     out = out[out["Store Name"] != ""]
     out["Orders"] = out["Orders"].fillna(0)
     out["Rated Orders"] = out["Rated Orders"].fillna(0)
     out["Avg Rating"] = out["Avg Rating"].fillna(0)
+    out["Comments Group"] = out["Comments Group"].fillna("").astype(str)
     out["Date"] = out["Date"].dt.strftime("%Y-%m-%d")
     return out
 
