@@ -3,7 +3,7 @@ name: Update sales dashboard
 on:
   schedule:
     - cron: "*/30 3-23 * * *"   # live: every 30 minutes, 9 AM to 5 AM IST (times are UTC)
-    - cron: "30 1 * * *"     # 07:00 IST every day: completed days and hourly rows
+    - cron: "30 1 * * *"        # 07:00 IST every day: completed days and hourly rows
   workflow_dispatch:
     inputs:
       mode:
@@ -21,6 +21,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
@@ -66,18 +67,24 @@ jobs:
       - name: Ratings from the three sheets
         run: python sync_ratings.py --out data/ratings.csv
 
-      - name: Sync user access
+      - name: User access from POS_Master_Dashboard
         run: python sync_access.py --out data/access.csv
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
-      - name: Build dashboard data
+      # One data set is built for each login. Each login only receives its own stores.
+      - name: Build one data set per login
         run: |
           EXTRA=""
           if [ -f data/new_sales.csv.gz ]; then EXTRA="$EXTRA --new data/new_sales.csv.gz"; fi
           if [ -f data/new_hourly.csv.gz ]; then EXTRA="$EXTRA --new-hourly data/new_hourly.csv.gz"; fi
-          python build_site.py --history historical_data/historical_sales.csv.gz $EXTRA \
-            --live data/live_sales.csv --ratings data/ratings.csv --out site/data
+          python build_groups.py --access data/access.csv --history historical_data/historical_sales.csv.gz $EXTRA \
+            --live data/live_sales.csv --ratings data/ratings.csv
+
+      # Stop before deploying if anything would expose data without the login check.
+      - name: Safety check before deploy
+        run: |
+          if [ -d site/data ]; then echo "Public data folder found: stopping"; exit 1; fi
+          if [ ! -f functions/_access.json ]; then echo "Access map missing: stopping"; exit 1; fi
+          if [ ! -f "functions/data/[[path]].js" ]; then echo "Access function missing: stopping"; exit 1; fi
 
       - name: Deploy to app.frozenbottle.com
         uses: cloudflare/wrangler-action@v3
