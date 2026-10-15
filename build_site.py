@@ -133,6 +133,8 @@ def main():
     ap.add_argument("--live")
     ap.add_argument("--ratings")
     ap.add_argument("--out", default="site/data")
+    ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
+    ap.add_argument("--icons-dir", default="site")
     args = ap.parse_args()
 
     os.makedirs(os.path.join(args.out, "stores"), exist_ok=True)
@@ -169,6 +171,20 @@ def main():
         ratings = ratings[ratings["Brand Name"].isin(BRAND_ORDER)]
         if ratings.empty:
             ratings = None
+
+    # One login's view (see build_groups.py): keep only the stores in the list.
+    if args.only_stores:
+        keep = set(json.load(open(args.only_stores, encoding="utf-8")))
+        sales = sales[sales["Branch"].isin(keep)].copy()
+        if nh is not None:
+            nh = nh[nh["Branch"].isin(keep)].copy()
+            nh = nh if not nh.empty else None
+        if lh is not None:
+            lh = lh[lh["Branch"].isin(keep)].copy()
+            lh = lh if not lh.empty else None
+        if ratings is not None:
+            ratings = ratings[ratings["Store Name"].isin(keep)].copy()
+            ratings = ratings if not ratings.empty else None
 
     hourly_frames = [f for f in [nh, lh] if f is not None]
     for f in [sales] + hourly_frames:
@@ -405,7 +421,7 @@ def main():
     }
     with open(os.path.join(args.out, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=1)
-    make_icons(os.path.dirname(os.path.normpath(args.out)))
+    make_icons(args.icons_dir)
     print(f"daily rows {len(sales)}, rollup rows {len(rollup)}, store files {per_store}, "
           f"hourly rows {len(hourly_values)}, live {manifest['has_live']}, ratings {has_ratings}, "
           f"last day {manifest['last_day']}")
