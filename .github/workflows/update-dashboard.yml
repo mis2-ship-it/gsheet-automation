@@ -2,7 +2,7 @@ name: Update sales dashboard
 
 on:
   schedule:
-    - cron: "0 */2 * * *"    # every 2 hours: live sales and ratings (use "*/30 * * * *" if the repo stays public)
+    - cron: "*/30 3-23 * * *"   # live: every 30 minutes, 9 AM to 5 AM IST (times are UTC)
     - cron: "30 1 * * *"     # 07:00 IST every day: completed days and hourly rows
   workflow_dispatch:
     inputs:
@@ -65,6 +65,11 @@ jobs:
 
       - name: Ratings from the three sheets
         run: python sync_ratings.py --out data/ratings.csv
+
+      - name: Sync user access
+        run: python sync_access.py --out data/access.csv
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
       - name: Build dashboard data
         run: |
