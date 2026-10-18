@@ -1,0 +1,26 @@
+/* ============ Mobile and desktop views, and the measure slicer ============
+   Mobile: a phone-width column, one-column filters, tables sized to the screen.
+           The Overall table keeps its full width and scrolls sideways.
+   Desktop: a wider column with the filters side by side. */
+
+.modeseg { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 3px; border-radius: 11px; background: var(--line); margin: 0 0 12px; }
+.modeseg button { padding: 6px 14px; border-radius: 9px; font-size: 13px; color: var(--ink-2); }
+.modeseg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+
+.seg4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 3px; border-radius: 11px; background: var(--line); margin: 8px 0 10px; }
+.seg4 button { padding: 6px 0; border-radius: 9px; font-size: 12.5px; color: var(--ink-2); }
+.seg4 button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+
+html.mode-mobile .app { max-width: 480px; margin: 0 auto; }
+html.mode-mobile .fgrid { grid-template-columns: 1fr; }
+html.mode-mobile .l2 { overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+html.mode-mobile .block:not(.wide-table) .tbl { font-size: 11.5px; }
+html.mode-mobile .block:not(.wide-table) .tbl th,
+html.mode-mobile .block:not(.wide-table) .tbl td { padding: 7px 4px; }
+html.mode-mobile .block:not(.wide-table) .tbl td:first-child { white-space: normal; min-width: 84px; max-width: 112px; }
+html.mode-mobile .block.bucket-table .tbl { font-size: 11px; }
+html.mode-mobile .block.bucket-table .tbl th,
+html.mode-mobile .block.bucket-table .tbl td { padding: 6px 3px; white-space: normal; line-height: 1.3; }
+
+html.mode-desktop .app { max-width: 1120px; margin: 0 auto; }
+html.mode-desktop .fgrid { grid-template-columns: repeat(4, 1fr); }
