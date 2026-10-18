@@ -1,7 +1,7 @@
 // Service worker: lets the dashboard install to the home screen and open offline.
-// Pages and data are fetched from the network first, so numbers stay current.
-// The last copy is used only when the phone is offline.
-const CACHE = "fb-sales-v2";
+// Pages and shell files come from the network first; the last copy is used only when offline.
+// Data files (/data/...) are never kept on the device, because each login has its own data.
+const CACHE = "fb-sales-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 
 self.addEventListener("install", event => {
@@ -19,6 +19,7 @@ self.addEventListener("activate", event => {
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/data/")) return;   // never keep one login's data on the device
   event.respondWith(
     fetch(event.request)
       .then(response => {
