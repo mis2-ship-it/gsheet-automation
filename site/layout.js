@@ -1,7 +1,7 @@
-/* ============ Mobile and desktop views ============
-   A Mobile / Desktop switch in the header. The first visit picks Mobile on a narrow screen; the choice is remembered.
-   Sections titled "Overall" keep their full width. If index.html did not load live.js, this loads it.
-   Loaded last. */
+/* ============ Top bar, mobile and desktop views, refresh, and hour labels ============
+   The top bar holds Mobile / Desktop, a Refresh button and the time of the latest live data.
+   Sections titled "Overall" keep their full width. The hour-by-hour chart gets a revenue and growth
+   label under each hour. If index.html did not load live.js, this loads it. Loaded last. */
 (function () {
   const KEY = "fb_view_mode";
   const root = document.documentElement;
@@ -20,19 +20,27 @@
   }
 
   const bar = document.createElement("div");
-  bar.className = "modeseg";
-  bar.setAttribute("role", "group");
-  bar.setAttribute("aria-label", "View mode");
-  bar.innerHTML = '<button data-mode="mobile">Mobile</button><button data-mode="desktop">Desktop</button>';
+  bar.className = "topbar";
+  bar.innerHTML = '<div class="modeseg" role="group" aria-label="View mode">' +
+    '<button data-mode="mobile">Mobile</button><button data-mode="desktop">Desktop</button></div>' +
+    '<button class="refresh" id="refresh-btn" type="button">Refresh</button>' +
+    '<span class="stamp" id="stamp"></span>';
   const l1 = document.getElementById("l1");
   if (l1) l1.parentNode.insertBefore(bar, l1);
   bar.addEventListener("click", e => {
+    if (e.target.closest("#refresh-btn")) { location.reload(); return; }
     const b = e.target.closest("[data-mode]");
     if (!b) return;
-    try { localStorage.setItem(KEY, b.dataset.mode); } catch (err) { /* private mode: the choice lasts for this visit only */ }
+    try { localStorage.setItem(KEY, b.dataset.mode); } catch (err) { /* private mode: this visit only */ }
     applyMode(b.dataset.mode);
   });
   applyMode(startMode());
+
+  function updateStamp() {
+    const el = document.getElementById("stamp");
+    if (!el || typeof M === "undefined" || !M || !M.live_as_of) return;
+    el.textContent = "Live data as of " + M.live_as_of.slice(11, 16) + " IST";
+  }
 
   function markSections() {
     document.querySelectorAll("#view section.block").forEach(sec => {
@@ -41,9 +49,38 @@
       sec.classList.toggle("bucket-table", !!h && /bucket/i.test(h.textContent));
     });
   }
+
+  function addHourLabels() {
+    const sec = [...document.querySelectorAll("#view section.block")]
+      .find(s => (s.querySelector("h2") || {}).textContent === "Hour by hour");
+    if (!sec || sec.querySelector(".hourlabels")) return;
+    const svg = sec.querySelector("svg.chart");
+    const rows = [...sec.querySelectorAll("table.tbl tbody tr")].filter(r => !r.classList.contains("tot"));
+    if (!svg || !rows.length) return;
+    const fmtK = v => (v >= 1000 ? (v / 1000).toFixed(1) + "k" : String(Math.round(v)));
+    const labels = rows.map(r => {
+      const td = r.querySelectorAll("td");
+      const rev = parseFloat((td[1].textContent || "").replace(/[^0-9.]/g, ""));
+      const g = (td[3].textContent || "").replace(/[()]/g, "").trim();
+      const cls = g.includes("▼") ? "dn" : g.includes("▲") ? "upc" : "";
+      return `<div class="hl"><span class="hv">${isNaN(rev) ? "" : fmtK(rev)}</span>` +
+        `<span class="hg ${cls}">${g || "—"}</span></div>`;
+    }).join("");
+    const wrap = document.createElement("div");
+    wrap.className = "hourwrap";
+    svg.parentNode.insertBefore(wrap, svg);
+    wrap.appendChild(svg);
+    const grid = document.createElement("div");
+    grid.className = "hourlabels";
+    grid.style.gridTemplateColumns = `repeat(${rows.length}, 1fr)`;
+    grid.innerHTML = labels;
+    wrap.appendChild(grid);
+  }
+
+  function onRender() { markSections(); addHourLabels(); updateStamp(); }
   const view = document.getElementById("view");
-  if (view) new MutationObserver(markSections).observe(view, { childList: true });
-  markSections();
+  if (view) new MutationObserver(onRender).observe(view, { childList: true });
+  onRender();
 
   if (typeof salesLiveView === "function" && !String(salesLiveView).includes("ensureHourly")) {
     const s = document.createElement("script");
