@@ -1,10 +1,11 @@
 /* ============ Rating tab: product level, star slicer and customer comments ============
    Category and item tables (top 15 by orders in Month B, with Month A), a 1-5 star slicer,
    and the customer comments for the chosen star and product. Google has no product columns,
-   so it shows its review text only. Loaded after ratings.js. It wraps ratingView(). */
+   so it shows its review text only. A product choice is cleared when the platform changes.
+   Loaded after ratings.js. It wraps ratingView(). */
 
 let PROD = null, COMM = null, PROD_LOADING = null;
-const SLICE = { star: "all", item: null };   // item: { kind: 0 = item, 1 = category, n: name index }
+const SLICE = { star: "all", item: null, platform: null };   // item: { kind: 0 = item, 1 = category, n: name index }
 
 function ensureProducts() {
   if (PROD && COMM) return Promise.resolve();
@@ -60,7 +61,7 @@ function productTable(platform, kind, A, B, la, lb) {
 function commentsSection(platform, A, B, lb, isGoogle) {
   const stars = ["all", "1", "2", "3", "4", "5"].map(s =>
     `<button data-sl="${s}" aria-pressed="${SLICE.star === s}">${s === "all" ? "All" : s + "★"}</button>`).join("");
-  const item = SLICE.item;
+  const item = isGoogle ? null : SLICE.item;   // a product choice from Swiggy or Zomato does not apply to Google
   const all = COMM.rows.filter(c => c[1] === platform &&
     (DAY_MON[c[0]] === A || DAY_MON[c[0]] === B) &&
     (S.brand === "all" || c[3] === +S.brand) &&
@@ -87,6 +88,7 @@ const ratingViewBase = ratingView;
 ratingView = function (platformName) {
   const base = ratingViewBase(platformName);
   if (!M.has_ratings || !RAT) return base;
+  if (SLICE.platform !== platformName) { SLICE.item = null; SLICE.platform = platformName; }
   if (!PROD || !COMM) {
     ensureProducts().then(() => render());
     return base + `<p class="muted" style="margin-top:16px">Loading product and comment data…</p>`;
