@@ -1,0 +1,33 @@
+name: KPT and O2D orders
+
+on:
+  schedule:
+    - cron: "45 1 * * *"     # 07:15 IST daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kpt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+      - name: Pull KPT and O2D orders for this month
+        run: python sync_kpt.py --out data/kpt_orders.csv
+      - name: Save the file for checking
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpt_orders
+          path: data/kpt_orders.csv
+          if-no-files-found: warn
