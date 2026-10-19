@@ -3,10 +3,6 @@ name: Historical Data Refresh
 on:
   workflow_dispatch:
 
-  schedule:
-    # Daily at 01:00 UTC = 06:30 AM IST
-    - cron: "0 1 * * *"
-
 permissions:
   contents: write
 
