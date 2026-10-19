@@ -25,6 +25,11 @@ jobs:
         run: pip install pandas numpy requests pyjwt gspread google-auth
       - name: Pull KPT and O2D orders for this month
         run: python sync_kpt.py --out data/kpt_orders.csv
+      - name: Keep the file for the sales dashboard
+        uses: actions/cache/save@v4
+        with:
+          path: data/kpt_orders.csv
+          key: kpt-orders-${{ github.run_id }}
       - name: Save the file for checking
         uses: actions/upload-artifact@v4
         with:
