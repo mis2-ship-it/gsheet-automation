@@ -124,6 +124,52 @@ def make_icons(site_dir):
             draw.rounded_rectangle([x0, top, x1, base], radius=int(size * 0.03), fill=colour)
         img.save(os.path.join(site_dir, name), "PNG")
 
+KPT_BRAND_ALIASES = {"Lubov- Patisserie": "Lubov", "Lubov - Patisserie": "Lubov", "Lubov-Patisserie": "Lubov"}
+
+
+def _clean(text):
+    return " ".join(str(text).split())
+
+
+def kpt_payload(path, keep):
+    """Order timings from sync_kpt.py for the KPT and O2D tab. keep = store names this login may see (None = all)."""
+    if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+        return None
+    k = pd.read_csv(path, dtype=str, keep_default_na=False)
+    if k.empty:
+        return None
+    k["store"] = k["store"].map(_clean)
+    if keep is not None:
+        k = k[k["store"].isin(keep)]
+    k["brand"] = k["brand"].map(_clean).replace(KPT_BRAND_ALIASES)
+    k = k[k["brand"].isin(BRAND_ORDER)]
+    k["session"] = k["session"].map(_clean).replace(SESSION_ALIASES)
+    k["region"] = k["region"].map(_clean)
+    k["channel"] = k["channel"].map(_clean)
+    k["day_ts"] = pd.to_datetime(k["day"], errors="coerce")
+    k["kpt"] = pd.to_numeric(k["kpt_min"], errors="coerce")
+    k["o2d"] = pd.to_numeric(k["o2d_min"], errors="coerce")
+    k = k.dropna(subset=["day_ts", "kpt"])
+    if k.empty:
+        return None
+    stores = sorted(k["store"].unique())
+    regions = ordered(k["region"].unique(), ["KA", "TN", "MH", "ROI", "AP & TL", "Kerela"])
+    sources = ordered(k["channel"].unique(), ["Swiggy", "Zomato"])
+    sessions = ordered(k["session"].unique(), SESSION_ORDER)
+    brands = [b for b in BRAND_ORDER if b in set(k["brand"])]
+    si = {v: i for i, v in enumerate(stores)}
+    ri = {v: i for i, v in enumerate(regions)}
+    bi = {v: i for i, v in enumerate(brands)}
+    so = {v: i for i, v in enumerate(sources)}
+    se = {v: i for i, v in enumerate(sessions)}
+    d = (k["day_ts"] - BASE).dt.days.values
+    kpt10 = np.round(k["kpt"].values * 10).astype(int)
+    o2d10 = np.where(k["o2d"].notna().values, np.round(k["o2d"].fillna(0).values * 10), -1).astype(int)
+    rows = np.column_stack([
+        d, k["store"].map(si).values, k["brand"].map(bi).values, k["region"].map(ri).values,
+        k["channel"].map(so).values, k["session"].map(se).values, kpt10, o2d10]).tolist()
+    return {"stores": stores, "brands": brands, "regions": regions, "sources": sources, "sessions": sessions,
+            "lastDay": int(d.max()), "rows": rows}
 
 def main():
     ap = argparse.ArgumentParser()
@@ -132,6 +178,7 @@ def main():
     ap.add_argument("--new-hourly")
     ap.add_argument("--live")
     ap.add_argument("--ratings")
+    ap.add_argument("--kpt")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
     ap.add_argument("--icons-dir", default="site")
@@ -389,6 +436,12 @@ def main():
         comm_rows = cdf[["d", "p", "star", "b", "r", "st", "item", "cat", "text"]].values.tolist()
         dump(os.path.join(args.out, "comments.json.gz"), {"rows": comm_rows})
 
+    # KPT and O2D tab: order timings from sync_kpt.py, limited to this login's stores.
+    keep_names = set(json.load(open(args.only_stores, encoding="utf-8"))) if args.only_stores else None
+    kpt = kpt_payload(args.kpt, keep_names)
+    if kpt is not None:
+        dump(os.path.join(args.out, "kpt.json.gz"), kpt)
+
     s26 = sales[sales["Date"].dt.year == 2026]
     manifest = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -410,6 +463,8 @@ def main():
         "has_live": live_meta is not None,
         "has_hourly": bool(hourly_values),
         "has_ratings": has_ratings,
+        "has_kpt": kpt is not None,
+        "kpt_last_day": kpt["lastDay"] if kpt is not None else None,
         "has_products": has_ratings and bool(prod_rows),
         "stats": {
             "sales_rows": int(len(sales)),
