@@ -70,6 +70,14 @@ jobs:
       - name: User access from POS_Master_Dashboard
         run: python sync_access.py --out data/access.csv
 
+      - name: Restore the KPT order file
+        uses: actions/cache/restore@v4
+        with:
+          path: data/kpt_orders.csv
+          key: kpt-orders-${{ github.run_id }}
+          restore-keys: |
+            kpt-orders-
+
       # One data set is built for each login. Each login only receives its own stores.
       - name: Build one data set per login
         run: |
