@@ -43,7 +43,7 @@ def get_months():
         )
 
     # 2026 Jan-Aug
-    for month in range(1, 9):
+    for month in range(1, 13):
 
         months.append(
             (2026, month)
