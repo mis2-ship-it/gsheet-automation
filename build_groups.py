@@ -63,6 +63,8 @@ def main():
     acc["Email"] = acc["Email"].str.strip().str.lower()
     acc = acc[(acc["Store Name"] != "") & acc["Email"].str.contains("@")]
 
+    print("KPT file:", args.kpt, "found" if args.kpt and os.path.exists(args.kpt) and os.path.getsize(args.kpt) > 0 else "NOT FOUND or empty")
+  
     data_branches = branches_with_data([args.history, args.new, args.new_hourly, args.live])
     all_token = secrets.token_hex(16)
     groups = [(all_token, None, "all stores")]
