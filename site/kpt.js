@@ -2,18 +2,20 @@
    A third top tab with two views: Day (the latest day in the order file) and Month to date.
    Tables by brand, region, source and session, then the stores over a limit, ranked by orders over a limit.
    KPT limit 12 min (order to ready). O2D limit 30 min (order to delivery). P80 is the time 80% of orders beat.
-   Data: data/kpt.json.gz, built from sync_kpt.py. Loaded after the main page script and the other tab scripts. */
+   Data: data/kpt.json.gz, built from sync_kpt.py. If the data cannot be loaded (usually an expired sign-in),
+   the tab says so and offers a retry. Loaded after the main page script and the other tab scripts. */
 
 SUBS.kpt = [["mtd", "Month to date"], ["ftd", "Day"]];
 const KPT_LIMIT = { kpt: 12, o2d: 30 };
-let KPT = null, KPT_LOADING = null;
+let KPT = null, KPT_LOADING = null, KPT_ERROR = null;
 
 function ensureKpt() {
   if (KPT) return Promise.resolve();
   if (!KPT_LOADING) {
+    KPT_ERROR = null;
     KPT_LOADING = loadGz("data/kpt.json.gz")
-      .then(d => { KPT = d; })
-      .catch(() => { KPT = { stores: [], brands: [], regions: [], sources: [], sessions: [], lastDay: null, rows: [] }; });
+      .then(d => { KPT = d; KPT_LOADING = null; })
+      .catch(err => { KPT_ERROR = (err && err.message) || "network error"; KPT_LOADING = null; });
   }
   return KPT_LOADING;
 }
@@ -98,7 +100,13 @@ function kptView() {
       <p class="muted">KPT is the time from order to ready. O2D is the time from order to delivery. The limits are 12 minutes for KPT and 30 minutes for O2D.</p></section>`;
   }
   if (!KPT) {
-    ensureKpt().then(() => render());
+    if (KPT_ERROR) {
+      return `<section class="empty"><h2>KPT and O2D</h2>
+        <p>The KPT and O2D data could not be loaded.</p>
+        <p class="muted">Usually the sign-in has expired. Refresh the page to sign in again, or try again below.</p>
+        <p><button class="refresh" type="button" data-kpt-retry="1">Try again</button></p></section>`;
+    }
+    if (!KPT_LOADING) ensureKpt().then(() => render());
     return `<p class="muted" style="margin-top:16px">Loading KPT and O2D data…</p>`;
   }
   if (KPT.lastDay === null || !KPT.rows.length) {
@@ -139,6 +147,7 @@ renderHeader = function () {
 };
 
 document.addEventListener("click", e => {
+  if (e.target.closest("[data-kpt-retry]")) { KPT_ERROR = null; render(); return; }
   if (!e.target.closest('[data-top="kpt"]')) return;
   S.sub = "mtd";
   S.sel = null;
