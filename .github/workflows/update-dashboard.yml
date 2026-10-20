@@ -70,6 +70,7 @@ jobs:
       - name: User access from POS_Master_Dashboard
         run: python sync_access.py --out data/access.csv
 
+      # The KPT and O2D order file is saved by the "KPT and O2D Orders" workflow.
       - name: Restore the KPT order file
         uses: actions/cache/restore@v4
         with:
@@ -78,6 +79,11 @@ jobs:
           restore-keys: |
             kpt-orders-
 
+      - name: Check the KPT file before the build
+        run: |
+          ls -la data/
+          if [ -s data/kpt_orders.csv ]; then echo "KPT file found: $(wc -l < data/kpt_orders.csv) lines"; else echo "KPT file MISSING"; fi
+
       # One data set is built for each login. Each login only receives its own stores.
       - name: Build one data set per login
         run: |
@@ -85,7 +91,7 @@ jobs:
           if [ -f data/new_sales.csv.gz ]; then EXTRA="$EXTRA --new data/new_sales.csv.gz"; fi
           if [ -f data/new_hourly.csv.gz ]; then EXTRA="$EXTRA --new-hourly data/new_hourly.csv.gz"; fi
           python build_groups.py --access data/access.csv --history historical_data/historical_sales.csv.gz $EXTRA \
-            --live data/live_sales.csv --ratings data/ratings.csv
+            --live data/live_sales.csv --ratings data/ratings.csv --kpt data/kpt_orders.csv
 
       # Stop before deploying if anything would expose data without the login check.
       - name: Safety check before deploy
