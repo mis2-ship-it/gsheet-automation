@@ -1,7 +1,8 @@
-/* ============ Top bar, mobile and desktop views, refresh, and hour labels ============
-   The top bar holds Mobile / Desktop, a Refresh button and the time of the latest live data.
-   Sections titled "Overall" keep their full width. The hour-by-hour chart gets a revenue and growth
-   label under each hour. If index.html did not load live.js, this loads it. Loaded last. */
+/* ============ Top bar, mobile and desktop views, refresh, hour labels, and sign-in notice ============
+   The top bar holds the Frozen Bottle logo, Mobile / Desktop, a Refresh button and the time of the latest live data.
+   If a data request fails because the sign-in has ended, a notice offers to sign in again.
+   Sections titled "Overall" keep their full width. The hour-by-hour chart gets a revenue and growth label under each hour.
+   If index.html did not load live.js, this loads it. Loaded last. */
 (function () {
   const KEY = "fb_view_mode";
   const root = document.documentElement;
@@ -21,7 +22,8 @@
 
   const bar = document.createElement("div");
   bar.className = "topbar";
-  bar.innerHTML = '<div class="modeseg" role="group" aria-label="View mode">' +
+  bar.innerHTML = '<img class="brand-logo" src="logo.png" alt="Frozen Bottle">' +
+    '<div class="modeseg" role="group" aria-label="View mode">' +
     '<button data-mode="mobile">Mobile</button><button data-mode="desktop">Desktop</button></div>' +
     '<button class="refresh" id="refresh-btn" type="button">Refresh</button>' +
     '<span class="stamp" id="stamp"></span>';
@@ -35,6 +37,35 @@
     applyMode(b.dataset.mode);
   });
   applyMode(startMode());
+
+  // Sign-in notice: shown when a data request is refused or redirected to the sign-in page.
+  function signInNotice() {
+    if (document.getElementById("signin-notice")) return;
+    const d = document.createElement("div");
+    d.id = "signin-notice";
+    d.className = "signin";
+    d.innerHTML = 'Your sign-in has ended or the connection was lost. <button type="button" id="signin-btn">Sign in again</button>';
+    (document.querySelector(".app") || document.body).prepend(d);
+    document.getElementById("signin-btn").addEventListener("click", () => location.reload());
+  }
+  function clearSignInNotice() {
+    const n = document.getElementById("signin-notice");
+    if (n) n.remove();
+  }
+  const nativeFetch = window.fetch.bind(window);
+  const isData = url => /(^|\/)data\//.test(url);   // matches "data/x" and "/data/x"
+  window.fetch = function (input, init) {
+    const url = String(input && input.url ? input.url : input);
+    if (!isData(url)) return nativeFetch(input, init);
+    return nativeFetch(input, init).then(res => {
+      if (res.redirected && new URL(res.url).origin !== location.origin) signInNotice();
+      else if (res.ok) clearSignInNotice();
+      return res;
+    }, err => {
+      signInNotice();
+      throw err;
+    });
+  };
 
   function updateStamp() {
     const el = document.getElementById("stamp");
