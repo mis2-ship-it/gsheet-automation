@@ -53,3 +53,9 @@ html.mode-desktop #fields .wide { grid-column: auto; }
 html.mode-mobile .hourwrap .chart, html.mode-mobile .hourlabels { min-width: 640px; }
 html.mode-mobile .l1 { grid-template-columns: repeat(3, 1fr); }
 html.mode-mobile .l1 button { font-size: 14px; padding: 10px 0; }
+
+/* Frozen Bottle logo: its black background blends into the navy page */
+.brand-logo { height: 40px; width: auto; mix-blend-mode: screen; margin-right: 4px; }
+/* Sign-in notice */
+.signin { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--down); color: var(--ink); font-size: 14px; }
+.signin button { margin-left: 10px; padding: 6px 12px; border-radius: 9px; background: var(--brand); color: #fff; font-weight: 600; font-size: 13px; }
