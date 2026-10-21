@@ -59,3 +59,9 @@ html.mode-mobile .l1 button { font-size: 14px; padding: 10px 0; }
 /* Sign-in notice */
 .signin { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--down); color: var(--ink); font-size: 14px; }
 .signin button { margin-left: 10px; padding: 6px 12px; border-radius: 9px; background: var(--brand); color: #fff; font-weight: 600; font-size: 13px; }
+
+/* Logo: crop the Frozen Bottle wordmark out of the square image (site/logo.png) */
+.brand-logo { display: inline-block; width: 120px; height: 63px; background: url(logo.png) -41.5px -71.7px / 203.8px auto no-repeat; mix-blend-mode: screen; margin-right: 4px; vertical-align: middle; }
+/* Chart controls */
+.chartctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 10px; }
+.chartctl .seg3 { grid-column: 1 / -1; }
