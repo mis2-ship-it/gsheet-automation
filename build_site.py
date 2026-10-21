@@ -442,6 +442,10 @@ def main():
     if kpt is not None:
         dump(os.path.join(args.out, "kpt.json.gz"), kpt)
 
+    # The store list shows only stores with sales or live rows. Names that come only from the rating sheets are kept in the data, but not listed.
+    has_rows = set(sales["Store"]) | {n for f in hourly_frames for n in f["Store"]}
+    listed_stores = [s for s in stores if s in has_rows]
+
     s26 = sales[sales["Date"].dt.year == 2026]
     manifest = {
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
