@@ -2,18 +2,19 @@
    Category and item tables (top 15 by orders in Month B, with Month A), a 1-5 star slicer,
    and the customer comments for the chosen star and product. Google has no product columns,
    so it shows its review text only. A product choice is cleared when the platform changes.
+   If the product or comment data cannot be loaded, the tab says so and offers a retry.
    Loaded after ratings.js. It wraps ratingView(). */
 
-let PROD = null, COMM = null, PROD_LOADING = null;
+let PROD = null, COMM = null, PROD_LOADING = null, PROD_ERROR = null;
 const SLICE = { star: "all", item: null, platform: null };   // item: { kind: 0 = item, 1 = category, n: name index }
 
 function ensureProducts() {
   if (PROD && COMM) return Promise.resolve();
   if (!PROD_LOADING) {
-    PROD_LOADING = Promise.all([
-      loadGz("data/products.json.gz").catch(() => ({ names: [], rows: [] })),
-      loadGz("data/comments.json.gz").catch(() => ({ rows: [] }))
-    ]).then(([p, c]) => { PROD = p; COMM = c; });
+    PROD_ERROR = null;
+    PROD_LOADING = Promise.all([loadGz("data/products.json.gz"), loadGz("data/comments.json.gz")])
+      .then(([p, c]) => { PROD = p; COMM = c; PROD_LOADING = null; })
+      .catch(err => { PROD_ERROR = (err && err.message) || "network error"; PROD_LOADING = null; });
   }
   return PROD_LOADING;
 }
@@ -90,19 +91,29 @@ ratingView = function (platformName) {
   if (!M.has_ratings || !RAT) return base;
   if (SLICE.platform !== platformName) { SLICE.item = null; SLICE.platform = platformName; }
   if (!PROD || !COMM) {
-    ensureProducts().then(() => render());
+    if (PROD_ERROR) {
+      return base + `<section class="block"><h2>Products and comments</h2>
+        <p>The product and comment data could not be loaded.</p>
+        <p class="muted">Usually the sign-in has expired. Refresh the page to sign in again, or try again below.</p>
+        <p><button class="refresh" type="button" data-prod-retry="1">Try again</button></p></section>`;
+    }
+    if (!PROD_LOADING) ensureProducts().then(() => render());
     return base + `<p class="muted" style="margin-top:16px">Loading product and comment data…</p>`;
   }
   const platform = M.platforms.indexOf(platformName);
   const A = RM.a, B = RM.b, la = monLabel(A), lb = monLabel(B);
   const isGoogle = platformName === "Google";
+  const counts = `<p class="muted">Loaded ${num(PROD.rows.length)} product rows and ${num(COMM.rows.length)} comments for this login.</p>`;
+  const noProducts = !isGoogle && PROD.rows.length === 0
+    ? `<p class="muted">No product rows were loaded. Check the Item Name and Category Name columns in the ratings sync.</p>` : "";
   const prodBlock = isGoogle ? "" :
     `<section class="block"><h2>Category level, top 15 by orders (${lb})</h2>${productTable(platform, 1, A, B, la, lb)}</section>` +
     `<section class="block"><h2>Item level, top 15 by orders (${lb})</h2>${productTable(platform, 0, A, B, la, lb)}</section>`;
-  return base + prodBlock + commentsSection(platform, A, B, lb, isGoogle);
+  return base + counts + noProducts + prodBlock + commentsSection(platform, A, B, lb, isGoogle);
 };
 
 document.addEventListener("click", e => {
+  if (e.target.closest("[data-prod-retry]")) { PROD_ERROR = null; render(); return; }
   const s = e.target.closest("[data-sl]");
   if (s) { SLICE.star = s.dataset.sl; render(); return; }
   const it = e.target.closest("[data-item]");
