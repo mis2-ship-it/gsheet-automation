@@ -463,7 +463,7 @@ def main():
         "aov_labels": AOV_LABELS,
         "disc_labels": DISC_LABELS,
         "stores": [{"i": sidx[s], "name": s, "type": store_attr[s][0], "region": store_attr[s][1],
-                    "brands": store_brands.get(sidx[s], [])} for s in stores],
+                    "brands": store_brands.get(sidx[s], [])} for s in listed_stores],
         "has_live": live_meta is not None,
         "has_hourly": bool(hourly_values),
         "has_ratings": has_ratings,
