@@ -38,9 +38,10 @@ html.mode-desktop .fgrid { grid-template-columns: repeat(4, 1fr); }
   color-scheme: dark;
 }
 
-html.mode-desktop .l1 { grid-template-columns: repeat(3, 1fr); }
-html.mode-desktop #fields { grid-template-columns: repeat(5, 1fr); }
-html.mode-desktop #fields .wide { grid-column: auto; }
+/* Four top tabs: Sales, Rating, KPT and O2D, Spike Days */
+html.mode-desktop .l1 { grid-template-columns: repeat(4, 1fr); }
+html.mode-mobile .l1 { grid-template-columns: repeat(4, 1fr); }
+html.mode-mobile .l1 button { font-size: 12.5px; padding: 10px 0; }
 
 .hourwrap { overflow-x: auto; }
 .hourwrap .chart { width: 100%; height: auto; display: block; }
