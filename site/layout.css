@@ -38,10 +38,9 @@ html.mode-desktop .fgrid { grid-template-columns: repeat(4, 1fr); }
   color-scheme: dark;
 }
 
-/* Four top tabs: Sales, Rating, KPT and O2D, Spike Days */
-html.mode-desktop .l1 { grid-template-columns: repeat(4, 1fr); }
-html.mode-mobile .l1 { grid-template-columns: repeat(4, 1fr); }
-html.mode-mobile .l1 button { font-size: 12.5px; padding: 10px 0; }
+html.mode-desktop .l1 { grid-template-columns: repeat(3, 1fr); }
+html.mode-desktop #fields { grid-template-columns: repeat(5, 1fr); }
+html.mode-desktop #fields .wide { grid-column: auto; }
 
 .hourwrap { overflow-x: auto; }
 .hourwrap .chart { width: 100%; height: auto; display: block; }
@@ -52,8 +51,10 @@ html.mode-mobile .l1 button { font-size: 12.5px; padding: 10px 0; }
 .hg.dn { color: var(--down); }
 .hg.upc { color: var(--up); }
 html.mode-mobile .hourwrap .chart, html.mode-mobile .hourlabels { min-width: 640px; }
-html.mode-mobile .l1 { grid-template-columns: repeat(3, 1fr); }
-html.mode-mobile .l1 button { font-size: 14px; padding: 10px 0; }
+/* Four top tabs: Sales, Rating, KPT and O2D, Spike Days */
+html.mode-desktop .l1 { grid-template-columns: repeat(4, 1fr); }
+html.mode-mobile .l1 { grid-template-columns: repeat(4, 1fr); }
+html.mode-mobile .l1 button { font-size: 12.5px; padding: 10px 0; }
 
 /* Frozen Bottle logo: its black background blends into the navy page */
 .brand-logo { height: 40px; width: auto; mix-blend-mode: screen; margin-right: 4px; }
