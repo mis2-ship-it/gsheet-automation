@@ -32,9 +32,13 @@ overallCols = function (kind, key) {
 SUBS.sales.push(["mtd", "Month to date"]);
 const monthKeyOfDay = d => (toDate(d).getUTCFullYear() - 2025) * 12 + toDate(d).getUTCMonth();
 
+function yesterdayIdx() {
+  const t = new Date(Date.now() + 19800000);
+  return Math.round((Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) - EPOCH) / DAY) - 1;
+
 function mtdBlock() {
   setPeriodBar("mtd", null, null);
-  const last = M.last_day;
+  const last = Math.min(M.last_day, yesterdayIdx());
   const cm = monthKeyOfDay(last);
   const cur = [monStart(cm), last];
   const span = last - monStart(cm);
