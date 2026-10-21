@@ -22,7 +22,7 @@
 
   const bar = document.createElement("div");
   bar.className = "topbar";
-  bar.innerHTML = '<img class="brand-logo" src="logo.png" alt="Frozen Bottle">' +
+  bar.innerHTML = '<span class="brand-logo" role="img" aria-label="Frozen Bottle"></span>' +
     '<div class="modeseg" role="group" aria-label="View mode">' +
     '<button data-mode="mobile">Mobile</button><button data-mode="desktop">Desktop</button></div>' +
     '<button class="refresh" id="refresh-btn" type="button">Refresh</button>' +
