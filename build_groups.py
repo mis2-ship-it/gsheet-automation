@@ -94,6 +94,7 @@ def main():
     for i, (token, stores, label) in enumerate(groups):
         out = os.path.join(args.site, "_g", token)
         cmd = [sys.executable, "build_site.py", "--history", args.history, "--out", out, "--icons-dir", args.site]
+        cmd += ["--access", args.access]
         for flag, value in [("--new", args.new), ("--new-hourly", args.new_hourly),
                             ("--live", args.live), ("--ratings", args.ratings), ("--kpt", args.kpt)]:
             if value:
