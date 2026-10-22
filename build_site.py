@@ -124,6 +124,7 @@ def make_icons(site_dir):
             draw.rounded_rectangle([x0, top, x1, base], radius=int(size * 0.03), fill=colour)
         img.save(os.path.join(site_dir, name), "PNG")
 
+
 KPT_BRAND_ALIASES = {"Lubov- Patisserie": "Lubov", "Lubov - Patisserie": "Lubov", "Lubov-Patisserie": "Lubov"}
 
 
@@ -171,6 +172,7 @@ def kpt_payload(path, keep, access=None):
     return {"stores": stores, "brands": brands, "regions": regions, "sources": sources, "sessions": sessions,
             "lastDay": int(d.max()), "rows": rows, "storeAm": build_am_index(access, stores)[1]}
 
+
 def build_am_index(path, stores):
     """Area manager for each store, from the User Access tab (AM Name). Index 0 is 'Unassigned'."""
     store_am = {}
@@ -184,6 +186,7 @@ def build_am_index(path, stores):
     ai = {n: i for i, n in enumerate(ams)}
     idx = [ai.get(store_am.get(_clean(s_), ""), 0) for s_ in stores]
     return ams, idx
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -321,6 +324,7 @@ def main():
     am_src["am"] = np.array(store_am_idx, dtype="int64")[am_src["st"].values]
     rollup = am_src.drop(columns="st").groupby(["d", "am", "b", "t", "r", "s", "ses"], as_index=False).sum()
     rollup = rollup[["d", "am", "b", "t", "r", "s", "ses", "net", "gross", "disc", "orders"]]
+    dump(os.path.join(args.out, "rollup.json.gz"), {"rows": rollup.values.tolist()})
 
     per_store = 0
     by_store = dict(list(all_rows.groupby("st")))
