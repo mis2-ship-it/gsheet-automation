@@ -32,10 +32,11 @@ overallCols = function (kind, key) {
 SUBS.sales.push(["mtd", "Month to date"]);
 const monthKeyOfDay = d => (toDate(d).getUTCFullYear() - 2025) * 12 + toDate(d).getUTCMonth();
 
+// Yesterday in India time, as a day index. Month to date stops here, so today's partial figures are left out.
 function yesterdayIdx() {
   const t = new Date(Date.now() + 19800000);
   return Math.round((Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) - EPOCH) / DAY) - 1;
-
+}
 function mtdBlock() {
   setPeriodBar("mtd", null, null);
   const last = Math.min(M.last_day, yesterdayIdx());
