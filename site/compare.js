@@ -59,7 +59,7 @@ function monthCompareBlock() {
   };
 
   return `<section class="block"><h2>Month comparison</h2>
-      <p class="sub">Revenue in ₹. The filters above apply. Changes compare Month B with Month A.</p>${picker}</section>
+      <p class="sub">Revenue in ₹. The filters above apply. Brackets and changes compare Month B with Month A.</p>${picker}</section>
     <section class="block"><h2>Overall: ${monShort(A)} against ${monShort(B)}</h2>${overall}</section>
     ${dimTable("brand", 2)}${dimTable("region", 4)}${dimTable("source", 5)}${dimTable("session", 6)}`;
 }
