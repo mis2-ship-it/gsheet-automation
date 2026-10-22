@@ -479,6 +479,7 @@ function salesPeriodView(kind) {
   const key = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
   const idx = keys.indexOf(key);
   setPeriodBar(kind, key, keys);
+  const cols = overallCols(kind, key);
   return `
     <section class="block"><h2>Overall</h2><p class="sub">Values in ₹ except Txn and %. Brackets show the change against the column named in the heading.</p>${overallTable(kind, key)}</section>
     ${trendBlock(kind, keys, idx, baseSales(), salesPass)}
@@ -668,7 +669,7 @@ document.addEventListener("change", async e => {
     ROLL = await loadGz("data/rollup.json.gz");
     AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
     DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
-    LIVE = null;
+    LIVE = null;   // live numbers now come from hourly.json.gz, loaded by live.js
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
     render();
   } catch (err) {
@@ -679,6 +680,7 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 </script>
+<script src="live.js"></script>
 <script src="ratings.js"></script>
 <script src="products.js"></script>
 <script src="compare.js"></script>
