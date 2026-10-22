@@ -2,7 +2,8 @@
 """
 Read the User Access tab of POS_Master_Dashboard and write data/access.csv.
 
-One row per store per email: Store Name, Email, Role (AM or TM).
+One row per store per email: Store Name, Email, Role (AM or TM), AM Name.
+A store with an AM Name but no email still gets a row (Email blank), so its area manager is known.
 A cell may hold more than one email (comma, space or semicolon separated). Emails are lower-cased.
 A login sees the stores where its email is listed in AM Mail or TM Mail (see build_groups.py).
 
@@ -42,15 +43,19 @@ def parse(values):
     rows = [(list(r) + [""] * len(head))[:len(head)] for r in values[1:]]
     df = pd.DataFrame(rows, columns=head)
     store_col, am_col, tm_col = find(head, "Store Name"), find(head, "AM Mail"), find(head, "TM Mail")
+    amname_col = find(head, "AM Name")
     out = []
     for _, r in df.iterrows():
         store = clean_name(r[store_col])
         if not store:
             continue
+        amname = clean_name(r[amname_col])
+        emails = []
         for role, col in [("AM", am_col), ("TM", tm_col)]:
             for email in sorted(set(e.lower() for e in EMAIL.findall(str(r[col])))):
-                out.append((store, email, role))
-    return pd.DataFrame(out, columns=["Store Name", "Email", "Role"]).drop_duplicates()
+                emails.append((store, email, role, amname))
+        out.extend(emails if emails else [(store, "", "AM", amname)])
+    return pd.DataFrame(out, columns=["Store Name", "Email", "Role", "AM Name"]).drop_duplicates()
 
 
 def main():
@@ -69,7 +74,8 @@ def main():
         sys.exit(f"The {TAB} tab gave no store and email rows. Check the tab and its sharing.")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     out.to_csv(args.out, index=False)
-    print(f"wrote {args.out}: {out['Store Name'].nunique()} stores, {out['Email'].nunique()} emails")
+    print(f"wrote {args.out}: {out['Store Name'].nunique()} stores, {out['Email'].replace('', pd.NA).dropna().nunique()} emails, "
+          f"{out.loc[out['AM Name'] != '', 'AM Name'].nunique()} area managers")
 
 
 if __name__ == "__main__":
