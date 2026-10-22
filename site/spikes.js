@@ -1,8 +1,8 @@
 /* ============ Sales: Spike Days ============
-   A sub-tab under Sales, laid out like Monthly. Spike days come from the master calendar (2025 to 2027).
+   A top tab after KPT and O2D. Spike days come from the master calendar (2025 to 2027).
    Each spike day is compared with the same event last year, on its own date that year.
    An event is listed under the month where it starts. Days after yesterday are not counted yet.
-   The Brand, Region, Source, Session and Store filters apply. Loaded after store.js. */
+   The Brand, Region, Source, Session and Store filters apply. Loaded after kpt.js. */
 
 const SPIKE_EVENTS = [
   {"m": "January", "n": "New Year's Day", "t": "Global Public Holiday", "d": {"2025": ["2025-01-01", "2025-01-01"], "2026": ["2026-01-01", "2026-01-01"], "2027": ["2027-01-01", "2027-01-01"]}},
