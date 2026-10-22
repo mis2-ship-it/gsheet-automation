@@ -131,7 +131,7 @@ def _clean(text):
     return " ".join(str(text).split())
 
 
-def kpt_payload(path, keep):
+def kpt_payload(path, keep, access=None):
     """Order timings from sync_kpt.py for the KPT and O2D tab. keep = store names this login may see (None = all)."""
     if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
         return None
@@ -169,7 +169,7 @@ def kpt_payload(path, keep):
         d, k["store"].map(si).values, k["brand"].map(bi).values, k["region"].map(ri).values,
         k["channel"].map(so).values, k["session"].map(se).values, kpt10, o2d10]).tolist()
     return {"stores": stores, "brands": brands, "regions": regions, "sources": sources, "sessions": sessions,
-            "lastDay": int(d.max()), "rows": rows}
+            "lastDay": int(d.max()), "rows": rows, "storeAm": build_am_index(access, stores)[1]}
 
 def build_am_index(path, stores):
     """Area manager for each store, from the User Access tab (AM Name). Index 0 is 'Unassigned'."""
@@ -455,7 +455,7 @@ def main():
 
     # KPT and O2D tab: order timings from sync_kpt.py, limited to this login's stores.
     keep_names = set(json.load(open(args.only_stores, encoding="utf-8"))) if args.only_stores else None
-    kpt = kpt_payload(args.kpt, keep_names)
+    kpt = kpt_payload(args.kpt, keep_names, args.access)
     if kpt is not None:
         dump(os.path.join(args.out, "kpt.json.gz"), kpt)
 
