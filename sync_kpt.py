@@ -3,17 +3,18 @@
 Pull order timings for the KPT and O2D dashboard from Rista's sales/page endpoint.
 
 Same source and rules as kpt_o2d_mtd.py:
-  - branches come from the Help Sheet (ownership COCO only, as in that script; use --ownership ALL for every branch)
+  - branches come from the Help Sheet. Default: COCO and FOFO (--ownership COCO for COCO only, ALL for every branch)
   - online orders only: the channel contains "swiggy" or "zomato"
   - the order's invoiceDay must equal the day pulled
   - order time = invoiceDate, ready time = orderReadyTimestamp, delivery time = modifiedDate
   - KPT = ready - order and O2D = delivery - order, in minutes; negatives become 0; rows with no KPT are dropped
 
-The day range defaults to the 1st of this month up to yesterday, in India time.
-Writes one row per order to --out. The dashboard build reads that file.
+Saved file: days already in --out are kept. Only the last --refresh-days days, and any day missing from the file,
+are pulled again, so a nightly run takes minutes. A file without an ownership column, or --full, pulls the whole range.
+Branches are fetched --workers at a time. Rows outside the range are dropped from the file.
 
 Needs API_KEY, SECRET_KEY and GOOGLE_CREDENTIALS.
-Usage: python sync_kpt.py --out data/kpt_orders.csv [--from 2026-10-01] [--to 2026-10-16] [--ownership COCO]
+Usage: python sync_kpt.py --out data/kpt_orders.csv [--from 2026-10-01] [--to 2026-10-18] [--ownership COCO,FOFO]
 """
 import argparse
 import json
@@ -21,6 +22,7 @@ import os
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -32,7 +34,7 @@ HELP_SHEET_ID = "19z6KkVBFoLC33_wcNqVhDLyQEC2dDQ8YQE0gE38BhVg"
 HELP_TAB = "Help Sheet"
 SALES_URL = "https://api.ristaapps.com/v1/sales/page"
 KPT_LIMIT, O2D_LIMIT = 12, 30   # minutes: the SLA lines used by the dashboard
-OUT_COLUMNS = ["day", "branchCode", "store", "region", "channel", "brand", "session",
+OUT_COLUMNS = ["day", "branchCode", "store", "region", "ownership", "channel", "brand", "session",
                "order_time", "ready_time", "delivery_time", "kpt_min", "o2d_min"]
 
 
@@ -42,7 +44,28 @@ def headers():
     return {"x-api-key": os.environ["API_KEY"], "x-api-token": token, "content-type": "application/json"}
 
 
-def load_branches(ownership):
+def parse_ownerships(text):
+    text = text.strip().upper()
+    if text == "ALL":
+        return None
+    return [t.strip() for t in text.split(",") if t.strip()]
+
+
+def filter_branches(df, ownerships):
+    """df: Help Sheet rows with lower-case column names (branchcode, storename, region, ownership)."""
+    df = df.copy()
+    df["branchcode"] = df["branchcode"].astype(str).str.strip()
+    df["ownership"] = df["ownership"].astype(str).str.strip().str.upper()
+    df = df[df["branchcode"] != ""]
+    if ownerships is not None:
+        df = df[df["ownership"].isin(ownerships)]
+    df = df.copy()
+    df["storename"] = df["storename"].astype(str).map(lambda s: " ".join(s.split()))
+    out = df.rename(columns={"branchcode": "branchCode", "storename": "store"})[["branchCode", "store", "region", "ownership"]]
+    return out.drop_duplicates("branchCode")
+
+
+def load_branches(ownerships):
     import gspread
     from google.oauth2.service_account import Credentials
     creds = Credentials.from_service_account_info(
@@ -54,25 +77,32 @@ def load_branches(ownership):
     missing = [c for c in ["branchcode", "storename", "region", "ownership"] if c not in df.columns]
     if missing:
         sys.exit(f"The Help Sheet is missing columns {missing}. Columns found: {head}")
-    df["branchcode"] = df["branchcode"].astype(str).str.strip()
-    df["ownership"] = df["ownership"].astype(str).str.strip().str.upper()
-    if ownership != "ALL":
-        df = df[df["ownership"] == ownership]
-    df = df[df["branchcode"] != ""].copy()
-    df["storename"] = df["storename"].astype(str).map(lambda s: " ".join(s.split()))
-    out = df.rename(columns={"branchcode": "branchCode", "storename": "store"})[["branchCode", "store", "region"]]
-    return out.drop_duplicates("branchCode")
+    return filter_branches(df, ownerships)
 
 
 def fetch_branch_day(branch, day):
-    for attempt in (1, 2):
-        r = requests.get(SALES_URL, headers=headers(), params={"branch": branch, "day": day}, timeout=120)
+    r = None
+    for attempt in range(3):
+        try:
+            r = requests.get(SALES_URL, headers=headers(), params={"branch": branch, "day": day}, timeout=120)
+        except requests.RequestException as e:
+            print(f"WARNING branch {branch} day {day}: {e}")
+            time.sleep(5)
+            continue
         if r.status_code == 200:
             data = r.json().get("data", [])
             return pd.json_normalize(data) if data else pd.DataFrame()
-        time.sleep(3)
-    print(f"WARNING branch {branch} day {day}: the sales endpoint returned {r.status_code}")
+        time.sleep(5 if r.status_code == 429 else 3)
+    code = r.status_code if r is not None else "no response"
+    print(f"WARNING branch {branch} day {day}: the sales endpoint returned {code}")
     return pd.DataFrame()
+
+
+def pull_day(codes, day, workers):
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        parts = list(pool.map(lambda code: fetch_branch_day(code, day), codes))
+    parts = [p for p in parts if not p.empty]
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
 
 
 def find_col(df, exact, contains=None, avoid=()):
@@ -125,6 +155,7 @@ def transform(raw, day, branches, report=None):
         "branchCode": df["branchCode"].values,
         "store": df["store"].values,
         "region": df["region"].values,
+        "ownership": df["ownership"].values,
         "channel": df["channel"].values,
         "brand": df[brand_col].astype(str).values if brand_col else "",
         "session": df[session_col].astype(str).values if session_col else "",
@@ -146,28 +177,49 @@ def main():
     ap.add_argument("--out", default="data/kpt_orders.csv")
     ap.add_argument("--from", dest="start", default=None)
     ap.add_argument("--to", dest="end", default=None)
-    ap.add_argument("--ownership", default="COCO", help="COCO (default, as in the KPT script), FOFO or ALL")
+    ap.add_argument("--ownership", default="COCO,FOFO", help="COCO, FOFO, COCO,FOFO (default) or ALL")
+    ap.add_argument("--refresh-days", type=int, default=2, help="the last days are always pulled again")
+    ap.add_argument("--workers", type=int, default=4, help="branches fetched at the same time")
+    ap.add_argument("--full", action="store_true", help="ignore the saved file and pull the whole range")
     args = ap.parse_args()
+    began = time.time()
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     start = datetime.strptime(args.start, "%Y-%m-%d").date() if args.start else today.replace(day=1)
     end = datetime.strptime(args.end, "%Y-%m-%d").date() if args.end else today - timedelta(days=1)
     if end < start:
         sys.exit("The end day is before the start day. Nothing to pull.")
+    start_s, end_s = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
-    branches = load_branches(args.ownership.upper())
-    print(f"{len(branches)} branches ({args.ownership.upper()}) from the Help Sheet; pulling {start} to {end}")
+    ownerships = parse_ownerships(args.ownership)
+    branches = load_branches(ownerships)
+    label = "ALL" if ownerships is None else ", ".join(ownerships)
+    print(f"{len(branches)} branches ({label}) from the Help Sheet; range {start_s} to {end_s}")
 
+    days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
+    saved = None
+    if not args.full and os.path.exists(args.out) and os.path.getsize(args.out) > 0:
+        saved = pd.read_csv(args.out, dtype=str)
+        if "ownership" not in saved.columns or "day" not in saved.columns:
+            print("The saved file has no ownership column, so the whole range is pulled again.")
+            saved = None
+
+    refresh_from = end - timedelta(days=max(args.refresh_days, 1) - 1)
+    if saved is None:
+        keep = pd.DataFrame(columns=OUT_COLUMNS)
+        pull_dates = days
+    else:
+        have = set(saved["day"])
+        pull_dates = [d for d in days if d >= refresh_from or d.strftime("%Y-%m-%d") not in have]
+        pulled = {d.strftime("%Y-%m-%d") for d in pull_dates}
+        keep = saved[(~saved["day"].isin(pulled)) & (saved["day"] >= start_s) & (saved["day"] <= end_s)]
+        print(f"Saved file: {len(keep)} orders kept; {len(pull_dates)} day(s) pulled again")
+
+    codes = branches["branchCode"].tolist()
     frames = []
-    day = start
-    while day <= end:
-        day_str = day.strftime("%Y-%m-%d")
-        raw_parts = []
-        for branch in branches["branchCode"]:
-            part = fetch_branch_day(branch, day_str)
-            if not part.empty:
-                raw_parts.append(part)
-        raw = pd.concat(raw_parts, ignore_index=True) if raw_parts else pd.DataFrame()
+    for d in pull_dates:
+        day_str = d.strftime("%Y-%m-%d")
+        raw = pull_day(codes, day_str, args.workers)
         report = {}
         got = transform(raw, day_str, branches, report)
         print(f"{day_str}: {len(raw)} rows from Rista, {len(got)} online orders with KPT "
@@ -175,17 +227,23 @@ def main():
         if report.get("brand_col") is None or report.get("session_col") is None:
             print(f"  note: brand column = {report.get('brand_col')}, session column = {report.get('session_col')}")
         frames.append(got)
-        day += timedelta(days=1)
 
-    out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=OUT_COLUMNS)
+    new = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=OUT_COLUMNS)
+    parts = [p for p in [keep, new] if not p.empty]
+    out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=OUT_COLUMNS)
+    out = out[OUT_COLUMNS].sort_values(["day", "branchCode"]).reset_index(drop=True)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     out.to_csv(args.out, index=False)
+
     if not out.empty:
-        print("brand values:", sorted(out["brand"].unique())[:10])
-        print("session values:", sorted(out["session"].unique())[:12])
-        print(f"KPT over {KPT_LIMIT} min: {(out['kpt_min'] > KPT_LIMIT).sum()} orders; "
-              f"O2D over {O2D_LIMIT} min: {(out['o2d_min'] > O2D_LIMIT).sum()} orders")
-    print(f"wrote {args.out} with {len(out)} orders")
+        kpt = pd.to_numeric(out["kpt_min"], errors="coerce")
+        o2d = pd.to_numeric(out["o2d_min"], errors="coerce")
+        print("ownership:", out["ownership"].value_counts().to_dict())
+        print("brand values:", sorted(out["brand"].dropna().unique())[:10])
+        print("session values:", sorted(out["session"].dropna().unique())[:12])
+        print(f"KPT over {KPT_LIMIT} min: {(kpt > KPT_LIMIT).sum()} orders; "
+              f"O2D over {O2D_LIMIT} min: {(o2d > O2D_LIMIT).sum()} orders")
+    print(f"wrote {args.out} with {len(out)} orders in {(time.time() - began) / 60:.1f} minutes")
 
 
 if __name__ == "__main__":
