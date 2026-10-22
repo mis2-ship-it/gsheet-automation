@@ -2,11 +2,15 @@ name: KPT and O2D orders
 
 on:
   schedule:
-    - cron: "45 1 * * *"     # 07:15 IST daily
+    - cron: "45 1 * * *"     # 07:15 IST daily: yesterday and the two days before
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: kpt-orders
+  cancel-in-progress: false
 
 jobs:
   kpt:
@@ -18,21 +22,36 @@ jobs:
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
-      - name: Pull KPT and O2D orders for this month
-        run: python sync_kpt.py --out data/kpt_orders.csv
-      - name: Keep the file for the sales dashboard
+
+      # The saved file is kept in GitHub's cache. A nightly run pulls only the last days; the first run pulls the month.
+      - name: Restore the saved KPT file
+        uses: actions/cache/restore@v4
+        with:
+          path: data/kpt_orders.csv
+          key: kpt-orders-${{ github.run_id }}
+          restore-keys: |
+            kpt-orders-
+
+      - name: Pull KPT and O2D orders (COCO and FOFO)
+        run: python sync_kpt.py --out data/kpt_orders.csv --ownership COCO,FOFO
+
+      - name: Save the KPT file for later runs
         uses: actions/cache/save@v4
         with:
           path: data/kpt_orders.csv
           key: kpt-orders-${{ github.run_id }}
-      - name: Save the file for checking
+
+      - name: Save a copy for checking
         uses: actions/upload-artifact@v4
         with:
           name: kpt_orders
           path: data/kpt_orders.csv
+          retention-days: 3
           if-no-files-found: warn
