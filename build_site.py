@@ -171,6 +171,20 @@ def kpt_payload(path, keep):
     return {"stores": stores, "brands": brands, "regions": regions, "sources": sources, "sessions": sessions,
             "lastDay": int(d.max()), "rows": rows}
 
+def build_am_index(path, stores):
+    """Area manager for each store, from the User Access tab (AM Name). Index 0 is 'Unassigned'."""
+    store_am = {}
+    if path and os.path.exists(path) and os.path.getsize(path) > 0:
+        a = pd.read_csv(path, dtype=str, keep_default_na=False)
+        if "AM Name" in a.columns and "Store Name" in a.columns:
+            for s_, n_ in zip(a["Store Name"].map(_clean), a["AM Name"].map(_clean)):
+                if s_ and n_ and s_ not in store_am:
+                    store_am[s_] = n_
+    ams = ["Unassigned"] + sorted(set(store_am.values()))
+    ai = {n: i for i, n in enumerate(ams)}
+    idx = [ai.get(store_am.get(_clean(s_), ""), 0) for s_ in stores]
+    return ams, idx
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--history", required=True)
@@ -179,6 +193,7 @@ def main():
     ap.add_argument("--live")
     ap.add_argument("--ratings")
     ap.add_argument("--kpt")
+    ap.add_argument("--access")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
     ap.add_argument("--icons-dir", default="site")
@@ -299,11 +314,13 @@ def main():
         with gzip.open(path, "wb", compresslevel=9) as f:
             f.write(raw)
 
-    # Daily files
+    # Daily files. The rollup's second column is the area manager (0 = Unassigned), so the sales tabs can split by AM.
+    ams, store_am_idx = build_am_index(args.access, stores)
     all_rows = daily_rows(sales)
-    rollup = all_rows.drop(columns="st").groupby(["d", "b", "t", "r", "s", "ses"], as_index=False).sum()
-    rollup.insert(1, "st", 0)
-    dump(os.path.join(args.out, "rollup.json.gz"), {"rows": rollup.values.tolist()})
+    am_src = all_rows.copy()
+    am_src["am"] = np.array(store_am_idx, dtype="int64")[am_src["st"].values]
+    rollup = am_src.drop(columns="st").groupby(["d", "am", "b", "t", "r", "s", "ses"], as_index=False).sum()
+    rollup = rollup[["d", "am", "b", "t", "r", "s", "ses", "net", "gross", "disc", "orders"]]
 
     per_store = 0
     by_store = dict(list(all_rows.groupby("st")))
@@ -463,10 +480,11 @@ def main():
         "aov_labels": AOV_LABELS,
         "disc_labels": DISC_LABELS,
         "stores": [{"i": sidx[s], "name": s, "type": store_attr[s][0], "region": store_attr[s][1],
-                    "brands": store_brands.get(sidx[s], [])} for s in listed_stores],
+                    "brands": store_brands.get(sidx[s], []), "a": store_am_idx[sidx[s]]} for s in listed_stores],
         "has_live": live_meta is not None,
         "has_hourly": bool(hourly_values),
         "has_ratings": has_ratings,
+        "ams": ams,
         "has_kpt": kpt is not None,
         "kpt_last_day": kpt["lastDay"] if kpt is not None else None,
         "has_products": has_ratings and bool(prod_rows),
