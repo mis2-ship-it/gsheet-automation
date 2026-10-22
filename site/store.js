@@ -1,7 +1,7 @@
-/* ============ Store filter: loading, no-sales and load-failure messages ============
+/* ============ Store filter: loading, no-sales, and load-failure messages ============
    A store's data is loaded when it is chosen. If it cannot be loaded (usually an ended sign-in),
    the page says so and offers a retry. A failed load is not kept, so the next choice tries again.
-   Loaded after periods.js. */
+   Loaded after periods.js. storeStateHtml() is also used by the Spike Days tab (am.js). */
 const STORE_FAILED = new Set();
 async function ensureStore(i) {
   if (STORE_ROWS.has(i)) return;
@@ -14,11 +14,9 @@ async function ensureStore(i) {
   }
 }
 const esc3 = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const salesPeriodViewBase4 = salesPeriodView;
-salesPeriodView = function (kind) {
-  const base = salesPeriodViewBase4(kind);
-  if (S.store === "all") return base;
-  const i = +S.store;
+
+// Returns a message when the store's numbers are not available yet, or "" when they are ready.
+function storeStateHtml(i) {
   const st = M.stores.find(x => x.i === i);
   const name = st ? esc3(st.name) : "This store";
   if (STORE_FAILED.has(i)) {
@@ -26,14 +24,25 @@ salesPeriodView = function (kind) {
       <p>The data for this store could not be loaded. Usually the sign-in has ended.</p>
       <p><button class="refresh" type="button" data-store-retry="${i}">Try again</button></p></section>`;
   }
-  const rows = STORE_ROWS.get(i);
-  if (rows === undefined) return `<section class="empty"><h2>${name}</h2><p>Loading this store's data…</p></section>`;
-  if (!rows.length) {
-    return `<section class="empty"><h2>${name}</h2>
+  if (!STORE_ROWS.has(i)) return `<section class="empty"><h2>${name}</h2><p>Loading this store's data…</p></section>`;
+  return "";
+}
+
+const salesPeriodViewBase4 = salesPeriodView;
+salesPeriodView = function (kind) {
+  const base = salesPeriodViewBase4(kind);
+  if (S.store === "all") return base;
+  const i = +S.store;
+  const state = storeStateHtml(i);
+  if (state) return state;
+  if (!STORE_ROWS.get(i).length) {
+    const st = M.stores.find(x => x.i === i);
+    return `<section class="empty"><h2>${esc3(st ? st.name : "This store")}</h2>
       <p>No sales are recorded for this store in the sales file. Choose another store, or All stores.</p></section>` + base;
   }
   return base;
 };
+
 document.addEventListener("click", e => {
   const b = e.target.closest("[data-store-retry]");
   if (!b) return;
