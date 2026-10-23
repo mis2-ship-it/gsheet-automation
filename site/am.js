@@ -70,14 +70,29 @@ salesPeriodView = function (kind) {
 };
 const spikeBlockAm = spikeBlock;
 spikeBlock = function () {
-  const state = S.store !== "all" ? storeStateHtml(+S.store) : "";
-  const base = spikeBlockAm();
-  if (state) return state + base;
-  if (S.store !== "all") return base;
-  if (!events.length) return base;
-  const g = spGroup(events, SP.year, spAvail(), baseSales());
-  return base + amSalesBlock(g.curWins, g.prevWins, String(SP.year), String(SP.year - 1),
-    `Spike days in ${spMonthName(SP.month)} ${SP.year}, with the same festivals last year.`);
+  try {
+    const state = S.store !== "all" ? storeStateHtml(+S.store) : "";
+    const base = spikeBlockAm();
+    if (state) return state + base;
+    if (S.store !== "all") return base;
+    let block = "";
+    try {
+      const events = spEvents(SP.year, SP.month);
+      if (events.length) {
+        const g = spGroup(events, SP.year, spAvail(), baseSales());
+        block = amSalesBlock(g.curWins, g.prevWins, String(SP.year), String(SP.year - 1),
+          `Spike days in ${spMonthName(SP.month)} ${SP.year}, with the same festivals last year.`);
+      }
+    } catch (err) {
+      console.error("By area manager (Spike Days):", err);
+      block = `<section class="block"><h2>By area manager</h2><p class="muted">This table could not be drawn: ${escA(err.message)}</p></section>`;
+    }
+    return base + block;
+  } catch (err) {
+    console.error("Spike Days:", err);
+    return `<section class="empty"><h2>Spike Days could not be drawn</h2><p>${escA(err.message)}</p>` +
+      `<p class="muted">Open the browser console (F12) for the full error.</p></section>`;
+  }
 };
 
 // Live: complete hours, from the hourly rows, grouped by the area manager of each store.
