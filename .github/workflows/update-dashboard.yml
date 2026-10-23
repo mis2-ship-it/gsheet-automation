@@ -1,9 +1,6 @@
 name: Update sales dashboard
 
 on:
-  schedule:
-    - cron: "*/30 3-23 * * *"   # live: every 30 minutes, 9 AM to 5 AM IST (times are UTC)
-    - cron: "30 1 * * *"        # 07:00 IST every day: completed days and hourly rows
   workflow_dispatch:
     inputs:
       mode:
