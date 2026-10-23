@@ -67,3 +67,9 @@ html.mode-mobile .l1 button { font-size: 12.5px; padding: 10px 0; }
 /* Chart controls */
 .chartctl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 10px; }
 .chartctl .seg3 { grid-column: 1 / -1; }
+
+/* Mobile: the five filters (Brand, Region, Source, Session, Store name) sit in one row, as on desktop. */
+html.mode-mobile #fields { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+html.mode-mobile #fields .wide { grid-column: auto; }
+html.mode-mobile #fields .field { font-size: 10.5px; min-width: 0; }
+html.mode-mobile #fields select { font-size: 11px; width: 100%; min-width: 0; padding: 8px 18px 8px 6px; text-overflow: ellipsis; }
