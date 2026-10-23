@@ -70,9 +70,10 @@ salesPeriodView = function (kind) {
 };
 const spikeBlockAm = spikeBlock;
 spikeBlock = function () {
+  const state = S.store !== "all" ? storeStateHtml(+S.store) : "";
   const base = spikeBlockAm();
+  if (state) return state + base;
   if (S.store !== "all") return base;
-  const events = spEvents(SP.year, SP.month);
   if (!events.length) return base;
   const g = spGroup(events, SP.year, spAvail(), baseSales());
   return base + amSalesBlock(g.curWins, g.prevWins, String(SP.year), String(SP.year - 1),
