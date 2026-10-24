@@ -9,14 +9,16 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:16px;background:#0A
 h1{font-size:20px;margin:0 0 4px}
 h2{font-size:16px;margin:22px 0 6px}
 .sub{color:#9AA8C2;font-size:12px;margin:0 0 8px}
+.note{color:#9AA8C2;font-size:12px;margin:6px 0}
 .controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
 label{font-size:12px;color:#9AA8C2;display:flex;flex-direction:column;gap:3px}
 select,input{background:#121C33;color:#E5ECF8;border:1px solid #24314f;border-radius:6px;padding:7px;font-size:13px}
+input.sg{width:80px;padding:4px}
 button{background:#3B82F6;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;margin-right:6px}
 button.ghost{background:#121C33;border:1px solid #24314f}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:10px 0}
 .card{background:#121C33;border:1px solid #24314f;border-radius:8px;padding:10px}
-.card small{color:#9AA8C2;font-size:11px}
+.card small{color:#9AA8C2;font-size:11px;display:block}
 .card b{display:block;font-size:17px;margin-top:4px}
 table{width:100%;border-collapse:collapse;font-size:12px}
 th,td{padding:6px 8px;border-bottom:1px solid #24314f;text-align:right;white-space:nowrap}
@@ -26,13 +28,12 @@ tr.sub td{font-weight:bold;background:#0F1830}
 .scroll{overflow-x:auto}
 .up{color:#34D399}
 .down{color:#F87171}
-.msg{padding:10px;border:1px dashed #24314f;border-radius:8px;color:#9AA8C2;margin-top:10px}
-.note{color:#9AA8C2;font-size:12px;margin:6px 0}
+.warn{color:#FBBF24}
 </style>
 </head>
 <body>
 <h1>Target Planner</h1>
-<p class="sub">Plans next month's target from the same month last year. All figures in ₹, net sales.</p>
+<p class="sub">Plans the target month from last year's month-on-month (MoM) movement. All figures in ₹, net sales.</p>
 
 <div class="controls">
   <label>Target month <select id="target"></select></label>
@@ -44,12 +45,21 @@ tr.sub td{font-weight:bold;background:#0F1830}
       <option value="Online">Online</option>
     </select>
   </label>
+  <label>Store type <select id="type"><option value="all">All types</option></select></label>
   <label>Brand <select id="brand"><option value="all">All brands</option></select></label>
   <label>Region <select id="region"><option value="all">All regions</option></select></label>
   <label>Store <select id="store"><option value="all">All stores</option></select></label>
   <label>Growth % (blank = automatic) <input id="growth" type="number" step="0.1" placeholder="automatic"></label>
+  <label>Automatic growth from
+    <select id="basis">
+      <option value="store">Each store's own MoM</option>
+      <option value="region">Region MoM, same for all stores in the region</option>
+      <option value="overall">Overall MoM, same for all stores</option>
+    </select>
+  </label>
   <label>Phasing method
     <select id="method">
+      <option value="weekday">Each weekday's average last year</option>
       <option value="daytype">Mon-Thu / Fri-Sun average</option>
       <option value="samedate">Same date last year</option>
     </select>
@@ -63,9 +73,12 @@ tr.sub td{font-weight:bold;background:#0F1830}
 <script>
 var OPTS = null;
 var LAST = null;
+var STORE_G = {};   // growth typed for individual stores in the store table, in percent (text)
+var WEEK = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function $(id) { return document.getElementById(id); }
 function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function attr(t) { return esc(t).replace(/"/g, "&quot;"); }
 function inr(n) { return (n === null || n === undefined || isNaN(n)) ? "—" : Math.round(n).toLocaleString("en-IN"); }
 function pct(x) {
   if (x === null || x === undefined || isNaN(x)) return "—";
@@ -79,7 +92,7 @@ function monthLabel(key) {
   return new Date(key + "-01T00:00:00Z").toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 function opt(value, label, selected) {
-  return '<option value="' + esc(value) + '"' + (selected ? " selected" : "") + ">" + esc(label) + "</option>";
+  return '<option value="' + attr(value) + '"' + (selected ? " selected" : "") + ">" + esc(label) + "</option>";
 }
 
 function setOptions(o) {
@@ -89,19 +102,39 @@ function setOptions(o) {
   $("target").innerHTML = future.map(function (m) { return opt(m, monthLabel(m), m === o.nextMonth); }).join("");
   var defCompare = addMonths(o.nextMonth, -12);
   $("compare").innerHTML = o.months.map(function (m) { return opt(m, monthLabel(m), m === defCompare); }).join("");
+  $("type").innerHTML = '<option value="all">All types</option>' + o.types.map(function (t) { return opt(t, t, false); }).join("");
   $("brand").innerHTML = '<option value="all">All brands</option>' + o.brands.map(function (b) { return opt(b, b, false); }).join("");
   $("region").innerHTML = '<option value="all">All regions</option>' + o.regions.map(function (r) { return opt(r, r, false); }).join("");
-  $("store").innerHTML = '<option value="all">All stores</option>' + o.stores.map(function (s) {
-    return opt(s.name, s.name + " (" + s.region + ")", false);
-  }).join("");
+  fillStores();
+  $("type").addEventListener("change", fillStores);
   $("status").textContent = "Choose the filters and press Calculate.";
 }
 
+// The store list follows the store type: COCO shows only COCO stores, FOFO only FOFO stores.
+function fillStores() {
+  var type = $("type").value;
+  var list = OPTS.stores.filter(function (s) { return type === "all" || s.type === type; });
+  $("store").innerHTML = '<option value="all">All stores</option>' + list.map(function (s) {
+    return opt(s.name, s.name + " (" + s.region + ")", false);
+  }).join("");
+}
+
+// Growth typed in the store table: kept here, and sent with every Calculate.
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (!t.getAttribute || t.getAttribute("data-sg") === null) return;
+  var name = t.getAttribute("data-sg");
+  if (String(t.value).trim() === "") delete STORE_G[name]; else STORE_G[name] = String(t.value).trim();
+  $("status").textContent = "Growth typed for " + name + ". Press Calculate to update the targets.";
+});
+
 function params() {
+  var sg = {};
+  Object.keys(STORE_G).forEach(function (k) { sg[k] = STORE_G[k]; });
   return {
     targetMonth: $("target").value, compareMonth: $("compare").value, channel: $("channel").value,
-    brand: $("brand").value, region: $("region").value, store: $("store").value,
-    growth: $("growth").value, method: $("method").value
+    type: $("type").value, brand: $("brand").value, region: $("region").value, store: $("store").value,
+    growth: $("growth").value, basis: $("basis").value, method: $("method").value, storeGrowth: sg
   };
 }
 
@@ -112,72 +145,118 @@ function calc() {
 function fail(e) { $("status").textContent = "Error: " + (e && e.message ? e.message : e); }
 
 function card(label, value, extra) {
-  return '<div class="card"><small>' + esc(label) + '</small><b>' + value + "</b>" + (extra ? '<small>' + extra + "</small>" : "") + "</div>";
+  return '<div class="card"><small>' + esc(label) + '</small><b>' + value + "</b>" + (extra ? "<small>" + extra + "</small>" : "") + "</div>";
 }
 
-function levelRow(name, r, cls, extraCells) {
-  return '<tr class="' + (cls || "") + '"><td class="l">' + esc(name) + "</td>" + (extraCells || "") +
-    "<td>" + inr(r.ly) + "</td><td>" + inr(r.prev) + "</td><td>" + pct(r.mom) + "</td>" +
-    "<td>" + inr(r.orders) + "</td><td>" + inr(r.lyWeekdayPerDay) + "</td><td>" + inr(r.lyWeekendPerDay) + "</td>" +
-    "<td>" + pct(r.recent) + "</td><td>" + pct(r.growthUsed) + "</td><td><b>" + inr(r.target) + "</b></td></tr>";
+// Days and average day sales, Mon to Sun.
+function daysBlock(d, m) {
+  var head = "<tr><th class='l'>Month</th>" + WEEK.map(function (w) { return "<th>" + w + "</th>"; }).join("") + "<th>Days</th></tr>";
+  var rows = d.days.rows.map(function (r) {
+    var label = monthLabel(r.key) + (r.key === m.compareMonth ? " (last year)" : " (target)");
+    return "<tr><td class='l'>" + esc(label) + "</td>" + r.counts.map(function (c) { return "<td>" + c + "</td>"; }).join("") +
+      "<td><b>" + r.total + "</b></td></tr>";
+  }).join("");
+  var avgHead = "<tr><th class='l'>Month</th>" + WEEK.map(function (w) { return "<th>" + w + "</th>"; }).join("") + "<th>Month average per day</th></tr>";
+  var avgRows = d.avgDay.rows.map(function (r) {
+    var label = monthLabel(r.key) + (r.label === "projected" ? " projected" : " actual");
+    return "<tr><td class='l'>" + esc(label) + "</td>" + r.avg.map(function (a) { return "<td>" + inr(a) + "</td>"; }).join("") +
+      "<td><b>" + inr(r.overall) + "</b></td></tr>";
+  }).join("");
+  return "<h2>Days in the month</h2>" +
+    '<div class="scroll"><table><thead>' + head + "</thead><tbody>" + rows + "</tbody></table></div>" +
+    "<h2>Average day sales</h2>" +
+    '<p class="note">Last year is the actual average for each weekday. The target month is the projected average, from the phasing below.</p>' +
+    '<div class="scroll"><table><thead>' + avgHead + "</thead><tbody>" + avgRows + "</tbody></table></div>";
 }
-var LEVEL_HEAD = "<th>LY net</th><th>Prev month net</th><th>Prev month growth</th><th>LY orders</th>" +
-  "<th>LY Mon-Thu / day</th><th>LY Fri-Sun / day</th><th>Like-for-like growth</th><th>Growth used</th><th>Target</th>";
 
-function levelTable(title, note, rows, firstHead, extraHead, extraFn) {
-  var tot = { ly: 0, prev: 0, orders: 0, target: 0 };
-  rows.forEach(function (r) { tot.ly += r.ly; tot.prev += r.prev; tot.orders += r.orders; tot.target += r.target; });
-  tot.mom = tot.prev > 0 ? tot.ly / tot.prev - 1 : null;
-  tot.recent = null;
-  tot.growthUsed = tot.ly > 0 ? tot.target / tot.ly - 1 : null;
-  tot.lyWeekdayPerDay = null; tot.lyWeekendPerDay = null;
-  var body = rows.map(function (r) { return levelRow(r.name, r, "", extraFn ? extraFn(r) : ""); }).join("");
-  return '<h2>' + esc(title) + '</h2><p class="note">' + esc(note) + '</p><div class="scroll"><table><thead><tr><th class="l">' +
-    esc(firstHead) + "</th>" + (extraHead || "") + LEVEL_HEAD + "</tr></thead><tbody>" +
-    levelRow("Total", tot, "tot", extraFn ? extraFn(null) : "") + body + "</tbody></table></div>";
+// The figures every row has: last year, the month before, the base, growth, target, and weekday averages.
+function numCells(r) {
+  return "<td>" + inr(r.ly) + "</td><td>" + inr(r.prev) + "</td><td>" + pct(r.mom) + "</td>" +
+    "<td>" + inr(r.base) + "</td><td>" + pct(r.growthUsed) + "</td><td><b>" + inr(r.target) + "</b></td>" +
+    "<td>" + inr(r.lyWeekdayPerDay) + "</td><td>" + inr(r.lyWeekendPerDay) + "</td>";
+}
+function totalOf(list) {
+  var t = { ly: 0, prev: 0, base: 0, target: 0, lyWeekdayPerDay: null, lyWeekendPerDay: null, outletsLy: 0, outletsBase: 0 };
+  list.forEach(function (r) {
+    t.ly += r.ly; t.prev += r.prev; t.base += r.base; t.target += r.target;
+    t.outletsLy += r.outletsLy; t.outletsBase += r.outletsBase;
+  });
+  t.mom = t.prev > 0 ? t.ly / t.prev - 1 : null;
+  t.growthUsed = t.base > 0 ? t.target / t.base - 1 : null;
+  return t;
+}
+
+function levelTable(title, note, rows, firstHead, summary) {
+  var tot = totalOf(rows);
+  tot.outletsLy = summary.outletsLy; tot.outletsBase = summary.outletsBase;
+  var body = rows.map(function (r) {
+    return "<tr><td class='l'>" + esc(r.name) + "</td><td>" + r.outletsLy + "</td><td>" + r.outletsBase + "</td>" + numCells(r) + "</tr>";
+  }).join("");
+  return "<h2>" + esc(title) + '</h2><p class="note">' + esc(note) + '</p><div class="scroll"><table><thead><tr><th class="l">' +
+    esc(firstHead) + "</th><th>Outlets last year</th><th>Outlets now</th>" +
+    "<th>LY net</th><th>Prev month net</th><th>LY MoM %</th><th>Base projected</th><th>Growth used</th><th>Target</th>" +
+    "<th>LY Mon-Thu / day</th><th>LY Fri-Sun / day</th></tr></thead><tbody>" +
+    "<tr class='tot'><td class='l'>Total</td><td>" + tot.outletsLy + "</td><td>" + tot.outletsBase + "</td>" + numCells(tot) + "</tr>" +
+    body + "</tbody></table></div>";
 }
 
 function storeTable(rows) {
-  var html = "", region = null, sub = null;
-  function flush() {
-    if (sub) html += levelRow(region + " total", sub, "sub", "<td>" + esc(region) + "</td>");
+  var head = "<tr><th class='l'>Store</th><th class='l'>Region</th><th class='l'>Type</th><th class='l'>Status</th>" +
+    "<th>LY net</th><th>Prev month net</th><th>LY MoM %</th><th>Base projected</th><th>Growth used</th><th>Growth typed</th>" +
+    "<th>Target</th><th>LY Mon-Thu / day</th><th>LY Fri-Sun / day</th></tr>";
+  var html = "", region = null, group = [];
+  function rowHtml(r) {
+    var typed = (r.typed === null || r.typed === undefined) ? "" : r.typed.toFixed(1);
+    return "<tr><td class='l'>" + esc(r.name) + "</td><td class='l'>" + esc(r.region) + "</td><td class='l'>" + esc(r.type) +
+      "</td><td class='l'>" + esc(r.status) + "</td>" + numCells(r) +
+      "<td><input class='sg' type='number' step='0.1' data-sg='" + attr(r.name) + "' value='" + typed + "' placeholder='auto'></td>" +
+      "<td><b>" + inr(r.target) + "</b></td></tr>";
   }
-  function newSub() { return { ly: 0, prev: 0, orders: 0, target: 0 }; }
+  function subHtml(name, list) {
+    var t = totalOf(list);
+    return "<tr class='sub'><td class='l'>" + esc(name) + " total</td><td></td><td></td><td></td><td>" + inr(t.ly) + "</td><td>" + inr(t.prev) +
+      "</td><td>" + pct(t.mom) + "</td><td>" + inr(t.base) + "</td><td>" + pct(t.growthUsed) + "</td><td></td><td>" + inr(t.target) +
+      "</td><td></td><td></td></tr>";
+  }
   rows.forEach(function (r) {
-    if (r.region !== region) { flush(); region = r.region; sub = newSub(); }
-    sub.ly += r.ly; sub.prev += r.prev; sub.orders += r.orders; sub.target += r.target;
-    sub.mom = sub.prev > 0 ? sub.ly / sub.prev - 1 : null;
-    sub.growthUsed = sub.ly > 0 ? sub.target / sub.ly - 1 : null;
-    sub.recent = null; sub.lyWeekdayPerDay = null; sub.lyWeekendPerDay = null;
-    html += levelRow(r.name, r, "", "<td>" + esc(r.region) + "</td><td>" + esc(r.type) + "</td>");
+    if (r.region !== region) {
+      if (group.length) html += subHtml(region, group);
+      region = r.region; group = [];
+    }
+    group.push(r);
+    html += rowHtml(r);
   });
-  flush();
-  return html;
+  if (group.length) html += subHtml(region, group);
+  return '<h2>By store, grouped by region</h2>' +
+    '<p class="note">Every store that traded last year is listed. A store with no sales in the base month is "Not trading now" and has no target. ' +
+    'To set a growth for one store, type it in "Growth typed" (percent) and press Calculate. Blank = automatic.</p>' +
+    '<div class="scroll"><table><thead>' + head + "</thead><tbody>" + html + "</tbody></table></div>";
 }
 
 function render(d) {
   LAST = d;
   var s = d.summary, m = d.meta;
-  $("status").textContent = "Compare " + monthLabel(m.compareMonth) + " with target " + monthLabel(m.targetMonth) +
-    ". Growth: " + m.growthMode + " (" + m.likeForLikeStores + " stores).";
-  var html = '<div class="cards">' +
+  $("status").textContent = "Target " + monthLabel(m.targetMonth) + " against " + monthLabel(m.compareMonth) + ". " + m.growthMode + ".";
+  var html = daysBlock(d, m) +
+    '<h2>Outlets</h2><div class="cards">' +
+    card("Outlets last year, " + monthLabel(m.compareMonth), inr(s.outletsLy), "stores with sales that month") +
+    card("Outlets operating now, " + monthLabel(m.baseMonth), inr(s.outletsBase), "target outlets: " + inr(s.outletsTarget)) +
+    card("Not trading now", inr(s.notTrading), "traded last year, no sales in " + monthLabel(m.baseMonth)) +
+    card("New since last year", inr(s.newStores), "sales in " + monthLabel(m.baseMonth) + " but not last year") +
+    "</div>" +
+    '<h2>Summary</h2><div class="cards">' +
     card("Last year, " + monthLabel(m.compareMonth), "₹" + inr(s.lyNet), inr(s.lyOrders) + " orders, " + s.lyDays + " days") +
-    card(monthLabel(m.prevMonth) + " net", "₹" + inr(s.prevNet), "growth to " + monthLabel(m.compareMonth) + ": " + pct(s.mom)) +
-    card("Like-for-like growth (suggested)", pct(s.recentYoY), "latest 3 months vs same months last year") +
-    card("Growth used for target", pct(s.growthApplied), m.growthMode.indexOf("automatic") === 0 ? "automatic" : "entered by you") +
-    card("Target, " + monthLabel(m.targetMonth), "₹" + inr(s.target), "phased by day") +
-    card("Mon-Thu days in " + monthLabel(m.compareMonth), inr(s.lyWeekdayDays) + " days", "₹" + inr(s.lyWeekdayAvg) + " per day") +
-    card("Fri-Sun days in " + monthLabel(m.compareMonth), inr(s.lyWeekendDays) + " days", "₹" + inr(s.lyWeekendAvg) + " per day") +
-    card("Target Mon-Thu days", inr(s.targetWeekdayDays) + " days", "₹" + inr(s.targetWeekdayAvg) + " per day") +
-    card("Target Fri-Sun days", inr(s.targetWeekendDays) + " days", "₹" + inr(s.targetWeekendAvg) + " per day") +
+    card("Last year MoM, " + monthLabel(m.prevMonth) + " to " + monthLabel(m.compareMonth), pct(s.mom), "₹" + inr(s.prevNet) + " in " + monthLabel(m.prevMonth)) +
+    card(monthLabel(m.baseMonth) + " projected to month end", "₹" + inr(s.baseNet),
+      "actual to date ₹" + inr(s.baseActual) + " in " + s.baseElapsed + " of " + s.baseDays + " days") +
+    card("Growth used", pct(s.growthApplied), m.growthMode.indexOf("entered") === 0 ? "entered by you" : "automatic, " + m.basis + " basis") +
+    card("Target, " + monthLabel(m.targetMonth), "₹" + inr(s.target), m.storeOverrides ? m.storeOverrides + " store growth(s) typed" : "phased by day below") +
     "</div>";
-  html += levelTable("By brand", "Each brand's last-year month, with the target for the target month.", d.brand, "Brand", "", null);
-  html += levelTable("By region", "Region totals. Growth is the sum of the store targets in the region.", d.region, "Region", "", null);
-  html += '<h2>By store, grouped by region</h2><p class="note">Stores with sales in the compare month. A new store uses its region\'s like-for-like growth, or the overall figure if the region has none. Blank like-for-like growth means the store did not trade in all six comparison months.</p>' +
-    '<div class="scroll"><table><thead><tr><th class="l">Store</th><th>Region</th><th>Type</th>' + LEVEL_HEAD + "</tr></thead><tbody>" +
-    storeTable(d.store) + "</tbody></table></div>";
+  html += levelTable("By brand", "Each brand: outlets, last year, the base projection and the target.", d.brand, "Brand", s);
+  html += levelTable("By region", "Each region: outlets, last year, the base projection and the target.", d.region, "Region", s);
+  html += storeTable(d.store);
   html += '<h2>Phasing by date, ' + monthLabel(m.targetMonth) + '</h2>' +
-    '<p class="note">The target spread over the days of the month. Method: ' + (m.method === "samedate" ? "same date last year" : "Mon-Thu and Fri-Sun averages from last year") + ".</p>" +
+    '<p class="note">Method: ' + ({ weekday: "each weekday's average last year", daytype: "Mon-Thu / Fri-Sun averages", samedate: "same date last year" })[m.method] + ".</p>" +
     '<div class="scroll"><table><thead><tr><th class="l">Date</th><th class="l">Day</th><th class="l">Type</th><th>Same date last year</th><th>Planned</th><th>Cumulative</th><th>% of month</th></tr></thead><tbody>' +
     d.phasing.map(function (p) {
       return '<tr><td class="l">' + esc(p.date) + '</td><td class="l">' + esc(p.weekday) + '</td><td class="l">' + esc(p.dayType) + "</td><td>" +
@@ -197,10 +276,11 @@ function csvDownload(name, head, rows) {
   a.download = name;
   a.click();
 }
+function pc(v) { return v === null || v === undefined ? "" : (v * 100).toFixed(2); }
 function downloadStores() {
   if (!LAST) return;
-  csvDownload("store_targets.csv", ["Store", "Region", "Type", "LY net", "Prev month net", "Prev month growth", "LY orders", "Like-for-like growth", "Growth used", "Target"],
-    LAST.store.map(function (r) { return [r.name, r.region, r.type, Math.round(r.ly), Math.round(r.prev), r.mom === null ? "" : (r.mom * 100).toFixed(2), r.orders, r.recent === null ? "" : (r.recent * 100).toFixed(2), r.growthUsed === null ? "" : (r.growthUsed * 100).toFixed(2), Math.round(r.target)]; }));
+  csvDownload("store_targets.csv", ["Store", "Region", "Type", "Status", "LY net", "Prev month net", "LY MoM %", "Base projected", "Growth used %", "Target"],
+    LAST.store.map(function (r) { return [r.name, r.region, r.type, r.status, Math.round(r.ly), Math.round(r.prev), pc(r.mom), Math.round(r.base), pc(r.growthUsed), Math.round(r.target)]; }));
 }
 function downloadPhasing() {
   if (!LAST) return;
