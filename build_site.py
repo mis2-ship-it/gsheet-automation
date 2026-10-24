@@ -188,6 +188,58 @@ def build_am_index(path, stores):
     return ams, idx
 
 
+BASE_DAY = pd.Timestamp("2025-01-01")
+DISC_SESSIONS = ["Breakfast", "Lunch", "Snacks", "Dinner", "Post Dinner", "Not tagged"]
+AGG = dict(inv=("invoiceNumber", "nunique"), qty=("qty", "sum"), gross=("gross", "sum"),
+           disc=("disc", "sum"), net=("net", "sum"))
+
+
+def discount_payload(path, stores):
+    """Discount Code tab data, from data/discount_rows.csv (see sync_discounts.py).
+    Rows group by day, brand, region, source, session and discount label; invoice counts are unique
+    invoice numbers in each group. Money is stored in paise, as in the sales files."""
+    if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+        return None
+    d = pd.read_csv(path, dtype=str, keep_default_na=False)
+    d = d[d["store"].isin(set(stores))].copy()
+    if d.empty:
+        return None
+    for c in ["qty", "gross", "disc", "net"]:
+        d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0.0)
+    d["disc"] = d["disc"].abs()
+    d["dayi"] = (pd.to_datetime(d["day"]) - BASE_DAY).dt.days
+    d["item"] = d["item"].str.strip()
+    d["category"] = d["category"].str.strip()
+    brands = sorted(d["brand"].unique())
+    regions = sorted(d["region"].unique())
+    sources = sorted(d["source"].unique())
+    present = set(d["session"])
+    sessions = [x for x in DISC_SESSIONS if x in present] + sorted(present - set(DISC_SESSIONS))
+    labels = sorted(d["label"].unique())
+    cats = sorted(d["category"].unique())
+    item_cat = d.groupby("item")["category"].first()
+    items = sorted(item_cat.index)
+    cat_index = {c: i for i, c in enumerate(cats)}
+    d["b"] = d["brand"].map({v: i for i, v in enumerate(brands)})
+    d["r"] = d["region"].map({v: i for i, v in enumerate(regions)})
+    d["s"] = d["source"].map({v: i for i, v in enumerate(sources)})
+    d["ss"] = d["session"].map({v: i for i, v in enumerate(sessions)})
+    d["l"] = d["label"].map({v: i for i, v in enumerate(labels)})
+    d["i"] = d["item"].map({v: i for i, v in enumerate(items)})
+    g1 = d.groupby(["dayi", "b", "r", "s", "ss", "l"]).agg(**AGG).reset_index()
+    g2 = d.groupby(["dayi", "b", "r", "s", "ss", "l", "i"]).agg(**AGG).reset_index()
+
+    def money(v):
+        return int(round(v * 100))
+    rows = [[int(x.dayi), int(x.b), int(x.r), int(x.s), int(x.ss), int(x.l), int(x.inv), int(round(x.qty)),
+             money(x.gross), money(x.disc), money(x.net)] for x in g1.itertuples(index=False)]
+    irows = [[int(x.dayi), int(x.b), int(x.r), int(x.s), int(x.ss), int(x.l), int(x.i), int(x.inv), int(round(x.qty)),
+              money(x.gross), money(x.disc), money(x.net)] for x in g2.itertuples(index=False)]
+    return {"brands": brands, "regions": regions, "sources": sources, "sessions": sessions,
+            "labels": labels, "cats": cats, "items": [[it, cat_index[item_cat[it]]] for it in items],
+            "rows": rows, "irows": irows}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--history", required=True)
@@ -197,6 +249,7 @@ def main():
     ap.add_argument("--ratings")
     ap.add_argument("--kpt")
     ap.add_argument("--access")
+    ap.add_argument("--discounts")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
     ap.add_argument("--icons-dir", default="site")
@@ -465,6 +518,9 @@ def main():
 
     # The store list shows only stores with sales or live rows. Names that come only from the rating sheets are kept in the data, but not listed.
     has_rows = set(sales["Store"]) | {n for f in hourly_frames for n in f["Store"]}
+    disc = discount_payload(args.discounts, stores)
+    if disc is not None:
+        dump(os.path.join(args.out, "discounts.json.gz"), disc)
     listed_stores = [s for s in stores if s in has_rows]
 
     s26 = sales[sales["Date"].dt.year == 2026]
@@ -490,6 +546,7 @@ def main():
         "has_ratings": has_ratings,
         "ams": ams,
         "has_kpt": kpt is not None,
+        "has_discounts": disc is not None,
         "kpt_last_day": kpt["lastDay"] if kpt is not None else None,
         "has_products": has_ratings and bool(prod_rows),
         "stats": {
