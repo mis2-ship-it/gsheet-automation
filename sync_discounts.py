@@ -133,8 +133,19 @@ def main():
     from sync_kpt import load_branches, pull_day     # same Rista and Help Sheet settings as the KPT pull
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    start = datetime.strptime(args.start or FIRST_DAY, "%Y-%m-%d").date()
-    end = datetime.strptime(args.end, "%Y-%m-%d").date() if args.end else today - timedelta(days=1)
+    def parse_day(text, default):
+        t = (text or "").strip().lower()
+        if t in ("", "default"):
+            return default
+        business_today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
+        if t == "today":
+            return business_today
+        if t == "yesterday":
+            return business_today - timedelta(days=1)
+        return datetime.strptime(t, "%Y-%m-%d").date()
+
+    start = parse_day(args.start, datetime.strptime(FIRST_DAY, "%Y-%m-%d").date())
+    end = parse_day(args.end, today - timedelta(days=1))
     if end < start:
         sys.exit("The end day is before the start day. Nothing to pull.")
     start_s, end_s = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
