@@ -4,13 +4,13 @@ Target Planner data: daily sales by store, brand and channel (Offline = In Store
 Built from the historical file and the completed days in the nightly cache, with the dashboard's own cleaning
 (build_site.clean_sales), so the planner and the dashboard show the same numbers.
 
-Writes data/target_base.csv, and the Target_Base tab of the Google Sheet in TARGET_SHEET_ID when it is set.
-Usage: python build_target_base.py [--from 2025-08-01] [--history historical_data/historical_sales.csv.gz]
-       [--new data/new_sales.csv.gz] [--out data/target_base.csv]
+Writes data/target_base.csv, then the Target_Base tab of the Google Sheet whose ID is in TARGET_SHEET_ID.
+Usage: python build_target_base.py [--from 2025-08-01] [--history ...] [--new ...] [--out ...]
 """
 import argparse
 import json
 import os
+import re
 
 import pandas as pd
 
@@ -18,6 +18,7 @@ from build_site import clean_sales, read_if_present
 
 COLUMNS = ["Date", "Branch", "Region", "Store Type", "Brand", "Channel", "Net", "Gross", "Discount", "Orders", "Quantity"]
 DEFAULT_FROM = "2025-08-01"
+SHEET_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,}")
 
 
 def build(history, new, start):
@@ -38,13 +39,41 @@ def build(history, new, start):
     return g[COLUMNS].sort_values(["Date", "Branch", "Brand", "Channel"]).reset_index(drop=True)
 
 
+def sheet_id_from(text):
+    """Accepts the bare ID, or a pasted sheet address, and returns the ID."""
+    s = (text or "").strip().strip('"').strip("'").strip()
+    m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", s)
+    return m.group(1) if m else s
+
+
 def write_sheet(df):
     import gspread
     from google.oauth2.service_account import Credentials
+    sid = sheet_id_from(os.environ.get("TARGET_SHEET_ID", ""))
+    if not SHEET_ID_PATTERN.fullmatch(sid):
+        raise SystemExit("TARGET_SHEET_ID is missing or is not a sheet ID. Paste only the ID: "
+                         "the text between /d/ and /edit in the sheet's address.")
     creds = Credentials.from_service_account_info(
         json.loads(os.environ["GOOGLE_CREDENTIALS"]),
         scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    sh = gspread.authorize(creds).open_by_key(os.environ["TARGET_SHEET_ID"])
+    gc = gspread.authorize(creds)
+    try:
+        sh = gc.open_by_key(sid)
+    except gspread.exceptions.APIError as e:
+        status = getattr(getattr(e, "response", None), "status_code", "unknown")
+        if status == 403:
+            why = ("The Google Sheets API is not enabled for the project of this service account. "
+                   "Enable it in Google Cloud Console under APIs & Services.")
+        else:
+            why = ("Google could not open the sheet. Usually the sheet is not shared with the service account "
+                   "as Editor, or the ID is wrong.")
+        raise SystemExit(
+            "Could not open the Target Planner sheet.\n"
+            f"  ID used: {sid[:6]}...{sid[-4:]} ({len(sid)} characters)\n"
+            f"  Service account: {creds.service_account_email}\n"
+            f"  Google status: {status}. {why}\n"
+            f"  Share the sheet with {creds.service_account_email} as Editor, check TARGET_SHEET_ID, "
+            "then run the workflow again.")
     try:
         ws = sh.worksheet("Target_Base")
         ws.clear()
