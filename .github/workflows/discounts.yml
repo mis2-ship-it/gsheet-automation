@@ -29,6 +29,7 @@ jobs:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      DISCOUNT_SHEET_ID: ${{ secrets.DISCOUNT_SHEET_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +40,6 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
-      # The saved rows are kept in GitHub's cache. A nightly run pulls only the last days; the first run pulls from September.
       - name: Restore the saved discount rows
         uses: actions/cache/restore@v4
         with:
@@ -56,3 +56,6 @@ jobs:
         with:
           path: data/discount_rows.csv
           key: discount-rows-${{ github.run_id }}
+
+      - name: Write the Discount Dashboard tabs
+        run: python write_discount_sheet.py --rows data/discount_rows.csv --keep-days 400
