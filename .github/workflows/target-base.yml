@@ -1,0 +1,42 @@
+name: Target base (Target Planner data)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"        # 08:30 IST daily, after the nightly sales run
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: target-base
+  cancel-in-progress: false
+
+jobs:
+  target-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      TARGET_SHEET_ID: ${{ secrets.TARGET_SHEET_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy pillow requests pyjwt gspread google-auth
+
+      # The completed days are saved by the nightly sales run, in the same cache the dashboard uses.
+      - name: Restore the saved sales files
+        uses: actions/cache/restore@v4
+        with:
+          path: data/new_sales.csv.gz
+          key: sales-data-${{ github.run_id }}
+          restore-keys: |
+            sales-data-
+
+      - name: Build the planning base and write the Target_Base tab
+        run: python build_target_base.py --out data/target_base.csv
