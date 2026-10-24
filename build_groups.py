@@ -52,6 +52,7 @@ def main():
     ap.add_argument("--live")
     ap.add_argument("--ratings")
     ap.add_argument("--kpt")
+    ap.add_argument("--discounts")
     ap.add_argument("--site", default="site")
     ap.add_argument("--functions", default="functions")
     args = ap.parse_args()
@@ -94,7 +95,7 @@ def main():
         cmd = [sys.executable, "build_site.py", "--history", args.history, "--out", out, "--icons-dir", args.site]
         cmd += ["--access", args.access]
         for flag, value in [("--new", args.new), ("--new-hourly", args.new_hourly),
-                            ("--live", args.live), ("--ratings", args.ratings), ("--kpt", args.kpt)]:
+                            ("--live", args.live), ("--ratings", args.ratings), ("--kpt", args.kpt), ("--discounts", args.discounts)]:
             if value:
                 cmd += [flag, value]
         if stores is not None:
