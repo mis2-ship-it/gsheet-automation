@@ -1,0 +1,58 @@
+name: Discount Code rows (Swiggy and Zomato)
+
+on:
+  schedule:
+    - cron: "15 2 * * *"      # 07:45 IST daily: yesterday and the two days before
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "First day to pull, YYYY-MM-DD (empty = 2026-09-01)"
+        required: false
+        default: ""
+      to:
+        description: "Last day to pull, YYYY-MM-DD (empty = yesterday)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discount-rows
+  cancel-in-progress: false
+
+jobs:
+  discounts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+
+      # The saved rows are kept in GitHub's cache. A nightly run pulls only the last days; the first run pulls from September.
+      - name: Restore the saved discount rows
+        uses: actions/cache/restore@v4
+        with:
+          path: data/discount_rows.csv
+          key: discount-rows-${{ github.run_id }}
+          restore-keys: |
+            discount-rows-
+
+      - name: Pull Swiggy and Zomato orders
+        run: python sync_discounts.py --out data/discount_rows.csv --from "${{ inputs.from }}" --to "${{ inputs.to }}"
+
+      - name: Save the discount rows for later runs
+        uses: actions/cache/save@v4
+        with:
+          path: data/discount_rows.csv
+          key: discount-rows-${{ github.run_id }}
