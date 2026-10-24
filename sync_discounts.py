@@ -14,8 +14,10 @@ Rules:
   per order, for example "15% Off + TRYNEW". No discount at all gives "Zero discount".
 - a Swiggy order whose tags contain "Toing" gets "Toing Discount" for its item discounts.
 - discount per item = abs(item_baseNetDiscountAmount). That figure already includes the Zomato voucher.
+- the API sends each order with its items inside a list. Each item becomes one row, and the item's own
+  fields are named item_<field>. Order fields keep their names.
 
-Usage: python sync_discounts.py --out data/discount_rows.csv [--from 2026-09-01] [--to YYYY-MM-DD]
+Usage: python sync_discounts.py --out data/discount_rows.csv [--from 2026-09-01] [--to YYYY-MM-DD | yesterday]
 """
 import argparse
 import ast
@@ -32,6 +34,7 @@ OUT_COLUMNS = ["day", "branchCode", "store", "region", "ownership", "brand", "so
 SESSION_ALIAS = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
 BRACKET = re.compile(r"\((.*)\)")
 FIRST_DAY = "2026-09-01"
+ITEM_HINTS = ("quantity", "shortName", "baseGrossAmount", "baseNetAmount")
 
 
 def parse_list(v):
@@ -64,17 +67,54 @@ def session_of(v):
     return SESSION_ALIAS.get(s, s)
 
 
+def is_list_of_dicts(v):
+    return isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict)
+
+
+def expand_items(raw):
+    """sales/page sends one record per order, with the items in a list. This makes one row per item:
+    the item's fields get the item_ prefix, and order fields keep their names."""
+    if raw is None or raw.empty:
+        return raw
+    if "item_shortName" in raw.columns or "item_quantity" in raw.columns:
+        return raw
+    def has_item_keys(col):
+        for v in raw[col]:
+            if is_list_of_dicts(v):
+                return any(h in v[0] for h in ITEM_HINTS)
+        return False
+    item_cols = [c for c in raw.columns if has_item_keys(c)]
+    if not item_cols:
+        first = raw.to_dict("records")[0]
+        nested = {k: list(v[0].keys()) for k, v in first.items() if is_list_of_dicts(v)}
+        raise SystemExit("sales/page: no item list found in the records. Keys of the first record: "
+                         f"{sorted(first.keys())[:40]}. Nested lists: {nested}")
+    col = item_cols[0]
+    rows = []
+    for rec in raw.to_dict("records"):
+        items = rec.pop(col, None)
+        if not is_list_of_dicts(items):
+            continue
+        for it in items:
+            row = dict(rec)
+            for k, v in it.items():
+                row["item_" + k] = v
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def transform(raw, day, branches):
-    """raw: sales/page rows (one or more days). day: keep only this day (None = keep all).
-    branches: Help Sheet rows with branchCode, store, region, ownership."""
+    """raw: sales/page rows (one or more days), one row per order or per item.
+    day: keep only this day (None = keep all). branches: Help Sheet rows with branchCode, store, region, ownership."""
     cols = ["channel", "status", "invoiceNumber", "branchCode", "brandName", "item_shortName",
             "item_categoryName", "item_quantity", "item_baseGrossAmount", "item_baseNetDiscountAmount",
             "item_baseNetAmount"]
     if raw is None or raw.empty:
         return pd.DataFrame(columns=OUT_COLUMNS)
+    raw = expand_items(raw)
     missing = [c for c in cols if c not in raw.columns]
     if missing:
-        raise SystemExit(f"sales/page is missing columns: {missing}")
+        raise SystemExit(f"sales/page is missing columns: {missing}. Columns received: {list(raw.columns)}")
     df = raw.copy()
     for c in ["sessionLabel", "tags", "discounts", "item_discounts", "invoiceDay"]:
         if c not in df.columns:
@@ -122,6 +162,19 @@ def transform(raw, day, branches):
     return out[OUT_COLUMNS]
 
 
+def parse_day(text, default):
+    """'' or 'default' = the default; 'today' and 'yesterday' = business days (a business day ends at 05:00 next morning)."""
+    t = (text or "").strip().lower()
+    if t in ("", "default"):
+        return default
+    business_today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
+    if t == "today":
+        return business_today
+    if t == "yesterday":
+        return business_today - timedelta(days=1)
+    return datetime.strptime(t, "%Y-%m-%d").date()
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="data/discount_rows.csv")
@@ -133,17 +186,6 @@ def main():
     from sync_kpt import load_branches, pull_day     # same Rista and Help Sheet settings as the KPT pull
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    def parse_day(text, default):
-        t = (text or "").strip().lower()
-        if t in ("", "default"):
-            return default
-        business_today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
-        if t == "today":
-            return business_today
-        if t == "yesterday":
-            return business_today - timedelta(days=1)
-        return datetime.strptime(t, "%Y-%m-%d").date()
-
     start = parse_day(args.start, datetime.strptime(FIRST_DAY, "%Y-%m-%d").date())
     end = parse_day(args.end, today - timedelta(days=1))
     if end < start:
