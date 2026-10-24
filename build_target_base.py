@@ -24,11 +24,21 @@ DEFAULT_FROM = "2025-08-01"
 SHEET_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,}")
 
 
+def combined_sales(history, new):
+    """Same rule as the dashboard (build_site): history up to the first new day, then the new days.
+    Each file is cleaned on its own, so a day in both files is counted once."""
+    sales = clean_sales(pd.read_csv(history, compression="infer", low_memory=False))
+    new_raw = read_if_present(new)
+    if new_raw is not None:
+        nw = clean_sales(new_raw)
+        cut = nw["Date"].min()
+        print(f"history used up to {(cut - pd.Timedelta(days=1)).date()}, new sales from {cut.date()}")
+        sales = pd.concat([sales[sales["Date"] < cut], nw], ignore_index=True)
+    return sales
+
+
 def build(history, new, start):
-    parts = [df for df in (read_if_present(history), read_if_present(new)) if df is not None]
-    if not parts:
-        raise SystemExit("No sales files found.")
-    df = clean_sales(pd.concat(parts, ignore_index=True))
+    df = combined_sales(history, new)
     df = df[df["Date"] >= pd.Timestamp(start)].copy()
     df["Channel"] = df["Source"].map(lambda s: "Offline" if s == "In Store" else "Online")
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0)
