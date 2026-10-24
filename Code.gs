@@ -95,8 +95,7 @@ function phaseWeights_(lyRows, targetKey, lyKey, method) {
 
 /* ---------- The planner ---------- */
 // p: { targetMonth, compareMonth (default: target minus 12 months), channel, type, brand, region, store,
-//      growth (percent, blank = automatic), basis: 'store' | 'region' | 'overall' (automatic only),
-//      storeGrowth: { storeName: percent } (typed in the store table), method: 'weekday' | 'daytype' | 'samedate' }
+//      growth (percent; blank = automatic MoM), method: 'weekday' | 'daytype' | 'samedate' }
 function computeDashboard(p, rowsIn) {
   const rows = rowsIn.map(r => (r.n === undefined ? Object.assign({}, r, { n: dn_(r.d) }) : r));
   const f = { channel: p.channel || "all", type: p.type || "all", brand: p.brand || "all",
@@ -106,33 +105,28 @@ function computeDashboard(p, rowsIn) {
   const target = p.targetMonth || ym_(latestKey, 1);
   const ly = p.compareMonth || ym_(target, -12);          // last year's compare month
   const prevKey = ym_(ly, -1);                             // the month before it (for MoM)
-  const baseKey = ym_(target, -1);                        // the month before the target (base)
-  const topGrowth = (p.growth === "" || p.growth === null || p.growth === undefined) ? null : Number(p.growth) / 100;
-  const useLy = topGrowth !== null;                       // manual Growth %: last year's month is the base
-  const basis = ["region", "overall"].indexOf(p.basis) >= 0 ? p.basis : "store";
+  const baseKey = ym_(target, -1);                        // the month before the target (base for automatic)
+  const override = (p.growth === "" || p.growth === null || p.growth === undefined) ? null : Number(p.growth) / 100;
   const method = ["samedate", "daytype"].indexOf(p.method) >= 0 ? p.method : "weekday";
-  const storeG = {};                                      // growth typed for individual stores
-  Object.keys(p.storeGrowth || {}).forEach(k => {
-    const raw = String(p.storeGrowth[k]).trim();
-    if (raw !== "" && isFinite(Number(raw))) storeG[k] = Number(raw) / 100;
-  });
 
   const sel = rows.filter(r => pick_(r, f));
-  const chan = rows.filter(r => f.channel === "all" || r.channel === f.channel);
+  const basis = rows.filter(r => f.channel === "all" || r.channel === f.channel);
   const inMonth = (list, key) => list.filter(r => r.d.slice(0, 7) === key);
 
-  // Store facts on the chosen channel: first sale day, region, net per store per month.
+  // Store facts on the chosen channel: first sale day, and net per store per month.
   const firstDay = new Map(), regionOf = new Map(), netOf = new Map();
-  for (const r of chan) {
+  for (const r of basis) {
     if (!firstDay.has(r.branch) || r.n < firstDay.get(r.branch)) firstDay.set(r.branch, r.n);
     regionOf.set(r.branch, r.region);
     const k = r.branch + "|" + r.d.slice(0, 7);
     netOf.set(k, (netOf.get(k) || 0) + r.net);
   }
 
-  // Last year's MoM per store. A store counts only if it traded in both months and was open before the earlier month.
+  // Last year's MoM % per store. Valid only if the store traded in both months and was open before the month began.
   const prevStart = dn_(prevKey + "-01");
-  const mom = new Map(), regionSum = new Map(), allSum = [0, 0];
+  const mom = new Map();
+  const regionSum = new Map();
+  const allSum = [0, 0];
   for (const s of firstDay.keys()) {
     const a = netOf.get(s + "|" + ly) || 0, b = netOf.get(s + "|" + prevKey) || 0;
     if (!(a > 0 && b > 0 && firstDay.get(s) <= prevStart)) continue;
@@ -143,18 +137,13 @@ function computeDashboard(p, rowsIn) {
     allSum[0] += a; allSum[1] += b;
   }
   const overallMom = allSum[1] > 0 ? allSum[0] / allSum[1] - 1 : 0;
-  const regionMom = reg => { const rs = regionSum.get(reg); return rs && rs[1] > 0 ? rs[0] / rs[1] - 1 : overallMom; };
-  const basisMom = store => {
-    if (basis === "overall") return overallMom;
-    if (basis === "region") return regionMom(regionOf.get(store));
+  const momFor = store => {
     if (mom.has(store)) return mom.get(store);
-    return regionMom(regionOf.get(store));
+    const rs = regionSum.get(regionOf.get(store));
+    return rs && rs[1] > 0 ? rs[0] / rs[1] - 1 : overallMom;
   };
-  // Growth for a store: its own typed growth, else the manual Growth %, else the automatic basis.
-  const growthOf = store => (storeG[store] !== undefined ? storeG[store] : (topGrowth !== null ? topGrowth : basisMom(store)));
 
-  // The base month, projected to the end of the month: sales so far / days so far x days in the month.
-  // A store that opened during the month is projected from its own first day.
+  // The base month projected to a full month, store by store (a store that opened during the month uses its own days).
   const baseStart = dn_(baseKey + "-01");
   const baseDays = monthDays_(baseKey).length;
   const lastBaseDay = Math.min(latestDay, baseStart + baseDays - 1);
@@ -164,19 +153,15 @@ function computeDashboard(p, rowsIn) {
     return elapsed > 0 ? r.net / elapsed * baseDays : 0;
   };
   const baseRows = inMonth(sel, baseKey).map(r => ({ r: r, proj: projectRow(r) }));
+
+  // Target rows: automatic = base projection x (1 + store MoM); manual = last year's rows x (1 + Growth %).
+  const tRows = override === null
+    ? baseRows.map(b => ({ r: b.r, t: b.proj * (1 + momFor(b.r.branch)) }))
+    : inMonth(sel, ly).map(r => ({ r: r, t: r.net * (1 + override) }));
+
   const lyRows = inMonth(sel, ly), prevRows = inMonth(sel, prevKey);
-
-  // Target rows: manual = last year's month x (1 + growth); automatic = base projection x (1 + growth).
-  const tRows = useLy
-    ? lyRows.map(r => ({ r: r, t: r.net * (1 + growthOf(r.branch)) }))
-    : baseRows.map(b => ({ r: b.r, t: b.proj * (1 + growthOf(b.r.branch)) }));
-
-  // Outlets: stores with sales in a month (net above zero).
-  const storeNet = list => { const m = new Map(); for (const r of list) m.set(r.branch, (m.get(r.branch) || 0) + r.net); return m; };
-  const trading = m => new Set([...m.keys()].filter(s => m.get(s) > 0));
-  const lyStores = trading(storeNet(lyRows)), baseStores = trading(storeNet(baseRows.map(b => b.r)));
-  const notTrading = [...lyStores].filter(s => !baseStores.has(s)).length;
-  const newStores = [...baseStores].filter(s => !lyStores.has(s)).length;
+  const lyCal = weekdayCounts_(monthDays_(ly));
+  const lyDaysN = monthDays_(ly).length;
 
   const levelTable = (keyFn, byRegion) => {
     const lyG = groupBy_(lyRows, keyFn), prevG = groupBy_(prevRows, keyFn);
@@ -188,27 +173,20 @@ function computeDashboard(p, rowsIn) {
       const first = lyList[0] || (baseList[0] && baseList[0].r) || (tList[0] && tList[0].r);
       const lyNet = sumOf_(lyList, r => r.net), prevNet = sumOf_(prevList, r => r.net);
       const base = sumOf_(baseList, b => b.proj), t = sumOf_(tList, x => x.t);
-      const lyOut = trading(storeNet(lyList)), baseOut = trading(storeNet(baseList.map(b => b.r)));
-      const isStore = byRegion === "store";
-      const growthUsed = isStore ? growthOf(String(k))
-        : (useLy ? (lyNet > 0 ? t / lyNet - 1 : null) : (base > 0 ? t / base - 1 : null));
       const lyWd = sumOf_(lyList.filter(r => isMonThu_(r.n)), r => r.net);
       const lyWe = lyNet - lyWd;
-      const wdDays = weekdayCounts_(monthDays_(ly)).slice(1, 5).reduce((a, b) => a + b, 0);
-      const weDays = monthDays_(ly).length - wdDays;
       return {
         name: String(k), region: first.region, type: first.type,
         ly: lyNet, orders: sumOf_(lyList, r => r.orders), prev: prevNet,
         mom: prevNet > 0 ? lyNet / prevNet - 1 : null,
-        base: base, growthUsed: growthUsed, target: t,
-        outletsLy: lyOut.size, outletsBase: baseOut.size,
-        status: (lyNet > 0 && base > 0) ? "Operating" : (lyNet > 0 ? "Not trading now" : (base > 0 ? "New" : "—")),
-        typed: storeG[String(k)] !== undefined ? storeG[String(k)] * 100 : null,
-        lyWeekdayPerDay: wdDays ? lyWd / wdDays : 0,
-        lyWeekendPerDay: weDays ? lyWe / weDays : 0
+        base: base,
+        growthUsed: override !== null ? override : (base > 0 ? t / base - 1 : null),
+        target: t,
+        lyWeekdayPerDay: lyCal[1] + lyCal[2] + lyCal[3] + lyCal[4] ? lyWd / (lyCal[1] + lyCal[2] + lyCal[3] + lyCal[4]) : 0,
+        lyWeekendPerDay: (lyDaysN - (lyCal[1] + lyCal[2] + lyCal[3] + lyCal[4])) ? lyWe / (lyDaysN - (lyCal[1] + lyCal[2] + lyCal[3] + lyCal[4])) : 0
       };
     });
-    if (byRegion === true) out.sort((a, b) => (a.region.localeCompare(b.region)) || (b.ly - a.ly));
+    if (byRegion) out.sort((a, b) => (a.region.localeCompare(b.region)) || (b.ly - a.ly));
     else out.sort((a, b) => b.target - a.target);
     return out;
   };
@@ -227,13 +205,14 @@ function computeDashboard(p, rowsIn) {
     return {
       date: ymd_(n), weekday: WDAY_NAMES[wdayOf_(n)], dayType: isMonThu_(n) ? "Mon-Thu" : "Fri-Sun",
       lySameDate: sameLy !== undefined ? (lyDaily.get(ymd_(sameLy)) || 0) : 0,
-      planned: planned, cumulative: cum, cumulativePct: targetTotal > 0 ? cum / targetTotal : 0, w: wdayOf_(n)
+      planned: planned, cumulative: cum, cumulativePct: targetTotal > 0 ? cum / targetTotal : 0,
+      w: wdayOf_(n)
     };
   });
 
   // Days and average day sales, Mon to Sun.
   const tDays = monthDays_(target);
-  const lyCounts = weekdayCounts_(lyDaysArr), tCounts = weekdayCounts_(tDays);
+  const lyCounts = lyCal, tCounts = weekdayCounts_(tDays);
   const lyWdNet = [0, 0, 0, 0, 0, 0, 0];
   for (const r of lyRows) lyWdNet[wdayOf_(r.n)] += r.net;
   const planWd = [0, 0, 0, 0, 0, 0, 0];
@@ -241,32 +220,27 @@ function computeDashboard(p, rowsIn) {
   const lyNet = sumOf_(lyRows, r => r.net);
   const prevNet = sumOf_(prevRows, r => r.net);
   const baseNet = sumOf_(baseRows, b => b.proj);
-  const baseActual = sumOf_(baseRows, b => b.r.net);
-  const baseElapsed = Math.max(0, lastBaseDay - baseStart + 1);
+  const baseActual = sumOf_(inMonth(sel, baseKey), r => r.net);
 
   return {
     meta: {
       targetMonth: target, compareMonth: ly, prevMonth: prevKey, baseMonth: baseKey, latestDataMonth: latestKey,
-      method: method, basis: basis, storeOverrides: Object.keys(storeG).length, storesWithMoM: mom.size,
-      growthMode: useLy
-        ? "entered by you: last year's month x (1 + Growth %)"
-        : "automatic: " + (basis === "store" ? "each store's own last-year MoM"
-            : basis === "region" ? "last year's region MoM, same for all stores in the region"
-            : "last year's overall MoM, same for all stores") + ", applied to " + baseKey + " projected to month end"
+      method: method, storesWithMoM: mom.size,
+      growthMode: override === null
+        ? "automatic: last year's MoM % per store (" + mom.size + " stores with a valid MoM)"
+        : "entered by you: last year's month x (1 + Growth %)"
     },
     summary: {
-      lyNet: lyNet, lyOrders: sumOf_(lyRows, r => r.orders), lyDays: lyDaysArr.length, prevNet: prevNet,
+      lyNet: lyNet, lyOrders: sumOf_(lyRows, r => r.orders), lyDays: lyDaysN, prevNet: prevNet,
       mom: prevNet > 0 ? lyNet / prevNet - 1 : null, overallMom: overallMom,
-      baseNet: baseNet, baseActual: baseActual, baseElapsed: baseElapsed, baseDays: baseDays,
+      baseNet: baseNet, baseActual: baseActual, baseDaysFull: baseDays, baseLastDay: lastBaseDay,
       target: targetTotal,
-      growthApplied: useLy ? (lyNet > 0 ? targetTotal / lyNet - 1 : null) : (baseNet > 0 ? targetTotal / baseNet - 1 : null),
-      outletsLy: lyStores.size, outletsBase: baseStores.size, notTrading: notTrading, newStores: newStores,
-      outletsTarget: baseStores.size
+      growthApplied: override !== null ? override : (baseNet > 0 ? targetTotal / baseNet - 1 : null)
     },
     days: {
       columns: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
       rows: [
-        { key: ly, counts: WEEK_ORDER.map(w => lyCounts[w]), total: lyDaysArr.length },
+        { key: ly, counts: WEEK_ORDER.map(w => lyCounts[w]), total: lyDaysN },
         { key: target, counts: WEEK_ORDER.map(w => tCounts[w]), total: tDays.length }
       ]
     },
@@ -274,14 +248,14 @@ function computeDashboard(p, rowsIn) {
       columns: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
       rows: [
         { key: ly, label: "actual", avg: WEEK_ORDER.map(w => (lyCounts[w] ? lyWdNet[w] / lyCounts[w] : 0)),
-          overall: lyDaysArr.length ? lyNet / lyDaysArr.length : 0 },
+          overall: lyDaysN ? lyNet / lyDaysN : 0 },
         { key: target, label: "projected", avg: WEEK_ORDER.map(w => (tCounts[w] ? planWd[w] / tCounts[w] : 0)),
           overall: tDays.length ? targetTotal / tDays.length : 0 }
       ]
     },
     brand: levelTable(r => r.brand, false),
     region: levelTable(r => r.region, false),
-    store: levelTable(r => r.branch, "store"),
+    store: levelTable(r => r.branch, true),
     phasing: phasing.map(d => ({ date: d.date, weekday: d.weekday, dayType: d.dayType, lySameDate: d.lySameDate,
       planned: d.planned, cumulative: d.cumulative, cumulativePct: d.cumulativePct }))
   };
