@@ -2,7 +2,7 @@ name: Target base (Target Planner data)
 
 on:
   schedule:
-    - cron: "0 3 * * *"        # 08:30 IST daily, after the nightly sales run
+    - cron: "0 3 * * *"        # 08:30 IST daily
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,10 @@ concurrency:
 jobs:
   target-base:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       TARGET_SHEET_ID: ${{ secrets.TARGET_SHEET_ID }}
     steps:
@@ -29,14 +31,28 @@ jobs:
       - name: Install
         run: pip install pandas numpy pillow requests pyjwt gspread google-auth
 
-      # The completed days are saved by the nightly sales run, in the same cache the dashboard uses.
+      # The saved sales files from earlier runs (nightly, and earlier target-base runs).
       - name: Restore the saved sales files
         uses: actions/cache/restore@v4
         with:
-          path: data/new_sales.csv.gz
+          path: |
+            data/new_sales.csv.gz
+            data/new_hourly.csv.gz
           key: sales-data-${{ github.run_id }}
           restore-keys: |
             sales-data-
 
+      # Adds any completed business days that the saved files do not have yet (does not depend on the nightly run).
+      - name: Pull completed days from Rista
+        run: python sync_sales.py --mode nightly --since 2026-09-01 --out data/new_sales.csv.gz --hourly-out data/new_hourly.csv.gz
+
       - name: Build the planning base and write the Target_Base tab
         run: python build_target_base.py --out data/target_base.csv
+
+      - name: Save the sales files for later runs
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/new_sales.csv.gz
+            data/new_hourly.csv.gz
+          key: sales-data-${{ github.run_id }}
