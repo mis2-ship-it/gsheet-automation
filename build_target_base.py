@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
 Target Planner data: daily sales by store, brand and channel (Offline = In Store, Online = everything else).
-Built from the historical file and the completed days in the nightly cache, with the dashboard's own cleaning
-(build_site.clean_sales), so the planner and the dashboard show the same numbers.
+Built from the historical file and the saved sales files, with the dashboard's own cleaning (build_site.clean_sales).
 
-Writes data/target_base.csv, then the Target_Base tab of the Google Sheet whose ID is in TARGET_SHEET_ID.
-Usage: python build_target_base.py [--from 2025-08-01] [--history ...] [--new ...] [--out ...]
+The saved sales files must reach the last completed business day. If they do not, nothing is written, so the
+sheet keeps its last good data. Writes data/target_base.csv, then the Target_Base tab of the Google Sheet whose
+ID is in TARGET_SHEET_ID.
+Usage: python build_target_base.py [--from 2025-08-01] [--history ...] [--new ...] [--out ...] [--allow-stale]
 """
 import argparse
 import json
 import os
 import re
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -21,11 +24,21 @@ DEFAULT_FROM = "2025-08-01"
 SHEET_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,}")
 
 
+def combined_sales(history, new):
+    """Same rule as the dashboard (build_site): history up to the first new day, then the new days.
+    Each file is cleaned on its own, so a day in both files is counted once."""
+    sales = clean_sales(pd.read_csv(history, compression="infer", low_memory=False))
+    new_raw = read_if_present(new)
+    if new_raw is not None:
+        nw = clean_sales(new_raw)
+        cut = nw["Date"].min()
+        print(f"history used up to {(cut - pd.Timedelta(days=1)).date()}, new sales from {cut.date()}")
+        sales = pd.concat([sales[sales["Date"] < cut], nw], ignore_index=True)
+    return sales
+
+
 def build(history, new, start):
-    parts = [df for df in (read_if_present(history), read_if_present(new)) if df is not None]
-    if not parts:
-        raise SystemExit("No sales files found.")
-    df = clean_sales(pd.concat(parts, ignore_index=True))
+    df = combined_sales(history, new)
     df = df[df["Date"] >= pd.Timestamp(start)].copy()
     df["Channel"] = df["Source"].map(lambda s: "Offline" if s == "In Store" else "Online")
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce").fillna(0)
@@ -37,6 +50,13 @@ def build(history, new, start):
     for c in ["Net", "Gross", "Discount"]:
         g[c] = g[c].round(2)
     return g[COLUMNS].sort_values(["Date", "Branch", "Brand", "Channel"]).reset_index(drop=True)
+
+
+def last_completed_day():
+    """The last business day that is complete. A business day runs 9 AM to 5 AM the next morning (India time)."""
+    now = datetime.now(ZoneInfo("Asia/Kolkata"))
+    business_today = (now - timedelta(hours=5)).date()
+    return business_today - timedelta(days=1)
 
 
 def sheet_id_from(text):
@@ -92,8 +112,16 @@ def main():
     ap.add_argument("--history", default="historical_data/historical_sales.csv.gz")
     ap.add_argument("--new", default="data/new_sales.csv.gz")
     ap.add_argument("--out", default="data/target_base.csv")
+    ap.add_argument("--allow-stale", action="store_true", help="write even if the last completed day is missing")
     args = ap.parse_args()
     df = build(args.history, args.new, args.start)
+    latest = pd.to_datetime(df["Date"]).max().date()
+    expected = last_completed_day()
+    print(f"sales data up to {latest}; last completed day is {expected}")
+    if latest < expected and not args.allow_stale:
+        raise SystemExit(
+            f"Not written: the sales data ends on {latest}, but {expected} is complete. The pull step did not add "
+            "the missing days. Check the log of 'Pull completed days from Rista'. The sheet keeps its last good data.")
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
     df.to_csv(args.out, index=False)
     print(f"wrote {args.out}: {len(df)} rows, {df['Date'].min()} to {df['Date'].max()}")
