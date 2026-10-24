@@ -9,7 +9,8 @@
               x (1 + last year's MoM % for that store)
      MoM % = compare month / the month before it, last year, per store. A store counts only if it traded
      from before the start of that month. A store without a valid MoM uses its region's MoM, then the overall MoM.
-     A month still in progress is projected: sales so far / days so far x days in the month.
+     A month still in progress is projected: actual sales to date + the balance days. Each balance day takes the
+     sales of the same weekday in the last 7 days of data (Friday of last week for a Friday, and so on).
    Manual target (Growth % entered):
      target = last year's compare month x (1 + Growth %)
    ============================================================ */
@@ -51,6 +52,7 @@ function monthDays_(key) {
 function wdayOf_(n) { return new Date(n * DAY_MS).getUTCDay(); }
 function isMonThu_(n) { const w = wdayOf_(n); return w >= 1 && w <= 4; }
 function domOf_(n) { return new Date(n * DAY_MS).getUTCDate(); }
+function fmtN_(x) { return Math.round(x).toLocaleString("en-IN"); }
 function weekdayCounts_(days) { const c = [0, 0, 0, 0, 0, 0, 0]; for (const n of days) c[wdayOf_(n)]++; return c; }
 
 /* ---------- Filters and grouping ---------- */
@@ -153,17 +155,42 @@ function computeDashboard(p, rowsIn) {
   // Growth for a store: its own typed growth, else the manual Growth %, else the automatic basis.
   const growthOf = store => (storeG[store] !== undefined ? storeG[store] : (topGrowth !== null ? topGrowth : basisMom(store)));
 
-  // The base month, projected to the end of the month: sales so far / days so far x days in the month.
-  // A store that opened during the month is projected from its own first day.
+  // The base month, projected to month end:
+  //   actual sales to date  +  balance days.
+  // Each balance day (after the latest data day) takes the sales of the same weekday in the last 7 days of data.
+  // Example: data to Thu 22 Oct -> 23 Oct (Fri) takes Fri 16 Oct, 24 Oct (Sat) takes Sat 17 Oct, and so on,
+  // so the 9 balance days are the last 7 days plus Fri 16 and Sat 17.
   const baseStart = dn_(baseKey + "-01");
   const baseDays = monthDays_(baseKey).length;
-  const lastBaseDay = Math.min(latestDay, baseStart + baseDays - 1);
-  const projectRow = r => {
-    const from = Math.max(baseStart, firstDay.get(r.branch) || baseStart);
-    const elapsed = lastBaseDay - from + 1;
-    return elapsed > 0 ? r.net / elapsed * baseDays : 0;
+  const baseEnd = baseStart + baseDays - 1;
+  const lastBaseDay = Math.min(latestDay, baseEnd);
+  const lastWeekStart = latestDay - 6;
+  const balanceDays = [];
+  for (let d = Math.max(baseStart, latestDay + 1); d <= baseEnd; d++) balanceDays.push(d);
+  const sourceDay = d => lastWeekStart + ((((d - lastWeekStart) % 7) + 7) % 7);
+  const lastWeek = new Map();                              // row + day -> net, for the last 7 days of data
+  for (const r of sel) {
+    if (r.n < lastWeekStart || r.n > latestDay) continue;
+    const k = r.branch + "|" + r.brand + "|" + r.channel + "|" + r.n;
+    lastWeek.set(k, (lastWeek.get(k) || 0) + r.net);
+  }
+  const balanceOf = r => {
+    let total = 0;
+    const base = r.branch + "|" + r.brand + "|" + r.channel + "|";
+    for (const d of balanceDays) total += lastWeek.get(base + sourceDay(d)) || 0;
+    return total;
   };
-  const baseRows = inMonth(sel, baseKey).map(r => ({ r: r, proj: projectRow(r) }));
+  // One row per store, brand and channel for the base month: actual to date, then its balance added once.
+  const baseAgg = new Map();
+  for (const r of inMonth(sel, baseKey)) {
+    const k = r.branch + "|" + r.brand + "|" + r.channel;
+    if (!baseAgg.has(k)) baseAgg.set(k, Object.assign({}, r, { net: 0 }));
+    baseAgg.get(k).net += r.net;
+  }
+  const baseRows = [...baseAgg.values()].map(rep => {
+    const bal = balanceOf(rep);
+    return { r: rep, actual: rep.net, bal: bal, proj: rep.net + bal };
+  });
   const lyRows = inMonth(sel, ly), prevRows = inMonth(sel, prevKey);
 
   // Target rows: manual = last year's month x (1 + growth); automatic = base projection x (1 + growth).
@@ -241,7 +268,8 @@ function computeDashboard(p, rowsIn) {
   const lyNet = sumOf_(lyRows, r => r.net);
   const prevNet = sumOf_(prevRows, r => r.net);
   const baseNet = sumOf_(baseRows, b => b.proj);
-  const baseActual = sumOf_(baseRows, b => b.r.net);
+  const baseActual = sumOf_(baseRows, b => b.actual);
+  const baseBalance = sumOf_(baseRows, b => b.bal);
   const baseElapsed = Math.max(0, lastBaseDay - baseStart + 1);
 
   return {
@@ -252,12 +280,14 @@ function computeDashboard(p, rowsIn) {
         ? "entered by you: last year's month x (1 + Growth %)"
         : "automatic: " + (basis === "store" ? "each store's own last-year MoM"
             : basis === "region" ? "last year's region MoM, same for all stores in the region"
-            : "last year's overall MoM, same for all stores") + ", applied to " + baseKey + " projected to month end"
+            : "last year's overall MoM, same for all stores") + ", applied to " + baseKey +
+          " projected (actual " + fmtN_(baseActual) + " + balance " + fmtN_(baseBalance) + ")"
     },
     summary: {
       lyNet: lyNet, lyOrders: sumOf_(lyRows, r => r.orders), lyDays: lyDaysArr.length, prevNet: prevNet,
       mom: prevNet > 0 ? lyNet / prevNet - 1 : null, overallMom: overallMom,
-      baseNet: baseNet, baseActual: baseActual, baseElapsed: baseElapsed, baseDays: baseDays,
+      baseNet: baseNet, baseActual: baseActual, baseBalance: baseBalance, baseElapsed: baseElapsed,
+      baseDays: baseDays, balanceDayCount: balanceDays.length,
       target: targetTotal,
       growthApplied: useLy ? (lyNet > 0 ? targetTotal / lyNet - 1 : null) : (baseNet > 0 ? targetTotal / baseNet - 1 : null),
       outletsLy: lyStores.size, outletsBase: baseStores.size, notTrading: notTrading, newStores: newStores,
