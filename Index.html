@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Target Planner</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:16px;background:#0A1020;color:#E5ECF8;font-size:14px}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:16px;margin:22px 0 6px}
+.sub{color:#9AA8C2;font-size:12px;margin:0 0 8px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}
+label{font-size:12px;color:#9AA8C2;display:flex;flex-direction:column;gap:3px}
+select,input{background:#121C33;color:#E5ECF8;border:1px solid #24314f;border-radius:6px;padding:7px;font-size:13px}
+button{background:#3B82F6;color:#fff;border:0;border-radius:6px;padding:9px 14px;font-size:13px;cursor:pointer;margin-right:6px}
+button.ghost{background:#121C33;border:1px solid #24314f}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:10px 0}
+.card{background:#121C33;border:1px solid #24314f;border-radius:8px;padding:10px}
+.card small{color:#9AA8C2;font-size:11px}
+.card b{display:block;font-size:17px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 8px;border-bottom:1px solid #24314f;text-align:right;white-space:nowrap}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+tr.tot td{font-weight:bold;border-top:2px solid #3B82F6}
+tr.sub td{font-weight:bold;background:#0F1830}
+.scroll{overflow-x:auto}
+.up{color:#34D399}
+.down{color:#F87171}
+.msg{padding:10px;border:1px dashed #24314f;border-radius:8px;color:#9AA8C2;margin-top:10px}
+.note{color:#9AA8C2;font-size:12px;margin:6px 0}
+</style>
+</head>
+<body>
+<h1>Target Planner</h1>
+<p class="sub">Plans next month's target from the same month last year. All figures in ₹, net sales.</p>
+
+<div class="controls">
+  <label>Target month <select id="target"></select></label>
+  <label>Compare with (last year) <select id="compare"></select></label>
+  <label>Channel
+    <select id="channel">
+      <option value="all">Overall</option>
+      <option value="Offline">Offline (In Store)</option>
+      <option value="Online">Online</option>
+    </select>
+  </label>
+  <label>Store type
+    <select id="type"><option value="all">All types</option></select>
+  </label>
+  <label>Brand <select id="brand"><option value="all">All brands</option></select></label>
+  <label>Region <select id="region"><option value="all">All regions</option></select></label>
+  <label>Store <select id="store"><option value="all">All stores</option></select></label>
+  <label>Growth % (blank = automatic) <input id="growth" type="number" step="0.1" placeholder="automatic"></label>
+  <label>Phasing method
+    <select id="method">
+      <option value="daytype">Mon-Thu / Fri-Sun average</option>
+      <option value="samedate">Same date last year</option>
+    </select>
+  </label>
+</div>
+<button id="calc">Calculate</button>
+<span id="status" class="sub"></span>
+
+<div id="out"></div>
+
+<script>
+var OPTS = null;
+var LAST = null;
+
+function $(id) { return document.getElementById(id); }
+function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function inr(n) { return (n === null || n === undefined || isNaN(n)) ? "—" : Math.round(n).toLocaleString("en-IN"); }
+function pct(x) {
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return '<span class="' + (x >= 0 ? "up" : "down") + '">' + (x >= 0 ? "▲ " : "▼ ") + Math.abs(x * 100).toFixed(1) + "%</span>";
+}
+function addMonths(key, k) {
+  var p = key.split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1 + k, 1)).toISOString().slice(0, 7);
+}
+function monthLabel(key) {
+  return new Date(key + "-01T00:00:00Z").toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+function opt(value, label, selected) {
+  return '<option value="' + esc(value) + '"' + (selected ? " selected" : "") + ">" + esc(label) + "</option>";
+}
+
+function setOptions(o) {
+  OPTS = o;
+  var future = [];
+  for (var k = 1; k <= 12; k++) future.push(addMonths(o.latest, k));
+  $("target").innerHTML = future.map(function (m) { return opt(m, monthLabel(m), m === o.nextMonth); }).join("");
+  var defCompare = addMonths(o.nextMonth, -12);
+  $("compare").innerHTML = o.months.map(function (m) { return opt(m, monthLabel(m), m === defCompare); }).join("");
+  $("type").innerHTML = '<option value="all">All types</option>' + o.types.map(function (t) { return opt(t, t, false); }).join("");
+  $("brand").innerHTML = '<option value="all">All brands</option>' + o.brands.map(function (b) { return opt(b, b, false); }).join("");
+  $("region").innerHTML = '<option value="all">All regions</option>' + o.regions.map(function (r) { return opt(r, r, false); }).join("");
+  fillStores();
+  $("type").addEventListener("change", fillStores);
+  $("status").textContent = "Choose the filters and press Calculate.";
+}
+
+// The store list follows the store type: COCO shows only COCO stores, FOFO only FOFO stores.
+function fillStores() {
+  var type = $("type").value;
+  var list = OPTS.stores.filter(function (s) { return type === "all" || s.type === type; });
+  $("store").innerHTML = '<option value="all">All stores</option>' + list.map(function (s) {
+    return opt(s.name, s.name + " (" + s.region + ")", false);
+  }).join("");
+}
+
+function params() {
+  return {
+    targetMonth: $("target").value, compareMonth: $("compare").value, channel: $("channel").value,
+    type: $("type").value, brand: $("brand").value, region: $("region").value, store: $("store").value,
+    growth: $("growth").value, method: $("method").value
+  };
+}
+
+function calc() {
+  $("status").textContent = "Calculating… this can take a little while for the full store list.";
+  google.script.run.withSuccessHandler(render).withFailureHandler(fail).getDashboard(params());
+}
+function fail(e) { $("status").textContent = "Error: " + (e && e.message ? e.message : e); }
+
+function card(label, value, extra) {
+  return '<div class="card"><small>' + esc(label) + '</small><b>' + value + "</b>" + (extra ? '<small>' + extra + "</small>" : "") + "</div>";
+}
+
+function levelRow(name, r, cls, extraCells) {
+  return '<tr class="' + (cls || "") + '"><td class="l">' + esc(name) + "</td>" + (extraCells || "") +
+    "<td>" + inr(r.ly) + "</td><td>" + inr(r.prev) + "</td><td>" + pct(r.mom) + "</td>" +
+    "<td>" + inr(r.orders) + "</td><td>" + inr(r.lyWeekdayPerDay) + "</td><td>" + inr(r.lyWeekendPerDay) + "</td>" +
+    "<td>" + pct(r.recent) + "</td><td>" + pct(r.growthUsed) + "</td><td><b>" + inr(r.target) + "</b></td></tr>";
+}
+var LEVEL_HEAD = "<th>LY net</th><th>Prev month net</th><th>Prev month growth</th><th>LY orders</th>" +
+  "<th>LY Mon-Thu / day</th><th>LY Fri-Sun / day</th><th>Like-for-like growth</th><th>Growth used</th><th>Target</th>";
+
+function levelTable(title, note, rows, firstHead, extraHead, extraFn) {
+  var tot = { ly: 0, prev: 0, orders: 0, target: 0 };
+  rows.forEach(function (r) { tot.ly += r.ly; tot.prev += r.prev; tot.orders += r.orders; tot.target += r.target; });
+  tot.mom = tot.prev > 0 ? tot.ly / tot.prev - 1 : null;
+  tot.recent = null;
+  tot.growthUsed = tot.ly > 0 ? tot.target / tot.ly - 1 : null;
+  tot.lyWeekdayPerDay = null; tot.lyWeekendPerDay = null;
+  var body = rows.map(function (r) { return levelRow(r.name, r, "", extraFn ? extraFn(r) : ""); }).join("");
+  return '<h2>' + esc(title) + '</h2><p class="note">' + esc(note) + '</p><div class="scroll"><table><thead><tr><th class="l">' +
+    esc(firstHead) + "</th>" + (extraHead || "") + LEVEL_HEAD + "</tr></thead><tbody>" +
+    levelRow("Total", tot, "tot", extraFn ? extraFn(null) : "") + body + "</tbody></table></div>";
+}
+
+function storeTable(rows) {
+  var html = "", region = null, sub = null;
+  function flush() {
+    if (sub) html += levelRow(region + " total", sub, "sub", "<td>" + esc(region) + "</td>");
+  }
+  function newSub() { return { ly: 0, prev: 0, orders: 0, target: 0 }; }
+  rows.forEach(function (r) {
+    if (r.region !== region) { flush(); region = r.region; sub = newSub(); }
+    sub.ly += r.ly; sub.prev += r.prev; sub.orders += r.orders; sub.target += r.target;
+    sub.mom = sub.prev > 0 ? sub.ly / sub.prev - 1 : null;
+    sub.growthUsed = sub.ly > 0 ? sub.target / sub.ly - 1 : null;
+    sub.recent = null; sub.lyWeekdayPerDay = null; sub.lyWeekendPerDay = null;
+    html += levelRow(r.name, r, "", "<td>" + esc(r.region) + "</td><td>" + esc(r.type) + "</td>");
+  });
+  flush();
+  return html;
+}
+
+function render(d) {
+  LAST = d;
+  var s = d.summary, m = d.meta;
+  $("status").textContent = "Compare " + monthLabel(m.compareMonth) + " with target " + monthLabel(m.targetMonth) +
+    ". Growth: " + m.growthMode + " (" + m.likeForLikeStores + " stores).";
+  var html = '<div class="cards">' +
+    card("Last year, " + monthLabel(m.compareMonth), "₹" + inr(s.lyNet), inr(s.lyOrders) + " orders, " + s.lyDays + " days") +
+    card(monthLabel(m.prevMonth) + " net", "₹" + inr(s.prevNet), "growth to " + monthLabel(m.compareMonth) + ": " + pct(s.mom)) +
+    card("Like-for-like growth (suggested)", pct(s.recentYoY), "latest 3 months vs same months last year") +
+    card("Growth used for target", pct(s.growthApplied), m.growthMode.indexOf("automatic") === 0 ? "automatic" : "entered by you") +
+    card("Target, " + monthLabel(m.targetMonth), "₹" + inr(s.target), "phased by day") +
+    card("Mon-Thu days in " + monthLabel(m.compareMonth), inr(s.lyWeekdayDays) + " days", "₹" + inr(s.lyWeekdayAvg) + " per day") +
+    card("Fri-Sun days in " + monthLabel(m.compareMonth), inr(s.lyWeekendDays) + " days", "₹" + inr(s.lyWeekendAvg) + " per day") +
+    card("Target Mon-Thu days", inr(s.targetWeekdayDays) + " days", "₹" + inr(s.targetWeekdayAvg) + " per day") +
+    card("Target Fri-Sun days", inr(s.targetWeekendDays) + " days", "₹" + inr(s.targetWeekendAvg) + " per day") +
+    "</div>";
+  html += levelTable("By brand", "Each brand's last-year month, with the target for the target month.", d.brand, "Brand", "", null);
+  html += levelTable("By region", "Region totals. Growth is the sum of the store targets in the region.", d.region, "Region", "", null);
+  html += '<h2>By store, grouped by region</h2><p class="note">Stores with sales in the compare month. A new store uses its region\'s like-for-like growth, or the overall figure if the region has none. Blank like-for-like growth means the store did not trade in all six comparison months.</p>' +
+    '<div class="scroll"><table><thead><tr><th class="l">Store</th><th>Region</th><th>Type</th>' + LEVEL_HEAD + "</tr></thead><tbody>" +
+    storeTable(d.store) + "</tbody></table></div>";
+  html += '<h2>Phasing by date, ' + monthLabel(m.targetMonth) + '</h2>' +
+    '<p class="note">The target spread over the days of the month. Method: ' + (m.method === "samedate" ? "same date last year" : "Mon-Thu and Fri-Sun averages from last year") + ".</p>" +
+    '<div class="scroll"><table><thead><tr><th class="l">Date</th><th class="l">Day</th><th class="l">Type</th><th>Same date last year</th><th>Planned</th><th>Cumulative</th><th>% of month</th></tr></thead><tbody>' +
+    d.phasing.map(function (p) {
+      return '<tr><td class="l">' + esc(p.date) + '</td><td class="l">' + esc(p.weekday) + '</td><td class="l">' + esc(p.dayType) + "</td><td>" +
+        inr(p.lySameDate) + "</td><td><b>" + inr(p.planned) + "</b></td><td>" + inr(p.cumulative) + "</td><td>" + (p.cumulativePct * 100).toFixed(1) + "%</td></tr>";
+    }).join("") + '</tbody></table></div>' +
+    '<p class="note"><button class="ghost" onclick="downloadStores()">Download store table (CSV)</button>' +
+    '<button class="ghost" onclick="downloadPhasing()">Download phasing (CSV)</button></p>';
+  $("out").innerHTML = html;
+}
+
+function csvDownload(name, head, rows) {
+  var text = [head].concat(rows).map(function (r) {
+    return r.map(function (c) { return '"' + String(c === null || c === undefined ? "" : c).replace(/"/g, '""') + '"'; }).join(",");
+  }).join("\n");
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+  a.download = name;
+  a.click();
+}
+function downloadStores() {
+  if (!LAST) return;
+  csvDownload("store_targets.csv", ["Store", "Region", "Type", "LY net", "Prev month net", "Prev month growth", "LY orders", "Like-for-like growth", "Growth used", "Target"],
+    LAST.store.map(function (r) { return [r.name, r.region, r.type, Math.round(r.ly), Math.round(r.prev), r.mom === null ? "" : (r.mom * 100).toFixed(2), r.orders, r.recent === null ? "" : (r.recent * 100).toFixed(2), r.growthUsed === null ? "" : (r.growthUsed * 100).toFixed(2), Math.round(r.target)]; }));
+}
+function downloadPhasing() {
+  if (!LAST) return;
+  csvDownload("phasing.csv", ["Date", "Day", "Type", "Same date last year", "Planned", "Cumulative"],
+    LAST.phasing.map(function (p) { return [p.date, p.weekday, p.dayType, Math.round(p.lySameDate), Math.round(p.planned), Math.round(p.cumulative)]; }));
+}
+
+$("calc").addEventListener("click", calc);
+google.script.run.withSuccessHandler(setOptions).withFailureHandler(fail).getOptions();
+</script>
+</body>
+</html>
