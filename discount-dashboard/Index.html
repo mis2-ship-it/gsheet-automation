@@ -31,6 +31,17 @@ tr.itemrow td{background:#0F1830;color:#C9D5EA}
 .chk{flex-direction:row;align-items:center;gap:6px;padding:2px 0;color:#E5ECF8;font-size:12px}
 .up{color:#34D399}
 .down{color:#F87171}
+.codewrap{grid-column:span 2;min-width:260px}
+.cap{font-size:12px;color:#9AA8C2;display:block;margin-bottom:3px}
+.cbox{position:relative}
+.cbox input{width:100%;box-sizing:border-box}
+.chips{margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;font-size:12px;align-items:center}
+.chip{background:#1E3A6E;border-radius:12px;padding:3px 8px;color:#E5ECF8}
+.chip a{color:#93C5FD;cursor:pointer;margin-left:4px;text-decoration:none}
+.cdrop{position:absolute;left:0;right:0;top:100%;margin-top:4px;max-height:320px;overflow:auto;background:#121C33;border:1px solid #24314f;border-radius:6px;z-index:40;display:none;padding:6px;box-sizing:border-box}
+.cdrop.open{display:block}
+.cdrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;font-size:12px}
+.cdopt{display:flex;gap:6px;align-items:center;font-size:12px;color:#E5ECF8;padding:3px 2px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -51,7 +62,14 @@ tr.itemrow td{background:#0F1830;color:#C9D5EA}
     <label>Region <select id="region"><option value="all">All regions</option></select></label>
     <label>Source <select id="source"><option value="all">All sources</option></select></label>
     <label>Session <select id="session"><option value="all">All sessions</option></select></label>
-    <label>Discount code (trend and items) <select id="code"><option value="all">All discount codes</option></select></label>
+    <div class="codewrap">
+      <span class="cap">Discount codes (type to search, tick several)</span>
+      <div id="codebox" class="cbox">
+        <input id="codeSearch" type="text" placeholder="All discount codes. Type to search…" autocomplete="off">
+        <div id="codeChips" class="chips"></div>
+        <div id="codeList" class="cdrop"></div>
+      </div>
+    </div>
   </div>
   <div id="status" class="sub"></div>
 </div>
@@ -62,7 +80,7 @@ tr.itemrow td{background:#0F1830;color:#C9D5EA}
 var OPTS = null;
 var LAST = null;
 var PAGE = 20;
-var STATE = { page: 0, cats: null, search: "", open: {}, searching: false };
+var STATE = { page: 0, cats: null, search: "", open: {}, searching: false, codes: [], codeSearch: "", dd: false, timer: null };
 
 function $(id) { return document.getElementById(id); }
 function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
@@ -80,6 +98,7 @@ function ptsChange(c, p) {
   return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
 }
 function catOn(c) { return STATE.cats === null || STATE.cats.indexOf(c) >= 0; }
+function addUnique(list, add) { return list.concat(add.filter(function (x) { return list.indexOf(x) < 0; })); }
 
 function fill(id, list, allLabel) {
   $(id).innerHTML = '<option value="all">' + allLabel + "</option>" + list.map(function (v) {
@@ -95,14 +114,39 @@ function setOptions(o) {
   fill("region", o.regions, "All regions");
   fill("source", o.sources, "All sources");
   fill("session", o.sessions, "All sessions");
-  fill("code", o.labels, "All discount codes");
+  renderCodePicker();
   calc();
 }
+
+// Discount code picker: type to narrow the list (any part of the name), tick codes, see them as chips.
+function codeMatches() {
+  var q = STATE.codeSearch.trim().toLowerCase();
+  return OPTS.labels.filter(function (l) { return !q || l.toLowerCase().indexOf(q) >= 0; });
+}
+function renderCodePicker() {
+  if (!OPTS) return;
+  var sel = STATE.codes;
+  $("codeChips").innerHTML = sel.length === 0 ? "<span class='sub'>All discount codes</span>" :
+    sel.slice(0, 8).map(function (c) {
+      return "<span class='chip'>" + esc(c) + " <a data-chip-remove='" + attr(c) + "'>✕</a></span>";
+    }).join("") + (sel.length > 8 ? "<span class='sub'>+" + (sel.length - 8) + " more</span>" : "");
+  var matches = codeMatches();
+  var shown = matches.slice(0, 200);
+  $("codeList").innerHTML = "<div class='cdrow'><button class='ghost' data-code-all-match='1'>Select all matching (" + matches.length +
+    ")</button><button class='ghost' data-code-clear='1'>Clear</button><span class='sub'>" + sel.length + " selected</span></div>" +
+    shown.map(function (l) {
+      return "<label class='cdopt'><input type='checkbox' data-code='" + attr(l) + "'" + (sel.indexOf(l) >= 0 ? " checked" : "") + "> " + esc(l) + "</label>";
+    }).join("") +
+    (matches.length > 200 ? "<div class='sub'>Showing 200 of " + matches.length + ". Type more to narrow the list.</div>" : "");
+  $("codeList").className = STATE.dd ? "cdrop open" : "cdrop";
+}
+// Applies the selected codes shortly after the last change.
+function scheduleCalc() { clearTimeout(STATE.timer); STATE.timer = setTimeout(calc, 500); }
 
 function calc() {
   var p = {
     anchor: $("anchor").value, kind: $("kind").value, brand: $("brand").value, region: $("region").value,
-    source: $("source").value, session: $("session").value, code: $("code").value
+    source: $("source").value, session: $("session").value, codes: STATE.codes.slice()
   };
   if (!p.anchor) { $("status").textContent = "Choose a date."; return; }
   $("status").textContent = "Calculating…";
@@ -111,7 +155,8 @@ function calc() {
 function onData(d) {
   LAST = d;
   STATE.page = 0;
-  $("status").textContent = "Showing " + d.meta.cur + " against " + d.meta.prev + " (" + d.meta.note + ").";
+  var scope = d.meta.codes.length ? d.meta.codes.length + " selected code(s)" : "all discount codes";
+  $("status").textContent = "Showing " + d.meta.cur + " against " + d.meta.prev + " (" + d.meta.note + "), " + scope + ".";
   renderOutput();
 }
 function fail(e) { $("status").textContent = "Error: " + (e && e.message ? e.message : e); }
@@ -133,20 +178,22 @@ function codeBlock(d) {
   if (STATE.page > pages - 1) STATE.page = pages - 1;
   if (STATE.page < 0) STATE.page = 0;
   var slice = rows.slice(STATE.page * PAGE, STATE.page * PAGE + PAGE);
-  var overall = d.totals.cur.net;
+  var overall = d.overall.cur.net;
   var contrib = function (n) { return overall > 0 ? (n / overall * 100).toFixed(1) + "%" : "—"; };
   var line = function (name, c, p, cls) {
     return "<tr class='" + (cls || "") + "'><td class='l'>" + esc(name) + "</td><td>" + inr(c.net) + "</td><td>" + growth(c.net, p.net) +
       "</td><td>" + contrib(c.net) + "</td><td>" + inr(c.inv) + "</td><td>" + inr(c.lines) + "</td><td>" + inr(c.qty) +
       "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
   };
-  var body = line("Overall (all codes)", d.totals.cur, d.totals.prev, "tot") +
+  var totalName = d.meta.codes.length ? "Selected codes (" + d.meta.codes.length + ")" : "Overall (all codes)";
+  var body = line(totalName, d.totals.cur, d.totals.prev, "tot") +
     slice.map(function (x) { return line(x.label, x.cur, x.prev, ""); }).join("");
   var pager = "<div class='pager'><button data-pg='-1'" + (STATE.page <= 0 ? " disabled" : "") + ">◀ Previous 20</button>" +
     " Page " + (STATE.page + 1) + " of " + pages + " (" + rows.length + " codes) " +
     "<button data-pg='1'" + (STATE.page >= pages - 1 ? " disabled" : "") + ">Next 20 ▶</button></div>";
-  return "<h2>Discount codes</h2>" +
-    "<p class='note'>Codes with sales in " + esc(d.meta.activeMonth) + " (the month of the date). Sorted by net revenue.</p>" +
+  var note = d.meta.codes.length ? "Only the selected codes. Contribution % is of all orders in the period."
+    : "Codes with sales in " + esc(d.meta.activeMonth) + " (the month of the date). Sorted by net revenue.";
+  return "<h2>Discount codes</h2><p class='note'>" + note + "</p>" +
     "<div class='scroll'><table><thead><tr><th class='l'>Discount code</th><th>Net rev</th><th>Net growth</th><th>Contribution %</th>" +
     "<th>Tx</th><th>Orders</th><th>Qty</th><th>Dis %</th></tr></thead><tbody>" + body + "</tbody></table></div>" + pager;
 }
@@ -156,7 +203,7 @@ function trendBlock(d) {
   if (!d.trend.kind || d.trend.rows.length < 2) return "<p class='note'>Choose Daily or Weekly to see the trend.</p>";
   var rows = d.trend.rows;
   var title = d.trend.kind === "daily" ? "Last 15 days" : "Last 8 weeks";
-  var scope = d.meta.code === "all" ? "all discount codes" : esc(d.meta.code);
+  var scope = d.meta.codes.length ? esc(d.meta.code) : "all discount codes";
   var body = "";
   for (var i = rows.length - 1; i >= 1; i--) {
     var c = rows[i], p = rows[i - 1];
@@ -213,7 +260,14 @@ function categoryBlock(d) {
 
 document.addEventListener("change", function (e) {
   var t = e.target;
-  if (["anchor", "kind", "brand", "region", "source", "session", "code"].indexOf(t.id) >= 0) { calc(); return; }
+  if (["anchor", "kind", "brand", "region", "source", "session"].indexOf(t.id) >= 0) { calc(); return; }
+  if (t.hasAttribute && t.hasAttribute("data-code")) {
+    var code = t.getAttribute("data-code");
+    STATE.codes = t.checked ? addUnique(STATE.codes, [code]) : STATE.codes.filter(function (x) { return x !== code; });
+    renderCodePicker();
+    scheduleCalc();
+    return;
+  }
   if (t.hasAttribute && t.hasAttribute("data-cat")) {
     var c = t.getAttribute("data-cat");
     var base = STATE.cats === null ? OPTS.categories.slice() : STATE.cats.slice();
@@ -221,14 +275,29 @@ document.addEventListener("change", function (e) {
     renderOutput();
   }
 });
+document.addEventListener("focusin", function (e) {
+  if (e.target.id === "codeSearch") { STATE.dd = true; renderCodePicker(); }
+});
 document.addEventListener("input", function (e) {
+  if (e.target.id === "codeSearch") { STATE.codeSearch = e.target.value; STATE.dd = true; renderCodePicker(); return; }
   if (e.target.id !== "csearch") return;
   STATE.search = e.target.value;
   STATE.searching = true;
   renderOutput();
 });
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape" && STATE.dd) { STATE.dd = false; renderCodePicker(); }
+});
 document.addEventListener("click", function (e) {
   var el = e.target;
+  var box = el.closest ? el.closest("#codebox") : null;
+  if (!box && STATE.dd) { STATE.dd = false; renderCodePicker(); }
+  var chip = el.closest ? el.closest("[data-chip-remove]") : null;
+  if (chip) { var cn = chip.getAttribute("data-chip-remove"); STATE.codes = STATE.codes.filter(function (x) { return x !== cn; }); renderCodePicker(); scheduleCalc(); return; }
+  var allm = el.closest ? el.closest("[data-code-all-match]") : null;
+  if (allm) { STATE.codes = addUnique(STATE.codes, codeMatches()); renderCodePicker(); scheduleCalc(); return; }
+  var clr = el.closest ? el.closest("[data-code-clear]") : null;
+  if (clr) { STATE.codes = []; renderCodePicker(); scheduleCalc(); return; }
   var pg = el.closest ? el.closest("[data-pg]") : null;
   if (pg) { STATE.page += Number(pg.getAttribute("data-pg")); renderOutput(); return; }
   var cat = el.closest ? el.closest("[data-catname]") : null;
