@@ -103,9 +103,21 @@ ratingView = function (platformName) {
   const platform = M.platforms.indexOf(platformName);
   const A = RM.a, B = RM.b, la = monLabel(A), lb = monLabel(B);
   const isGoogle = platformName === "Google";
-  const counts = `<p class="muted">Loaded ${num(PROD.rows.length)} product rows and ${num(COMM.rows.length)} comments for this login.</p>`;
-  const noProducts = !isGoogle && PROD.rows.length === 0
-    ? `<p class="muted">No product rows were loaded. Check the Item Name and Category Name columns in the ratings sync.</p>` : "";
+  // Which columns came through for this platform, from the ratings sync (counted by the build).
+  const pc = (M.product_counts && M.product_counts[platformName]) || null;
+  const counts = `<p class="muted">Loaded ${num(PROD.rows.length)} product rows and ${num(COMM.rows.length)} comments for this login.` +
+    (pc && !isGoogle ? ` In the ratings sheet for ${esc(platformName)}: ${num(pc.items)} rows with an item name and ${num(pc.categories)} with a category.` : "") +
+    `</p>`;
+  const absent = [];
+  if (!isGoogle && pc && pc.items === 0) absent.push("Item Name");
+  if (!isGoogle && pc && pc.categories === 0) absent.push("Category Name");
+  const noProducts = absent.length
+    ? `<section class="block"><h2>Items and categories</h2>` +
+      `<p>The ${esc(platformName)} ratings sheet has no values in ${absent.join(" or ")}, so the item and category tables are empty.</p>` +
+      `<p class="muted">The ratings sync finds each column by its header. Its log shows a WARNING with the headers it found for ` +
+      `${esc(platformName)}. Rename the column in the sheet to ${absent.join(" or ")}, or send us the header row.</p></section>`
+    : (!isGoogle && PROD.rows.length === 0
+      ? `<p class="muted">No product rows were loaded for ${esc(platformName)}.</p>` : "");
   const prodBlock = isGoogle ? "" :
     `<section class="block"><h2>Category level, top 15 by orders (${lb})</h2>${productTable(platform, 1, A, B, la, lb)}</section>` +
     `<section class="block"><h2>Item level, top 15 by orders (${lb})</h2>${productTable(platform, 0, A, B, la, lb)}</section>`;
