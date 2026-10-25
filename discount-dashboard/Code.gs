@@ -1,16 +1,18 @@
 /* ============================================================
    Discount Dashboard (Google Apps Script)
-   Discount Code sales for Swiggy and Zomato orders: by discount code, and by item within a code and categories.
+   Discount Code sales for Swiggy and Zomato orders.
    Reads the tabs Disc_Label and Disc_Item, written by write_discount_sheet.py.
    Set DISCOUNT_SHEET_ID to the Google Sheet that holds those tabs.
 
    Each order counts once, under its discount label (the label combines all discounts on the order).
-   Net = Gross - Discount. Dis % = Discount / Gross. AOV = Net / Txn.
+   Tx = orders (invoices). Orders = item lines. Net = Gross - Discount. Dis % = Discount / Gross.
+   Contribution % = a code's net / total net of all orders in the period.
+   Discount codes listed are those with sales in the calendar month of the date chosen.
    Periods, for the date you choose:
-     Daily   : that day, against the day before
-     Weekly  : the 7 days ending on that day, against the 7 days before
-     Monthly : the calendar month, against the month before
-     MTD     : the 1st of the month to that day, against the same days of the month before
+     Daily   : that day, against the day before. Trend: the last 15 days.
+     Weekly  : the 7 days ending on that day, against the 7 days before. Trend: the last 8 weeks.
+     Monthly : the calendar month, against the month before.
+     MTD     : the 1st of the month to that day, against the same days of the month before.
    ============================================================ */
 const DISCOUNT_SHEET_ID = "PASTE_DISCOUNT_SHEET_ID_HERE";
 const DAY_MS = 86400000;
@@ -34,12 +36,12 @@ function loadDisc_() {
   const labelRows = readTab_("Disc_Label").map(v => ({
     d: dateOf_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), session: String(v[4]),
     label: String(v[5]), inv: Number(v[6]) || 0, qty: Number(v[7]) || 0, gross: Number(v[8]) || 0,
-    disc: Number(v[9]) || 0, net: Number(v[10]) || 0
+    disc: Number(v[9]) || 0, net: Number(v[10]) || 0, lines: Number(v[11]) || 0
   })).filter(r => r.d.length === 10);
   const itemRows = readTab_("Disc_Item").map(v => ({
     d: dateOf_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), session: String(v[4]),
     label: String(v[5]), item: String(v[6]), cat: String(v[7]), inv: Number(v[8]) || 0, qty: Number(v[9]) || 0,
-    gross: Number(v[10]) || 0, disc: Number(v[11]) || 0, net: Number(v[12]) || 0
+    gross: Number(v[10]) || 0, disc: Number(v[11]) || 0, net: Number(v[12]) || 0, lines: Number(v[13]) || 0
   })).filter(r => r.d.length === 10);
   return { labelRows: labelRows, itemRows: itemRows };
 }
@@ -64,18 +66,34 @@ function windows_(kind, anchor) {
   return { cur: [a, a], prev: [a - 1, a - 1], note: "the day, against the day before" };
 }
 
+// Trend buckets, oldest first. The first bucket is only used for the growth of the second.
+function trendWindows_(kind, anchor) {
+  const a = dn_(anchor);
+  const out = [];
+  if (kind === "daily") { for (let k = 15; k >= 0; k--) out.push([a - k, a - k]); }
+  if (kind === "weekly") { for (let k = 8; k >= 0; k--) out.push([a - 7 * k - 6, a - 7 * k]); }
+  return out;
+}
+
 /* ---------- Totals ---------- */
-function blank_() { return { inv: 0, qty: 0, gross: 0, disc: 0, net: 0 }; }
-function add_(a, r) { a.inv += r.inv; a.qty += r.qty; a.gross += r.gross; a.disc += r.disc; a.net += r.net; return a; }
+function blank_() { return { inv: 0, qty: 0, gross: 0, disc: 0, net: 0, lines: 0 }; }
+function add_(a, r) {
+  a.inv += r.inv || 0; a.qty += r.qty || 0; a.gross += r.gross || 0;
+  a.disc += r.disc || 0; a.net += r.net || 0; a.lines += r.lines || 0;
+  return a;
+}
 
 /* ---------- The dashboard ---------- */
 // data: { labelRows, itemRows } as read from the sheet.
-// p: { kind, anchor 'YYYY-MM-DD', brand, region, source, session ('all' = no filter), code (a label, or 'all') }
+// p: { kind, anchor 'YYYY-MM-DD', brand, region, source, session ('all' = no filter),
+//      codes (array of discount codes; empty = all codes) }
 function computeDiscount_(data, p) {
   const kind = KINDS.indexOf(p.kind) >= 0 ? p.kind : "monthly";
   const w = windows_(kind, p.anchor);
   const f = { brand: p.brand || "all", region: p.region || "all", source: p.source || "all", session: p.session || "all" };
-  const code = p.code || "all";
+  const codes = Array.isArray(p.codes) ? p.codes.filter(c => c) : (p.code && p.code !== "all" ? [p.code] : []);
+  const codeSet = new Set(codes);
+  const inCodes = label => codeSet.size === 0 || codeSet.has(label);
   const passF = r => (f.brand === "all" || r.brand === f.brand) && (f.region === "all" || r.region === f.region) &&
                      (f.source === "all" || r.source === f.source) && (f.session === "all" || r.session === f.session);
   const inWin = (r, win) => { const n = dn_(r.d); return n >= win[0] && n <= win[1]; };
@@ -89,26 +107,45 @@ function computeDiscount_(data, p) {
     return m;
   };
 
-  // By discount code: every code, current and previous period.
+  // Discount codes: only those with sales in the calendar month of the date chosen, and only the selected codes.
+  const a = dn_(p.anchor);
+  const monthWin = [monthStart_(a), monthEnd_(a)];
   const curL = sumBy_(data.labelRows, r => r.label, w.cur);
   const prvL = sumBy_(data.labelRows, r => r.label, w.prev);
-  const labels = [...new Set([...curL.keys(), ...prvL.keys()])].map(k => ({
+  const activeL = sumBy_(data.labelRows, r => r.label, monthWin);
+  const labels = [...activeL.keys()].filter(inCodes).map(k => ({
     label: k, cur: curL.get(k) || blank_(), prev: prvL.get(k) || blank_()
   }));
 
-  // By item: the chosen code, current period, with each item's category.
-  const curI = sumBy_(data.itemRows, r => r.item + "\u0001" + r.cat, w.cur, r => code === "all" || r.label === code);
-  const items = [...curI.entries()].map(([k, a]) => {
-    const parts = k.split("\u0001");
-    return { item: parts[0], cat: parts[1], cur: a };
+  // Trend for the selected codes (all codes when none are selected).
+  const trend = trendWindows_(kind, p.anchor).map(win => {
+    const acc = blank_();
+    for (const r of data.labelRows) {
+      if (!inWin(r, win) || !passF(r) || !inCodes(r.label)) continue;
+      add_(acc, r);
+    }
+    return { range: rangeText_(win), inv: acc.inv, qty: acc.qty, gross: acc.gross, disc: acc.disc, net: acc.net, lines: acc.lines };
   });
 
-  const total_ = list => list.reduce((t, x) => add_(t, x), blank_());
+  // Items for the selected codes, current period, with each item's category.
+  const curI = sumBy_(data.itemRows, r => r.item + "\u0001" + r.cat, w.cur, r => inCodes(r.label));
+  const items = [...curI.entries()].map(([k, x]) => {
+    const parts = k.split("\u0001");
+    return { item: parts[0], cat: parts[1], cur: x };
+  });
+
+  const total_ = m => [...m.values()].reduce((t, x) => add_(t, x), blank_());
+  const selCur = new Map([...curL.entries()].filter(([k]) => inCodes(k)));
+  const selPrv = new Map([...prvL.entries()].filter(([k]) => inCodes(k)));
+  const scope = codes.length === 0 ? "all" : (codes.length === 1 ? codes[0] : codes.length + " selected codes");
   return {
-    meta: { kind: kind, anchor: p.anchor, cur: rangeText_(w.cur), prev: rangeText_(w.prev), note: w.note },
+    meta: { kind: kind, anchor: p.anchor, codes: codes, code: scope, cur: rangeText_(w.cur), prev: rangeText_(w.prev),
+            note: w.note, activeMonth: rangeText_(monthWin) },
     labels: labels,
     items: items,
-    totals: { cur: total_(labels.map(x => x.cur)), prev: total_(labels.map(x => x.prev)) }
+    totals: { cur: total_(selCur), prev: total_(selPrv) },
+    overall: { cur: total_(curL), prev: total_(prvL) },
+    trend: { kind: (kind === "daily" || kind === "weekly") ? kind : "", rows: trend }
   };
 }
 
