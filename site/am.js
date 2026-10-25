@@ -1,7 +1,8 @@
 /* ============ By area manager: every sales tab, Live, Rating, and KPT and O2D ============
    Each tab gets a "By area manager" table. Each area manager's stores are added up with the same filters.
-   The area manager for each store comes from the User Access tab (AM Name).
-   The store view has no area manager split. Loaded after spikes.js, live.js, ratings.js, products.js and kpt.js. */
+   Click an area manager's name to open its stores; click again to close them. The area manager for each store
+   comes from the User Access tab (AM Name). The store view has no area manager split.
+   Loaded after spikes.js, live.js, ratings.js, products.js and kpt.js. */
 const amAdd = (x, y) => { const r = Object.assign({}, x); for (const k of Object.keys(y)) r[k] = (r[k] || 0) + y[k]; return r; };
 const escA = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const amName = k => (M.ams && M.ams[k]) || "Unassigned";
@@ -11,26 +12,62 @@ function amOfStore(i) {
   return AM_OF_STORE.get(i) || 0;
 }
 
+// Which area managers are open (their stores shown). Kept between redraws.
+const AM_OPEN = {};
+const AM_LOADING = new Set();
+function amStoresOf(k) { return M.stores.filter(s => (s.a || 0) === k); }
+
+// The figures for one row: net, orders and discount, this period against the one it is compared with.
+function amMetricCells(a, b) {
+  if (a === null || b === null) return `<td colspan="9" style="color:#9AA8C2">loading…</td>`;
+  const am = metrics(a), bm = metrics(b);
+  const gr = (x, y) => (y ? dlt(rel(x, y), "%", true) : "—");
+  return `<td>${num(am.net)}</td><td>${num(bm.net)}</td><td>${gr(am.net, bm.net)}</td>` +
+    `<td>${num(am.txn)}</td><td>${num(bm.txn)}</td><td>${gr(am.txn, bm.txn)}</td>` +
+    `<td>${am.discPct.toFixed(1)}%</td><td>${bm.discPct.toFixed(1)}%</td><td>${dlt(pts(am.discPct, bm.discPct), " pts", false)}</td>`;
+}
+
+// The store rows under an open area manager.
+function amStoreRowsHtml(k, detail) {
+  if (!detail || !AM_OPEN[k]) return "";
+  const list = detail(k).filter(r => r.failed || r.a === null || r.a.net || (r.b && r.b.net));
+  list.sort((x, y) => (y.a ? y.a.net : -1) - (x.a ? x.a.net : -1));
+  if (!list.length) {
+    return `<tr class="amstore"><td style="padding-left:22px;color:#9AA8C2">No sales in these periods</td><td colspan="9"></td></tr>`;
+  }
+  return list.map(r => r.failed
+    ? `<tr class="amstore"><td style="padding-left:22px;color:#9AA8C2">${escA(r.name)}</td><td colspan="9" style="color:#F87171">could not be loaded</td></tr>`
+    : `<tr class="amstore"><td style="padding-left:22px;color:#C9D5EA">${escA(r.name)}</td>${amMetricCells(r.a, r.b)}</tr>`
+  ).join("");
+}
+
 // One table: this period against the period it is compared with. Each map is keyed by area manager.
-function amTableFromMaps(ca, cb, c, p, note) {
+// detail(k) gives the store rows for area manager k (used when its name is opened).
+function amTableFromMaps(ca, cb, c, p, note, detail) {
   const sumAll = m => [...m.values()].reduce((acc, a) => amAdd(acc, a), Object.assign({}, EMPTY_A));
   const keys = [...new Set([...ca.keys(), ...cb.keys()])]
     .filter(k => (ca.get(k) || EMPTY_A).net || (cb.get(k) || EMPTY_A).net)
     .sort((x, y) => (ca.get(y) || EMPTY_A).net - (ca.get(x) || EMPTY_A).net);
-  const gr = (a, b) => (b ? dlt(rel(a, b), "%", true) : "—");
-  const line = (label, a, b, cls) => {
-    const am = metrics(a), bm = metrics(b);
-    return `<tr class="${cls || ""}"><td>${escA(label)}</td><td>${num(am.net)}</td><td>${num(bm.net)}</td><td>${gr(am.net, bm.net)}</td>` +
-      `<td>${num(am.txn)}</td><td>${num(bm.txn)}</td><td>${gr(am.txn, bm.txn)}</td>` +
-      `<td>${am.discPct.toFixed(1)}%</td><td>${bm.discPct.toFixed(1)}%</td><td>${dlt(pts(am.discPct, bm.discPct), " pts", false)}</td></tr>`;
-  };
-  const body = line("Total", sumAll(ca), sumAll(cb), "tot") +
-    keys.map(k => line(amName(k), ca.get(k) || EMPTY_A, cb.get(k) || EMPTY_A)).join("");
-  return `<section class="block"><h2>By area manager</h2><p class="sub">${note}</p>` +
+  const totalRow = `<tr class="tot"><td>Total</td>${amMetricCells(sumAll(ca), sumAll(cb))}</tr>`;
+  const amRows = keys.map(k => {
+    const open = !!AM_OPEN[k];
+    const nameCell = `<td data-amk="${k}" style="cursor:pointer;font-weight:600">${open ? "▾ " : "▸ "}${escA(amName(k))}</td>`;
+    return `<tr>${nameCell}${amMetricCells(ca.get(k) || EMPTY_A, cb.get(k) || EMPTY_A)}</tr>` + amStoreRowsHtml(k, detail);
+  }).join("");
+  return `<section class="block"><h2>By area manager</h2><p class="sub">${note} Click an area manager's name to see its stores.</p>` +
     `<div class="scroll"><table class="tbl"><thead><tr><th>Area manager</th><th>${c} net</th><th>${p} net</th><th>Growth</th>` +
     `<th>${c} orders</th><th>${p} orders</th><th>Growth</th><th>${c} Dis %</th><th>${p} Dis %</th><th>Dis change</th></tr></thead>` +
-    `<tbody>${body}</tbody></table></div></section>`;
+    `<tbody>${totalRow}${amRows}</tbody></table></div></section>`;
 }
+
+// Opens and closes an area manager's stores when its name is clicked.
+document.addEventListener("click", e => {
+  const cell = e.target && e.target.closest ? e.target.closest("[data-amk]") : null;
+  if (!cell) return;
+  const k = Number(cell.getAttribute("data-amk"));
+  AM_OPEN[k] = !AM_OPEN[k];
+  render();
+});
 
 // Sales tabs: the sales rows already carry the area manager in their second column.
 function amByWins(rows, wins, pass) {
@@ -42,9 +79,39 @@ function amByWins(rows, wins, pass) {
   }
   return out;
 }
+
+// Store figures for the sales periods, from each store's own file (loaded the first time it is needed).
+function aggWins(rows, wins) {
+  let acc = Object.assign({}, EMPTY_A);
+  for (const w of wins) acc = amAdd(acc, aggFor(rows, w[0], w[1], salesPass));
+  return acc;
+}
+function amLoadStores(ids) {
+  const need = ids.filter(i => !AM_LOADING.has(i));
+  if (!need.length) return;
+  need.forEach(i => AM_LOADING.add(i));
+  const done = () => { need.forEach(i => AM_LOADING.delete(i)); render(); };
+  Promise.all(need.map(i => ensureStore(i))).then(done, done);
+}
+function amPeriodStoreRows(k, curWins, prevWins) {
+  const missing = [];
+  const out = amStoresOf(k).map(s => {
+    const rows = STORE_ROWS.get(s.i);
+    if (rows === undefined) {
+      if (STORE_FAILED.has(s.i)) return { name: s.name, a: null, b: null, failed: true };
+      missing.push(s.i);
+      return { name: s.name, a: null, b: null };
+    }
+    return { name: s.name, a: aggWins(rows, curWins), b: aggWins(rows, prevWins) };
+  });
+  if (missing.length) amLoadStores(missing);
+  return out;
+}
+
 function amSalesBlock(curWins, prevWins, c, p, note) {
   const rows = baseSales();
-  return amTableFromMaps(amByWins(rows, curWins, salesPass), amByWins(rows, prevWins, salesPass), c, p, note);
+  return amTableFromMaps(amByWins(rows, curWins, salesPass), amByWins(rows, prevWins, salesPass), c, p, note,
+    k => amPeriodStoreRows(k, curWins, prevWins));
 }
 function amPeriodWins(kind) {
   if (kind === "mtd") {
@@ -104,6 +171,12 @@ function amFromStoreMap(m) {
   }
   return out;
 }
+// Live store rows: complete hours today and the same hours last week, from the hourly rows.
+function amLiveStoreRows(k) {
+  const clock = liveClock();
+  const ca = hourlyDim(M.live_day, clock.cut, 1), cb = hourlyDim(M.live_day - 7, clock.cut, 1);
+  return amStoresOf(k).map(s => ({ name: s.name, a: ca.get(s.i) || EMPTY_A, b: cb.get(s.i) || EMPTY_A }));
+}
 function amLiveBlock() {
   const clock = liveClock();
   if (!clock.active || clock.cut === 0) {
@@ -112,7 +185,8 @@ function amLiveBlock() {
   const cut = clock.cut, day = M.live_day;
   const ca = amFromStoreMap(hourlyDim(day, cut, 1)), cb = amFromStoreMap(hourlyDim(day - 7, cut, 1));
   return amTableFromMaps(ca, cb, "Today", "Last week",
-    `Complete hours, 9 AM to ${hourName(cut)}. Brackets compare with last week, same hours.`);
+    `Complete hours, 9 AM to ${hourName(cut)}. Brackets compare with last week, same hours.`,
+    k => amLiveStoreRows(k));
 }
 const salesLiveViewAm = salesLiveView;
 salesLiveView = function () {
