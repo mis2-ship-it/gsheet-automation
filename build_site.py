@@ -425,6 +425,7 @@ def main():
     elif lh is not None:
         live_day = int((lh["Date"].max() - BASE).days)
 
+    product_counts = {}
     has_ratings = False
     if ratings is not None:
         rt = ratings
@@ -466,6 +467,10 @@ def main():
         cat_txt = rt["Category Name"].fillna("").astype(str).str.strip().values if "Category Name" in rt.columns else np.array([""] * len(rt))
         review = rt["Review Text"].fillna("").astype(str).str.replace(r"\s+", " ", regex=True).str.strip().str.slice(0, 220).values \
             if "Review Text" in rt.columns else np.array([""] * len(rt))
+        for pname in PLATFORMS:
+            on = (rt["Platform"].values == pname)
+            product_counts[pname] = {"items": int(np.sum(on & (item_txt != ""))),
+                                     "categories": int(np.sum(on & (cat_txt != "")))}
         prod_names, prod_id = [], {}
 
         def name_id(text):
@@ -549,6 +554,7 @@ def main():
         "has_discounts": disc is not None,
         "kpt_last_day": kpt["lastDay"] if kpt is not None else None,
         "has_products": has_ratings and bool(prod_rows),
+        "product_counts": product_counts,
         "stats": {
             "sales_rows": int(len(sales)),
             "unmapped_store_type_share_2026_pct": round(

@@ -46,8 +46,10 @@ FIELD_NAMES = {
     "rated": (["rated orders"], ["rated order", "rated"]),
     "rating": (["avg rating", "rating"], ["avg rating", "rating"]),
     "comments": (["comments group", "group comments"], ["comments group", "group comments"]),
-    "item": (["item name"], ["item name"]),
-    "category": (["category name", "category"], ["category name"]),
+    "item": (["item", "item name", "item names", "items name", "items", "product name", "product", "menu item", "dish name"],
+             ["item name", "item names", "product name"]),
+    "category": (["category name", "category", "item category", "menu category", "product category"],
+                 ["category name", "item category"]),
     "review": (["customer comments", "comments", "review"], ["customer comments", "review"]),
 }
 GOOGLE_OPTIONAL = {"orders", "rated", "comments"}   # Google reviews: one rating per row, no order count or comment group
@@ -116,6 +118,11 @@ def parse_platform(platform, values, header_row):
         optional = field in OPTIONAL_ALL or (platform == "Google" and field in GOOGLE_OPTIONAL)
         cols[field] = find_column(head, field, required=not optional)
     print(f"{platform} columns used: " + ", ".join(f"{f} = '{c}'" for f, c in cols.items() if c))
+    if platform != "Google":
+        for field, label in [("item", "Item Name"), ("category", "Category Name")]:
+            if not cols[field]:
+                print(f"WARNING {platform}: no column found for {label}, so the {label} tables will be empty. "
+                      f"Headers in this sheet: {[h for h in head if h]}")
 
     def text(field):
         return df[cols[field]].astype(str).map(clean_name)
