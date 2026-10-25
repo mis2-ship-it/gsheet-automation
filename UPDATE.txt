@@ -1,0 +1,18 @@
+DISCOUNT DASHBOARD - UPDATE (v2)
+
+What changed
+- Discount codes: 20 per page, sorted by net revenue, with Previous/Next buttons. Each code shows its
+  contribution % of overall net for the period. Only codes with sales in the calendar month of the date are listed.
+- Orders = item lines in the orders. Tx = orders (invoices). Both are in the code table and the trends.
+- Daily shows the last 15 days; Weekly shows the last 8 weeks. Each row shows Net rev, Tx, Orders, Qty and Dis %,
+  with growth against the row below it. The trend follows the discount code chosen at the top (All by default).
+- Category table: click a category to open its items; click it again to close them.
+- The filters stay at the top while you scroll. Changing a filter updates the tables.
+
+Steps
+1. GitHub: replace write_discount_sheet.py at the top of the repo with the one in this zip.
+2. GitHub: Actions -> Discount Code rows (Swiggy and Zomato) -> Run workflow. It rewrites Disc_Label and Disc_Item
+   with the new Lines column. The log ends with "Disc_Label: N rows written" and "Disc_Item: N rows written".
+3. Apps Script: replace the contents of Code.gs with discount-dashboard/Code.gs. Keep your DISCOUNT_SHEET_ID line.
+4. Apps Script: replace the contents of the Index HTML file with discount-dashboard/Index.html.
+5. Deploy -> Manage deployments -> edit the active deployment -> Version: New version -> Deploy.

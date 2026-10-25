@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Discount Dashboard</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:16px;background:#0A1020;color:#E5ECF8;font-size:14px}
+h1{font-size:20px;margin:0 0 4px}
+h2{font-size:16px;margin:22px 0 6px}
+.sub{color:#9AA8C2;font-size:12px;margin:0 0 8px}
+.note{color:#9AA8C2;font-size:12px;margin:6px 0}
+.sticky{position:sticky;top:0;z-index:20;background:#0A1020;padding:8px 0 6px;border-bottom:1px solid #24314f;margin-bottom:6px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:8px 0}
+label{font-size:12px;color:#9AA8C2;display:flex;flex-direction:column;gap:3px}
+select,input{background:#121C33;color:#E5ECF8;border:1px solid #24314f;border-radius:6px;padding:7px;font-size:13px}
+button{background:#3B82F6;color:#fff;border:0;border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer;margin-right:6px}
+button:disabled{background:#24314f;color:#6B7A94;cursor:default}
+button.ghost{background:#121C33;border:1px solid #24314f}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 8px;border-bottom:1px solid #24314f;text-align:right;white-space:nowrap}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+tr.tot td{font-weight:bold;border-top:2px solid #3B82F6}
+tr.catrow{cursor:pointer}
+tr.catrow td:first-child{font-weight:bold}
+tr.itemrow td{background:#0F1830;color:#C9D5EA}
+.scroll{overflow-x:auto}
+.pager{margin:8px 0;font-size:12px;color:#9AA8C2}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:10px}
+.clist{max-height:170px;overflow:auto;border:1px solid #24314f;border-radius:8px;padding:6px}
+.chk{flex-direction:row;align-items:center;gap:6px;padding:2px 0;color:#E5ECF8;font-size:12px}
+.up{color:#34D399}
+.down{color:#F87171}
+</style>
+</head>
+<body>
+
+<div class="sticky">
+  <h1>Discount Dashboard</h1>
+  <div class="controls">
+    <label>Date <input id="anchor" type="date"></label>
+    <label>Period
+      <select id="kind">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly" selected>Monthly</option>
+        <option value="mtd">Month to date</option>
+      </select>
+    </label>
+    <label>Brand <select id="brand"><option value="all">All brands</option></select></label>
+    <label>Region <select id="region"><option value="all">All regions</option></select></label>
+    <label>Source <select id="source"><option value="all">All sources</option></select></label>
+    <label>Session <select id="session"><option value="all">All sessions</option></select></label>
+    <label>Discount code (trend and items) <select id="code"><option value="all">All discount codes</option></select></label>
+  </div>
+  <div id="status" class="sub"></div>
+</div>
+
+<div id="out"></div>
+
+<script>
+var OPTS = null;
+var LAST = null;
+var PAGE = 20;
+var STATE = { page: 0, cats: null, search: "", open: {}, searching: false };
+
+function $(id) { return document.getElementById(id); }
+function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function attr(t) { return esc(t).replace(/"/g, "&quot;"); }
+function inr(n) { return (n === null || n === undefined || isNaN(n)) ? "—" : Math.round(n).toLocaleString("en-IN"); }
+function pct(x) {
+  if (x === null || x === undefined || isNaN(x)) return "—";
+  return '<span class="' + (x >= 0 ? "up" : "down") + '">' + (x >= 0 ? "▲ " : "▼ ") + Math.abs(x * 100).toFixed(1) + "%</span>";
+}
+function growth(cur, prev) { return prev > 0 ? pct(cur / prev - 1) : "—"; }
+function dpct(d, g) { return g > 0 ? (d / g * 100).toFixed(1) + "%" : "—"; }
+function ptsChange(c, p) {
+  if (!c.gross || !p.gross) return "—";
+  var diff = (c.disc / c.gross - p.disc / p.gross) * 100;
+  return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
+}
+function catOn(c) { return STATE.cats === null || STATE.cats.indexOf(c) >= 0; }
+
+function fill(id, list, allLabel) {
+  $(id).innerHTML = '<option value="all">' + allLabel + "</option>" + list.map(function (v) {
+    return '<option value="' + attr(v) + '">' + esc(v) + "</option>";
+  }).join("");
+}
+
+function setOptions(o) {
+  OPTS = o;
+  var a = $("anchor");
+  a.min = o.first; a.max = o.latest; a.value = o.latest;
+  fill("brand", o.brands, "All brands");
+  fill("region", o.regions, "All regions");
+  fill("source", o.sources, "All sources");
+  fill("session", o.sessions, "All sessions");
+  fill("code", o.labels, "All discount codes");
+  calc();
+}
+
+function calc() {
+  var p = {
+    anchor: $("anchor").value, kind: $("kind").value, brand: $("brand").value, region: $("region").value,
+    source: $("source").value, session: $("session").value, code: $("code").value
+  };
+  if (!p.anchor) { $("status").textContent = "Choose a date."; return; }
+  $("status").textContent = "Calculating…";
+  google.script.run.withSuccessHandler(onData).withFailureHandler(fail).getDiscountData(p);
+}
+function onData(d) {
+  LAST = d;
+  STATE.page = 0;
+  $("status").textContent = "Showing " + d.meta.cur + " against " + d.meta.prev + " (" + d.meta.note + ").";
+  renderOutput();
+}
+function fail(e) { $("status").textContent = "Error: " + (e && e.message ? e.message : e); }
+
+function renderOutput() {
+  if (!LAST) return;
+  $("out").innerHTML = codeBlock(LAST) + trendBlock(LAST) + categoryBlock(LAST);
+  if (STATE.searching) {
+    var s = $("csearch");
+    if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
+    STATE.searching = false;
+  }
+}
+
+// Discount codes: 20 per page, sorted by net revenue, with contribution to overall net.
+function codeBlock(d) {
+  var rows = d.labels.slice().sort(function (a, b) { return b.cur.net - a.cur.net; });
+  var pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  if (STATE.page > pages - 1) STATE.page = pages - 1;
+  if (STATE.page < 0) STATE.page = 0;
+  var slice = rows.slice(STATE.page * PAGE, STATE.page * PAGE + PAGE);
+  var overall = d.totals.cur.net;
+  var contrib = function (n) { return overall > 0 ? (n / overall * 100).toFixed(1) + "%" : "—"; };
+  var line = function (name, c, p, cls) {
+    return "<tr class='" + (cls || "") + "'><td class='l'>" + esc(name) + "</td><td>" + inr(c.net) + "</td><td>" + growth(c.net, p.net) +
+      "</td><td>" + contrib(c.net) + "</td><td>" + inr(c.inv) + "</td><td>" + inr(c.lines) + "</td><td>" + inr(c.qty) +
+      "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
+  };
+  var body = line("Overall (all codes)", d.totals.cur, d.totals.prev, "tot") +
+    slice.map(function (x) { return line(x.label, x.cur, x.prev, ""); }).join("");
+  var pager = "<div class='pager'><button data-pg='-1'" + (STATE.page <= 0 ? " disabled" : "") + ">◀ Previous 20</button>" +
+    " Page " + (STATE.page + 1) + " of " + pages + " (" + rows.length + " codes) " +
+    "<button data-pg='1'" + (STATE.page >= pages - 1 ? " disabled" : "") + ">Next 20 ▶</button></div>";
+  return "<h2>Discount codes</h2>" +
+    "<p class='note'>Codes with sales in " + esc(d.meta.activeMonth) + " (the month of the date). Sorted by net revenue.</p>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Discount code</th><th>Net rev</th><th>Net growth</th><th>Contribution %</th>" +
+    "<th>Tx</th><th>Orders</th><th>Qty</th><th>Dis %</th></tr></thead><tbody>" + body + "</tbody></table></div>" + pager;
+}
+
+// Trend: last 15 days (Daily) or last 8 weeks (Weekly), with growth for each metric.
+function trendBlock(d) {
+  if (!d.trend.kind || d.trend.rows.length < 2) return "<p class='note'>Choose Daily or Weekly to see the trend.</p>";
+  var rows = d.trend.rows;
+  var title = d.trend.kind === "daily" ? "Last 15 days" : "Last 8 weeks";
+  var scope = d.meta.code === "all" ? "all discount codes" : esc(d.meta.code);
+  var body = "";
+  for (var i = rows.length - 1; i >= 1; i--) {
+    var c = rows[i], p = rows[i - 1];
+    body += "<tr><td class='l'>" + esc(c.range) + "</td><td>" + inr(c.net) + "</td><td>" + growth(c.net, p.net) +
+      "</td><td>" + inr(c.inv) + "</td><td>" + growth(c.inv, p.inv) + "</td><td>" + inr(c.lines) + "</td><td>" + growth(c.lines, p.lines) +
+      "</td><td>" + inr(c.qty) + "</td><td>" + growth(c.qty, p.qty) + "</td><td>" + dpct(c.disc, c.gross) + "</td><td>" + ptsChange(c, p) + "</td></tr>";
+  }
+  return "<h2>" + title + "</h2><p class='note'>For " + scope + ". Each growth compares with the row below it.</p>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Period</th><th>Net rev</th><th>Growth</th><th>Tx</th><th>Growth</th>" +
+    "<th>Orders</th><th>Growth</th><th>Qty</th><th>Growth</th><th>Dis %</th><th>Dis % change</th></tr></thead><tbody>" +
+    body + "</tbody></table></div>";
+}
+
+// Category table: click a category to show its items; click again to hide them.
+function categoryBlock(d) {
+  var q = STATE.search.trim().toLowerCase();
+  var groups = {};
+  d.items.forEach(function (x) {
+    if (!groups[x.cat]) groups[x.cat] = { name: x.cat, items: [], cur: { inv: 0, qty: 0, gross: 0, disc: 0, net: 0 } };
+    groups[x.cat].items.push(x);
+    var g = groups[x.cat].cur;
+    g.qty += x.cur.qty; g.gross += x.cur.gross; g.disc += x.cur.disc; g.net += x.cur.net;
+  });
+  var list = Object.keys(groups).map(function (k) { return groups[k]; })
+    .filter(function (g) { return catOn(g.name) && (!q || g.name.toLowerCase().indexOf(q) >= 0); })
+    .sort(function (a, b) { return b.cur.net - a.cur.net; });
+  var checks = OPTS.categories.filter(function (c) { return !q || c.toLowerCase().indexOf(q) >= 0; }).slice(0, 300).map(function (c) {
+    return "<label class='chk'><input type='checkbox' data-cat='" + attr(c) + "'" + (catOn(c) ? " checked" : "") + "> " + esc(c) + "</label>";
+  }).join("") || "<span class='sub'>No category matches.</span>";
+  var selected = STATE.cats === null ? OPTS.categories.length : STATE.cats.length;
+  var body = "";
+  list.forEach(function (g) {
+    var open = !!STATE.open[g.name];
+    var c = g.cur;
+    body += "<tr class='catrow' data-catname='" + attr(g.name) + "'><td class='l'>" + (open ? "▾ " : "▸ ") + esc(g.name) + "</td><td>—</td><td>" +
+      inr(c.qty) + "</td><td>" + inr(c.gross) + "</td><td>" + inr(c.disc) + "</td><td>" + inr(c.net) + "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
+    if (open) {
+      g.items.slice().sort(function (a, b) { return b.cur.net - a.cur.net; }).forEach(function (x) {
+        var k = x.cur;
+        body += "<tr class='itemrow'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.item) + "</td><td>" + inr(k.inv) + "</td><td>" + inr(k.qty) +
+          "</td><td>" + inr(k.gross) + "</td><td>" + inr(k.disc) + "</td><td>" + inr(k.net) + "</td><td>" + dpct(k.disc, k.gross) + "</td></tr>";
+      });
+    }
+  });
+  return "<h2>By category</h2>" +
+    "<p class='note'>Click a category to see its items. Click it again to hide them. Txn is not added up across items.</p>" +
+    "<div class='grid2'><div><label>Search category<input id='csearch' type='search' value='" + attr(STATE.search) + "' placeholder='e.g. 70%'></label>" +
+    "<p class='note'><button class='ghost' data-cat-all='1'>All</button><button class='ghost' data-cat-none='1'>None</button> " +
+    selected + " of " + OPTS.categories.length + " selected</p></div>" +
+    "<div class='clist'>" + checks + "</div></div>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Category</th><th>Txn</th><th>Qty</th><th>Gross</th><th>Discount</th><th>Net</th><th>Dis %</th></tr></thead><tbody>" +
+    (body || "<tr><td colspan='7' class='sub'>No categories for this selection.</td></tr>") + "</tbody></table></div>";
+}
+
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (["anchor", "kind", "brand", "region", "source", "session", "code"].indexOf(t.id) >= 0) { calc(); return; }
+  if (t.hasAttribute && t.hasAttribute("data-cat")) {
+    var c = t.getAttribute("data-cat");
+    var base = STATE.cats === null ? OPTS.categories.slice() : STATE.cats.slice();
+    STATE.cats = t.checked ? base.concat(base.indexOf(c) < 0 ? [c] : []) : base.filter(function (x) { return x !== c; });
+    renderOutput();
+  }
+});
+document.addEventListener("input", function (e) {
+  if (e.target.id !== "csearch") return;
+  STATE.search = e.target.value;
+  STATE.searching = true;
+  renderOutput();
+});
+document.addEventListener("click", function (e) {
+  var el = e.target;
+  var pg = el.closest ? el.closest("[data-pg]") : null;
+  if (pg) { STATE.page += Number(pg.getAttribute("data-pg")); renderOutput(); return; }
+  var cat = el.closest ? el.closest("[data-catname]") : null;
+  if (cat) { var n = cat.getAttribute("data-catname"); STATE.open[n] = !STATE.open[n]; renderOutput(); return; }
+  var all = el.closest ? el.closest("[data-cat-all],[data-cat-none]") : null;
+  if (all) { STATE.cats = all.hasAttribute("data-cat-all") ? null : []; renderOutput(); }
+});
+
+google.script.run.withSuccessHandler(setOptions).withFailureHandler(fail).getDiscountOptions();
+</script>
+</body>
+</html>
