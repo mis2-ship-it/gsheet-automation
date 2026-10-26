@@ -15,7 +15,7 @@ Bands are upper-inclusive, as on the Sales dashboard: an order of exactly 200 is
   Disc_Recon        product totals against the order totals, by day and source (--recon, from sync_discounts.py)
 Disc_Label, Disc_Item and Disc_Hour use Swiggy and Zomato only. Disc_Bucket, Disc_Prod and Disc_Prod_Bucket use
 all channels (--products, from sync_discounts.py --products-out) and keep the last PRODUCT_DAYS completed days.
-Lines count item lines only: the "Charges, tax and rounding" rows (line_flag 0) are not counted as items.
+Lines count item lines only: the "Charges (not a product)" and "Other differences" rows (line_flag 0) are not counted.
 Usage: python write_discount_sheet.py [--rows ...] [--live ...] [--keep-days 400] [--hour-days 9]
        [--product-days 62] [--only-hourly]
 Needs DISCOUNT_SHEET_ID and GOOGLE_CREDENTIALS.
@@ -24,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -38,8 +39,8 @@ PROD_COLS = ["Date", "Brand", "Region", "Source", "Discounted", "Category", "Ite
 PBUCKET_COLS = ["Date", "Brand", "Region", "Source", "Kind", "Bucket", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
 RECON_NAMES = {"day": "Date", "source": "Source", "orders": "Orders", "sales_gross": "Sales gross",
                "sales_discount": "Sales discount", "sales_net": "Sales net", "product_gross": "Product gross",
-               "product_discount": "Product discount", "product_net": "Product net", "gross_gap": "Gross gap",
-               "net_gap": "Net gap"}
+               "product_discount": "Product discount", "product_net": "Product net", "charges_net": "Charges",
+               "other_net": "Other net", "other_gross": "Other gross", "gross_gap": "Gross gap", "net_gap": "Net gap"}
 BASE_KEYS = ["day", "brand", "region", "source", "session", "label"]
 HOUR_KEYS = ["day", "bh", "brand", "region", "source", "session", "label"]
 RENAME_BASE = {"day": "Date", "brand": "Brand", "region": "Region", "source": "Source", "session": "Session", "label": "Label"}
@@ -206,7 +207,7 @@ def write_tab(sh, name, df):
     print(f"{name}: {len(df)} rows written")
 
 
-def write_sheet(tabs):
+def open_sheet():
     import gspread
     from google.oauth2.service_account import Credentials
     sid = sheet_id_from(os.environ.get("DISCOUNT_SHEET_ID", ""))
@@ -217,12 +218,50 @@ def write_sheet(tabs):
         json.loads(os.environ["GOOGLE_CREDENTIALS"]),
         scopes=["https://www.googleapis.com/auth/spreadsheets"])
     try:
-        sh = gspread.authorize(creds).open_by_key(sid)
+        return gspread.authorize(creds).open_by_key(sid)
     except gspread.exceptions.APIError:
         raise SystemExit(f"Could not open the Discount Dashboard sheet. Share it with "
                          f"{creds.service_account_email} as Editor, and check DISCOUNT_SHEET_ID.")
+
+
+def write_sheet(tabs):
+    sh = open_sheet()
     for name, df in tabs:
         write_tab(sh, name, df)
+
+
+def read_tab(sh, name):
+    """Current contents of a tab, as text. An empty frame if the tab does not exist yet."""
+    import gspread
+    try:
+        ws = sh.worksheet(name)
+    except gspread.WorksheetNotFound:
+        return pd.DataFrame()
+    values = ws.get_all_values()
+    if not values:
+        return pd.DataFrame()
+    return pd.DataFrame(values[1:], columns=values[0])
+
+
+def merge_live_hours(existing, live_hours, today, hour_days):
+    """Disc_Hour for the window: the days already in the sheet (written by the nightly run, and including last week),
+    with today's hours replaced by the live rows. Returns (frame, whether last week's day is in the sheet)."""
+    today_s = today.strftime("%Y-%m-%d")
+    last_week_s = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    first_s = (today - timedelta(days=hour_days - 1)).strftime("%Y-%m-%d")
+    if existing is None or existing.empty or "Date" not in existing.columns:
+        old = pd.DataFrame(columns=HOUR_COLS)
+    else:
+        old = existing.copy()
+        old["Date"] = old["Date"].astype(str).str[:10]
+        old = old[(old["Date"] != today_s) & (old["Date"] >= first_s)].copy()
+        for c in ["Hour", "Invoices", "Qty", "Gross", "Discount", "Net", "Lines"]:
+            if c in old.columns:
+                old[c] = pd.to_numeric(old[c], errors="coerce").fillna(0)
+        old = old.reindex(columns=HOUR_COLS)
+    combined = pd.concat([old, live_hours.reindex(columns=HOUR_COLS)], ignore_index=True)
+    last_week_found = bool((old["Date"] == last_week_s).any()) if len(old) else False
+    return combined, last_week_found
 
 
 def main():
@@ -250,7 +289,16 @@ def main():
     hour = aggregate_hour(pd.concat(hourly, ignore_index=True), args.hour_days, today)
     print(f"hourly rows: {len(hour)}")
     if args.only_hourly:
-        write_sheet([("Disc_Hour", hour)])
+        # Live job: no saved rows are needed. Last week's hours come from the Disc_Hour tab that the nightly run wrote.
+        sh = open_sheet()
+        existing = read_tab(sh, "Disc_Hour")
+        combined, last_week_found = merge_live_hours(existing, hour, today, args.hour_days)
+        write_tab(sh, "Disc_Hour", combined)
+        if not last_week_found:
+            last_week = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+            print(f"ERROR: last week's day ({last_week}) is not in the Disc_Hour tab, so the live growth has no base. "
+                  "Run the nightly Discount Code rows workflow and check it finished.")
+            sys.exit(1)
         return
     if rows is None:
         raise SystemExit("No completed-day rows. Run the Discount Code rows workflow first.")
