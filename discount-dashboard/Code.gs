@@ -5,7 +5,7 @@
    Set DISCOUNT_SHEET_ID to the Google Sheet that holds those tabs.
 
    Each order counts once, under its discount label (the label combines all discounts on the order).
-   Tx = orders (invoices). Orders = item lines. Net = Gross - Discount. Dis % = Discount / Gross.
+   Orders = orders (unique invoices). Items = item lines. Net = Gross - Discount. Dis % = Discount / Gross.
    Contribution % = a code's net / total net of all orders in the period.
    Discount codes listed are those with sales in the calendar month of the date chosen.
    Periods, for the date you choose:
@@ -150,19 +150,23 @@ function computeDiscount_(data, p) {
 }
 
 /* ---------- Called from the page ---------- */
-function getDiscountOptions() {
-  const data = loadDisc_();
-  const uniq = list => [...new Set(list)].sort();
-  const days = data.labelRows.map(r => r.d).sort();
+// Filter choices: brands, regions, sources and sessions from every tab; the labels and codes from the Overview tab.
+function optionsFrom_(labelRows, itemRows, prodRows, bucketRows) {
+  const uniq = list => [...new Set(list.filter(x => x !== "" && x !== undefined && x !== null))].sort();
+  const days = labelRows.map(r => r.d).sort();
   return {
     first: days.length ? days[0] : "", latest: days.length ? days[days.length - 1] : "",
-    brands: uniq(data.labelRows.map(r => r.brand)),
-    regions: uniq(data.labelRows.map(r => r.region)),
-    sources: uniq(data.labelRows.map(r => r.source)),
-    sessions: uniq(data.labelRows.map(r => r.session)),
-    labels: uniq(data.labelRows.map(r => r.label)),
-    categories: uniq(data.itemRows.map(r => r.cat))
+    brands: uniq([...labelRows.map(r => r.brand), ...prodRows.map(r => r.brand), ...bucketRows.map(r => r.brand)]),
+    regions: uniq([...labelRows.map(r => r.region), ...prodRows.map(r => r.region), ...bucketRows.map(r => r.region)]),
+    sources: uniq([...labelRows.map(r => r.source), ...prodRows.map(r => r.source), ...bucketRows.map(r => r.source)]),
+    sessions: uniq([...labelRows.map(r => r.session), ...bucketRows.map(r => r.session)]),
+    labels: uniq(labelRows.map(r => r.label)),
+    categories: uniq([...itemRows.map(r => r.cat), ...prodRows.map(r => r.cat)])
   };
+}
+function getDiscountOptions() {
+  const data = loadDisc_();
+  return optionsFrom_(data.labelRows, data.itemRows, loadProd_(), loadBucket_());
 }
 function getDiscountData(p) { return computeDiscount_(loadDisc_(), p); }
 
@@ -241,3 +245,137 @@ function computeDiscountLive_(hourRows, p) {
   };
 }
 function getDiscountLive(p) { return computeDiscountLive_(loadHour_(), p); }
+
+/* ---------- Product performance and discount analysis ----------
+   Tabs: Disc_Bucket (orders and sales by AOV and discount band), Disc_Prod (items split by whether the order
+   had a discount), Disc_Prod_Bucket (items inside each band). All channels (from the product rows).
+   Bands are the same as the Sales dashboard. Product tabs cover the last 62 completed days. */
+const AOV_ORDER = ["0-100", "100-200", "200-300", "300-400", "400-500", "500-600", "600-900", ">900"];
+const DISC_ORDER = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-60%", "60%-70%", "70%-80%", "80%-90%", "90%-100%"];
+
+function readTab_(name) {
+  const sh = SpreadsheetApp.openById(DISCOUNT_SHEET_ID).getSheetByName(name);
+  if (!sh) throw new Error("The tab " + name + " was not found. Run write_discount_sheet.py first.");
+  const last = sh.getLastRow();
+  return last < 2 ? [] : sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+}
+function dateText_(v) {
+  return v instanceof Date ? Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd") : String(v).slice(0, 10);
+}
+// read(name) returns the rows of a tab (no header). The page uses the sheet; tests pass their own rows.
+function loadBucket_(read) {
+  const rd = read || readTab_;
+  return rd("Disc_Bucket").map(v => ({
+    d: dateText_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), session: String(v[4]),
+    kind: String(v[5]), bucket: String(v[6]), inv: Number(v[7]) || 0, qty: Number(v[8]) || 0,
+    gross: Number(v[9]) || 0, disc: Number(v[10]) || 0, net: Number(v[11]) || 0
+  })).filter(r => r.d.length === 10);
+}
+function loadProd_(read) {
+  const rd = read || readTab_;
+  return rd("Disc_Prod").map(v => ({
+    d: dateText_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), yes: String(v[4]) === "Yes",
+    cat: String(v[5]), item: String(v[6]), inv: Number(v[7]) || 0, qty: Number(v[8]) || 0,
+    gross: Number(v[9]) || 0, disc: Number(v[10]) || 0, net: Number(v[11]) || 0
+  })).filter(r => r.d.length === 10);
+}
+function loadProdBucket_(read) {
+  const rd = read || readTab_;
+  return rd("Disc_Prod_Bucket").map(v => ({
+    d: dateText_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), kind: String(v[4]),
+    bucket: String(v[5]), cat: String(v[6]), item: String(v[7]), inv: Number(v[8]) || 0, qty: Number(v[9]) || 0,
+    gross: Number(v[10]) || 0, disc: Number(v[11]) || 0, net: Number(v[12]) || 0
+  })).filter(r => r.d.length === 10);
+}
+function pFilter_(p) { return { brand: p.brand || "all", region: p.region || "all", source: p.source || "all", session: p.session || "all" }; }
+function passP_(r, f) {
+  return (f.brand === "all" || r.brand === f.brand) && (f.region === "all" || r.region === f.region) &&
+         (f.source === "all" || r.source === f.source);
+}
+function inWin_(r, win) { const n = dn_(r.d); return n >= win[0] && n <= win[1]; }
+function sideBlank_() { return { yes: blank_(), no: blank_() }; }
+function sideNet_(s) { return s.yes.net + s.no.net; }
+
+// Products: each item's sales split into orders with a discount (yes) and without (no), this period against the one before.
+function computeProducts_(rows, p) {
+  const kind = KINDS.indexOf(p.kind) >= 0 ? p.kind : "monthly";
+  const w = windows_(kind, p.anchor);
+  const f = pFilter_(p);
+  const totCur = sideBlank_(), totPrev = sideBlank_();
+  const items = new Map();
+  let first = null, last = null;
+  for (const r of rows) {
+    if (!first || r.d < first) first = r.d;
+    if (!last || r.d > last) last = r.d;
+    if (!passP_(r, f)) continue;
+    const isCur = inWin_(r, w.cur), isPrev = !isCur && inWin_(r, w.prev);
+    if (!isCur && !isPrev) continue;
+    const side = r.yes ? "yes" : "no";
+    const key = r.cat + "\u0001" + r.item;
+    if (!items.has(key)) items.set(key, { item: r.item, cat: r.cat, cur: sideBlank_(), prev: sideBlank_() });
+    const e = items.get(key);
+    if (isCur) { add_(e.cur[side], r); add_(totCur[side], r); }
+    else { add_(e.prev[side], r); add_(totPrev[side], r); }
+  }
+  const products = [...items.values()]
+    .filter(e => sideNet_(e.cur) > 0 || sideNet_(e.prev) > 0)
+    .sort((x, y) => sideNet_(y.cur) - sideNet_(x.cur));
+  const catMap = new Map();
+  for (const e of products) {
+    if (!catMap.has(e.cat)) catMap.set(e.cat, { cat: e.cat, cur: sideBlank_(), prev: sideBlank_() });
+    const c = catMap.get(e.cat);
+    for (const s of ["yes", "no"]) { add_(c.cur[s], e.cur[s]); add_(c.prev[s], e.prev[s]); }
+  }
+  const categories = [...catMap.values()].sort((x, y) => sideNet_(y.cur) - sideNet_(x.cur));
+  return {
+    meta: { kind: kind, cur: rangeText_(w.cur), prev: rangeText_(w.prev), note: w.note,
+            dataFrom: first || "", dataTo: last || "" },
+    totals: { cur: totCur, prev: totPrev },
+    products: products,
+    categories: categories
+  };
+}
+
+// Bands: orders and sales per band, this period against the one before, and the items inside each band (current period).
+function computeBuckets_(bucketRows, drillRows, p) {
+  const kind = KINDS.indexOf(p.kind) >= 0 ? p.kind : "monthly";
+  const w = windows_(kind, p.anchor);
+  const f = pFilter_(p);
+  const bandSets = { AOV: AOV_ORDER, Discount: DISC_ORDER };
+  const out = {};
+  for (const name of Object.keys(bandSets)) {
+    const order = bandSets[name];
+    const idx = new Map(order.map((lb, i) => [lb, i]));
+    const bands = order.map(lb => ({ label: lb, cur: blank_(), prev: blank_(), items: new Map() }));
+    for (const r of bucketRows) {
+      if (r.kind !== name || !passP_(r, f) || (f.session !== "all" && r.session !== f.session)) continue;
+      const isCur = inWin_(r, w.cur), isPrev = !isCur && inWin_(r, w.prev);
+      if (!isCur && !isPrev) continue;
+      const bi = idx.get(r.bucket);
+      if (bi === undefined) continue;
+      add_(isCur ? bands[bi].cur : bands[bi].prev, r);
+    }
+    for (const r of drillRows) {
+      if (r.kind !== name || !passP_(r, f) || !inWin_(r, w.cur)) continue;
+      const bi = idx.get(r.bucket);
+      if (bi === undefined) continue;
+      const m = bands[bi].items, key = r.cat + "\u0001" + r.item;
+      if (!m.has(key)) m.set(key, { item: r.item, cat: r.cat, v: blank_() });
+      add_(m.get(key).v, r);
+    }
+    out[name] = bands.map(b => ({
+      label: b.label, cur: b.cur, prev: b.prev,
+      items: [...b.items.values()].sort((x, y) => y.v.net - x.v.net).slice(0, 200)
+    }));
+  }
+  const sumBands = (arr, key) => arr.reduce((acc, b) => add_(acc, b[key]), blank_());
+  return {
+    meta: { kind: kind, cur: rangeText_(w.cur), prev: rangeText_(w.prev), note: w.note },
+    aov: out.AOV,
+    discount: out.Discount,
+    totals: { cur: sumBands(out.AOV, "cur"), prev: sumBands(out.AOV, "prev") }
+  };
+}
+
+function getProductData(p) { return computeProducts_(loadProd_(), p); }
+function getBucketData(p) { return computeBuckets_(loadBucket_(), loadProdBucket_(), p); }
