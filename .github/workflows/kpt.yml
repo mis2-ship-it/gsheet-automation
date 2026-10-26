@@ -1,8 +1,6 @@
 name: KPT and O2D orders
 
 on:
-  schedule:
-    - cron: "45 1 * * *"     # 07:15 IST daily: yesterday and the two days before
   workflow_dispatch:
 
 permissions:
