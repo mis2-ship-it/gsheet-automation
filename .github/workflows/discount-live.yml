@@ -31,18 +31,11 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
-      - name: Restore the saved discount rows (completed days)
-        uses: actions/cache/restore@v4
-        with:
-          path: data/discount_rows.csv
-          key: discount-rows-live-${{ github.run_id }}
-          restore-keys: |
-            discount-rows-
-
+      # No cache here. Last week's hours are read from the Disc_Hour tab that the nightly run writes.
       - name: Pull today's Swiggy and Zomato orders
         run: |
           mkdir -p data
           python sync_discounts.py --live --out data/discount_live.csv
 
-      - name: Write the hourly tab
-        run: python write_discount_sheet.py --rows data/discount_rows.csv --live data/discount_live.csv --only-hourly
+      - name: Write today's hours into the Disc_Hour tab
+        run: python write_discount_sheet.py --live data/discount_live.csv --only-hourly
