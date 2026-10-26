@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 OUT_COLUMNS = ["day", "branchCode", "store", "region", "ownership", "brand", "source", "session",
-               "invoiceNumber", "category", "item", "qty", "gross", "disc", "net", "label"]
+               "invoiceNumber", "category", "item", "qty", "gross", "disc", "net", "label", "bh"]
 SESSION_ALIAS = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
 BRACKET = re.compile(r"\((.*)\)")
 FIRST_DAY = "2026-09-01"
@@ -65,6 +65,14 @@ def session_of(v):
     if not s or s.lower() == "nan":
         return "Not tagged"
     return SESSION_ALIAS.get(s, s)
+
+
+def business_hour_series(values):
+    """Business hour of each order: 0 = 9 AM, 19 = 4 AM (India time). -1 when the time is missing."""
+    ts = pd.to_datetime(values, errors="coerce", utc=True)
+    hour = ts.dt.tz_convert("Asia/Kolkata").dt.hour
+    bh = (hour - 9) % 24
+    return bh.where(ts.notna(), -1).astype(int)
 
 
 def is_list_of_dicts(v):
@@ -116,7 +124,7 @@ def transform(raw, day, branches):
     if missing:
         raise SystemExit(f"sales/page is missing columns: {missing}. Columns received: {list(raw.columns)}")
     df = raw.copy()
-    for c in ["sessionLabel", "tags", "discounts", "item_discounts", "invoiceDay"]:
+    for c in ["sessionLabel", "tags", "discounts", "item_discounts", "invoiceDay", "invoiceDate"]:
         if c not in df.columns:
             df[c] = ""
     df["status"] = df["status"].astype(str).str.strip()
@@ -144,6 +152,7 @@ def transform(raw, day, branches):
         label_of[inv] = " + ".join(sorted(parts)) if parts else "Zero discount"
     df["label"] = df["invoiceNumber"].map(label_of)
 
+    df["bh"] = business_hour_series(df["invoiceDate"]).values
     df["session"] = df["sessionLabel"].map(session_of)
     df["brand"] = df["brandName"].astype(str).str.strip()
     df["category"] = df["item_categoryName"].astype(str).str.strip()
@@ -182,12 +191,15 @@ def main():
     ap.add_argument("--to", dest="end", default="")
     ap.add_argument("--refresh-days", type=int, default=2, help="the last days are always pulled again")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--live", action="store_true", help="pull today's business day only, to a separate file")
     args = ap.parse_args()
     from sync_kpt import load_branches, pull_day     # same Rista and Help Sheet settings as the KPT pull
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     start = parse_day(args.start, datetime.strptime(FIRST_DAY, "%Y-%m-%d").date())
     end = parse_day(args.end, today - timedelta(days=1))
+    if args.live:
+        start = end = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
     if end < start:
         sys.exit("The end day is before the start day. Nothing to pull.")
     start_s, end_s = start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
@@ -196,7 +208,7 @@ def main():
     codes = branches["branchCode"].tolist()
     days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
     saved = None
-    if os.path.exists(args.out) and os.path.getsize(args.out) > 0:
+    if os.path.exists(args.out) and os.path.getsize(args.out) > 0 and not args.live:
         saved = pd.read_csv(args.out, dtype=str, keep_default_na=False)
         if "day" not in saved.columns:
             saved = None
