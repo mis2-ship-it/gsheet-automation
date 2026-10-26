@@ -1,4 +1,4 @@
-name: Discount Code and product rows (sales/page)
+name: Discount Code, product and reconciliation rows (sales/page)
 
 on:
   schedule:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       from:
-        description: "First day to pull, YYYY-MM-DD (empty = 2026-09-01)"
+        description: "First day to pull, YYYY-MM-DD (empty = 2026-09-01). Use chunks for the first backfill."
         required: false
         default: ""
       to:
@@ -40,20 +40,22 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
+      # The key prefix is new (v2), so the partial history from the earlier version is not restored.
       - name: Restore the saved rows
         uses: actions/cache/restore@v4
         with:
           path: |
             data/discount_rows.csv
             data/product_rows.csv
-          key: discount-rows-${{ github.run_id }}
+            data/product_recon.csv
+          key: discount-v2-${{ github.run_id }}
           restore-keys: |
-            discount-rows-
+            discount-v2-
 
-      - name: Pull sales/page (discounts for Swiggy and Zomato, products for all channels)
+      - name: Pull sales/page (all Active branches, all pages)
         run: >
           python sync_discounts.py --out data/discount_rows.csv --products-out data/product_rows.csv
-          --from "${{ inputs.from }}" --to "${{ inputs.to }}"
+          --recon-out data/product_recon.csv --from "${{ inputs.from }}" --to "${{ inputs.to }}"
 
       - name: Save the rows for later runs
         uses: actions/cache/save@v4
@@ -61,7 +63,10 @@ jobs:
           path: |
             data/discount_rows.csv
             data/product_rows.csv
-          key: discount-rows-${{ github.run_id }}
+            data/product_recon.csv
+          key: discount-v2-${{ github.run_id }}
 
       - name: Write the Discount Dashboard tabs
-        run: python write_discount_sheet.py --rows data/discount_rows.csv --products data/product_rows.csv --keep-days 400 --product-days 62
+        run: >
+          python write_discount_sheet.py --rows data/discount_rows.csv --products data/product_rows.csv
+          --recon data/product_recon.csv --keep-days 400 --product-days 62
