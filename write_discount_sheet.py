@@ -12,8 +12,10 @@ Writes:
   Disc_Prod_Bucket  item sales inside each AOV and discount band (Discount analysis drill-down)
 The bucket bands are the same as the Sales dashboard (build_site.py), applied to each order.
 Bands are upper-inclusive, as on the Sales dashboard: an order of exactly 200 is in 100-200.
+  Disc_Recon        product totals against the order totals, by day and source (--recon, from sync_discounts.py)
 Disc_Label, Disc_Item and Disc_Hour use Swiggy and Zomato only. Disc_Bucket, Disc_Prod and Disc_Prod_Bucket use
 all channels (--products, from sync_discounts.py --products-out) and keep the last PRODUCT_DAYS completed days.
+Lines count item lines only: the "Charges, tax and rounding" rows (line_flag 0) are not counted as items.
 Usage: python write_discount_sheet.py [--rows ...] [--live ...] [--keep-days 400] [--hour-days 9]
        [--product-days 62] [--only-hourly]
 Needs DISCOUNT_SHEET_ID and GOOGLE_CREDENTIALS.
@@ -34,11 +36,15 @@ HOUR_COLS = ["Date", "Hour", "Brand", "Region", "Source", "Session", "Label", "I
 BUCKET_COLS = ["Date", "Brand", "Region", "Source", "Session", "Kind", "Bucket", "Orders", "Qty", "Gross", "Discount", "Net"]
 PROD_COLS = ["Date", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
 PBUCKET_COLS = ["Date", "Brand", "Region", "Source", "Kind", "Bucket", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
+RECON_NAMES = {"day": "Date", "source": "Source", "orders": "Orders", "sales_gross": "Sales gross",
+               "sales_discount": "Sales discount", "sales_net": "Sales net", "product_gross": "Product gross",
+               "product_discount": "Product discount", "product_net": "Product net", "gross_gap": "Gross gap",
+               "net_gap": "Net gap"}
 BASE_KEYS = ["day", "brand", "region", "source", "session", "label"]
 HOUR_KEYS = ["day", "bh", "brand", "region", "source", "session", "label"]
 RENAME_BASE = {"day": "Date", "brand": "Brand", "region": "Region", "source": "Source", "session": "Session", "label": "Label"}
 AGG = dict(Invoices=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
-           Discount=("disc", "sum"), Net=("net", "sum"), Lines=("item", "size"))
+           Discount=("disc", "sum"), Net=("net", "sum"), Lines=("line_flag", "sum"))
 SHEET_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{20,}")
 
 # Bands, the same as the Sales dashboard (build_site.py). Applied per order.
@@ -61,6 +67,9 @@ def clean_numbers(rows):
     for c in ["qty", "gross", "disc", "net"]:
         rows[c] = pd.to_numeric(rows[c], errors="coerce").fillna(0.0)
     rows["disc"] = rows["disc"].abs()
+    if "line_flag" not in rows.columns:
+        rows["line_flag"] = 1
+    rows["line_flag"] = pd.to_numeric(rows["line_flag"], errors="coerce").fillna(1)
     rows["day"] = rows["day"].astype(str).str[:10]
     return rows
 
@@ -164,6 +173,18 @@ def build_product_tabs(rows, days=PRODUCT_DAYS):
     return bucket, prod, pbucket
 
 
+def build_recon_tab(recon):
+    """Product totals against the order totals, by day and source, with the gaps (net and gross should be 0)."""
+    cols = list(RECON_NAMES.values())
+    if recon is None or recon.empty:
+        return pd.DataFrame(columns=cols)
+    r = recon.rename(columns=RECON_NAMES)[cols].copy()
+    for c in cols[2:]:
+        r[c] = pd.to_numeric(r[c], errors="coerce").fillna(0.0).round(2)
+    r["Orders"] = r["Orders"].astype(int)
+    return r.sort_values(["Date", "Source"]).reset_index(drop=True)
+
+
 def sheet_id_from(text):
     s = (text or "").strip().strip('"').strip("'").strip()
     m = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", s)
@@ -212,6 +233,7 @@ def main():
     ap.add_argument("--hour-days", type=int, default=9)
     ap.add_argument("--product-days", type=int, default=PRODUCT_DAYS)
     ap.add_argument("--products", default="data/product_rows.csv", help="all channels (sync_discounts.py --products-out)")
+    ap.add_argument("--recon", default="data/product_recon.csv", help="reconciliation (sync_discounts.py --recon-out)")
     ap.add_argument("--only-hourly", action="store_true", help="write only the hourly tab (live job)")
     args = ap.parse_args()
     today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
@@ -240,16 +262,30 @@ def main():
     else:
         print(f"product rows: {len(product_rows)} item rows, all channels")
     bucket, prod, pbucket = build_product_tabs(product_rows, args.product_days)
+    recon_rows = read_csv_if_present(args.recon)
+    recon_tab = build_recon_tab(recon_rows)
+    if recon_rows is None:
+        print("Warning: no reconciliation file. Disc_Recon is not written.")
+    else:
+        net_gap = recon_tab["Net gap"].sum()
+        print(f"reconciliation: sales net {recon_tab['Sales net'].sum():,.2f}, product net {recon_tab['Product net'].sum():,.2f}, "
+              f"net gap {net_gap:,.2f}")
+        if abs(net_gap) > 1 or abs(recon_tab["Gross gap"].sum()) > 1:
+            print("WARNING: product totals do not match the order totals. Check the Disc_Recon tab.")
     print(f"{len(lab)} label rows, {len(itm)} item rows, days {lab['Date'].min()} to {lab['Date'].max()}")
     print(f"product tabs (last {args.product_days} days): bucket {len(bucket)}, product {len(prod)}, "
           f"product by bucket {len(pbucket)} rows")
     total_cells = (len(lab) * len(LABEL_COLS) + len(itm) * len(ITEM_COLS) + len(hour) * len(HOUR_COLS)
-                   + len(bucket) * len(BUCKET_COLS) + len(prod) * len(PROD_COLS) + len(pbucket) * len(PBUCKET_COLS))
+                   + len(bucket) * len(BUCKET_COLS) + len(prod) * len(PROD_COLS) + len(pbucket) * len(PBUCKET_COLS)
+                   + len(recon_tab) * len(RECON_NAMES))
     print(f"cells written: about {total_cells:,} of the Google Sheets limit of 10,000,000")
     if total_cells > 8_000_000:
         print("WARNING: close to the Google Sheets cell limit. Lower --product-days or --keep-days.")
-    write_sheet([("Disc_Label", lab), ("Disc_Item", itm), ("Disc_Hour", hour),
-                 ("Disc_Bucket", bucket), ("Disc_Prod", prod), ("Disc_Prod_Bucket", pbucket)])
+    tabs = [("Disc_Label", lab), ("Disc_Item", itm), ("Disc_Hour", hour),
+            ("Disc_Bucket", bucket), ("Disc_Prod", prod), ("Disc_Prod_Bucket", pbucket)]
+    if recon_rows is not None:
+        tabs.append(("Disc_Recon", recon_tab))
+    write_sheet(tabs)
 
 
 if __name__ == "__main__":
