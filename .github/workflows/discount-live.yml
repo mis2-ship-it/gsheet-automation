@@ -1,0 +1,48 @@
+name: Discount Code live (today so far)
+
+on:
+  schedule:
+    - cron: "*/30 3-23 * * *"   # every 30 minutes, about 08:30 to 04:30 IST (cron times are UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discount-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      DISCOUNT_SHEET_ID: ${{ secrets.DISCOUNT_SHEET_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+
+      - name: Restore the saved discount rows (completed days)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/discount_rows.csv
+          key: discount-rows-live-${{ github.run_id }}
+          restore-keys: |
+            discount-rows-
+
+      - name: Pull today's Swiggy and Zomato orders
+        run: |
+          mkdir -p data
+          python sync_discounts.py --live --out data/discount_live.csv
+
+      - name: Write the hourly tab
+        run: python write_discount_sheet.py --rows data/discount_rows.csv --live data/discount_live.csv --only-hourly
