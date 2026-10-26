@@ -1,4 +1,4 @@
-name: Discount Code rows (Swiggy and Zomato)
+name: Discount Code and product rows (sales/page)
 
 on:
   schedule:
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   discounts:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
     env:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
@@ -40,22 +40,28 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
-      - name: Restore the saved discount rows
+      - name: Restore the saved rows
         uses: actions/cache/restore@v4
         with:
-          path: data/discount_rows.csv
+          path: |
+            data/discount_rows.csv
+            data/product_rows.csv
           key: discount-rows-${{ github.run_id }}
           restore-keys: |
             discount-rows-
 
-      - name: Pull Swiggy and Zomato orders
-        run: python sync_discounts.py --out data/discount_rows.csv --from "${{ inputs.from }}" --to "${{ inputs.to }}"
+      - name: Pull sales/page (discounts for Swiggy and Zomato, products for all channels)
+        run: >
+          python sync_discounts.py --out data/discount_rows.csv --products-out data/product_rows.csv
+          --from "${{ inputs.from }}" --to "${{ inputs.to }}"
 
-      - name: Save the discount rows for later runs
+      - name: Save the rows for later runs
         uses: actions/cache/save@v4
         with:
-          path: data/discount_rows.csv
+          path: |
+            data/discount_rows.csv
+            data/product_rows.csv
           key: discount-rows-${{ github.run_id }}
 
       - name: Write the Discount Dashboard tabs
-        run: python write_discount_sheet.py --rows data/discount_rows.csv --keep-days 400
+        run: python write_discount_sheet.py --rows data/discount_rows.csv --products data/product_rows.csv --keep-days 400 --product-days 62
