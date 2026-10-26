@@ -56,6 +56,7 @@ tr.itemrow td{background:#0F1830;color:#C9D5EA}
         <option value="weekly">Weekly</option>
         <option value="monthly" selected>Monthly</option>
         <option value="mtd">Month to date</option>
+        <option value="live">Live (today so far)</option>
       </select>
     </label>
     <label>Brand <select id="brand"><option value="all">All brands</option></select></label>
@@ -148,9 +149,12 @@ function calc() {
     anchor: $("anchor").value, kind: $("kind").value, brand: $("brand").value, region: $("region").value,
     source: $("source").value, session: $("session").value, codes: STATE.codes.slice()
   };
-  if (!p.anchor) { $("status").textContent = "Choose a date."; return; }
-  $("status").textContent = "Calculating…";
-  google.script.run.withSuccessHandler(onData).withFailureHandler(fail).getDiscountData(p);
+  var live = p.kind === "live";
+  $("anchor").disabled = live;
+  if (!live && !p.anchor) { $("status").textContent = "Choose a date."; return; }
+  $("status").textContent = live ? "Calculating today so far…" : "Calculating…";
+  if (live) google.script.run.withSuccessHandler(onData).withFailureHandler(fail).getDiscountLive(p);
+  else google.script.run.withSuccessHandler(onData).withFailureHandler(fail).getDiscountData(p);
 }
 function onData(d) {
   LAST = d;
@@ -163,7 +167,11 @@ function fail(e) { $("status").textContent = "Error: " + (e && e.message ? e.mes
 
 function renderOutput() {
   if (!LAST) return;
-  $("out").innerHTML = codeBlock(LAST) + trendBlock(LAST) + categoryBlock(LAST);
+  if (LAST.meta.kind === "live") {
+    $("out").innerHTML = liveKpiBlock(LAST) + codeBlock(LAST) + liveHourBlock(LAST);
+  } else {
+    $("out").innerHTML = codeBlock(LAST) + trendBlock(LAST) + categoryBlock(LAST);
+  }
   if (STATE.searching) {
     var s = $("csearch");
     if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
@@ -192,10 +200,37 @@ function codeBlock(d) {
     " Page " + (STATE.page + 1) + " of " + pages + " (" + rows.length + " codes) " +
     "<button data-pg='1'" + (STATE.page >= pages - 1 ? " disabled" : "") + ">Next 20 ▶</button></div>";
   var note = d.meta.codes.length ? "Only the selected codes. Contribution % is of all orders in the period."
-    : "Codes with sales in " + esc(d.meta.activeMonth) + " (the month of the date). Sorted by net revenue.";
+    : (d.meta.kind === "live" ? "Codes with sales today so far. Sorted by net revenue."
+      : "Codes with sales in " + esc(d.meta.activeMonth) + " (the month of the date). Sorted by net revenue.");
   return "<h2>Discount codes</h2><p class='note'>" + note + "</p>" +
     "<div class='scroll'><table><thead><tr><th class='l'>Discount code</th><th>Net rev</th><th>Net growth</th><th>Contribution %</th>" +
     "<th>Tx</th><th>Orders</th><th>Qty</th><th>Dis %</th></tr></thead><tbody>" + body + "</tbody></table></div>" + pager;
+}
+
+// Live: today so far, complete hours only, against the same hours last week.
+function liveKpiBlock(d) {
+  var c = d.totals.cur, p = d.totals.prev;
+  var line = function (name, a, b) {
+    return "<tr><td class='l'>" + name + "</td><td>" + inr(a) + "</td><td>" + inr(b) + "</td><td>" + growth(a, b) + "</td></tr>";
+  };
+  return "<h2>Live: " + esc(d.meta.liveDay) + " so far</h2>" +
+    "<p class='note'>" + esc(d.meta.note) + " Compared with the same hours last week (" + esc(d.meta.lwDay) + ").</p>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Complete hours</th><th>Today</th><th>Last week, same hours</th><th>Growth</th></tr></thead><tbody>" +
+    line("Net rev", c.net, p.net) + line("Tx", c.inv, p.inv) + line("Orders", c.lines, p.lines) + line("Qty", c.qty, p.qty) +
+    "<tr><td class='l'>Dis %</td><td>" + dpct(c.disc, c.gross) + "</td><td>" + dpct(p.disc, p.gross) + "</td><td>" + ptsChange(c, p) + "</td></tr>" +
+    "</tbody></table></div>";
+}
+function liveHourBlock(d) {
+  if (!d.hours || !d.hours.length) return "";
+  var body = d.hours.map(function (h) {
+    var c = h.cur, p = h.prev;
+    return "<tr><td class='l'>" + esc(h.label) + "</td><td>" + inr(c.net) + "</td><td>" + growth(c.net, p.net) +
+      "</td><td>" + inr(c.inv) + "</td><td>" + growth(c.inv, p.inv) + "</td><td>" + inr(c.lines) + "</td><td>" + growth(c.lines, p.lines) +
+      "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
+  }).join("");
+  return "<h2>By hour</h2><p class='note'>Each hour against the same hour last week.</p>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Hour</th><th>Net rev</th><th>Growth</th><th>Tx</th><th>Growth</th><th>Orders</th><th>Growth</th><th>Dis %</th></tr></thead><tbody>" +
+    body + "</tbody></table></div>";
 }
 
 // Trend: last 15 days (Daily) or last 8 weeks (Weekly), with growth for each metric.

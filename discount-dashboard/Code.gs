@@ -165,3 +165,79 @@ function getDiscountOptions() {
   };
 }
 function getDiscountData(p) { return computeDiscount_(loadDisc_(), p); }
+
+/* ---------- Live: today so far (business day 9 AM to 5 AM), against the same hours last week ---------- */
+// Business hour: 0 = 9 AM, 19 = 4 AM. Only complete hours are compared. Hours still running are left out.
+function liveContext_(now) {
+  const t = now.getTime();
+  const istHour = new Date(t + 5.5 * 3600000).getUTCHours();          // India time
+  const istDate = new Date(t + 5.5 * 3600000).toISOString().slice(0, 10);
+  let liveDay, cutBh;
+  if (istHour >= 9) { liveDay = istDate; cutBh = istHour - 9; }                // day started at 9 AM today
+  else if (istHour < 5) { liveDay = ymd_(dn_(istDate) - 1); cutBh = istHour + 15; }  // after midnight: still yesterday's day
+  else { liveDay = ymd_(dn_(istDate) - 1); cutBh = 20; }                        // 5 to 9 AM: yesterday's day is complete
+  return { liveDay: liveDay, cutBh: cutBh };
+}
+function hourLabel_(bh) {
+  const h = (bh + 9) % 24;
+  return ((h % 12) || 12) + " " + (h < 12 ? "AM" : "PM");
+}
+function loadHour_() {
+  const ss = SpreadsheetApp.openById(DISCOUNT_SHEET_ID);
+  const tz = Session.getScriptTimeZone();
+  const sh = ss.getSheetByName("Disc_Hour");
+  if (!sh) throw new Error("The tab Disc_Hour was not found. Run the Discount Code rows workflow first.");
+  const last = sh.getLastRow();
+  const vals = last < 2 ? [] : sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  return vals.map(v => ({
+    d: v[0] instanceof Date ? Utilities.formatDate(v[0], tz, "yyyy-MM-dd") : String(v[0]).slice(0, 10),
+    bh: Number(v[1]) || 0, brand: String(v[2]), region: String(v[3]), source: String(v[4]), session: String(v[5]),
+    label: String(v[6]), inv: Number(v[7]) || 0, qty: Number(v[8]) || 0, gross: Number(v[9]) || 0,
+    disc: Number(v[10]) || 0, net: Number(v[11]) || 0, lines: Number(v[12]) || 0
+  })).filter(r => r.d.length === 10);
+}
+// p: { brand, region, source, session, codes, now (optional ISO time, for testing) }
+function computeDiscountLive_(hourRows, p) {
+  const now = p.now ? new Date(p.now) : new Date();
+  const ctx = liveContext_(now);
+  const lwDay = ymd_(dn_(ctx.liveDay) - 7);
+  const codes = Array.isArray(p.codes) ? p.codes.filter(c => c) : [];
+  const codeSet = new Set(codes);
+  const inCodes = label => codeSet.size === 0 || codeSet.has(label);
+  const f = { brand: p.brand || "all", region: p.region || "all", source: p.source || "all", session: p.session || "all" };
+  const passF = r => (f.brand === "all" || r.brand === f.brand) && (f.region === "all" || r.region === f.region) &&
+                     (f.source === "all" || r.source === f.source) && (f.session === "all" || r.session === f.session);
+  const overallCur = blank_(), overallPrev = blank_(), selCur = blank_(), selPrev = blank_();
+  const labelCur = new Map(), labelPrev = new Map(), hourCur = new Map(), hourPrev = new Map();
+  const addTo = (m, key, r) => { m.set(key, add_(m.get(key) || blank_(), r)); };
+  for (const r of hourRows) {
+    if (r.bh >= ctx.cutBh || !passF(r)) continue;
+    const isCur = r.d === ctx.liveDay, isPrev = r.d === lwDay;
+    if (!isCur && !isPrev) continue;
+    if (isCur) add_(overallCur, r); else add_(overallPrev, r);
+    if (!inCodes(r.label)) continue;
+    if (isCur) { add_(selCur, r); addTo(labelCur, r.label, r); addTo(hourCur, r.bh, r); }
+    else { add_(selPrev, r); addTo(labelPrev, r.label, r); addTo(hourPrev, r.bh, r); }
+  }
+  const labelKeys = [...new Set([...labelCur.keys(), ...labelPrev.keys()])];
+  const labels = labelKeys.map(k => ({ label: k, cur: labelCur.get(k) || blank_(), prev: labelPrev.get(k) || blank_() }));
+  const hours = [];
+  for (let bh = 0; bh < ctx.cutBh; bh++) {
+    hours.push({ label: hourLabel_(bh), bh: bh, cur: hourCur.get(bh) || blank_(), prev: hourPrev.get(bh) || blank_() });
+  }
+  const note = ctx.cutBh === 0
+    ? "No complete hour yet. The business day starts at 9 AM."
+    : "Complete hours: 9 AM to " + hourLabel_(ctx.cutBh - 1) + ". Hours still running are not counted.";
+  const scope = codes.length === 0 ? "all" : (codes.length === 1 ? codes[0] : codes.length + " selected codes");
+  return {
+    meta: { kind: "live", liveDay: ctx.liveDay, lwDay: lwDay, codes: codes, code: scope,
+            cur: ctx.liveDay + " so far", prev: lwDay + ", same hours", activeMonth: "today so far", note: note },
+    labels: labels,
+    hours: hours,
+    items: [],
+    totals: { cur: selCur, prev: selPrev },
+    overall: { cur: overallCur, prev: overallPrev },
+    trend: { kind: "", rows: [] }
+  };
+}
+function getDiscountLive(p) { return computeDiscountLive_(loadHour_(), p); }
