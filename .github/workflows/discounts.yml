@@ -40,7 +40,7 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
-      # The key prefix is new (v2), so the partial history from the earlier version is not restored.
+      # The key prefix is new (v3): product gross and net now come from the item gross and net, so earlier saved rows are not restored.
       - name: Restore the saved rows
         uses: actions/cache/restore@v4
         with:
@@ -48,9 +48,9 @@ jobs:
             data/discount_rows.csv
             data/product_rows.csv
             data/product_recon.csv
-          key: discount-v2-${{ github.run_id }}
+          key: discount-v3-${{ github.run_id }}
           restore-keys: |
-            discount-v2-
+            discount-v3-
 
       - name: Pull sales/page (all Active branches, all pages)
         run: >
@@ -64,7 +64,7 @@ jobs:
             data/discount_rows.csv
             data/product_rows.csv
             data/product_recon.csv
-          key: discount-v2-${{ github.run_id }}
+          key: discount-v3-${{ github.run_id }}
 
       - name: Write the Discount Dashboard tabs
         run: >
