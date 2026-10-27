@@ -19,9 +19,11 @@ How the data is pulled:
 
 Rules:
 - status must be "Closed" (Cancelled, Voided and Open are left out).
-- Net = netAmount + chargeAmount of the order, as on the Sales dashboard. The item rows carry each item's net. The
-  difference between the order and its items (charges, tax, rounding) is one row per order named
-  "Charges, tax and rounding (not a product)", so the product rows add up to the order totals.
+- Gross and net per item come from the item's grossAmount (base plus add-on options) and netAmount (after its discount).
+  The items tie to the order: their gross is the order gross and their net is the order net.
+- Net sales = order netAmount + chargeAmount, as on the Sales dashboard. Charges are one row per order named
+  "Charges (not a product)", so each invoice's charge counts once, however many item lines it has.
+- Any difference between the order and its items is one row named "Other differences (not a product)".
 - an order with no item list is kept as one row named "(no item detail)".
 - a discount name shows the text inside its brackets: "Merchant Voucher Code (TRYNEW)" -> "TRYNEW",
   "Restaurant Discount (15% off)" -> "15% Off". A name without brackets is used as it is ("SALT").
@@ -29,8 +31,8 @@ Rules:
 - the voucher in `discounts` and the item discounts in `item_discounts` are combined into one label per order,
   for example "15% Off + TRYNEW". No discount at all gives "Zero discount".
 - a Swiggy order whose tags contain "Toing" gets "Toing Discount" for its item discounts.
-- discount per item = abs(item_baseNetDiscountAmount). On Swiggy and Zomato the platform discount is already in
-  the order net, so the order-level discountAmount does not include it. The reconciliation shows that difference.
+- discount per item = abs(item_netDiscountAmount), so gross - discount = net for every product. The order-level
+  discountAmount does not include the platform discount on Swiggy and Zomato. The reconciliation shows that difference.
 
 Usage: python sync_discounts.py --out data/discount_rows.csv --products-out data/product_rows.csv
        --recon-out data/product_recon.csv [--from 2026-09-01] [--to YYYY-MM-DD | yesterday] [--product-days 62]
@@ -50,8 +52,10 @@ import pandas as pd
 OUT_COLUMNS = ["day", "branchCode", "store", "region", "ownership", "brand", "source", "session",
                "invoiceNumber", "category", "item", "qty", "gross", "disc", "net", "label", "bh", "line_flag"]
 RECON_COLUMNS = ["day", "source", "orders", "sales_gross", "sales_discount", "sales_net",
-                 "product_gross", "product_discount", "product_net", "gross_gap", "net_gap"]
-ADJ_ITEM = "Charges, tax and rounding (not a product)"
+                 "product_gross", "product_discount", "product_net", "charges_net", "other_net", "other_gross",
+                 "gross_gap", "net_gap"]
+CHARGE_ITEM = "Charges (not a product)"
+OTHER_ITEM = "Other differences (not a product)"
 PLACEHOLDER_ITEM = "(no item detail)"
 SESSION_ALIAS = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
 BRACKET = re.compile(r"\((.*)\)")
@@ -151,8 +155,12 @@ def expand_items(raw):
         items = rec.pop(col, None)
         if not is_list_of_dicts(items):
             row = dict(rec)
+            g = pd.to_numeric(rec.get("grossAmount"), errors="coerce")
+            n = pd.to_numeric(rec.get("netAmount"), errors="coerce")
+            g = 0.0 if pd.isna(g) else float(g)
+            n = 0.0 if pd.isna(n) else float(n)
             row.update({"item_shortName": PLACEHOLDER_ITEM, "item_categoryName": "", "item_quantity": 0,
-                        "item_baseGrossAmount": 0, "item_baseNetDiscountAmount": 0, "item_baseNetAmount": 0,
+                        "item_grossAmount": g, "item_netDiscountAmount": -(g - n), "item_netAmount": n,
                         "is_placeholder": True})
             rows.append(row)
             continue
@@ -170,8 +178,7 @@ def transform(raw, day, master):
     master: {'store_type', 'region', 'source'} from the POS master (sync_sales.load_maps).
     Returns (rows for all channels with an `online` flag, reconciliation rows for the day and source)."""
     cols = ["channel", "status", "invoiceNumber", "branchCode", "brandName", "item_shortName",
-            "item_categoryName", "item_quantity", "item_baseGrossAmount", "item_baseNetDiscountAmount",
-            "item_baseNetAmount"]
+            "item_categoryName", "item_quantity", "item_grossAmount", "item_netDiscountAmount", "item_netAmount"]
     empty_rows = pd.DataFrame(columns=OUT_COLUMNS + ["online"])
     empty_recon = pd.DataFrame(columns=RECON_COLUMNS)
     if raw is None or raw.empty:
@@ -221,9 +228,9 @@ def transform(raw, day, master):
     df["category"] = df["item_categoryName"].astype(str).str.strip()
     df["item"] = df["item_shortName"].astype(str).str.strip()
     df["qty"] = num(df["item_quantity"])
-    df["gross"] = num(df["item_baseGrossAmount"]).round(2)
-    df["disc"] = num(df["item_baseNetDiscountAmount"]).abs().round(2)
-    df["net"] = num(df["item_baseNetAmount"]).round(2)
+    df["gross"] = num(df["item_grossAmount"]).round(2)
+    df["disc"] = num(df["item_netDiscountAmount"]).abs().round(2)
+    df["net"] = num(df["item_netAmount"]).round(2)
     df["store"] = df["branchName"].astype(str).map(lambda s: " ".join(s.split()))
     df["branchCode"] = df["branchCode"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     df["o_net"] = num(df["netAmount"])
@@ -232,37 +239,52 @@ def transform(raw, day, master):
     df["o_disc"] = num(df["discountAmount"])
     df["line_flag"] = (~df["is_placeholder"]).astype(int)
 
-    # One line per order: the order totals against its items. The difference is kept as its own row.
+    # One line per order. Items tie to the order (item net = order net, item gross = order gross). Any difference is
+    # its own labelled row, and each invoice's charge is one row, however many item lines it has.
     orders = df.groupby("invoiceNumber").agg(
         invoiceNumber_=("invoiceNumber", "first"), day=("day", "first"), source=("source", "first"),
         o_net=("o_net", "first"), o_charge=("o_charge", "first"), o_gross=("o_gross", "first"),
         o_disc=("o_disc", "first"), item_net=("net", "sum"), item_gross=("gross", "sum")).reset_index(drop=True)
-    orders["adj_net"] = (orders["o_net"] + orders["o_charge"] - orders["item_net"]).round(2)
-    orders["adj_gross"] = (orders["o_gross"] - orders["item_gross"]).round(2)
+    orders["resid_net"] = (orders["o_net"] - orders["item_net"]).round(2)
+    orders["resid_gross"] = (orders["o_gross"] - orders["item_gross"]).round(2)
     orders["sales_net"] = orders["o_net"] + orders["o_charge"]
 
     head = df.drop_duplicates("invoiceNumber").merge(
-        orders[["invoiceNumber_", "adj_net", "adj_gross"]].rename(columns={"invoiceNumber_": "invoiceNumber"}),
+        orders[["invoiceNumber_", "resid_net", "resid_gross"]].rename(columns={"invoiceNumber_": "invoiceNumber"}),
         on="invoiceNumber", how="left")
-    adj = head[(head["adj_net"].abs() > 0.005) | (head["adj_gross"].abs() > 0.005)].copy()
-    adj["item"] = ADJ_ITEM
-    adj["category"] = "Adjustments"
-    adj["qty"] = 0.0
-    adj["gross"] = adj["adj_gross"]
-    adj["disc"] = 0.0
-    adj["net"] = adj["adj_net"]
-    adj["line_flag"] = 0
-    items_all = pd.concat([df, adj], ignore_index=True)
+    resid = head[(head["resid_net"].abs() > 0.005) | (head["resid_gross"].abs() > 0.005)].copy()
+    resid["item"] = OTHER_ITEM
+    resid["category"] = "Other"
+    resid["qty"] = 0.0
+    resid["gross"] = resid["resid_gross"]
+    resid["disc"] = 0.0
+    resid["net"] = resid["resid_net"]
+    resid["line_flag"] = 0
+    charge = head[head["o_charge"].abs() > 0.005].copy()
+    charge["item"] = CHARGE_ITEM
+    charge["category"] = "Charges"
+    charge["qty"] = 0.0
+    charge["gross"] = 0.0
+    charge["disc"] = 0.0
+    charge["net"] = charge["o_charge"]
+    charge["line_flag"] = 0
+    items_all = pd.concat([df, resid, charge], ignore_index=True)
 
     sales = orders.groupby(["day", "source"]).agg(
         orders=("invoiceNumber_", "count"), sales_gross=("o_gross", "sum"),
         sales_discount=("o_disc", "sum"), sales_net=("sales_net", "sum")).reset_index()
+    items_all["charge_net"] = items_all["net"].where(items_all["item"] == CHARGE_ITEM, 0.0)
+    items_all["other_net"] = items_all["net"].where(items_all["item"] == OTHER_ITEM, 0.0)
+    items_all["other_gross"] = items_all["gross"].where(items_all["item"] == OTHER_ITEM, 0.0)
     prod = items_all.groupby(["day", "source"]).agg(
-        product_gross=("gross", "sum"), product_discount=("disc", "sum"), product_net=("net", "sum")).reset_index()
+        product_gross=("gross", "sum"), product_discount=("disc", "sum"), product_net=("net", "sum"),
+        charges_net=("charge_net", "sum"), other_net=("other_net", "sum"),
+        other_gross=("other_gross", "sum")).reset_index()
     recon = sales.merge(prod, on=["day", "source"], how="outer").fillna(0)
     recon["gross_gap"] = (recon["product_gross"] - recon["sales_gross"]).round(2)
     recon["net_gap"] = (recon["product_net"] - recon["sales_net"]).round(2)
-    for c in ["sales_gross", "sales_discount", "sales_net", "product_gross", "product_discount", "product_net"]:
+    for c in ["sales_gross", "sales_discount", "sales_net", "product_gross", "product_discount", "product_net",
+              "charges_net", "other_net", "other_gross"]:
         recon[c] = recon[c].round(2)
     recon["orders"] = recon["orders"].astype(int)
     recon = recon[RECON_COLUMNS]
@@ -435,7 +457,7 @@ def main():
         keep = pd.DataFrame(columns=columns)
         if saved is not None:
             lo = keep_from.strftime("%Y-%m-%d")
-            keep = saved[(~saved["day"].isin(pulled_set)) & (saved["day"] >= lo) & (saved["day"] <= end_s)]
+            keep = saved[(~saved["day"].isin(pulled_set)) & (saved["day"] >= lo)]   # keep later days too
         new = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=columns)
         parts = [p for p in [keep, new] if not p.empty]
         out = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=columns)
@@ -459,7 +481,8 @@ def main():
         os.makedirs(os.path.dirname(args.recon_out) or ".", exist_ok=True)
         recon_out.to_csv(args.recon_out, index=False)
         r = recon_out.copy()
-        for c in ["sales_net", "product_net", "sales_gross", "product_gross", "sales_discount", "product_discount"]:
+        for c in ["sales_net", "product_net", "sales_gross", "product_gross", "sales_discount", "product_discount",
+                  "charges_net", "other_net", "other_gross"]:
             r[c] = pd.to_numeric(r[c], errors="coerce").fillna(0)
         print(f"CROSS-CHECK, {product_start} to {end_s} (sales = Sales dashboard definitions):")
         print(f"  net:      sales {r['sales_net'].sum():,.2f} | product {r['product_net'].sum():,.2f} | "
@@ -468,6 +491,8 @@ def main():
               f"gap {r['product_gross'].sum() - r['sales_gross'].sum():,.2f}")
         print(f"  discount: sales {r['sales_discount'].sum():,.2f} | product {r['product_discount'].sum():,.2f} "
               "(expected to differ: platform discounts sit in the order net, not in the order discount)")
+        print(f"  charges:  net {r['charges_net'].sum():,.2f} (once per invoice)")
+        print(f"  other:    net {r['other_net'].sum():,.2f}, gross {r['other_gross'].sum():,.2f} (should be 0 when items tie)")
         if abs(r["product_net"].sum() - r["sales_net"].sum()) > 1 or abs(r["product_gross"].sum() - r["sales_gross"].sum()) > 1:
             print("WARNING: net or gross does not agree with the order totals. See the Disc_Recon tab.")
 
