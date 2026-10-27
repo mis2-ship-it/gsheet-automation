@@ -243,9 +243,27 @@ def read_tab(sh, name):
     return pd.DataFrame(values[1:], columns=values[0])
 
 
+DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"]
+
+
+def _one_date(text):
+    first = str(text).strip().split(" ")[0]          # drop a time part, if the sheet added one
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(first, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return ""
+
+
+def normalize_dates(values):
+    """Dates from the sheet as yyyy-mm-dd. Reads ISO, day-first and month-first text; unreadable values become ''."""
+    return pd.Series([_one_date(v) for v in values], dtype=object)
+
+
 def merge_live_hours(existing, live_hours, today, hour_days):
     """Disc_Hour for the window: the days already in the sheet (written by the nightly run, and including last week),
-    with today's hours replaced by the live rows. Returns (frame, whether last week's day is in the sheet)."""
+    with today's hours replaced by the live rows. Returns (frame, whether last week's day is in the sheet, rows per day)."""
     today_s = today.strftime("%Y-%m-%d")
     last_week_s = (today - timedelta(days=7)).strftime("%Y-%m-%d")
     first_s = (today - timedelta(days=hour_days - 1)).strftime("%Y-%m-%d")
@@ -253,15 +271,22 @@ def merge_live_hours(existing, live_hours, today, hour_days):
         old = pd.DataFrame(columns=HOUR_COLS)
     else:
         old = existing.copy()
-        old["Date"] = old["Date"].astype(str).str[:10]
+        old["Date"] = normalize_dates(old["Date"])
+        unreadable = int((old["Date"] == "").sum())
+        if unreadable:
+            print(f"Warning: {unreadable} row(s) in Disc_Hour have a Date that could not be read.")
         old = old[(old["Date"] != today_s) & (old["Date"] >= first_s)].copy()
         for c in ["Hour", "Invoices", "Qty", "Gross", "Discount", "Net", "Lines"]:
             if c in old.columns:
                 old[c] = pd.to_numeric(old[c], errors="coerce").fillna(0)
         old = old.reindex(columns=HOUR_COLS)
     combined = pd.concat([old, live_hours.reindex(columns=HOUR_COLS)], ignore_index=True)
-    last_week_found = bool((old["Date"] == last_week_s).any()) if len(old) else False
-    return combined, last_week_found
+    days = old["Date"].value_counts().sort_index().to_dict() if len(old) else {}
+    return combined, last_week_s in days, days
+
+
+def describe_days(days):
+    return ", ".join(f"{d} ({n} rows)" for d, n in days.items()) if days else "none"
 
 
 def main():
@@ -288,16 +313,19 @@ def main():
         hourly.append(live)
     hour = aggregate_hour(pd.concat(hourly, ignore_index=True), args.hour_days, today)
     print(f"hourly rows: {len(hour)}")
+    if not args.only_hourly and len(hour):
+        print(f"Disc_Hour days from the saved rows: {describe_days(hour['Date'].value_counts().sort_index().to_dict())}")
     if args.only_hourly:
         # Live job: no saved rows are needed. Last week's hours come from the Disc_Hour tab that the nightly run wrote.
         sh = open_sheet()
         existing = read_tab(sh, "Disc_Hour")
-        combined, last_week_found = merge_live_hours(existing, hour, today, args.hour_days)
+        combined, last_week_found, days = merge_live_hours(existing, hour, today, args.hour_days)
         write_tab(sh, "Disc_Hour", combined)
+        print(f"Disc_Hour days in the window (before today): {describe_days(days)}")
         if not last_week_found:
             last_week = (today - timedelta(days=7)).strftime("%Y-%m-%d")
             print(f"ERROR: last week's day ({last_week}) is not in the Disc_Hour tab, so the live growth has no base. "
-                  "Run the nightly Discount Code rows workflow and check it finished.")
+                  "Run the Discount Code rows workflow for that day (from and to = its date), then this job again.")
             sys.exit(1)
         return
     if rows is None:
