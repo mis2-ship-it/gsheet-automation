@@ -701,7 +701,7 @@ def build_overall_extended(today_df, lw_df, l2w_df, mom_df, ly_df):
     })
 
     # Growth calculations
-    df["LW GW% %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
+    df["LW GW %"] = ((df["Today"]-df["Last Week"]) / df["Last Week"].replace(0,1)) * 100
     df["L2W Growth %"] = ((df["Today"]-df["Last 2 Week"]) / df["Last 2 Week"].replace(0,1)) * 100
     df["MoM Growth %"] = ((df["Today"]-df["Last Month"]) / df["Last Month"].replace(0,1)) * 100
     df["LY Growth %"] = ((df["Today"]-df["Last Year"]) / df["Last Year"].replace(0,1)) * 100
@@ -2270,19 +2270,21 @@ def styled_html(df):
         # ---------------- GROWTH COLUMNS ---------------- #
 
         elif col in growth_cols:
-
+        
             def growth_format(x):
-
+        
                 try:
-
                     if str(x).strip() == "":
                         return ""
-
-                    val = float(str(x).replace("%", "").replace(",", "").strip())
-
+        
+                    val = float(
+                        str(x).replace("%", "").replace(",", "").strip()
+                    )
+        
+                    # Positive = Green | Negative = Red
                     bg = "#d4edda" if val >= 0 else "#f8d7da"
                     color = "#155724" if val >= 0 else "#721c24"
-
+        
                     return (
                         f'<div style="'
                         f'background:{bg};'
@@ -2293,25 +2295,24 @@ def styled_html(df):
                         f'text-align:center;'
                         f'white-space:nowrap;'
                         f'">'
-                        f'{val:.2f}%'
+                        f'{val:,.0f}%'
                         f'</div>'
                     )
-
-                except:
+        
+                except (ValueError, TypeError):
                     return ""
-
+        
             df[col] = df[col].apply(growth_format)
 
-        # ---------------- NORMAL NUMBER COLUMNS ---------------- #
+# ---------------- NORMAL NUMBER COLUMNS ---------------- #
 
         else:
-
+        
             df[col] = pd.to_numeric(df[col], errors="coerce")
-
+        
             df[col] = df[col].apply(
-                lambda x: f"{x:,.2f}" if pd.notnull(x) else ""
+                lambda x: f"{x:,.0f}" if pd.notnull(x) else ""
             )
-
     # =====================================================
     # HTML CONVERT
     # =====================================================
