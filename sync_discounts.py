@@ -51,7 +51,7 @@ import pandas as pd
 
 OUT_COLUMNS = ["day", "branchCode", "store", "region", "ownership", "brand", "source", "session",
                "invoiceNumber", "category", "item", "qty", "gross", "disc", "net", "label", "bh", "line_flag"]
-RECON_COLUMNS = ["day", "source", "orders", "sales_gross", "sales_discount", "sales_net",
+RECON_COLUMNS = ["day", "source", "ownership", "orders", "sales_gross", "sales_discount", "sales_net",
                  "product_gross", "product_discount", "product_net", "charges_net", "other_net", "other_gross",
                  "gross_gap", "net_gap"]
 CHARGE_ITEM = "Charges (not a product)"
@@ -61,6 +61,7 @@ SESSION_ALIAS = {"Late Night": "Post Dinner", "Closing": "Post Dinner"}
 BRACKET = re.compile(r"\((.*)\)")
 FIRST_DAY = "2026-09-01"
 PRODUCT_DAYS = 62
+DEFAULT_STORE_TYPE = "COCO"      # the Sales dashboard's COCO view; use --store-type all for every store
 ITEM_HINTS = ("quantity", "shortName", "baseGrossAmount", "baseNetAmount")
 
 
@@ -173,7 +174,7 @@ def expand_items(raw):
     return pd.DataFrame(rows)
 
 
-def transform(raw, day, master):
+def transform(raw, day, master, store_type=DEFAULT_STORE_TYPE):
     """raw: sales/page records (one or more days). day: keep only this day (None = all).
     master: {'store_type', 'region', 'source'} from the POS master (sync_sales.load_maps).
     Returns (rows for all channels with an `online` flag, reconciliation rows for the day and source)."""
@@ -203,6 +204,17 @@ def transform(raw, day, master):
     if df.empty:
         return empty_rows, empty_recon
     df["invoiceNumber"] = df["invoiceNumber"].astype(str).str.strip()
+    df["store"] = df["branchName"].astype(str).map(lambda s: " ".join(s.split()))
+    df["ownership"] = df["store"].map(master["store_type"]).fillna("Unmapped")
+    if store_type != "all":
+        dropped = df[df["ownership"] != store_type]
+        if len(dropped):
+            counts = dropped.drop_duplicates("invoiceNumber")["ownership"].value_counts().to_dict()
+            print(f"{day or 'all days'}: left out {dropped['invoiceNumber'].nunique()} orders that are not "
+                  f"{store_type} ({', '.join(f'{k}: {v}' for k, v in counts.items())})")
+        df = df[df["ownership"] == store_type].copy()
+        if df.empty:
+            return empty_rows, empty_recon
 
     channel_text = df["channel"].astype(str)
     df["online"] = channel_text.str.contains("swiggy|zomato", case=False, na=False)
@@ -231,7 +243,6 @@ def transform(raw, day, master):
     df["gross"] = num(df["item_grossAmount"]).round(2)
     df["disc"] = num(df["item_netDiscountAmount"]).abs().round(2)
     df["net"] = num(df["item_netAmount"]).round(2)
-    df["store"] = df["branchName"].astype(str).map(lambda s: " ".join(s.split()))
     df["branchCode"] = df["branchCode"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
     df["o_net"] = num(df["netAmount"])
     df["o_charge"] = num(df["chargeAmount"])
@@ -287,10 +298,10 @@ def transform(raw, day, master):
               "charges_net", "other_net", "other_gross"]:
         recon[c] = recon[c].round(2)
     recon["orders"] = recon["orders"].astype(int)
+    recon.insert(2, "ownership", store_type)
     recon = recon[RECON_COLUMNS]
 
     items_all["region"] = items_all["store"].map(master["region"]).fillna("Unmapped")
-    items_all["ownership"] = items_all["store"].map(master["store_type"]).fillna("Unmapped")
     items_all["invoiceNumber"] = items_all["invoiceNumber"].astype(str)
     out = items_all[OUT_COLUMNS + ["online"]].copy()
     return out, recon
@@ -309,11 +320,20 @@ def parse_day(text, default):
     return datetime.strptime(t, "%Y-%m-%d").date()
 
 
-def read_saved(path):
+def read_saved(path, store_type=DEFAULT_STORE_TYPE):
+    """Saved rows for the store type. A file saved before store types were recorded is treated as missing, so its
+    days are pulled again. Rows of other store types are dropped, so FOFO rows saved earlier do not come back."""
     if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
         return None
     saved = pd.read_csv(path, dtype=str, keep_default_na=False)
-    return saved if "day" in saved.columns else None
+    if "day" not in saved.columns:
+        return None
+    if "ownership" not in saved.columns:
+        print(f"{path}: saved without store types, so its days are pulled again")
+        return None
+    if store_type != "all":
+        saved = saved[saved["ownership"] == store_type]
+    return saved
 
 
 def needed(saved, first_day, days, refresh_from):
@@ -380,6 +400,7 @@ def main():
     ap.add_argument("--refresh-days", type=int, default=2, help="the last days are always pulled again")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--live", action="store_true", help="pull today's business day only, to a separate file")
+    ap.add_argument("--store-type", default=DEFAULT_STORE_TYPE, help="COCO (default), FOFO, or all")
     args = ap.parse_args()
     from sync_sales import active_branches
 
@@ -395,7 +416,7 @@ def main():
     products = bool(args.products_out) and not args.live
     recon_on = bool(args.recon_out) and not args.live
     # Windows are measured from the END day, so a run that starts later keeps the saved history.
-    saved_disc = read_saved(args.out) if not args.live else None
+    saved_disc = read_saved(args.out, args.store_type) if not args.live else None
     saved_min = min(saved_disc["day"]) if saved_disc is not None and len(saved_disc) else None
     earliest = [first_day, start] + ([datetime.strptime(saved_min, "%Y-%m-%d").date()] if saved_min else [])
     disc_keep_from = min(earliest)     # never drops saved history, even when a run starts later
@@ -407,16 +428,16 @@ def main():
     codes = active_branches()
     if not codes:
         sys.exit("Rista returned no Active branches.")
-    print(f"Active branches in Rista: {len(codes)}")
+    print(f"Active branches in Rista: {len(codes)}. Store type kept: {args.store_type}")
     master = load_master()
 
     if args.live:
         saved_disc = saved_prod = saved_recon = None
         pull_dates = all_days
     else:
-        saved_disc = read_saved(args.out)
-        saved_prod = read_saved(args.products_out) if products else None
-        saved_recon = read_saved(args.recon_out) if recon_on else None
+        saved_disc = read_saved(args.out, args.store_type)
+        saved_prod = read_saved(args.products_out, args.store_type) if products else None
+        saved_recon = read_saved(args.recon_out, args.store_type) if recon_on else None
         wanted = set(needed(saved_disc, start, all_days, refresh_from))
         if products:
             wanted |= set(needed(saved_prod, product_start, all_days, refresh_from))
@@ -432,7 +453,7 @@ def main():
         records, day_failures = pull_day(codes, ds, args.workers)
         failures += day_failures
         raw = pd.json_normalize(records) if records else pd.DataFrame()
-        got, recon_day = transform(raw, ds, master)
+        got, recon_day = transform(raw, ds, master, args.store_type)
         online_rows = got[got["online"]] if not got.empty else got
         print(f"{ds}: {len(records)} sales/page records, {len(online_rows)} Swiggy/Zomato item rows, "
               f"{len(got)} item rows in all channels")
@@ -484,7 +505,7 @@ def main():
         for c in ["sales_net", "product_net", "sales_gross", "product_gross", "sales_discount", "product_discount",
                   "charges_net", "other_net", "other_gross"]:
             r[c] = pd.to_numeric(r[c], errors="coerce").fillna(0)
-        print(f"CROSS-CHECK, {product_start} to {end_s} (sales = Sales dashboard definitions):")
+        print(f"CROSS-CHECK ({args.store_type}), {product_start} to {end_s} (sales = Sales dashboard definitions):")
         print(f"  net:      sales {r['sales_net'].sum():,.2f} | product {r['product_net'].sum():,.2f} | "
               f"gap {r['product_net'].sum() - r['sales_net'].sum():,.2f}")
         print(f"  gross:    sales {r['sales_gross'].sum():,.2f} | product {r['product_gross'].sum():,.2f} | "
