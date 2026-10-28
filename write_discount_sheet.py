@@ -55,6 +55,16 @@ DISC_LABELS = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-
                "60%-70%", "70%-80%", "80%-90%", "90%-100%"]
 DISC_EDGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 PRODUCT_DAYS = 62
+DEFAULT_STORE_TYPE = "COCO"
+
+
+def keep_store(rows, store_type, label):
+    """Keeps the rows of one store type (COCO by default), as the Sales dashboard's COCO view does."""
+    if rows is None or store_type == "all" or "ownership" not in rows.columns:
+        return rows
+    kept = rows[rows["ownership"] == store_type]
+    print(f"{label}: kept {store_type} rows {len(kept):,} of {len(rows):,}")
+    return kept
 
 
 def read_csv_if_present(path):
@@ -299,10 +309,11 @@ def main():
     ap.add_argument("--products", default="data/product_rows.csv", help="all channels (sync_discounts.py --products-out)")
     ap.add_argument("--recon", default="data/product_recon.csv", help="reconciliation (sync_discounts.py --recon-out)")
     ap.add_argument("--only-hourly", action="store_true", help="write only the hourly tab (live job)")
+    ap.add_argument("--store-type", default=DEFAULT_STORE_TYPE, help="COCO (default), FOFO, or all")
     args = ap.parse_args()
     today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
-    rows = read_csv_if_present(args.rows)
-    live = read_csv_if_present(args.live) if args.live else None
+    rows = keep_store(read_csv_if_present(args.rows), args.store_type, "discount rows")
+    live = keep_store(read_csv_if_present(args.live) if args.live else None, args.store_type, "live rows")
     if rows is None and live is None:
         raise SystemExit("No discount rows found. Run the Discount Code rows workflow first.")
     today_s = today.strftime("%Y-%m-%d")
@@ -331,14 +342,14 @@ def main():
     if rows is None:
         raise SystemExit("No completed-day rows. Run the Discount Code rows workflow first.")
     lab, itm = aggregate(rows, args.keep_days)
-    product_rows = read_csv_if_present(args.products)
+    product_rows = keep_store(read_csv_if_present(args.products), args.store_type, "product rows")
     if product_rows is None:
         print("Warning: no product rows file. Product tabs use Swiggy and Zomato only.")
         product_rows = rows
     else:
         print(f"product rows: {len(product_rows)} item rows, all channels")
     bucket, prod, pbucket = build_product_tabs(product_rows, args.product_days)
-    recon_rows = read_csv_if_present(args.recon)
+    recon_rows = keep_store(read_csv_if_present(args.recon), args.store_type, "reconciliation rows")
     recon_tab = build_recon_tab(recon_rows)
     if recon_rows is None:
         print("Warning: no reconciliation file. Disc_Recon is not written.")
