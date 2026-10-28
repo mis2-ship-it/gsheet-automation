@@ -897,7 +897,7 @@ def generate_insight(overall):
     try:
         row = overall[overall["Parameters"]=="Net"].iloc[0]
 
-        lw = row["LW GW% %"]
+        lw = row["LW GW %"]
         l2w = row["L2W Growth %"]
         mom = row["MoM Growth %"]
         ly = row["LY Growth %"]
@@ -2237,154 +2237,120 @@ def push(name, df):
 # =====================================================
 
 def styled_html(df):
+    """Format report tables consistently for HTML email.
 
+    - Highlights every growth column, including the abbreviated "LW GW %".
+    - Positive / zero growth is green; negative growth is red.
+    - Displays numeric values with zero decimals.
+    - Preserves labels and mixed text columns in tables such as Hourly analysis.
+    """
     df = df.copy()
 
-    growth_cols = [c for c in df.columns if "Growth" in c]
+    text_cols = {
+        "Parameters", "Parameter", "Metric", "Source Group", "Region",
+        "Brand", "Session", "Hour", "Store Name", "Insight", "Spike",
+        "Store", "Branch", "Status", "Date", "Business Date"
+    }
 
-    text_cols = [
-        "Parameters",
-        "Parameter",
-        "Metric",
-        "Source Group",
-        "Region",
-        "Brand",
-        "Session",
-        "Hour",
-        "Store Name",
-        "Insight"
-    ]
+    # Normalize names to tolerate spaces/case differences.
+    def normalize_col_name(name):
+        return "".join(str(name).lower().split())
 
-
-    # Normalize column names to avoid spacing mismatches
     growth_col_keys = {
-        "lwg w%".replace(" ", ""),  # LW GW %
+        "lwgw%",       # LW GW %
+        "lwgw",        # fallback if the percent sign is omitted
+        "lwgrowth%",
         "l2wgrowth%",
         "momgrowth%",
         "lygrowth%"
     }
-    
-    def normalize_col_name(name):
-        return "".join(str(name).lower().split())
-    
-    # =====================================================
-    # FORMAT
-    # =====================================================
 
+    def is_growth_column(col):
+        normalized = normalize_col_name(col)
+        return "growth" in normalized or normalized in growth_col_keys
+
+    # =====================================================
+    # FORMAT EACH COLUMN
+    # =====================================================
     for col in df.columns:
-
-        # ---------------- TEXT COLUMNS ---------------- #
-
-        if col in text_cols:
-
-            df[col] = df[col].fillna("").astype(str)
-
-        # ---------------- GROWTH COLUMNS ---------------- #
-
-        elif normalize_col_name(col) in growth_col_keys:
-        
-            def growth_format(x):
-        
+        if is_growth_column(col):
+            def growth_format(value):
                 try:
-                    if str(x).strip() == "":
+                    if pd.isna(value) or str(value).strip() == "":
                         return ""
-        
+
                     val = float(
-                        str(x).replace("%", "").replace(",", "").strip()
+                        str(value).replace("%", "").replace(",", "").strip()
                     )
-        
-                    # Positive = Green | Negative = Red
                     bg = "#d4edda" if val >= 0 else "#f8d7da"
                     color = "#155724" if val >= 0 else "#721c24"
-                    
+
                     return (
-                        f'<div style="'
-                        f'background:{bg};'
-                        f'color:{color};'
-                        f'padding:4px 8px;'
-                        f'border-radius:4px;'
-                        f'font-weight:bold;'
-                        f'text-align:center;'
-                        f'white-space:nowrap;'
-                        f'">'
-                        f'{val:,.0f}%'
-                        f'</div>'
+                        f'<div style="background:{bg};color:{color};'
+                        f'padding:4px 8px;border-radius:4px;'
+                        f'font-weight:bold;text-align:center;white-space:nowrap;">'
+                        f'{val:,.0f}%</div>'
                     )
-        
                 except (ValueError, TypeError):
                     return ""
-        
+
             df[col] = df[col].apply(growth_format)
+            continue
 
-# ---------------- NORMAL NUMBER COLUMNS ---------------- #
+        # Explicit label columns and columns containing actual text must not
+        # be coerced to numeric, or labels such as "🚀 Spike" become blank.
+        if col in text_cols:
+            df[col] = df[col].fillna("").astype(str)
+            continue
 
+        original = df[col]
+        numeric = pd.to_numeric(
+            original.astype(str).str.replace(",", "", regex=False).str.strip(),
+            errors="coerce"
+        )
+        non_blank = original.map(
+            lambda value: pd.notna(value) and str(value).strip() != ""
+        )
+
+        # If any non-empty cell is not numeric, preserve this as a text/mixed
+        # column. Otherwise format numeric values with no decimal places.
+        if (non_blank & numeric.isna()).any():
+            df[col] = original.fillna("").astype(str)
         else:
-        
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        
-            df[col] = df[col].apply(
-                lambda x: f"{x:,.0f}" if pd.notnull(x) else ""
+            df[col] = numeric.apply(
+                lambda value: f"{value:,.0f}" if pd.notna(value) else ""
             )
+
     # =====================================================
     # HTML CONVERT
     # =====================================================
-
-    html = df.to_html(
-        index=False,
-        escape=False,
-        border=0
-    )
+    html = df.to_html(index=False, escape=False, border=0)
 
     # =====================================================
     # TABLE STYLE
     # =====================================================
-
     html = html.replace(
         '<table class="dataframe">',
-        '''
-        <table style="
-            border-collapse:collapse;
-            width:auto;
-            min-width:60%;
-            font-family:Arial;
-            font-size:12px;
-            background:white;
-        ">
-        '''
+        '<table style="border-collapse:collapse;width:auto;min-width:60%;'
+        'font-family:Arial;font-size:12px;background:white;">'
     )
 
     # =====================================================
     # HEADER STYLE
     # =====================================================
-
     html = html.replace(
         '<th>',
-        '''
-        <th style="
-            background:#1f4e78;
-            color:white;
-            padding:8px;
-            border:1px solid #d9d9d9;
-            text-align:center;
-            white-space:nowrap;
-        ">
-        '''
+        '<th style="background:#1f4e78;color:white;padding:8px;'
+        'border:1px solid #d9d9d9;text-align:center;white-space:nowrap;">'
     )
 
     # =====================================================
     # CELL STYLE
     # =====================================================
-
     html = html.replace(
         '<td>',
-        '''
-        <td style="
-            padding:6px;
-            border:1px solid #e5e5e5;
-            text-align:left;
-            white-space:nowrap;
-        ">
-        '''
+        '<td style="padding:6px;border:1px solid #e5e5e5;'
+        'text-align:left;white-space:nowrap;">'
     )
 
     return html
