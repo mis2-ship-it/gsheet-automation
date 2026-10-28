@@ -1,8 +1,6 @@
 name: Discount Code, product and reconciliation rows (sales/page)
 
 on:
-  schedule:
-    - cron: "15 2 * * *"      # 07:45 IST daily: yesterday and the two days before
   workflow_dispatch:
     inputs:
       from:
