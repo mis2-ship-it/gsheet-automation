@@ -2255,6 +2255,18 @@ def styled_html(df):
         "Insight"
     ]
 
+
+    # Normalize column names to avoid spacing mismatches
+    growth_col_keys = {
+        "lwg w%".replace(" ", ""),  # LW GW %
+        "l2wgrowth%",
+        "momgrowth%",
+        "lygrowth%"
+    }
+    
+    def normalize_col_name(name):
+        return "".join(str(name).lower().split())
+    
     # =====================================================
     # FORMAT
     # =====================================================
@@ -2269,7 +2281,7 @@ def styled_html(df):
 
         # ---------------- GROWTH COLUMNS ---------------- #
 
-        elif col in growth_cols:
+        elif normalize_col_name(col) in growth_col_keys:
         
             def growth_format(x):
         
@@ -2284,7 +2296,7 @@ def styled_html(df):
                     # Positive = Green | Negative = Red
                     bg = "#d4edda" if val >= 0 else "#f8d7da"
                     color = "#155724" if val >= 0 else "#721c24"
-        
+                    
                     return (
                         f'<div style="'
                         f'background:{bg};'
