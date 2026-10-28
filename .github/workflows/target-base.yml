@@ -1,8 +1,6 @@
 name: Target base (Target Planner data)
 
 on:
-  schedule:
-    - cron: "0 3 * * *"        # 08:30 IST daily
   workflow_dispatch:
 
 permissions:
