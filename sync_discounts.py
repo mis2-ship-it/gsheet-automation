@@ -65,6 +65,15 @@ DEFAULT_STORE_TYPE = "COCO"      # the Sales dashboard's COCO view; use --store-
 ITEM_HINTS = ("quantity", "shortName", "baseGrossAmount", "baseNetAmount")
 
 
+def months_back(d, n):
+    """First day of the calendar month n months before d's month."""
+    y, m = d.year, d.month - n
+    while m <= 0:
+        m += 12
+        y -= 1
+    return d.replace(year=y, month=m, day=1)
+
+
 def parse_list(v):
     if v is None or (isinstance(v, float) and pd.isna(v)):
         return []
@@ -401,6 +410,8 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--live", action="store_true", help="pull today's business day only, to a separate file")
     ap.add_argument("--store-type", default=DEFAULT_STORE_TYPE, help="COCO (default), FOFO, or all")
+    ap.add_argument("--category-months", type=int, default=3,
+                    help="calendar months back (from the end day's month) that the product rows must cover")
     args = ap.parse_args()
     from sync_sales import active_branches
 
@@ -420,7 +431,12 @@ def main():
     saved_min = min(saved_disc["day"]) if saved_disc is not None and len(saved_disc) else None
     earliest = [first_day, start] + ([datetime.strptime(saved_min, "%Y-%m-%d").date()] if saved_min else [])
     disc_keep_from = min(earliest)     # never drops saved history, even when a run starts later
-    product_start = end - timedelta(days=max(args.product_days, 1) - 1) if (products or recon_on) else None
+    # The product rows cover the Product tab's window and the calendar months the Category table needs.
+    category_start = months_back(end, max(args.category_months, 0))
+    product_start = (min(end - timedelta(days=max(args.product_days, 1) - 1), category_start)
+                     if (products or recon_on) else None)
+    if product_start:
+        print(f"Product rows from {product_start} to {end} (category table: {category_start} onward)")
     span_start = min(start, product_start) if product_start else start
     all_days = [span_start + timedelta(days=i) for i in range((end - span_start).days + 1)]
     refresh_from = end - timedelta(days=max(args.refresh_days, 1) - 1)
