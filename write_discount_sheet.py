@@ -56,6 +56,9 @@ DISC_LABELS = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-
 DISC_EDGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 PRODUCT_DAYS = 62
 DEFAULT_STORE_TYPE = "COCO"
+CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net"]
+PMONTH_COLS = ["Month", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
+ALL_CATEGORIES = "(all categories)"     # one row per group with the distinct orders across all categories
 
 
 def keep_store(rows, store_type, label):
@@ -182,6 +185,55 @@ def build_product_tabs(rows, days=PRODUCT_DAYS):
     p_dsc["Kind"] = "Discount"
     pbucket = pd.concat([p_aov, p_dsc], ignore_index=True)[PBUCKET_COLS]
     return bucket, prod, pbucket
+
+
+def build_category_tab(rows):
+    """Monthly category table: by month, brand, region, source, channel and category. Offline = In Store;
+    Online = every other source. Orders are distinct invoices; the (all categories) row counts each order once."""
+    if rows is None or rows.empty:
+        return pd.DataFrame(columns=CAT_COLS)
+    r = clean_numbers(rows)
+    r["invoiceNumber"] = r["invoiceNumber"].astype(str)
+    r["Month"] = r["day"].str[:7]
+    r["Channel"] = np.where(r["source"].str.strip().str.lower().isin(["in store", "in-store", "instore"]),
+                            "Offline", "Online")
+    keys = ["Month", "brand", "region", "source", "Channel"]
+
+    def agg(frame, extra):
+        return (frame.groupby(keys + extra)
+                .agg(Orders=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
+                     Discount=("disc", "sum"), Net=("net", "sum")).reset_index())
+
+    by_cat = agg(r, ["category"]).rename(columns={"category": "Category"})
+    all_cat = agg(r, []).assign(Category=ALL_CATEGORIES)
+    out = pd.concat([by_cat, all_cat], ignore_index=True).rename(
+        columns={"brand": "Brand", "region": "Region", "source": "Source"})
+    for c in ["Qty", "Gross", "Discount", "Net"]:
+        out[c] = out[c].astype(float).round(2)
+    out["Orders"] = out["Orders"].astype(int)
+    return out[CAT_COLS]
+
+
+def build_product_month_tab(rows):
+    """Product sales by calendar month, brand, region, source, discounted (order had a discount), category and item.
+    Feeds the Product tab's monthly view: the selected month, the month before and the two months before that."""
+    if rows is None or rows.empty:
+        return pd.DataFrame(columns=PMONTH_COLS)
+    r = clean_numbers(rows)
+    r["invoiceNumber"] = r["invoiceNumber"].astype(str)
+    r["Month"] = r["day"].str[:7]
+    order_disc = r.groupby("invoiceNumber")["disc"].sum()
+    discounted = r["invoiceNumber"].map(order_disc > 0).fillna(False).astype(bool)
+    r["Discounted"] = np.where(discounted, "Yes", "No")
+    g = (r.groupby(["Month", "brand", "region", "source", "Discounted", "category", "item"])
+         .agg(Orders=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
+              Discount=("disc", "sum"), Net=("net", "sum")).reset_index())
+    g = g.rename(columns={"brand": "Brand", "region": "Region", "source": "Source",
+                          "category": "Category", "item": "Item"})
+    for c in ["Qty", "Gross", "Discount", "Net"]:
+        g[c] = g[c].astype(float).round(2)
+    g["Orders"] = g["Orders"].astype(int)
+    return g[PMONTH_COLS]
 
 
 def build_recon_tab(recon):
@@ -351,6 +403,9 @@ def main():
     bucket, prod, pbucket = build_product_tabs(product_rows, args.product_days)
     recon_rows = keep_store(read_csv_if_present(args.recon), args.store_type, "reconciliation rows")
     recon_tab = build_recon_tab(recon_rows)
+    cat_tab = build_category_tab(product_rows)
+    prod_month_tab = build_product_month_tab(product_rows)
+    print(f"category rows: {len(cat_tab)}, months {sorted(cat_tab['Month'].unique()) if len(cat_tab) else []}")
     if recon_rows is None:
         print("Warning: no reconciliation file. Disc_Recon is not written.")
     else:
@@ -364,12 +419,15 @@ def main():
           f"product by bucket {len(pbucket)} rows")
     total_cells = (len(lab) * len(LABEL_COLS) + len(itm) * len(ITEM_COLS) + len(hour) * len(HOUR_COLS)
                    + len(bucket) * len(BUCKET_COLS) + len(prod) * len(PROD_COLS) + len(pbucket) * len(PBUCKET_COLS)
-                   + len(recon_tab) * len(RECON_NAMES))
+                   + len(recon_tab) * len(RECON_NAMES) + len(cat_tab) * len(CAT_COLS)
+                   + len(prod_month_tab) * len(PMONTH_COLS))
     print(f"cells written: about {total_cells:,} of the Google Sheets limit of 10,000,000")
     if total_cells > 8_000_000:
         print("WARNING: close to the Google Sheets cell limit. Lower --product-days or --keep-days.")
     tabs = [("Disc_Label", lab), ("Disc_Item", itm), ("Disc_Hour", hour),
             ("Disc_Bucket", bucket), ("Disc_Prod", prod), ("Disc_Prod_Bucket", pbucket)]
+    tabs.append(("Disc_Cat", cat_tab))
+    tabs.append(("Disc_Prod_Month", prod_month_tab))
     if recon_rows is not None:
         tabs.append(("Disc_Recon", recon_tab))
     write_sheet(tabs)
