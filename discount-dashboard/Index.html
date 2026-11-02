@@ -107,7 +107,7 @@ var LAST = { overview: null, products: null, analysis: null };
 var PAGE = 20, PPAGE = 25;
 var STATE = { tab: "overview", page: 0, cats: null, search: "", open: {}, searching: false,
   codes: [], codeSearch: "", dd: false, timer: null,
-  psearch: "", pcat: "all", ppage: 0, band: { AOV: {}, Discount: {} } };
+  psearch: "", pcat: "all", ppage: 0, catMetric: "net", catChannel: "all", band: { AOV: {}, Discount: {} } };
 var C = { yes: "#34D399", no: "#60A5FA", acc: "#3B82F6", warn: "#F87171", grid: "#24314f", text: "#9AA8C2", ink: "#E5ECF8" };
 
 /* ---------- helpers ---------- */
@@ -427,42 +427,71 @@ function onProducts(d) {
   status("Showing " + d.meta.cur + " against " + d.meta.prev + ". Product data covers " + d.meta.dataFrom + " to " + d.meta.dataTo + ".");
   renderProducts();
 }
+function pctPts(cur, prev) {
+  var diff = cur - prev;
+  return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
+}
 function renderProducts() {
   var d = LAST.products;
   if (!d) return;
+  var mon = !!d.monthly;
+  var vs = mon ? "vs " + d.months[1].label : "vs previous";
   var t = d.totals.cur, pv = d.totals.prev;
   var totCur = t.yes.net + t.no.net, totPrev = pv.yes.net + pv.no.net;
   var share = totCur ? t.yes.net / totCur : 0;
-  var discYes = t.yes.gross ? t.yes.disc / t.yes.gross : 0;
+  var discCur = t.yes.gross ? t.yes.disc / t.yes.gross * 100 : 0;
+  var discPrev = pv.yes.gross ? pv.yes.disc / pv.yes.gross * 100 : 0;
   var sold = d.products.filter(function (x) { return x.cur.yes.net + x.cur.no.net > 0; }).length;
+  var soldPrev = d.products.filter(function (x) { return x.prev.yes.net + x.prev.no.net > 0; }).length;
   var kpis = '<div class="kpis">' +
-    kpiCard("Net revenue", inr(totCur), growth(totCur, totPrev) + " vs previous") +
-    kpiCard("With discount", inr(t.yes.net), (share * 100).toFixed(1) + "% of net · " + growth(t.yes.net, pv.yes.net)) +
-    kpiCard("Without discount", inr(t.no.net), ((1 - share) * 100).toFixed(1) + "% of net · " + growth(t.no.net, pv.no.net)) +
-    kpiCard("Discount on discounted sales", (discYes * 100).toFixed(1) + "%", "discount ÷ gross, orders with a discount") +
-    kpiCard("Products sold", inr(sold), "in this period") + "</div>";
+    kpiCard(mon ? "Net revenue · " + d.months[0].label : "Net revenue", inr(totCur), growth(totCur, totPrev) + " " + vs) +
+    kpiCard("With discount", inr(t.yes.net), (share * 100).toFixed(1) + "% of net · " + growth(t.yes.net, pv.yes.net) + " " + vs) +
+    kpiCard("Without discount", inr(t.no.net), ((1 - share) * 100).toFixed(1) + "% of net · " + growth(t.no.net, pv.no.net) + " " + vs) +
+    kpiCard("Discount on discounted sales", discCur.toFixed(1) + "%", pctPts(discCur, discPrev) + " " + vs) +
+    kpiCard("Products sold", inr(sold), growth(sold, soldPrev) + " " + vs) + "</div>";
   var topP = d.products.slice(0, 10).map(function (x) { return { label: x.item, a: x.cur.yes.net, b: x.cur.no.net }; });
   var topC = d.categories.slice(0, 10).map(function (x) { return { label: x.cat, a: x.cur.yes.net, b: x.cur.no.net }; });
   var charts = '<div class="cards">' +
     '<div class="card"><h3>Top 10 products by net revenue</h3>' + legendStack() + svgStackH(topP) + "</div>" +
     '<div class="card"><h3>Top 10 categories by net revenue</h3>' + legendStack() + svgStackH(topC) + "</div></div>";
+  var catSection = d.categoryMonths ? renderCategorySection(d.categoryMonths) : "";
   var catOpts = '<option value="all">All categories</option>' + d.categories.map(function (c) {
     return '<option value="' + attr(c.cat) + '"' + (STATE.pcat === c.cat ? " selected" : "") + ">" + esc(c.cat) + "</option>";
   }).join("");
-  var filters = '<div class="section"><h2>Products</h2>' +
+  var filters = '<div class="section"><h2>Products' + (mon ? " · " + esc(d.months[0].label) : "") + '</h2>' +
     '<p class="note">All channels, from the full sales data (Swiggy, Zomato, In Store and others). Discount codes do not apply on this tab. ' +
-    'With discount = the order had a discount amount. Session is not used here.</p>' +
+    'With discount = the order had a discount amount. ' +
+    (mon ? "The last three months sit beside the selected month. " : "") + 'Session is not used here.</p>' +
     '<div class="frow"><input id="psearch" type="search" placeholder="Search product or category" value="' + attr(STATE.psearch) + '">' +
     '<select id="pcat">' + catOpts + "</select></div>" +
     '<div id="ptableBody"></div></div>';
-  $("out").innerHTML = kpis + charts + filters;
+  $("out").innerHTML = kpis + charts + catSection + filters;
+  renderCategoryTable();
   renderProductTable();
   if (STATE.focusSearch) { var s = $("psearch"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } STATE.focusSearch = false; }
+}
+function productRowPeriod(x) {
+  var tot = x.cur.yes.net + x.cur.no.net, totp = x.prev.yes.net + x.prev.no.net;
+  return "<tr><td class='l'>" + esc(x.item) + "</td><td class='l'>" + esc(x.cat) + "</td>" +
+    "<td>" + inr(x.cur.yes.inv) + "</td><td>" + inr(x.cur.no.inv) + "</td>" +
+    "<td>" + inr(x.cur.yes.net) + "</td><td>" + inr(x.cur.no.net) + "</td><td>" + inr(tot) + "</td>" +
+    "<td>" + (tot ? (x.cur.yes.net / tot * 100).toFixed(1) + "%" : "—") + "</td>" +
+    "<td>" + dpct(x.cur.yes.disc, x.cur.yes.gross) + "</td><td>" + growth(tot, totp) + "</td></tr>";
+}
+function productRowMonthly(x) {
+  var c = x.cur, tot = c.yes.net + c.no.net;
+  return "<tr><td class='l'>" + esc(x.item) + "</td><td class='l'>" + esc(x.cat) + "</td>" +
+    "<td>" + inr(c.yes.inv) + "</td><td>" + inr(c.no.inv) + "</td>" +
+    "<td>" + inr(c.yes.net) + "</td><td>" + inr(c.no.net) + "</td><td>" + inr(tot) + "</td>" +
+    "<td>" + (tot ? (c.yes.net / tot * 100).toFixed(1) + "%" : "—") + "</td>" +
+    "<td>" + dpct(c.yes.disc, c.yes.gross) + "</td><td>" + growth(tot, x.m[1]) + "</td>" +
+    "<td>" + inr(x.m[1]) + "</td><td>" + inr(x.m[2]) + "</td><td>" + inr(x.m[3]) + "</td></tr>";
 }
 function renderProductTable() {
   var d = LAST.products;
   var box = $("ptableBody");
   if (!d || !box) return;
+  var mon = !!d.monthly;
   var q = STATE.psearch.trim().toLowerCase();
   var rows = d.products.filter(function (x) {
     return (STATE.pcat === "all" || x.cat === STATE.pcat) && (!q || (x.item + " " + x.cat).toLowerCase().indexOf(q) >= 0);
@@ -471,20 +500,69 @@ function renderProductTable() {
   if (STATE.ppage > pages - 1) STATE.ppage = pages - 1;
   if (STATE.ppage < 0) STATE.ppage = 0;
   var slice = rows.slice(STATE.ppage * PPAGE, STATE.ppage * PPAGE + PPAGE);
-  var body = slice.map(function (x) {
-    var tot = x.cur.yes.net + x.cur.no.net, totp = x.prev.yes.net + x.prev.no.net;
-    return "<tr><td class='l'>" + esc(x.item) + "</td><td class='l'>" + esc(x.cat) + "</td>" +
-      "<td>" + inr(x.cur.yes.inv) + "</td><td>" + inr(x.cur.no.inv) + "</td>" +
-      "<td>" + inr(x.cur.yes.net) + "</td><td>" + inr(x.cur.no.net) + "</td><td>" + inr(tot) + "</td>" +
-      "<td>" + (tot ? (x.cur.yes.net / tot * 100).toFixed(1) + "%" : "—") + "</td>" +
-      "<td>" + dpct(x.cur.yes.disc, x.cur.yes.gross) + "</td><td>" + growth(tot, totp) + "</td></tr>";
-  }).join("");
+  var body = slice.map(mon ? productRowMonthly : productRowPeriod).join("");
+  var head = mon
+    ? "<th class='l'>Product</th><th class='l'>Category</th><th>Orders with disc.</th><th>Orders without disc.</th>" +
+      "<th>Net with discount</th><th>Net without discount</th>" +
+      "<th>Total net<br><span class='sub'>Current Month · " + esc(d.months[0].label) + "</span></th>" +
+      "<th>Share with discount</th><th>Dis % (with discount)</th><th>Growth vs Last Month</th>" +
+      "<th>Last Month<br><span class='sub'>" + esc(d.months[1].label) + "</span></th>" +
+      "<th>Last 2 Month<br><span class='sub'>" + esc(d.months[2].label) + "</span></th>" +
+      "<th>Last 3 Month<br><span class='sub'>" + esc(d.months[3].label) + "</span></th>"
+    : "<th class='l'>Product</th><th class='l'>Category</th><th>Orders with disc.</th><th>Orders without disc.</th>" +
+      "<th>Net with discount</th><th>Net without discount</th><th>Total net</th><th>Share with discount</th>" +
+      "<th>Dis % (with discount)</th><th>Net growth</th>";
+  var span = mon ? 13 : 10;
   box.innerHTML = "<div class='pager'>" + rows.length + " products · page " + (STATE.ppage + 1) + " of " + pages +
     " <button class='ghost' data-pp='-1'" + (STATE.ppage <= 0 ? " disabled" : "") + ">◀ Previous</button>" +
     "<button class='ghost' data-pp='1'" + (STATE.ppage >= pages - 1 ? " disabled" : "") + ">Next ▶</button></div>" +
-    "<div class='scroll'><table><thead><tr><th class='l'>Product</th><th class='l'>Category</th><th>Orders with disc.</th><th>Orders without disc.</th>" +
-    "<th>Net with discount</th><th>Net without discount</th><th>Total net</th><th>Share with discount</th><th>Dis % (with discount)</th><th>Net growth</th></tr></thead>" +
-    "<tbody>" + (body || "<tr><td colspan='10' class='sub'>No products for these filters.</td></tr>") + "</tbody></table></div>";
+    "<div class='scroll'><table><thead><tr>" + head + "</tr></thead>" +
+    "<tbody>" + (body || "<tr><td colspan='" + span + "' class='sub'>No products for these filters.</td></tr>") + "</tbody></table></div>";
+}
+
+/* ---------- Category performance (the last four calendar months) ---------- */
+var CAT_METRICS = [["net", "Net Sales"], ["orders", "Orders"], ["qty", "Quantity"], ["disc", "Discount %"]];
+var CAT_CHANNELS = [["all", "All channels"], ["offline", "Offline (In Store)"], ["online", "Online (except In Store)"]];
+var CAT_HEAD = ["Current Month", "Last Month", "Last 2 Month", "Last 3 Month"];
+function renderCategorySection(cm) {
+  var missing = cm.months.filter(function (m, i) { return !cm.hasData[i]; }).map(function (m) { return m.label; });
+  var note = "Calendar months from the full sales data. Current month = the month of the date you chose, up to that date. " +
+    "Offline = In Store; Online = every other source." + (missing.length ? " No data yet for: " + missing.join(", ") + "." : "");
+  var opts = function (list, sel) {
+    return list.map(function (o) { return '<option value="' + o[0] + '"' + (sel === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
+  };
+  return '<div class="section"><h2>Category performance</h2><p class="note">' + note + '</p>' +
+    '<div class="frow"><select id="catMetric">' + opts(CAT_METRICS, STATE.catMetric) + "</select>" +
+    '<select id="catChannel">' + opts(CAT_CHANNELS, STATE.catChannel) + "</select></div>" +
+    '<div id="catTableBody"></div></div>';
+}
+function catValue(cell, metric) {
+  if (metric === "net") return cell.net;
+  if (metric === "orders") return cell.orders;
+  if (metric === "qty") return cell.qty;
+  return cell.gross ? cell.disc / cell.gross * 100 : null;
+}
+function fmtCat(metric, v) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  if (metric === "disc") return v.toFixed(1) + "%";
+  return v === 0 ? "—" : inr(v);
+}
+function renderCategoryTable() {
+  var d = LAST.products, box = $("catTableBody");
+  if (!d || !d.categoryMonths || !box) return;
+  var cm = d.categoryMonths, ch = STATE.catChannel, metric = STATE.catMetric;
+  var head = "<th class='l'>Category Name</th>" + CAT_HEAD.map(function (h, i) {
+    return "<th>" + h + "<br><span class='sub'>" + esc(cm.months[i].label) + "</span></th>";
+  }).join("");
+  var total = "<tr class='tot'><td class='l'>Total</td>" + cm.totals[ch].map(function (c) {
+    return "<td>" + fmtCat(metric, catValue(c, metric)) + "</td>";
+  }).join("") + "</tr>";
+  var rows = cm.categories.map(function (c) {
+    return "<tr><td class='l'>" + esc(c.cat) + "</td>" + c.cells[ch].map(function (cell) {
+      return "<td>" + fmtCat(metric, catValue(cell, metric)) + "</td>";
+    }).join("") + "</tr>";
+  }).join("");
+  box.innerHTML = "<div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + total + rows + "</tbody></table></div>";
 }
 
 /* ---------- Discount analysis: AOV and discount bands ---------- */
@@ -567,6 +645,8 @@ document.addEventListener("change", function (e) {
   var t = e.target;
   if (["anchor", "kind", "brand", "region", "source", "session"].indexOf(t.id) >= 0) { calc(); return; }
   if (t.id === "pcat") { STATE.pcat = t.value; STATE.ppage = 0; renderProductTable(); return; }
+  if (t.id === "catMetric") { STATE.catMetric = t.value; renderCategoryTable(); return; }
+  if (t.id === "catChannel") { STATE.catChannel = t.value; renderCategoryTable(); return; }
   if (t.hasAttribute && t.hasAttribute("data-code")) {
     var code = t.getAttribute("data-code");
     STATE.codes = t.checked ? addUnique(STATE.codes, [code]) : STATE.codes.filter(function (x) { return x !== code; });
