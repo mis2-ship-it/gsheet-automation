@@ -79,9 +79,12 @@ svg text{font-family:Arial,Helvetica,sans-serif}
         <option value="weekly">Weekly</option>
         <option value="monthly" selected>Monthly</option>
         <option value="mtd">Month to date</option>
+        <option value="custom">Custom dates</option>
         <option value="live" id="optLive">Live (today so far)</option>
       </select>
     </label>
+    <label id="fromWrap" style="display:none">From <input id="dfrom" type="date"></label>
+    <label id="toWrap" style="display:none">To <input id="dto" type="date"></label>
     <label>Brand <select id="brand"><option value="all">All brands</option></select></label>
     <label>Region <select id="region"><option value="all">All regions</option></select></label>
     <label>Source <select id="source"><option value="all">All sources</option></select></label>
@@ -105,9 +108,13 @@ svg text{font-family:Arial,Helvetica,sans-serif}
 var OPTS = null;
 var LAST = { overview: null, products: null, analysis: null };
 var PAGE = 20, PPAGE = 25;
-var STATE = { tab: "overview", page: 0, cats: null, search: "", open: {}, searching: false,
+var STATE = { tab: "overview", page: 0, searching: false,
   codes: [], codeSearch: "", dd: false, timer: null,
   psearch: "", pcat: "all", ppage: 0, catMetric: "net", catChannel: "all", band: { AOV: {}, Discount: {} } };
+// Category block state, one per tab: the same structure on Overview, Product performance and Discount analysis.
+var CB = { overview: { cats: null, search: "", open: {}, searching: false },
+           products: { cats: null, search: "", open: {}, searching: false },
+           analysis: { cats: null, search: "", open: {}, searching: false } };
 var C = { yes: "#34D399", no: "#60A5FA", acc: "#3B82F6", warn: "#F87171", grid: "#24314f", text: "#9AA8C2", ink: "#E5ECF8" };
 
 /* ---------- helpers ---------- */
@@ -130,13 +137,21 @@ function ptsChange(c, p) {
   var diff = (c.disc / c.gross - p.disc / p.gross) * 100;
   return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
 }
+function pctPts(cur, prev) {
+  var diff = cur - prev;
+  return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
+}
 function kpiCard(label, value, sub) {
   return '<div class="kpi"><div class="kl">' + label + '</div><div class="kv">' + value + '</div><div class="ks">' + (sub || "") + "</div></div>";
 }
 function addUnique(list, add) { return list.concat(add.filter(function (x) { return list.indexOf(x) < 0; })); }
+function addDays(iso, n) {
+  var p = iso.split("-").map(Number);
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] + n)).toISOString().slice(0, 10);
+}
 function status(text) { $("status").textContent = text; }
 function fail(e) { status("Error: " + (e && e.message ? e.message : e)); }
-function sumNet(arr, key) { return arr.reduce(function (s, b) { return s + b[key].net; }, 0); }
+function short_(t, n) { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; }
 
 /* ---------- charts (SVG, no outside libraries) ---------- */
 function svgHBars(items, color) {
@@ -214,38 +229,52 @@ function svgDonut(parts) {
   });
   return s + "</svg>";
 }
-function short_(t, n) { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; }
 function legendStack() {
   return '<div class="legend"><span class="dot" style="background:' + C.yes + '"></span>With discount<span class="dot" style="background:' + C.no + '"></span>Without discount</div>';
 }
 
-/* ---------- filters ---------- */
+/* ---------- filters and periods ---------- */
 function fill(id, list, allLabel) {
   $(id).innerHTML = '<option value="all">' + allLabel + "</option>" + list.map(function (v) {
     return '<option value="' + attr(v) + '">' + esc(v) + "</option>";
   }).join("");
 }
+function syncPeriodUI() {
+  var custom = $("kind").value === "custom";
+  $("fromWrap").style.display = custom ? "" : "none";
+  $("toWrap").style.display = custom ? "" : "none";
+  if (custom) {
+    if (!$("dto").value) $("dto").value = $("anchor").value;
+    if (!$("dfrom").value) $("dfrom").value = addDays($("dto").value, -6);
+  }
+}
 function setOptions(o) {
   OPTS = o;
   var a = $("anchor");
   a.min = o.first; a.max = o.latest; a.value = o.latest;
+  var f = $("dfrom"), t = $("dto");
+  f.min = t.min = o.first; f.max = t.max = o.latest;
+  t.value = o.latest; f.value = addDays(o.latest, -6);
   fill("brand", o.brands, "All brands");
   fill("region", o.regions, "All regions");
   fill("source", o.sources, "All sources");
   fill("session", o.sessions, "All sessions");
   renderCodePicker();
+  syncPeriodUI();
   calc();
 }
 function params() {
-  return { anchor: $("anchor").value, kind: $("kind").value, brand: $("brand").value, region: $("region").value,
-    source: $("source").value, session: $("session").value, codes: STATE.codes.slice() };
+  return { anchor: $("anchor").value, kind: $("kind").value, from: $("dfrom").value, to: $("dto").value,
+    brand: $("brand").value, region: $("region").value, source: $("source").value, session: $("session").value,
+    codes: STATE.codes.slice() };
 }
 function calc() {
   var p = params(), tab = STATE.tab;
-  if (tab !== "overview" && p.kind === "live") { $("kind").value = "monthly"; p.kind = "monthly"; }
+  if (tab !== "overview" && p.kind === "live") { $("kind").value = "monthly"; p.kind = "monthly"; syncPeriodUI(); }
   $("optLive").disabled = tab !== "overview";
   $("anchor").disabled = p.kind === "live";
   if (p.kind !== "live" && !p.anchor) { status("Choose a date."); return; }
+  if (p.kind === "custom" && (!p.from || !p.to)) { status("Choose the from and to dates."); return; }
   status(tab === "overview" ? (p.kind === "live" ? "Calculating today so far…" : "Calculating…") : "Calculating…");
   var run = google.script.run.withFailureHandler(fail);
   if (tab === "products") run.withSuccessHandler(onProducts).getProductData(p);
@@ -265,6 +294,52 @@ function setTab(t) {
   calc();
 }
 
+/* ---------- Category block: the same on Overview, Product performance and Discount analysis ---------- */
+// Category rows show Txn (orders, each order once), Qty, Gross, Discount, Net and Dis %. Click a category to see its items.
+function catBlockHtml(scope, cats, allCats, title, note) {
+  var st = CB[scope];
+  var q = st.search.trim().toLowerCase();
+  var catOn = function (c) { return st.cats === null || st.cats.indexOf(c) >= 0; };
+  var list = (cats || []).filter(function (g) { return catOn(g.cat) && (!q || g.cat.toLowerCase().indexOf(q) >= 0); });
+  var checks = allCats.filter(function (c) { return !q || c.toLowerCase().indexOf(q) >= 0; }).slice(0, 300).map(function (c) {
+    return "<label class='chk'><input type='checkbox' data-cb='" + scope + "' data-cat='" + attr(c) + "'" + (catOn(c) ? " checked" : "") + "> " + esc(c) + "</label>";
+  }).join("") || "<span class='sub'>No category matches.</span>";
+  var selected = st.cats === null ? allCats.length : st.cats.length;
+  var body = "";
+  list.forEach(function (g) {
+    var open = !!st.open[g.cat], c = g.cur;
+    body += "<tr class='clickable' data-cb='" + scope + "' data-catname='" + attr(g.cat) + "'><td class='l'>" + (open ? "▾ " : "▸ ") + esc(g.cat) + "</td>" +
+      "<td>" + inr(c.inv) + "</td><td>" + inr(c.qty) + "</td><td>" + inr(c.gross) + "</td><td>" + inr(c.disc) + "</td><td>" + inr(c.net) + "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
+    if (open) {
+      g.items.forEach(function (x) {
+        var k = x.cur;
+        body += "<tr class='drill'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.item) + "</td><td>" + inr(k.inv) + "</td><td>" + inr(k.qty) +
+          "</td><td>" + inr(k.gross) + "</td><td>" + inr(k.disc) + "</td><td>" + inr(k.net) + "</td><td>" + dpct(k.disc, k.gross) + "</td></tr>";
+      });
+    }
+  });
+  return "<div class='section'><h2>" + title + "</h2><p class='note'>" + note + "</p>" +
+    "<div class='grid2'><div><label>Search category<input data-cbsearch='" + scope + "' type='search' value='" + attr(st.search) + "' placeholder='e.g. Coffee'></label>" +
+    "<p class='note'><button class='ghost' data-cb='" + scope + "' data-cat-all='1'>All</button><button class='ghost' data-cb='" + scope + "' data-cat-none='1'>None</button> " +
+    selected + " of " + allCats.length + " selected</p></div>" +
+    "<div class='clist'>" + checks + "</div></div>" +
+    "<div class='scroll'><table><thead><tr><th class='l'>Category</th><th>Txn</th><th>Qty</th><th>Gross</th><th>Discount</th><th>Net</th><th>Dis %</th></tr></thead><tbody>" +
+    (body || "<tr><td colspan='7' class='sub'>No categories for this selection.</td></tr>") + "</tbody></table></div></div>";
+}
+function rerender(scope) {
+  if (scope === "overview") renderOverview();
+  else if (scope === "products") renderProducts();
+  else if (scope === "analysis") renderAnalysis();
+  restoreFocus(scope);
+}
+function restoreFocus(scope) {
+  var st = CB[scope];
+  if (!st.searching) return;
+  st.searching = false;
+  var el = document.querySelector("[data-cbsearch='" + scope + "']");
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
 /* ---------- Overview: discount codes ---------- */
 function onOverview(d) {
   LAST.overview = d;
@@ -280,24 +355,23 @@ function renderOverview() {
   if (d.meta.kind === "live") {
     html = liveKpiBlock(d) + codeBlock(d) + liveHourBlock(d);
   } else {
-    html = "<p class='note'>Discount codes: Swiggy and Zomato orders only.</p>" + overviewKpis(d) + overviewCharts(d) + codeBlock(d) + trendBlock(d) + categoryBlock(d);
+    html = "<p class='note'>Discount codes: Swiggy and Zomato orders only.</p>" + overviewKpis(d) + overviewCharts(d) + codeBlock(d) + trendBlock(d) +
+      catBlockHtml("overview", d.cats, OPTS.categories, "By category",
+        "Click a category to see its items. Txn counts each order once in the category.");
   }
   $("out").innerHTML = html;
-  if (STATE.searching) {
-    var s = $("csearch");
-    if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
-    STATE.searching = false;
-  }
+  restoreFocus("overview");
 }
 function overviewKpis(d) {
   var useAll = d.meta.codes.length === 0;
   var c = useAll ? d.overall.cur : d.totals.cur, p = useAll ? d.overall.prev : d.totals.prev;
   var aov = c.inv ? c.net / c.inv : 0, paov = p.inv ? p.net / p.inv : 0;
+  var vs = d.meta.kind === "custom" ? "vs previous period" : "vs previous";
   return '<div class="kpis">' +
-    kpiCard("Net revenue", inr(c.net), growth(c.net, p.net) + " vs previous") +
-    kpiCard("Orders", inr(c.inv), growth(c.inv, p.inv) + " vs previous") +
-    kpiCard("Average order value", inr(aov), growth(aov, paov) + " vs previous") +
-    kpiCard("Discount % of gross", dpct(c.disc, c.gross), ptsChange(c, p) + " vs previous") +
+    kpiCard("Net revenue", inr(c.net), growth(c.net, p.net) + " " + vs) +
+    kpiCard("Orders", inr(c.inv), growth(c.inv, p.inv) + " " + vs) +
+    kpiCard("Average order value", inr(aov), growth(aov, paov) + " " + vs) +
+    kpiCard("Discount % of gross", dpct(c.disc, c.gross), ptsChange(c, p) + " " + vs) +
     "</div>" + (useAll ? "" : "<p class='note'>KPIs show the selected codes only.</p>");
 }
 function overviewCharts(d) {
@@ -356,45 +430,6 @@ function trendBlock(d) {
     "<th>Items</th><th>Growth</th><th>Qty</th><th>Growth</th><th>Dis %</th><th>Dis % change</th></tr></thead><tbody>" +
     body + "</tbody></table></div></div>";
 }
-function categoryBlock(d) {
-  var q = STATE.search.trim().toLowerCase();
-  var groups = {};
-  d.items.forEach(function (x) {
-    if (!groups[x.cat]) groups[x.cat] = { name: x.cat, items: [], cur: { inv: 0, qty: 0, gross: 0, disc: 0, net: 0 } };
-    groups[x.cat].items.push(x);
-    var g = groups[x.cat].cur;
-    g.qty += x.cur.qty; g.gross += x.cur.gross; g.disc += x.cur.disc; g.net += x.cur.net;
-  });
-  var catOn = function (c) { return STATE.cats === null || STATE.cats.indexOf(c) >= 0; };
-  var list = Object.keys(groups).map(function (k) { return groups[k]; })
-    .filter(function (g) { return catOn(g.name) && (!q || g.name.toLowerCase().indexOf(q) >= 0); })
-    .sort(function (a, b) { return b.cur.net - a.cur.net; });
-  var checks = OPTS.categories.filter(function (c) { return !q || c.toLowerCase().indexOf(q) >= 0; }).slice(0, 300).map(function (c) {
-    return "<label class='chk'><input type='checkbox' data-cat='" + attr(c) + "'" + (catOn(c) ? " checked" : "") + "> " + esc(c) + "</label>";
-  }).join("") || "<span class='sub'>No category matches.</span>";
-  var selected = STATE.cats === null ? OPTS.categories.length : STATE.cats.length;
-  var body = "";
-  list.forEach(function (g) {
-    var open = !!STATE.open[g.name], c = g.cur;
-    body += "<tr class='clickable' data-catname='" + attr(g.name) + "'><td class='l'>" + (open ? "▾ " : "▸ ") + esc(g.name) + "</td><td>—</td><td>" +
-      inr(c.qty) + "</td><td>" + inr(c.gross) + "</td><td>" + inr(c.disc) + "</td><td>" + inr(c.net) + "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
-    if (open) {
-      g.items.slice().sort(function (a, b) { return b.cur.net - a.cur.net; }).forEach(function (x) {
-        var k = x.cur;
-        body += "<tr class='drill'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.item) + "</td><td>" + inr(k.inv) + "</td><td>" + inr(k.qty) +
-          "</td><td>" + inr(k.gross) + "</td><td>" + inr(k.disc) + "</td><td>" + inr(k.net) + "</td><td>" + dpct(k.disc, k.gross) + "</td></tr>";
-      });
-    }
-  });
-  return "<div class='section'><h2>By category</h2>" +
-    "<p class='note'>Click a category to see its items. Click it again to hide them. Txn is not added up across items.</p>" +
-    "<div class='grid2'><div><label>Search category<input id='csearch' type='search' value='" + attr(STATE.search) + "' placeholder='e.g. Coffee'></label>" +
-    "<p class='note'><button class='ghost' data-cat-all='1'>All</button><button class='ghost' data-cat-none='1'>None</button> " +
-    selected + " of " + OPTS.categories.length + " selected</p></div>" +
-    "<div class='clist'>" + checks + "</div></div>" +
-    "<div class='scroll'><table><thead><tr><th class='l'>Category</th><th>Txn</th><th>Qty</th><th>Gross</th><th>Discount</th><th>Net</th><th>Dis %</th></tr></thead><tbody>" +
-    (body || "<tr><td colspan='7' class='sub'>No categories for this selection.</td></tr>") + "</tbody></table></div></div>";
-}
 function liveKpiBlock(d) {
   var c = d.totals.cur, p = d.totals.prev;
   var line = function (name, a, b) {
@@ -427,15 +462,56 @@ function onProducts(d) {
   status("Showing " + d.meta.cur + " against " + d.meta.prev + ". Product data covers " + d.meta.dataFrom + " to " + d.meta.dataTo + ".");
   renderProducts();
 }
-function pctPts(cur, prev) {
-  var diff = cur - prev;
-  return '<span class="' + (diff >= 0 ? "up" : "down") + '">' + (diff >= 0 ? "▲ " : "▼ ") + Math.abs(diff).toFixed(1) + " pts</span>";
+// Category performance: the last four calendar months, with the dates each month covers.
+var CAT_METRICS = [["net", "Net Sales"], ["orders", "Orders"], ["qty", "Quantity"], ["disc", "Discount %"]];
+var CAT_CHANNELS = [["all", "All channels"], ["offline", "Offline (In Store)"], ["online", "Online (except In Store)"]];
+var CAT_HEAD = ["Current Month", "Last Month", "Last 2 Month", "Last 3 Month"];
+function renderCategorySection(cm) {
+  var missing = cm.months.filter(function (m, i) { return !cm.hasData[i]; }).map(function (m) { return m.label; });
+  var note = "Calendar months from the full sales data. Current month = the month of the date you chose, up to that date. " +
+    "Offline = In Store; Online = every other source." + (missing.length ? " No data yet for: " + missing.join(", ") + "." : "");
+  var opts = function (list, sel) {
+    return list.map(function (o) { return '<option value="' + o[0] + '"' + (sel === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
+  };
+  return '<div class="section"><h2>Category performance</h2><p class="note">' + note + '</p>' +
+    '<div class="frow"><select id="catMetric">' + opts(CAT_METRICS, STATE.catMetric) + "</select>" +
+    '<select id="catChannel">' + opts(CAT_CHANNELS, STATE.catChannel) + "</select></div>" +
+    '<div id="catTableBody"></div></div>';
 }
+function catValue(cell, metric) {
+  if (metric === "net") return cell.net;
+  if (metric === "orders") return cell.orders;
+  if (metric === "qty") return cell.qty;
+  return cell.gross ? cell.disc / cell.gross * 100 : null;
+}
+function fmtCat(metric, v) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  if (metric === "disc") return v.toFixed(1) + "%";
+  return v === 0 ? "—" : inr(v);
+}
+function renderCategoryTable() {
+  var d = LAST.products, box = $("catTableBody");
+  if (!d || !d.categoryMonths || !box) return;
+  var cm = d.categoryMonths, ch = STATE.catChannel, metric = STATE.catMetric;
+  var head = "<th class='l'>Category Name</th>" + CAT_HEAD.map(function (h, i) {
+    return "<th>" + h + "<br><span class='sub'>" + esc(cm.months[i].label) + " · " + esc(cm.months[i].span) + "</span></th>";
+  }).join("");
+  var total = "<tr class='tot'><td class='l'>Total</td>" + cm.totals[ch].map(function (c) {
+    return "<td>" + fmtCat(metric, catValue(c, metric)) + "</td>";
+  }).join("") + "</tr>";
+  var rows = cm.categories.map(function (c) {
+    return "<tr><td class='l'>" + esc(c.cat) + "</td>" + c.cells[ch].map(function (cell) {
+      return "<td>" + fmtCat(metric, catValue(cell, metric)) + "</td>";
+    }).join("") + "</tr>";
+  }).join("");
+  box.innerHTML = "<div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + total + rows + "</tbody></table></div>";
+}
+
 function renderProducts() {
   var d = LAST.products;
   if (!d) return;
-  var mon = !!d.monthly;
-  var vs = mon ? "vs " + d.months[1].label : "vs previous";
+  var mon = !!d.monthly, cus = d.meta.kind === "custom";
+  var vs = mon ? "vs " + d.months[1].label + " (" + d.months[1].span + ")" : (cus ? "vs previous period" : "vs previous");
   var t = d.totals.cur, pv = d.totals.prev;
   var totCur = t.yes.net + t.no.net, totPrev = pv.yes.net + pv.no.net;
   var share = totCur ? t.yes.net / totCur : 0;
@@ -444,7 +520,7 @@ function renderProducts() {
   var sold = d.products.filter(function (x) { return x.cur.yes.net + x.cur.no.net > 0; }).length;
   var soldPrev = d.products.filter(function (x) { return x.prev.yes.net + x.prev.no.net > 0; }).length;
   var kpis = '<div class="kpis">' +
-    kpiCard(mon ? "Net revenue · " + d.months[0].label : "Net revenue", inr(totCur), growth(totCur, totPrev) + " " + vs) +
+    kpiCard(mon ? "Net revenue · " + d.months[0].label + " (" + d.months[0].span + ")" : "Net revenue", inr(totCur), growth(totCur, totPrev) + " " + vs) +
     kpiCard("With discount", inr(t.yes.net), (share * 100).toFixed(1) + "% of net · " + growth(t.yes.net, pv.yes.net) + " " + vs) +
     kpiCard("Without discount", inr(t.no.net), ((1 - share) * 100).toFixed(1) + "% of net · " + growth(t.no.net, pv.no.net) + " " + vs) +
     kpiCard("Discount on discounted sales", discCur.toFixed(1) + "%", pctPts(discCur, discPrev) + " " + vs) +
@@ -455,17 +531,20 @@ function renderProducts() {
     '<div class="card"><h3>Top 10 products by net revenue</h3>' + legendStack() + svgStackH(topP) + "</div>" +
     '<div class="card"><h3>Top 10 categories by net revenue</h3>' + legendStack() + svgStackH(topC) + "</div></div>";
   var catSection = d.categoryMonths ? renderCategorySection(d.categoryMonths) : "";
+  var block = catBlockHtml("products", d.cats || [], OPTS.categories, "By category",
+    "Category totals count each order once. Click a category to see its products.");
   var catOpts = '<option value="all">All categories</option>' + d.categories.map(function (c) {
     return '<option value="' + attr(c.cat) + '"' + (STATE.pcat === c.cat ? " selected" : "") + ">" + esc(c.cat) + "</option>";
   }).join("");
-  var filters = '<div class="section"><h2>Products' + (mon ? " · " + esc(d.months[0].label) : "") + '</h2>' +
-    '<p class="note">All channels, from the full sales data (Swiggy, Zomato, In Store and others). Discount codes do not apply on this tab. ' +
-    'With discount = the order had a discount amount. ' +
+  var heading = mon ? "Products · " + d.months[0].label + " (" + d.months[0].span + ")" : "Products";
+  var filters = '<div class="section"><h2>' + esc(heading) + '</h2>' +
+    '<p class="note">All channels, from the full sales data (Swiggy, Zomato, In Store and others). Charges are not products, so they are not listed here. ' +
+    'Discount codes do not apply on this tab. With discount = the order had a discount amount. ' +
     (mon ? "The last three months sit beside the selected month. " : "") + 'Session is not used here.</p>' +
     '<div class="frow"><input id="psearch" type="search" placeholder="Search product or category" value="' + attr(STATE.psearch) + '">' +
     '<select id="pcat">' + catOpts + "</select></div>" +
     '<div id="ptableBody"></div></div>';
-  $("out").innerHTML = kpis + charts + catSection + filters;
+  $("out").innerHTML = kpis + charts + catSection + block + filters;
   renderCategoryTable();
   renderProductTable();
   if (STATE.focusSearch) { var s = $("psearch"); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } STATE.focusSearch = false; }
@@ -504,11 +583,11 @@ function renderProductTable() {
   var head = mon
     ? "<th class='l'>Product</th><th class='l'>Category</th><th>Orders with disc.</th><th>Orders without disc.</th>" +
       "<th>Net with discount</th><th>Net without discount</th>" +
-      "<th>Total net<br><span class='sub'>Current Month · " + esc(d.months[0].label) + "</span></th>" +
+      "<th>Total net<br><span class='sub'>Current Month · " + esc(d.months[0].label) + " (" + esc(d.months[0].span) + ")</span></th>" +
       "<th>Share with discount</th><th>Dis % (with discount)</th><th>Growth vs Last Month</th>" +
-      "<th>Last Month<br><span class='sub'>" + esc(d.months[1].label) + "</span></th>" +
-      "<th>Last 2 Month<br><span class='sub'>" + esc(d.months[2].label) + "</span></th>" +
-      "<th>Last 3 Month<br><span class='sub'>" + esc(d.months[3].label) + "</span></th>"
+      "<th>Last Month<br><span class='sub'>" + esc(d.months[1].label) + " (" + esc(d.months[1].span) + ")</span></th>" +
+      "<th>Last 2 Month<br><span class='sub'>" + esc(d.months[2].label) + " (" + esc(d.months[2].span) + ")</span></th>" +
+      "<th>Last 3 Month<br><span class='sub'>" + esc(d.months[3].label) + " (" + esc(d.months[3].span) + ")</span></th>"
     : "<th class='l'>Product</th><th class='l'>Category</th><th>Orders with disc.</th><th>Orders without disc.</th>" +
       "<th>Net with discount</th><th>Net without discount</th><th>Total net</th><th>Share with discount</th>" +
       "<th>Dis % (with discount)</th><th>Net growth</th>";
@@ -520,51 +599,6 @@ function renderProductTable() {
     "<tbody>" + (body || "<tr><td colspan='" + span + "' class='sub'>No products for these filters.</td></tr>") + "</tbody></table></div>";
 }
 
-/* ---------- Category performance (the last four calendar months) ---------- */
-var CAT_METRICS = [["net", "Net Sales"], ["orders", "Orders"], ["qty", "Quantity"], ["disc", "Discount %"]];
-var CAT_CHANNELS = [["all", "All channels"], ["offline", "Offline (In Store)"], ["online", "Online (except In Store)"]];
-var CAT_HEAD = ["Current Month", "Last Month", "Last 2 Month", "Last 3 Month"];
-function renderCategorySection(cm) {
-  var missing = cm.months.filter(function (m, i) { return !cm.hasData[i]; }).map(function (m) { return m.label; });
-  var note = "Calendar months from the full sales data. Current month = the month of the date you chose, up to that date. " +
-    "Offline = In Store; Online = every other source." + (missing.length ? " No data yet for: " + missing.join(", ") + "." : "");
-  var opts = function (list, sel) {
-    return list.map(function (o) { return '<option value="' + o[0] + '"' + (sel === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
-  };
-  return '<div class="section"><h2>Category performance</h2><p class="note">' + note + '</p>' +
-    '<div class="frow"><select id="catMetric">' + opts(CAT_METRICS, STATE.catMetric) + "</select>" +
-    '<select id="catChannel">' + opts(CAT_CHANNELS, STATE.catChannel) + "</select></div>" +
-    '<div id="catTableBody"></div></div>';
-}
-function catValue(cell, metric) {
-  if (metric === "net") return cell.net;
-  if (metric === "orders") return cell.orders;
-  if (metric === "qty") return cell.qty;
-  return cell.gross ? cell.disc / cell.gross * 100 : null;
-}
-function fmtCat(metric, v) {
-  if (v === null || v === undefined || isNaN(v)) return "—";
-  if (metric === "disc") return v.toFixed(1) + "%";
-  return v === 0 ? "—" : inr(v);
-}
-function renderCategoryTable() {
-  var d = LAST.products, box = $("catTableBody");
-  if (!d || !d.categoryMonths || !box) return;
-  var cm = d.categoryMonths, ch = STATE.catChannel, metric = STATE.catMetric;
-  var head = "<th class='l'>Category Name</th>" + CAT_HEAD.map(function (h, i) {
-    return "<th>" + h + "<br><span class='sub'>" + esc(cm.months[i].label) + "</span></th>";
-  }).join("");
-  var total = "<tr class='tot'><td class='l'>Total</td>" + cm.totals[ch].map(function (c) {
-    return "<td>" + fmtCat(metric, catValue(c, metric)) + "</td>";
-  }).join("") + "</tr>";
-  var rows = cm.categories.map(function (c) {
-    return "<tr><td class='l'>" + esc(c.cat) + "</td>" + c.cells[ch].map(function (cell) {
-      return "<td>" + fmtCat(metric, catValue(cell, metric)) + "</td>";
-    }).join("") + "</tr>";
-  }).join("");
-  box.innerHTML = "<div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + total + rows + "</tbody></table></div>";
-}
-
 /* ---------- Discount analysis: AOV and discount bands ---------- */
 function onBands(d) {
   LAST.analysis = d;
@@ -574,10 +608,14 @@ function onBands(d) {
 function renderAnalysis() {
   var d = LAST.analysis;
   if (!d) return;
-  $("out").innerHTML = "<p class='note'>All channels, from the full sales data (Swiggy, Zomato, In Store and others). Session applies to the band totals; the products under a band are not split by session.</p>" + bandSection(d, "AOV", "Order value (AOV) bands", d.aov,
+  $("out").innerHTML = "<p class='note'>All channels, from the full sales data (Swiggy, Zomato, In Store and others). Session applies to the band totals; the products under a band are not split by session.</p>" +
+    bandSection(d, "AOV", "Order value (AOV) bands", d.aov,
       "Order value is the net amount of an order. Bands are upper-inclusive, as on the Sales dashboard: 200 is in 100-200.") +
     bandSection(d, "Discount", "Discount % bands", d.discount,
-      "Discount % is the order's discount divided by its gross amount. 0% means no discount.");
+      "Discount % is the order's discount divided by its gross amount. 0% means no discount.") +
+    catBlockHtml("analysis", d.cats || [], OPTS.categories, "By category",
+      "All orders in the period, for the items sold. Not split by band. Click a category to see its products.");
+  restoreFocus("analysis");
 }
 function bandSection(d, kind, title, bands, note) {
   var orders = bands.reduce(function (s, b) { return s + b.cur.inv; }, 0);
@@ -643,7 +681,8 @@ document.querySelectorAll("#tabs button").forEach(function (b) {
 });
 document.addEventListener("change", function (e) {
   var t = e.target;
-  if (["anchor", "kind", "brand", "region", "source", "session"].indexOf(t.id) >= 0) { calc(); return; }
+  if (t.id === "kind") { syncPeriodUI(); calc(); return; }
+  if (["anchor", "brand", "region", "source", "session", "dfrom", "dto"].indexOf(t.id) >= 0) { calc(); return; }
   if (t.id === "pcat") { STATE.pcat = t.value; STATE.ppage = 0; renderProductTable(); return; }
   if (t.id === "catMetric") { STATE.catMetric = t.value; renderCategoryTable(); return; }
   if (t.id === "catChannel") { STATE.catChannel = t.value; renderCategoryTable(); return; }
@@ -654,20 +693,26 @@ document.addEventListener("change", function (e) {
     scheduleCalc();
     return;
   }
-  if (t.hasAttribute && t.hasAttribute("data-cat")) {
-    var c = t.getAttribute("data-cat");
-    var base = STATE.cats === null ? OPTS.categories.slice() : STATE.cats.slice();
-    STATE.cats = t.checked ? base.concat(base.indexOf(c) < 0 ? [c] : []) : base.filter(function (x) { return x !== c; });
-    renderOverview();
+  if (t.hasAttribute && t.hasAttribute("data-cb") && t.hasAttribute("data-cat")) {
+    var sc = t.getAttribute("data-cb"), st = CB[sc], c = t.getAttribute("data-cat");
+    var base = st.cats === null ? OPTS.categories.slice() : st.cats.slice();
+    st.cats = t.checked ? base.concat(base.indexOf(c) < 0 ? [c] : []) : base.filter(function (x) { return x !== c; });
+    rerender(sc);
   }
 });
 document.addEventListener("focusin", function (e) {
   if (e.target.id === "codeSearch") { STATE.dd = true; renderCodePicker(); }
 });
 document.addEventListener("input", function (e) {
-  if (e.target.id === "codeSearch") { STATE.codeSearch = e.target.value; STATE.dd = true; renderCodePicker(); return; }
-  if (e.target.id === "psearch") { STATE.psearch = e.target.value; STATE.ppage = 0; renderProductTable(); return; }
-  if (e.target.id === "csearch") { STATE.search = e.target.value; STATE.searching = true; renderOverview(); }
+  var t = e.target;
+  if (t.id === "codeSearch") { STATE.codeSearch = t.value; STATE.dd = true; renderCodePicker(); return; }
+  if (t.id === "psearch") { STATE.psearch = t.value; STATE.ppage = 0; renderProductTable(); return; }
+  if (t.hasAttribute && t.hasAttribute("data-cbsearch")) {
+    var sc = t.getAttribute("data-cbsearch");
+    CB[sc].search = t.value;
+    CB[sc].searching = true;
+    rerender(sc);
+  }
 });
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape" && STATE.dd) { STATE.dd = false; renderCodePicker(); }
@@ -685,12 +730,18 @@ document.addEventListener("click", function (e) {
   if (pg) { STATE.page += Number(pg.getAttribute("data-pg")); renderOverview(); return; }
   var pp = has("[data-pp]");
   if (pp) { STATE.ppage += Number(pp.getAttribute("data-pp")); renderProductTable(); return; }
-  var cat = has("[data-catname]");
-  if (cat) { var n = cat.getAttribute("data-catname"); STATE.open[n] = !STATE.open[n]; renderOverview(); return; }
-  if (has("[data-cat-all],[data-cat-none]")) {
-    var all = has("[data-cat-all],[data-cat-none]");
-    STATE.cats = all.hasAttribute("data-cat-all") ? null : [];
-    renderOverview();
+  var cbRow = has("[data-cb][data-catname]");
+  if (cbRow) {
+    var sc1 = cbRow.getAttribute("data-cb"), n = cbRow.getAttribute("data-catname");
+    CB[sc1].open[n] = !CB[sc1].open[n];
+    rerender(sc1);
+    return;
+  }
+  var cbAll = has("[data-cb][data-cat-all],[data-cb][data-cat-none]");
+  if (cbAll) {
+    var sc2 = cbAll.getAttribute("data-cb");
+    CB[sc2].cats = cbAll.hasAttribute("data-cat-all") ? null : [];
+    rerender(sc2);
     return;
   }
   var band = has("[data-band]");
