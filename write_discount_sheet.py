@@ -59,6 +59,15 @@ DEFAULT_STORE_TYPE = "COCO"
 CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net"]
 PMONTH_COLS = ["Month", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
 ALL_CATEGORIES = "(all categories)"     # one row per group with the distinct orders across all categories
+CHARGE_ITEM = "Charges (not a product)"
+OTHER_ITEM = "Other differences (not a product)"
+NON_PRODUCT = (CHARGE_ITEM, OTHER_ITEM)
+ALL_ITEMS = "(all items)"               # one row per category with the distinct orders across all its items
+
+
+def products_only(rows):
+    """Rows for real products: charges and other differences are left out of the product views."""
+    return rows[~rows["item"].isin(NON_PRODUCT)]
 
 
 def keep_store(rows, store_type, label):
@@ -96,8 +105,13 @@ def aggregate(rows, keep_days=0):
         if len(days) > keep_days:
             rows = rows[rows["day"] >= days[-keep_days]]
     lab = rows.groupby(BASE_KEYS).agg(**AGG).reset_index().rename(columns=RENAME_BASE)
-    itm = (rows.groupby(BASE_KEYS + ["item", "category"]).agg(**AGG).reset_index()
+    prod_rows = products_only(rows)
+    itm = (prod_rows.groupby(BASE_KEYS + ["item", "category"]).agg(**AGG).reset_index()
            .rename(columns={**RENAME_BASE, "item": "Item", "category": "Category"}))
+    cat_all = (prod_rows.groupby(BASE_KEYS + ["category"]).agg(**AGG).reset_index()
+               .rename(columns={**RENAME_BASE, "category": "Category"}))
+    cat_all["Item"] = ALL_ITEMS
+    itm = pd.concat([itm, cat_all], ignore_index=True)
     for df in (lab, itm):
         for c in ["Qty", "Gross", "Discount", "Net"]:
             df[c] = df[c].astype(float).round(2)
@@ -142,24 +156,24 @@ def disc_band(disc, gross):
 
 
 def build_product_tabs(rows, days=PRODUCT_DAYS):
-    """Bucket, product and product-by-bucket tables from the completed item rows (last `days` days)."""
+    """Bucket and drill-down tables use the last `days` completed days. The product table (Disc_Prod) uses every day
+    in the rows. Charges and other differences are not products, so the product tables leave them out; the bucket
+    table keeps them, as the order totals do. Each category also gets an (all items) row with its distinct orders."""
     empty = (pd.DataFrame(columns=BUCKET_COLS), pd.DataFrame(columns=PROD_COLS), pd.DataFrame(columns=PBUCKET_COLS))
     if rows is None or rows.empty:
         return empty
-    r = clean_numbers(rows)
-    day_list = sorted(r["day"].unique())
-    if len(day_list) > days:
-        r = r[r["day"] >= day_list[-days]]
-    if r.empty:
-        return empty
-    r["invoiceNumber"] = r["invoiceNumber"].astype(str)
-    orders = r.groupby("invoiceNumber").agg(o_gross=("gross", "sum"), o_disc=("disc", "sum"), o_net=("net", "sum")).reset_index()
+    full = clean_numbers(rows)
+    full["invoiceNumber"] = full["invoiceNumber"].astype(str)
+    orders = full.groupby("invoiceNumber").agg(o_gross=("gross", "sum"), o_disc=("disc", "sum"), o_net=("net", "sum")).reset_index()
     orders["aov_i"] = aov_band(orders["o_net"])
     orders["disc_i"] = disc_band(orders["o_disc"], orders["o_gross"])
     orders["Discounted"] = np.where(orders["o_disc"] > 0, "Yes", "No")
-    r = r.merge(orders[["invoiceNumber", "aov_i", "disc_i", "Discounted"]], on="invoiceNumber", how="left")
-    r["aov"] = [AOV_LABELS[i] for i in r["aov_i"]]
-    r["dsc"] = [DISC_LABELS[i] for i in r["disc_i"]]
+    full = full.merge(orders[["invoiceNumber", "aov_i", "disc_i", "Discounted"]], on="invoiceNumber", how="left")
+    full["aov"] = [AOV_LABELS[i] for i in full["aov_i"]]
+    full["dsc"] = [DISC_LABELS[i] for i in full["disc_i"]]
+    day_list = sorted(full["day"].unique())
+    cutoff = day_list[-days] if len(day_list) > days else None
+    recent = full if cutoff is None else full[full["day"] >= cutoff]
 
     def agg(keys, frame):
         g = frame.groupby(keys).agg(Orders=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
@@ -171,17 +185,22 @@ def build_product_tabs(rows, days=PRODUCT_DAYS):
 
     names = {"day": "Date", "brand": "Brand", "region": "Region", "source": "Source", "session": "Session",
              "category": "Category", "item": "Item", "Discounted": "Discounted", "aov": "Bucket", "dsc": "Bucket"}
-    b_aov = agg(["day", "brand", "region", "source", "session", "aov"], r).rename(columns=names)
+    b_aov = agg(["day", "brand", "region", "source", "session", "aov"], recent).rename(columns=names)
     b_aov["Kind"] = "AOV"
-    b_dsc = agg(["day", "brand", "region", "source", "session", "dsc"], r).rename(columns=names)
+    b_dsc = agg(["day", "brand", "region", "source", "session", "dsc"], recent).rename(columns=names)
     b_dsc["Kind"] = "Discount"
     bucket = pd.concat([b_aov, b_dsc], ignore_index=True)[BUCKET_COLS]
 
-    prod = agg(["day", "brand", "region", "source", "Discounted", "category", "item"], r).rename(columns=names)[PROD_COLS]
+    products = products_only(full)
+    prod_items = agg(["day", "brand", "region", "source", "Discounted", "category", "item"], products).rename(columns=names)
+    prod_cats = agg(["day", "brand", "region", "source", "Discounted", "category"], products).rename(columns=names)
+    prod_cats["Item"] = ALL_ITEMS
+    prod = pd.concat([prod_items, prod_cats], ignore_index=True)[PROD_COLS]
 
-    p_aov = agg(["day", "brand", "region", "source", "aov", "category", "item"], r).rename(columns=names)
+    recent_products = products_only(recent)
+    p_aov = agg(["day", "brand", "region", "source", "aov", "category", "item"], recent_products).rename(columns=names)
     p_aov["Kind"] = "AOV"
-    p_dsc = agg(["day", "brand", "region", "source", "dsc", "category", "item"], r).rename(columns=names)
+    p_dsc = agg(["day", "brand", "region", "source", "dsc", "category", "item"], recent_products).rename(columns=names)
     p_dsc["Kind"] = "Discount"
     pbucket = pd.concat([p_aov, p_dsc], ignore_index=True)[PBUCKET_COLS]
     return bucket, prod, pbucket
@@ -192,7 +211,7 @@ def build_category_tab(rows):
     Online = every other source. Orders are distinct invoices; the (all categories) row counts each order once."""
     if rows is None or rows.empty:
         return pd.DataFrame(columns=CAT_COLS)
-    r = clean_numbers(rows)
+    r = products_only(clean_numbers(rows))
     r["invoiceNumber"] = r["invoiceNumber"].astype(str)
     r["Month"] = r["day"].str[:7]
     r["Channel"] = np.where(r["source"].str.strip().str.lower().isin(["in store", "in-store", "instore"]),
@@ -215,21 +234,28 @@ def build_category_tab(rows):
 
 
 def build_product_month_tab(rows):
-    """Product sales by calendar month, brand, region, source, discounted (order had a discount), category and item.
-    Feeds the Product tab's monthly view: the selected month, the month before and the two months before that."""
+    """Product sales by calendar month, brand, region, source, discounted (order had a discount), category and item,
+    with one (all items) row per category. Charges are left out. Feeds the Product tab's monthly view."""
     if rows is None or rows.empty:
         return pd.DataFrame(columns=PMONTH_COLS)
-    r = clean_numbers(rows)
-    r["invoiceNumber"] = r["invoiceNumber"].astype(str)
-    r["Month"] = r["day"].str[:7]
-    order_disc = r.groupby("invoiceNumber")["disc"].sum()
-    discounted = r["invoiceNumber"].map(order_disc > 0).fillna(False).astype(bool)
-    r["Discounted"] = np.where(discounted, "Yes", "No")
-    g = (r.groupby(["Month", "brand", "region", "source", "Discounted", "category", "item"])
-         .agg(Orders=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
-              Discount=("disc", "sum"), Net=("net", "sum")).reset_index())
-    g = g.rename(columns={"brand": "Brand", "region": "Region", "source": "Source",
-                          "category": "Category", "item": "Item"})
+    full = clean_numbers(rows)
+    full["invoiceNumber"] = full["invoiceNumber"].astype(str)
+    full["Month"] = full["day"].str[:7]
+    order_disc = full.groupby("invoiceNumber")["disc"].sum()
+    discounted = full["invoiceNumber"].map(order_disc > 0).fillna(False).astype(bool)
+    full["Discounted"] = np.where(discounted, "Yes", "No")
+    r = products_only(full)
+    keys = ["Month", "brand", "region", "source", "Discounted", "category"]
+
+    def agg(extra):
+        return (r.groupby(keys + extra)
+                .agg(Orders=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
+                     Discount=("disc", "sum"), Net=("net", "sum")).reset_index())
+
+    items = agg(["item"]).rename(columns={"item": "Item"})
+    cats = agg([]).assign(Item=ALL_ITEMS)
+    g = pd.concat([items, cats], ignore_index=True).rename(
+        columns={"brand": "Brand", "region": "Region", "source": "Source", "category": "Category"})
     for c in ["Qty", "Gross", "Discount", "Net"]:
         g[c] = g[c].astype(float).round(2)
     g["Orders"] = g["Orders"].astype(int)
