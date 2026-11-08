@@ -30,9 +30,7 @@ jobs:
     env:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
-      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-
-      run: pip install pandas numpy requests pyjwt gspread google-auth
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}   # reads the store and channel master sheet
     steps:
       - uses: actions/checkout@v4
 
@@ -41,7 +39,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install pandas numpy requests pyjwt
+        run: pip install pandas numpy requests pyjwt gspread google-auth   # same packages as the nightly job
 
       # The latest saved rows (nightly or an earlier backfill), so this run adds to them.
       - name: Restore the saved rows
