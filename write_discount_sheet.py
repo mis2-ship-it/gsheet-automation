@@ -21,6 +21,7 @@ Usage: python write_discount_sheet.py [--rows ...] [--live ...] [--keep-days 400
 Needs DISCOUNT_SHEET_ID and GOOGLE_CREDENTIALS.
 """
 import argparse
+import calendar
 import json
 import os
 import re
@@ -58,6 +59,8 @@ PRODUCT_DAYS = 62
 DEFAULT_STORE_TYPE = "COCO"
 CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net"]
 PMONTH_COLS = ["Month", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
+ITEM_HOUR_COLS = ["Date", "Hour", "Brand", "Region", "Source", "Session", "Label", "Item", "Category",
+                  "Invoices", "Qty", "Gross", "Discount", "Net", "Lines"]
 ALL_CATEGORIES = "(all categories)"     # one row per group with the distinct orders across all categories
 CHARGE_ITEM = "Charges (not a product)"
 OTHER_ITEM = "Other differences (not a product)"
@@ -97,7 +100,7 @@ def clean_numbers(rows):
     return rows
 
 
-def aggregate(rows, keep_days=0):
+def aggregate(rows, keep_days=0, item_days=0):
     """Returns (label rows, item rows) for the days kept."""
     rows = clean_numbers(rows)
     if keep_days:
@@ -105,7 +108,14 @@ def aggregate(rows, keep_days=0):
         if len(days) > keep_days:
             rows = rows[rows["day"] >= days[-keep_days]]
     lab = rows.groupby(BASE_KEYS).agg(**AGG).reset_index().rename(columns=RENAME_BASE)
-    prod_rows = products_only(rows)
+    # Labels (offer types, codes) keep every day kept above. Items and categories keep the last item_days only,
+    # so the sheet stays within its cell limit; the category block then covers those days.
+    item_rows = rows
+    if item_days:
+        days_all = sorted(rows["day"].unique())
+        if len(days_all) > item_days:
+            item_rows = rows[rows["day"] >= days_all[-item_days]]
+    prod_rows = products_only(item_rows)
     itm = (prod_rows.groupby(BASE_KEYS + ["item", "category"]).agg(**AGG).reset_index()
            .rename(columns={**RENAME_BASE, "item": "Item", "category": "Category"}))
     cat_all = (prod_rows.groupby(BASE_KEYS + ["category"]).agg(**AGG).reset_index()
@@ -262,6 +272,32 @@ def build_product_month_tab(rows):
     return g[PMONTH_COLS]
 
 
+def aggregate_item_hour(rows, hour_days, today):
+    """Hourly product rows for the last hour_days business days, with one (all items) row per category and hour.
+    Charges are left out. Used by the Live category block (today) and for last week's same hours."""
+    empty = pd.DataFrame(columns=ITEM_HOUR_COLS)
+    if rows is None or rows.empty or "bh" not in rows.columns:
+        return empty
+    r = products_only(clean_numbers(rows))
+    r["bh"] = pd.to_numeric(r["bh"], errors="coerce").fillna(-1).astype(int)
+    r = r[r["bh"] >= 0]
+    first = (today - timedelta(days=hour_days - 1)).strftime("%Y-%m-%d")
+    r = r[r["day"] >= first]
+    if r.empty:
+        return empty
+    items = r.groupby(HOUR_KEYS + ["item", "category"]).agg(**AGG).reset_index()
+    cats = r.groupby(HOUR_KEYS + ["category"]).agg(**AGG).reset_index()
+    cats["item"] = ALL_ITEMS
+    out = pd.concat([items, cats], ignore_index=True).rename(
+        columns={**RENAME_BASE, "bh": "Hour", "item": "Item", "category": "Category"})
+    for c in ["Qty", "Gross", "Discount", "Net"]:
+        out[c] = out[c].astype(float).round(2)
+    out["Invoices"] = out["Invoices"].astype(int)
+    out["Lines"] = out["Lines"].astype(int)
+    out["Hour"] = out["Hour"].astype(int)
+    return out[ITEM_HOUR_COLS]
+
+
 def build_recon_tab(recon):
     """Product totals against the order totals, by day and source, with the gaps (net and gross should be 0)."""
     cols = list(RECON_NAMES.values())
@@ -377,6 +413,67 @@ def describe_days(days):
     return ", ".join(f"{d} ({n} rows)" for d, n in days.items()) if days else "none"
 
 
+# Monthly archive: each month that has ended is saved once, day by day, as a gzipped CSV in GitHub. The Sheet keeps
+# only the months that are not archived yet, so it stays within its row and cell limits.
+ARCHIVE_DIR = "data/discount/archive"
+ARCHIVE_GRACE_DAYS = 3          # late refreshes of the last days of a month are in before it is archived
+ARCHIVE_COLS = ["kind", "day", "brand", "region", "source", "session", "label", "item", "category",
+                "invoices", "qty", "gross", "discount", "net", "lines"]
+
+
+def month_end(month):
+    y, m = map(int, month.split("-"))
+    return datetime(y, m, calendar.monthrange(y, m)[1]).date()
+
+
+def missing_days(rows, month):
+    """Days of the month with no rows. A month is archived only when none are missing."""
+    y, m = map(int, month.split("-"))
+    have = set(rows.loc[rows["day"].astype(str).str[:7] == month, "day"].astype(str).str[:10])
+    return [f"{month}-{d:02d}" for d in range(1, calendar.monthrange(y, m)[1] + 1)
+            if f"{month}-{d:02d}" not in have]
+
+
+def archive_frame(lab, itm):
+    """Label rows and item rows in one table; the kind column says which is which."""
+    labels = pd.DataFrame({
+        "kind": "label", "day": lab["Date"], "brand": lab["Brand"], "region": lab["Region"], "source": lab["Source"],
+        "session": lab["Session"], "label": lab["Label"], "item": "", "category": "",
+        "invoices": lab["Invoices"], "qty": lab["Qty"], "gross": lab["Gross"], "discount": lab["Discount"],
+        "net": lab["Net"], "lines": lab["Lines"]})
+    items = pd.DataFrame({
+        "kind": "item", "day": itm["Date"], "brand": itm["Brand"], "region": itm["Region"], "source": itm["Source"],
+        "session": itm["Session"], "label": itm["Label"], "item": itm["Item"], "category": itm["Category"],
+        "invoices": itm["Invoices"], "qty": itm["Qty"], "gross": itm["Gross"], "discount": itm["Discount"],
+        "net": itm["Net"], "lines": itm["Lines"]})
+    return pd.concat([labels, items], ignore_index=True)[ARCHIVE_COLS]
+
+
+def archive_closed_months(rows, archive_dir, today):
+    """Writes each month that has ended (plus the grace period) and has a row for every day, as one gzipped CSV in
+    archive_dir. Months already archived are not written again. Returns the archived months, oldest first."""
+    os.makedirs(archive_dir, exist_ok=True)
+    index_path = os.path.join(archive_dir, "index.json")
+    done = set()
+    if os.path.exists(index_path):
+        with open(index_path, encoding="utf-8") as f:
+            done = set(json.load(f).get("months", []))
+    for m in sorted(set(rows["day"].astype(str).str[:7])):
+        if m in done or month_end(m) + timedelta(days=ARCHIVE_GRACE_DAYS) >= today:
+            continue
+        gaps = missing_days(rows, m)
+        if gaps:
+            print(f"archive {m}: not yet, {len(gaps)} day(s) with no rows (first {gaps[0]})")
+            continue
+        lab, itm = aggregate(rows[rows["day"].astype(str).str[:7] == m], 0, 0)
+        archive_frame(lab, itm).to_csv(os.path.join(archive_dir, f"{m}.csv.gz"), index=False, compression="gzip")
+        done.add(m)
+        print(f"archive {m}: {len(lab)} label rows, {len(itm)} item rows")
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump({"months": sorted(done), "updated": today.isoformat()}, f, indent=1)
+    return sorted(done)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rows", default="data/discount_rows.csv")
@@ -387,6 +484,9 @@ def main():
     ap.add_argument("--products", default="data/product_rows.csv", help="all channels (sync_discounts.py --products-out)")
     ap.add_argument("--recon", default="data/product_recon.csv", help="reconciliation (sync_discounts.py --recon-out)")
     ap.add_argument("--only-hourly", action="store_true", help="write only the hourly tab (live job)")
+    ap.add_argument("--item-days", type=int, default=120, help="days of item and category rows to keep (labels keep all)")
+    ap.add_argument("--archive-dir", default=ARCHIVE_DIR,
+                    help="monthly day-level archive for closed months (empty = do not archive)")
     ap.add_argument("--store-type", default=DEFAULT_STORE_TYPE, help="COCO (default), FOFO, or all")
     args = ap.parse_args()
     today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
@@ -410,6 +510,8 @@ def main():
         existing = read_tab(sh, "Disc_Hour")
         combined, last_week_found, days = merge_live_hours(existing, hour, today, args.hour_days)
         write_tab(sh, "Disc_Hour", combined)
+        # Today's items by hour for the Live category block. Overwritten on every run; no read-back needed.
+        write_tab(sh, "Disc_Live_Item", aggregate_item_hour(live, args.hour_days, today))
         print(f"Disc_Hour days in the window (before today): {describe_days(days)}")
         if not last_week_found:
             last_week = (today - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -419,7 +521,9 @@ def main():
         return
     if rows is None:
         raise SystemExit("No completed-day rows. Run the Discount Code rows workflow first.")
-    lab, itm = aggregate(rows, args.keep_days)
+    archived = archive_closed_months(rows, args.archive_dir, today) if args.archive_dir else []
+    sheet_rows = rows[~rows["day"].astype(str).str[:7].isin(archived)] if archived else rows
+    lab, itm = aggregate(sheet_rows, args.keep_days, args.item_days)
     product_rows = keep_store(read_csv_if_present(args.products), args.store_type, "product rows")
     if product_rows is None:
         print("Warning: no product rows file. Product tabs use Swiggy and Zomato only.")
@@ -431,6 +535,7 @@ def main():
     recon_tab = build_recon_tab(recon_rows)
     cat_tab = build_category_tab(product_rows)
     prod_month_tab = build_product_month_tab(product_rows)
+    item_hour_tab = aggregate_item_hour(rows, args.hour_days, today)
     print(f"category rows: {len(cat_tab)}, months {sorted(cat_tab['Month'].unique()) if len(cat_tab) else []}")
     if recon_rows is None:
         print("Warning: no reconciliation file. Disc_Recon is not written.")
@@ -446,7 +551,7 @@ def main():
     total_cells = (len(lab) * len(LABEL_COLS) + len(itm) * len(ITEM_COLS) + len(hour) * len(HOUR_COLS)
                    + len(bucket) * len(BUCKET_COLS) + len(prod) * len(PROD_COLS) + len(pbucket) * len(PBUCKET_COLS)
                    + len(recon_tab) * len(RECON_NAMES) + len(cat_tab) * len(CAT_COLS)
-                   + len(prod_month_tab) * len(PMONTH_COLS))
+                   + len(prod_month_tab) * len(PMONTH_COLS) + len(item_hour_tab) * len(ITEM_HOUR_COLS))
     print(f"cells written: about {total_cells:,} of the Google Sheets limit of 10,000,000")
     if total_cells > 8_000_000:
         print("WARNING: close to the Google Sheets cell limit. Lower --product-days or --keep-days.")
@@ -454,6 +559,7 @@ def main():
             ("Disc_Bucket", bucket), ("Disc_Prod", prod), ("Disc_Prod_Bucket", pbucket)]
     tabs.append(("Disc_Cat", cat_tab))
     tabs.append(("Disc_Prod_Month", prod_month_tab))
+    tabs.append(("Disc_Item_Hour", item_hour_tab))
     if recon_rows is not None:
         tabs.append(("Disc_Recon", recon_tab))
     write_sheet(tabs)
