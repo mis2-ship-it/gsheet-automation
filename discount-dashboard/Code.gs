@@ -42,19 +42,89 @@ function dateText_(v) {
   return v instanceof Date ? Utilities.formatDate(v, Session.getScriptTimeZone(), "yyyy-MM-dd") : String(v).slice(0, 10);
 }
 // read(name) returns the rows of a tab (no header). The page uses the sheet; tests pass their own rows.
-function loadDisc_(read) {
+/* ---------- Data: the Sheet (open months) and the GitHub archive (closed months, day level) ----------
+   The Sheet holds the current month and the month before. Each month that has ended is in the archive: one gzipped
+   CSV per month in the GitHub repository (data/discount/archive), listed in index.json. A month comes from the
+   archive if it is listed there, otherwise from the Sheet, so nothing is counted twice.
+   Set ARCHIVE_REPO_ to your repository ("owner/name"). For a private repository, add the token as the script
+   property GITHUB_TOKEN (Project Settings > Script properties). */
+const ARCHIVE_REPO_ = "OWNER/REPO";
+const ARCHIVE_BRANCH_ = "main";
+const ARCHIVE_PATH_ = "data/discount/archive";
+let ARCHIVE_MEMO_ = null;        // one request: the archive index, and the months already read
+
+// The file from the archive, or null when it is not there (not archived yet).
+function archiveFetch_(file) {
+  if (ARCHIVE_REPO_ === "OWNER/REPO") throw new Error("Set ARCHIVE_REPO_ in Code.gs to your GitHub repository (owner/name).");
+  const token = PropertiesService.getScriptProperties().getProperty("GITHUB_TOKEN");
+  const url = "https://raw.githubusercontent.com/" + ARCHIVE_REPO_ + "/" + ARCHIVE_BRANCH_ + "/" + ARCHIVE_PATH_ + "/" + file;
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, headers: token ? { Authorization: "token " + token } : {} });
+  const code = res.getResponseCode();
+  if (code === 404) return null;
+  if (code !== 200) throw new Error("Could not read " + file + " from the archive (status " + code + ").");
+  return res.getBlob();
+}
+// The archived months, oldest first. No index yet means no archived months.
+function archiveMonths_() {
+  if (!ARCHIVE_MEMO_) ARCHIVE_MEMO_ = { months: null, read: {} };
+  if (ARCHIVE_MEMO_.months === null) {
+    const blob = archiveFetch_("index.json");
+    ARCHIVE_MEMO_.months = blob ? (JSON.parse(blob.getDataAsString()).months || []).slice().sort() : [];
+  }
+  return ARCHIVE_MEMO_.months;
+}
+// One archived month: label rows and item rows, in the same shape as the Sheet rows.
+// Columns: kind, day, brand, region, source, session, label, item, category, invoices, qty, gross, discount, net, lines.
+function archiveMonth_(month) {
+  if (!ARCHIVE_MEMO_.read[month]) {
+    const blob = archiveFetch_(month + ".csv.gz");
+    if (!blob) throw new Error("The archive is missing " + month + ". Check the archive folder in GitHub.");
+    const rows = Utilities.parseCsv(Utilities.ungzip(blob).getDataAsString()).slice(1);
+    const labelRows = [], itemRows = [];
+    for (const v of rows) {
+      if (v.length < 15) continue;
+      const base = { d: v[1], brand: v[2], region: v[3], source: v[4], session: v[5], label: v[6] };
+      const nums = { inv: Number(v[9]) || 0, qty: Number(v[10]) || 0, gross: Number(v[11]) || 0,
+                     disc: Number(v[12]) || 0, net: Number(v[13]) || 0, lines: Number(v[14]) || 0 };
+      if (v[0] === "label") labelRows.push(Object.assign(base, nums));
+      else if (isProduct_(v[7])) itemRows.push(Object.assign(base, { item: v[7], cat: v[8] }, nums));
+    }
+    ARCHIVE_MEMO_.read[month] = { labelRows: labelRows, itemRows: itemRows };
+  }
+  return ARCHIVE_MEMO_.read[month];
+}
+// The Sheet's open months, plus the archived months asked for (months = "YYYY-MM" list; omitted = all archived).
+function loadDisc_(read, months) {
   const rd = read || readTab_;
-  const labelRows = rd("Disc_Label").map(v => ({
+  const sheetLabel = rd("Disc_Label").map(v => ({
     d: dateText_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), session: String(v[4]),
     label: String(v[5]), inv: Number(v[6]) || 0, qty: Number(v[7]) || 0, gross: Number(v[8]) || 0,
     disc: Number(v[9]) || 0, net: Number(v[10]) || 0, lines: Number(v[11]) || 0
   })).filter(r => r.d.length === 10);
-  const itemRows = rd("Disc_Item").map(v => ({
+  const sheetItem = rd("Disc_Item").map(v => ({
     d: dateText_(v[0]), brand: String(v[1]), region: String(v[2]), source: String(v[3]), session: String(v[4]),
     label: String(v[5]), item: String(v[6]), cat: String(v[7]), inv: Number(v[8]) || 0, qty: Number(v[9]) || 0,
     gross: Number(v[10]) || 0, disc: Number(v[11]) || 0, net: Number(v[12]) || 0, lines: Number(v[13]) || 0
   })).filter(r => r.d.length === 10 && isProduct_(r.item));
-  return { labelRows: labelRows, itemRows: itemRows };
+  const archived = archiveMonths_();
+  const wanted = (months || archived).filter(m => archived.indexOf(m) >= 0);
+  const closed = new Set(archived);
+  const labelRows = sheetLabel.filter(r => !closed.has(r.d.slice(0, 7)));
+  const itemRows = sheetItem.filter(r => !closed.has(r.d.slice(0, 7)));
+  for (const m of wanted) {
+    const a = archiveMonth_(m);
+    for (const x of a.labelRows) labelRows.push(x);
+    for (const x of a.itemRows) itemRows.push(x);
+  }
+  let sheetLatest = "";
+  for (const r of sheetLabel) if (r.d > sheetLatest) sheetLatest = r.d;
+  return { labelRows: labelRows, itemRows: itemRows, sheetLatest: sheetLatest };
+}
+// The "YYYY-MM" months that a set of day-number windows touches.
+function monthsOfWindows_(wins) {
+  const keys = new Set();
+  for (const w of wins) for (let d = w[0]; d <= w[1]; d += 1) keys.add(ymd_(d).slice(0, 7));
+  return [...keys];
 }
 
 /* ---------- Dates (day numbers count days since 1970-01-01, in UTC) ---------- */
@@ -65,37 +135,106 @@ function monthEnd_(n) { const d = new Date(n * DAY_MS); return Math.round(Date.U
 function rangeText_(w) { return w[0] === w[1] ? ymd_(w[0]) : ymd_(w[0]) + " to " + ymd_(w[1]); }
 function isDate_(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")); }
 
-/* ---------- Periods ---------- */
-function windows_(kind, anchor) {
-  const a = dn_(anchor);
-  const ms = monthStart_(a);
-  if (kind === "weekly") return { cur: [a - 6, a], prev: [a - 13, a - 7], note: "the 7 days ending on the date, against the 7 days before" };
-  if (kind === "monthly") return { cur: [ms, monthEnd_(a)], prev: [monthStart_(ms - 1), monthEnd_(ms - 1)], note: "the calendar month, against the month before" };
-  if (kind === "mtd") {
-    const pms = monthStart_(ms - 1);
-    return { cur: [ms, a], prev: [pms, Math.min(pms + (a - ms), monthEnd_(ms - 1))], note: "month to date, against the same days of the month before" };
-  }
-  return { cur: [a, a], prev: [a - 1, a - 1], note: "the day, against the day before" };
+/* ---------- Weeks, days and months ----------
+   Weeks run Monday to Sunday and are numbered as in the ISO calendar (WK 45 = 2–8 Nov 2026). */
+const DAY_NAMES_ = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+function dow_(n) { return (new Date(n * DAY_MS).getUTCDay() + 6) % 7; }   // Monday = 0 ... Sunday = 6
+function mondayOf_(n) { return n - dow_(n); }
+function isoWeekNo_(n) {
+  const thu = mondayOf_(n) + 3;                                             // the Thursday of the same week
+  const y = new Date(thu * DAY_MS).getUTCFullYear();
+  const jan1 = Math.round(Date.UTC(y, 0, 1) / DAY_MS);
+  return Math.floor((thu - jan1) / 7) + 1;
 }
-// The window for the chosen period. Custom uses the dates chosen, against the same number of days before.
+function weekLabel_(mon) {
+  const a = new Date(mon * DAY_MS), b = new Date((mon + 6) * DAY_MS);
+  const span = a.getUTCMonth() === b.getUTCMonth()
+    ? a.getUTCDate() + "–" + b.getUTCDate() + " " + MONTH_NAMES_[b.getUTCMonth()]
+    : a.getUTCDate() + " " + MONTH_NAMES_[a.getUTCMonth()] + " – " + b.getUTCDate() + " " + MONTH_NAMES_[b.getUTCMonth()];
+  return "WK " + isoWeekNo_(mon) + " · " + span;
+}
+function dayLabel_(n) {
+  const d = new Date(n * DAY_MS);
+  return DAY_NAMES_[dow_(n)] + " " + d.getUTCDate() + " " + MONTH_NAMES_[d.getUTCMonth()];
+}
+function rangeLabel_(lo, hi) {
+  const a = new Date(lo * DAY_MS), b = new Date(hi * DAY_MS);
+  const A = a.getUTCDate() + " " + MONTH_NAMES_[a.getUTCMonth()] + " " + a.getUTCFullYear();
+  const B = b.getUTCDate() + " " + MONTH_NAMES_[b.getUTCMonth()] + " " + b.getUTCFullYear();
+  return lo === hi ? A : A + " – " + B;
+}
+// The same calendar date k months away (the day is kept, or the last day of a shorter month).
+function addMonthsDn_(n, k) {
+  const d = new Date(n * DAY_MS);
+  const first = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1));
+  const ty = first.getUTCFullYear(), tm = first.getUTCMonth();
+  const last = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate();
+  return Math.round(Date.UTC(ty, tm, Math.min(d.getUTCDate(), last)) / DAY_MS);
+}
+
+/* ---------- Periods ---------- */
+// cmp: "last" = the previous period; "year" = the same period a year earlier.
+function windows_(kind, anchor, cmp) {
+  const a = dn_(anchor);
+  const ms = monthStart_(a), me = monthEnd_(a);
+  const year = cmp === "year";
+  if (kind === "weekly") {
+    const m = mondayOf_(a);
+    return year
+      ? { cur: [m, m + 6], prev: [addMonthsDn_(m, -12), addMonthsDn_(m, -12) + 6], vs: "same week last year",
+          note: "the ISO week (Mon–Sun), against the same dates last year" }
+      : { cur: [m, m + 6], prev: [m - 7, m - 1], vs: "previous week", note: "the ISO week (Mon–Sun), against the week before" };
+  }
+  if (kind === "monthly") {
+    const py = monthStart_(addMonthsDn_(ms, -12));
+    return year
+      ? { cur: [ms, me], prev: [py, monthEnd_(py)], vs: "same month last year", note: "the calendar month, against the same month last year" }
+      : { cur: [ms, me], prev: [monthStart_(ms - 1), monthEnd_(ms - 1)], vs: "previous month", note: "the calendar month, against the month before" };
+  }
+  if (kind === "mtd") {
+    const back = year ? monthStart_(addMonthsDn_(ms, -12)) : monthStart_(ms - 1);
+    return { cur: [ms, a], prev: [back, Math.min(back + (a - ms), monthEnd_(back))],
+             vs: year ? "same days last year" : "same days last month",
+             note: year ? "month to date, against the same days last year" : "month to date, against the same days of the month before" };
+  }
+  // daily
+  return year
+    ? { cur: [a, a], prev: [addMonthsDn_(a, -12), addMonthsDn_(a, -12)], vs: "same day last year", note: "the day, against the same day last year" }
+    : { cur: [a, a], prev: [a - 7, a - 7], vs: "same weekday last week", note: "the day, against the same weekday last week" };
+}
+// The window for the chosen period. Custom uses the dates chosen, against the same number of days before (or the same dates last year).
 function windowsFor_(p) {
   const kind = KINDS.indexOf(p.kind) >= 0 ? p.kind : "monthly";
+  let cmp = p.cmp === "year" || p.cmp === "last" ? p.cmp : "auto";
+  if (cmp === "auto") cmp = kind === "monthly" ? "year" : "last";
+  let w;
   if (kind === "custom" && isDate_(p.from) && isDate_(p.to)) {
     let a = dn_(p.from), b = dn_(p.to);
     if (b < a) { const t = a; a = b; b = t; }
     const len = b - a + 1;
-    return { kind: "custom", cur: [a, b], prev: [a - len, a - 1], note: "the chosen dates, against the same number of days before" };
+    w = cmp === "year"
+      ? { kind: "custom", cur: [a, b], prev: [addMonthsDn_(a, -12), addMonthsDn_(b, -12)], vs: "same dates last year",
+          note: "the chosen dates, against the same dates last year" }
+      : { kind: "custom", cur: [a, b], prev: [a - len, a - 1], vs: "the days before",
+          note: "the chosen dates, against the same number of days before" };
+  } else {
+    const base = kind === "custom" ? "monthly" : kind;
+    w = Object.assign({ kind: base }, windows_(base, p.anchor, cmp));
   }
-  const base = kind === "custom" ? "monthly" : kind;
-  return Object.assign({ kind: base }, windows_(base, p.anchor));
+  // The current period stops at the last day with data, so a part-finished week or month is not compared as a whole one.
+  if (isDate_(p.latest) && w.cur[1] > dn_(p.latest)) {
+    w.cur = [w.cur[0], Math.max(w.cur[0], dn_(p.latest))];
+    w.note += ", to " + ymd_(dn_(p.latest));
+  }
+  return w;
 }
 
-// Trend buckets, oldest first. The first bucket is only used for the growth of the second.
+// Trend buckets, oldest first. Weeks are Monday to Sunday. The first bucket is only used for the growth of the second.
 function trendWindows_(kind, anchor) {
   const a = dn_(anchor);
   const out = [];
   if (kind === "daily") { for (let k = 15; k >= 0; k--) out.push([a - k, a - k]); }
-  if (kind === "weekly") { for (let k = 8; k >= 0; k--) out.push([a - 7 * k - 6, a - 7 * k]); }
+  if (kind === "weekly") { const m = mondayOf_(a); for (let k = 8; k >= 0; k--) out.push([m - 7 * k, m - 7 * k + 6]); }
   return out;
 }
 
@@ -127,9 +266,109 @@ function catBlock_(rows, win, keep) {
   }).sort((a, b) => b.cur.net - a.cur.net);
 }
 
+/* ---------- Offer types: discount codes grouped like the Swiggy offer-type sheet ----------
+   Each discount label goes to one offer type. A label with several parts (for example "15% Off + TRYNEW") takes the
+   first part that matches, in this order: Price-point (toing), Buy 1 Get 1, Items under Rs X, Flat Rs Off, then the
+   highest percentage off. "Zero discount" is "No offer tag". Anything else is "Other". */
+function singleOfferType_(s) {
+  const t = String(s).trim().toLowerCase();
+  if (t === "" || t === "zero discount") return "No offer tag";
+  if (/toing/.test(t)) return "Price-point (toing)";
+  if (/buy ?1 ?get ?1|b1g1|bogo/.test(t)) return "Buy 1 Get 1";
+  if (/items? under/.test(t)) return "Items under Rs X";
+  if (/^flat/.test(t)) return "Flat Rs Off";
+  const m = t.match(/(\d{1,3})\s*% ?off/);
+  if (m) return m[1] + "% Off";
+  return "Other";
+}
+function offerTypeOf_(label) {
+  const parts = String(label || "").split(" + ").map(x => x.trim()).filter(x => x);
+  if (!parts.length) return "No offer tag";
+  const kinds = parts.map(singleOfferType_);
+  for (const k of ["Price-point (toing)", "Buy 1 Get 1", "Items under Rs X", "Flat Rs Off"]) {
+    if (kinds.indexOf(k) >= 0) return k;
+  }
+  const pct = kinds.filter(k => /% Off$/.test(k)).sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
+  if (pct.length) return pct[0];
+  return kinds.indexOf("No offer tag") >= 0 ? "No offer tag" : "Other";
+}
+// entries: [{ label, cur, prev }]. Returns the offer types, biggest net first, each with the codes inside it.
+function groupOffers_(entries) {
+  const m = new Map();
+  for (const e of entries) {
+    const type = offerTypeOf_(e.label);
+    if (!m.has(type)) m.set(type, { type: type, cur: blank_(), prev: blank_(), labels: [] });
+    const o = m.get(type);
+    add_(o.cur, e.cur);
+    add_(o.prev, e.prev);
+    o.labels.push({ label: e.label, cur: e.cur, prev: e.prev });
+  }
+  return [...m.values()]
+    .map(o => ({ type: o.type, cur: o.cur, prev: o.prev, labels: o.labels.sort((a, b) => b.cur.net - a.cur.net) }))
+    .sort((a, b) => b.cur.net - a.cur.net);
+}
+
+/* ---------- Hourly product rows: Disc_Item_Hour (last week, nightly) and Disc_Live_Item (today, live job) ---------- */
+// A missing tab gives no rows, so the page still loads and shows that there are no categories yet.
+function loadItemHour_(name, read) {
+  const rd = read || readTab_;
+  try {
+    return rd(name).map(v => ({
+      d: dateText_(v[0]), bh: Number(v[1]) || 0, brand: String(v[2]), region: String(v[3]), source: String(v[4]),
+      session: String(v[5]), label: String(v[6]), item: String(v[7]), cat: String(v[8]),
+      inv: Number(v[9]) || 0, qty: Number(v[10]) || 0, gross: Number(v[11]) || 0, disc: Number(v[12]) || 0,
+      net: Number(v[13]) || 0, lines: Number(v[14]) || 0
+    })).filter(r => r.d.length === 10 && isProduct_(r.item));
+  } catch (err) {
+    return [];
+  }
+}
+function loadLiveItems_(read) {
+  return [...loadItemHour_("Disc_Item_Hour", read), ...loadItemHour_("Disc_Live_Item", read)];
+}
+// Adds the previous period's figures to each category and item (matched by name).
+function attachPrev_(curCats, prvCats) {
+  const byCat = new Map(prvCats.map(c => [c.cat, c]));
+  return curCats.map(c => {
+    const pc = byCat.get(c.cat);
+    const prevItems = new Map(pc ? pc.items.map(x => [x.item, x.cur]) : []);
+    return Object.assign({}, c, {
+      prev: pc ? pc.cur : blank_(),
+      items: c.items.map(x => Object.assign({}, x, { prev: prevItems.get(x.item) || blank_() }))
+    });
+  });
+}
+
+// Zomato is shown by voucher code, as on the Zomato sheet: one row per code, no offer-type grouping.
+function groupCodes_(entries) {
+  return entries.map(e => ({ type: e.label, cur: e.cur, prev: e.prev, labels: [] }))
+    .sort((a, b) => b.cur.net - a.cur.net);
+}
+// Offer types by platform (Swiggy by offer type, Zomato by voucher code). rows need d, label and source;
+// curWin and prevWin are day-number ranges.
+function offersBySource_(rows, curWin, prevWin, keep) {
+  const sources = new Map();
+  for (const r of rows) {
+    if (!keep(r)) continue;
+    const inCur = inWin_(r, curWin), inPrev = !inCur && inWin_(r, prevWin);
+    if (!inCur && !inPrev) continue;
+    if (!sources.has(r.source)) sources.set(r.source, new Map());
+    const m = sources.get(r.source);
+    if (!m.has(r.label)) m.set(r.label, { label: r.label, cur: blank_(), prev: blank_() });
+    add_(inCur ? m.get(r.label).cur : m.get(r.label).prev, r);
+  }
+  const out = {};
+  [...sources.keys()].sort((x, y) => (x === "Swiggy" ? -1 : y === "Swiggy" ? 1 : x.localeCompare(y)))
+    .forEach(src => {
+      const entries = [...sources.get(src).values()];
+      out[src] = src === "Zomato" ? groupCodes_(entries) : groupOffers_(entries);
+    });
+  return out;
+}
+
 /* ---------- The dashboard (Discount Codes) ---------- */
 // data: { labelRows, itemRows } as read from the sheet.
-// p: { kind, anchor 'YYYY-MM-DD', from, to, brand, region, source, session ('all' = no filter), codes }
+// p: { kind, anchor 'YYYY-MM-DD', from, to, cmp ('auto' | 'last' | 'year'), latest, brand, region, source, session, codes }
 function computeDiscount_(data, p) {
   const w = windowsFor_(p);
   const kind = w.kind;
@@ -166,21 +405,28 @@ function computeDiscount_(data, p) {
       if (!inWin_(r, win) || !passF(r) || !inCodes(r.label)) continue;
       add_(acc, r);
     }
-    return { range: rangeText_(win), inv: acc.inv, qty: acc.qty, gross: acc.gross, disc: acc.disc, net: acc.net, lines: acc.lines };
+    return { range: kind === "weekly" ? weekLabel_(win[0]) : rangeText_(win),
+             inv: acc.inv, qty: acc.qty, gross: acc.gross, disc: acc.disc, net: acc.net, lines: acc.lines };
   });
 
-  // Categories and items for the selected codes, current period.
+  // Categories and items for the selected codes, current period; offer types by platform, with the codes inside.
   const cats = catBlock_(data.itemRows, w.cur, r => passF(r) && inCodes(r.label));
+  const offers = offersBySource_(data.labelRows, w.cur, w.prev, r => passF(r) && inCodes(r.label));
+  const prevHasData = data.labelRows.some(r => passF(r) && inWin_(r, w.prev));
 
   const total_ = m => [...m.values()].reduce((t, x) => add_(t, x), blank_());
   const selCur = new Map([...curL.entries()].filter(([k]) => inCodes(k)));
   const selPrv = new Map([...prvL.entries()].filter(([k]) => inCodes(k)));
   const scope = codes.length === 0 ? "all" : (codes.length === 1 ? codes[0] : codes.length + " selected codes");
   return {
-    meta: { kind: kind, anchor: p.anchor, codes: codes, code: scope, cur: rangeText_(w.cur), prev: rangeText_(w.prev),
-            note: w.note, activeMonth: rangeText_(monthWin) },
+    meta: { kind: kind, anchor: p.anchor, codes: codes, code: scope,
+            cur: rangeText_(w.cur), prev: rangeText_(w.prev),
+            curLabel: kind === "weekly" ? weekLabel_(w.cur[0]) : rangeText_(w.cur),
+            prevLabel: kind === "weekly" ? weekLabel_(w.prev[0]) : rangeText_(w.prev),
+            note: w.note, vs: w.vs, prevHasData: prevHasData, activeMonth: rangeText_(monthWin) },
     labels: labels,
     cats: cats,
+    offers: offers,
     totals: { cur: total_(selCur), prev: total_(selPrv) },
     overall: { cur: total_(curL), prev: total_(prvL) },
     trend: { kind: (kind === "daily" || kind === "weekly") ? kind : "", rows: trend }
@@ -203,10 +449,97 @@ function optionsFrom_(labelRows, itemRows, prodRows, bucketRows) {
   };
 }
 function getDiscountOptions() {
-  const data = loadDisc_();
-  return optionsFrom_(data.labelRows, data.itemRows, loadProd_(), loadBucket_());
+  const archived = archiveMonths_();
+  const data = loadDisc_(readTab_, archived.slice(-2));   // the latest archived months, so their codes are in the list
+  const o = optionsFrom_(data.labelRows, data.itemRows, loadProd_(), loadBucket_());
+  if (archived.length) o.first = archived[0] + "-01";
+  return o;
 }
-function getDiscountData(p) { return computeDiscount_(loadDisc_(), p); }
+function getDiscountData(p) {
+  const w = windowsFor_(p);
+  const a = dn_(p.anchor);
+  const needed = monthsOfWindows_([w.cur, w.prev, [monthStart_(a), monthEnd_(a)]].concat(trendWindows_(w.kind, p.anchor)));
+  const data = loadDisc_(readTab_, needed);
+  return computeDiscount_(data, Object.assign({}, p, { latest: data.sheetLatest || undefined }));
+}
+
+/* ---------- Compare: the same kind of period side by side ----------
+   mode "day"    : single days, the same weekday week after week (Day on Day)
+   mode "week"   : ISO weeks, Monday to Sunday, with WK numbers
+   mode "months" : the same dates (From to To) in earlier months
+   mode "year"   : the same dates (From to To) in earlier years
+   The last column is the period the anchor date falls in. Figures are by platform, then by offer type. */
+function compareColumns_(mode, n, anchor, from, to) {
+  const count = Math.max(1, Math.min(12, Number(n) || 5));
+  const a = dn_(anchor);
+  const cols = [];
+  if (mode === "week") {
+    const m = mondayOf_(a);
+    for (let k = count - 1; k >= 0; k--) { const s0 = m - 7 * k; cols.push({ win: [s0, s0 + 6], label: weekLabel_(s0) }); }
+    return cols;
+  }
+  if (mode === "day") {
+    for (let k = count - 1; k >= 0; k--) { const d = a - 7 * k; cols.push({ win: [d, d], label: dayLabel_(d) }); }
+    return cols;
+  }
+  const step = mode === "year" ? 12 : 1;
+  const f0 = isDate_(from) ? dn_(from) : a;
+  const t0 = isDate_(to) ? dn_(to) : f0;
+  const lo = Math.min(f0, t0), hi = Math.max(f0, t0);
+  for (let k = count - 1; k >= 0; k--) {
+    const l = addMonthsDn_(lo, -step * k), h = addMonthsDn_(hi, -step * k);
+    cols.push({ win: [l, h], label: rangeLabel_(l, h) });
+  }
+  return cols;
+}
+function metricOf_(cell, metric) { return metric === "net" ? cell.net : metric === "inv" ? cell.inv : cell.disc; }
+
+function computeCompare_(labelRows, p) {
+  const mode = ["day", "week", "months", "year"].indexOf(p.mode) >= 0 ? p.mode : "day";
+  const metric = ["disc", "net", "inv"].indexOf(p.metric) >= 0 ? p.metric : "disc";
+  const cols = compareColumns_(mode, p.periods, p.anchor, p.from, p.to);
+  const f = { brand: p.brand || "all", region: p.region || "all", source: p.source || "all", session: p.session || "all" };
+  const passF = r => (f.brand === "all" || r.brand === f.brand) && (f.region === "all" || r.region === f.region) &&
+                     (f.source === "all" || r.source === f.source) && (f.session === "all" || r.session === f.session);
+  const sources = new Map();                       // source -> Map(label -> one cell per column)
+  cols.forEach((c, i) => {
+    for (const r of labelRows) {
+      if (!passF(r) || !inWin_(r, c.win)) continue;
+      if (!sources.has(r.source)) sources.set(r.source, new Map());
+      const m = sources.get(r.source);
+      if (!m.has(r.label)) m.set(r.label, cols.map(() => blank_()));
+      add_(m.get(r.label)[i], r);
+    }
+  });
+  const platforms = [...sources.keys()]
+    .sort((x, y) => (x === "Swiggy" ? -1 : y === "Swiggy" ? 1 : x.localeCompare(y)))
+    .map(src => {
+      const types = new Map();
+      for (const [label, cells] of sources.get(src)) {
+        const t = src === "Zomato" ? label : offerTypeOf_(label);
+        if (!types.has(t)) types.set(t, cols.map(() => blank_()));
+        const tv = types.get(t);
+        cells.forEach((cell, i) => add_(tv[i], cell));
+      }
+      const rows = [...types.entries()]
+        .map(([type, cells]) => ({ type: type, values: cells.map(c => metricOf_(c, metric)) }))
+        .sort((x, y) => y.values.reduce((s, v) => s + v, 0) - x.values.reduce((s, v) => s + v, 0));
+      const total = cols.map((_, i) => rows.reduce((s, r) => s + r.values[i], 0));
+      return { source: src, types: rows, total: total };
+    });
+  return {
+    mode: mode, metric: metric,
+    columns: cols.map(c => ({ label: c.label, range: rangeText_(c.win),
+                              hasData: labelRows.some(r => passF(r) && inWin_(r, c.win)) })),
+    platforms: platforms
+  };
+}
+function getCompareData(p) {
+  const mode = ["day", "week", "months", "year"].indexOf(p.mode) >= 0 ? p.mode : "day";
+  const cols = compareColumns_(mode, p.periods, p.anchor, p.from, p.to);
+  const data = loadDisc_(readTab_, monthsOfWindows_(cols.map(c => c.win)));
+  return computeCompare_(data.labelRows, p);
+}
 
 /* ---------- Live: today so far (business day 9 AM to 5 AM), against the same hours last week ---------- */
 // Business hour: 0 = 9 AM, 19 = 4 AM. Only complete hours are compared. Hours still running are left out.
@@ -239,7 +572,7 @@ function loadHour_() {
   })).filter(r => r.d.length === 10);
 }
 // p: { brand, region, source, session, codes, now (optional ISO time, for testing) }
-function computeDiscountLive_(hourRows, p) {
+function computeDiscountLive_(hourRows, p, itemRows) {
   const now = p.now ? new Date(p.now) : new Date();
   const ctx = liveContext_(now);
   const lwDay = ymd_(dn_(ctx.liveDay) - 7);
@@ -267,22 +600,31 @@ function computeDiscountLive_(hourRows, p) {
   for (let bh = 0; bh < ctx.cutBh; bh++) {
     hours.push({ label: hourLabel_(bh), bh: bh, cur: hourCur.get(bh) || blank_(), prev: hourPrev.get(bh) || blank_() });
   }
+  // Category block for today so far, against the same hours last week. Only complete hours are counted.
+  const liveItems = (itemRows || []).filter(r => passF(r) && inCodes(r.label) && r.bh < ctx.cutBh);
+  const curDn = dn_(ctx.liveDay), lwDn = dn_(lwDay);
+  const cats = attachPrev_(
+    catBlock_(liveItems.filter(r => r.d === ctx.liveDay), [curDn, curDn], () => true),
+    catBlock_(liveItems.filter(r => r.d === lwDay), [lwDn, lwDn], () => true));
+  const liveRows = hourRows.filter(r => r.bh < ctx.cutBh && passF(r) && inCodes(r.label));
+  const offers = offersBySource_(liveRows, [dn_(ctx.liveDay), dn_(ctx.liveDay)], [dn_(lwDay), dn_(lwDay)], () => true);
   const note = ctx.cutBh === 0
     ? "No complete hour yet. The business day starts at 9 AM."
     : "Complete hours: 9 AM to " + hourLabel_(ctx.cutBh - 1) + ". Hours still running are not counted.";
   const scope = codes.length === 0 ? "all" : (codes.length === 1 ? codes[0] : codes.length + " selected codes");
   return {
     meta: { kind: "live", liveDay: ctx.liveDay, lwDay: lwDay, codes: codes, code: scope,
-            cur: ctx.liveDay + " so far", prev: lwDay + ", same hours", activeMonth: "today so far", note: note },
+            cur: ctx.liveDay + " so far", prev: lwDay + ", same hours", activeMonth: "today so far", note: note, vs: "same hours last week", prevHasData: true },
     labels: labels,
     hours: hours,
-    cats: [],
+    cats: cats,
+    offers: offers,
     totals: { cur: selCur, prev: selPrev },
     overall: { cur: overallCur, prev: overallPrev },
     trend: { kind: "", rows: [] }
   };
 }
-function getDiscountLive(p) { return computeDiscountLive_(loadHour_(), p); }
+function getDiscountLive(p) { return computeDiscountLive_(loadHour_(), p, loadLiveItems_()); }
 
 /* ---------- Product performance and discount analysis ----------
    Tabs: Disc_Bucket (orders by AOV and discount band, order totals), Disc_Prod (items split by whether the order
