@@ -3605,7 +3605,6 @@ def send_whatsapp_live():
     print("=" * 60)
 
     PHONE_NUMBER_ID = "1138561289350791"
-
     ACCESS_TOKEN = os.environ.get("WHATSAPP_ACCESS_TOKEN")
 
     RECIPIENTS = [
@@ -3615,7 +3614,6 @@ def send_whatsapp_live():
         "919959347168",
         "919710926088",
         "918553666666"
-
     ]
 
     if not ACCESS_TOKEN:
@@ -3628,149 +3626,185 @@ def send_whatsapp_live():
         microsecond=0
     )
 
-    # =====================================================
-    # OVERALL KPI
-    # =====================================================
+    # -----------------------------------------------------
+    # FORMAT HELPERS
+    # -----------------------------------------------------
 
-    net_row = overall[
-        overall["Parameters"] == "Net"
-    ].iloc[0]
+    def fmt_lakh(value):
+        try:
+            return f"₹{float(value) / 100000:.2f}L"
+        except (TypeError, ValueError):
+            return "₹0.00L"
 
-    gross_row = overall[
-        overall["Parameters"] == "Gross"
-    ].iloc[0]
+    def fmt_lw_pct(value):
+        try:
+            return f"{float(value):+.0f}%"
+        except (TypeError, ValueError):
+            return "0.0%"
 
-    txn_row = overall[
-        overall["Parameters"] == "Txn"
-    ].iloc[0]
-
-    aov_row = overall[
-        overall["Parameters"] == "AOV"
-    ].iloc[0]
-
-    discount_row = overall[
-        overall["Parameters"] == "Discount %"
-    ].iloc[0]
-
-    net_sales = float(net_row["Today"])
-    gross_sales = float(gross_row["Today"])
-    transactions = int(txn_row["Today"])
-    aov = float(aov_row["Today"])
-    discount_pct = float(discount_row["Today"])
+    def get_overall_lw_growth(row):
+        """Use the exact growth already calculated in Overall KPI."""
+        try:
+            return float(row["LW GW %"])
+        except (KeyError, TypeError, ValueError):
+            today_value = float(row.get("Today", 0) or 0)
+            lw_value = float(row.get("Last Week", 0) or 0)
+            return ((today_value - lw_value) / max(abs(lw_value), 1)) * 100
 
     # =====================================================
-    # BRAND SALES
+    # OVERALL KPI + LW% FOR EVERY COMPARABLE KPI
+    # =====================================================
+
+    try:
+        net_row = overall.loc[
+            overall["Parameters"] == "Net"
+        ].iloc[0]
+        gross_row = overall.loc[
+            overall["Parameters"] == "Gross"
+        ].iloc[0]
+        txn_row = overall.loc[
+            overall["Parameters"] == "Txn"
+        ].iloc[0]
+        aov_row = overall.loc[
+            overall["Parameters"] == "AOV"
+        ].iloc[0]
+        discount_row = overall.loc[
+            overall["Parameters"] == "Discount %"
+        ].iloc[0]
+
+        net_sales = float(net_row["Today"])
+        gross_sales = float(gross_row["Today"])
+        transactions = int(txn_row["Today"])
+        aov = float(aov_row["Today"])
+        discount_pct = abs(float(discount_row["Today"]))
+
+        net_lw_growth = get_overall_lw_growth(net_row)
+        gross_lw_growth = get_overall_lw_growth(gross_row)
+        txn_lw_growth = get_overall_lw_growth(txn_row)
+        aov_lw_growth = get_overall_lw_growth(aov_row)
+        discount_lw_growth = get_overall_lw_growth(discount_row)
+
+    except Exception as e:
+        print(f"❌ WhatsApp Overall KPI Error: {e}")
+        return
+
+    # =====================================================
+    # BRAND CONTRIBUTION + LW%
     # =====================================================
 
     brand_lines = []
 
     if not brand_summary.empty:
-
-        total_brand_sales = brand_summary["Today Rev"].sum()
+        total_brand_sales = float(brand_summary["Today Rev"].sum())
 
         for _, r in brand_summary.sort_values(
             "Today Rev",
             ascending=False
         ).iterrows():
-
             rev = float(r["Today Rev"])
-
-            contribution = (
-                rev / max(total_brand_sales, 1)
-            ) * 100
+            contribution = rev / max(total_brand_sales, 1) * 100
+            brand_growth = float(r.get("Growth %", 0) or 0)
 
             brand_lines.append(
-                f"🍶 {r['Brand']}: "
-                f"₹{rev/100000:.2f}L "
-                f"({contribution:.0f}%)"
+                f"🍶 {r['Brand']}: {fmt_lakh(rev)} "
+                f"({contribution:.0f}%) "
+                f"| LW%: {fmt_lw_pct(brand_growth)}"
             )
 
-    brand_text = "\n".join(brand_lines)
+    brand_text = "\n".join(brand_lines) if brand_lines else "No brand data available"
 
     # =====================================================
-    # SOURCE SALES
+    # SOURCE CONTRIBUTION + LW%
     # =====================================================
 
     source_lines = []
 
     if not source_summary.empty:
-
         for _, r in source_summary.sort_values(
             "Today Rev",
             ascending=False
         ).iterrows():
-
             rev = float(r["Today Rev"])
+            source_growth = float(r.get("Growth %", 0) or 0)
 
             source_lines.append(
-                f"📍 {r['Source Group']}: "
-                f"₹{rev/100000:.2f}L"
+                f"📍 {r['Source Group']}: {fmt_lakh(rev)} "
+                f"| LW%: {fmt_lw_pct(source_growth)}"
             )
 
-    source_text = "\n".join(source_lines)
+    source_text = "\n".join(source_lines) if source_lines else "No source data available"
 
     # =====================================================
-    # HOURLY SALES
+    # HOURLY PERFORMANCE + LW%
     # =====================================================
 
     hourly_lines = []
 
     if not hourly_analysis.empty:
-
-        latest_hour = hourly_analysis.iloc[-1]
+        latest_hour = (
+            hourly_analysis
+            .sort_values("BusinessHour")
+            .iloc[-1]
+        )
 
         hourly_today = float(latest_hour["Today"])
         hourly_lw = float(latest_hour["Last Week"])
         hourly_growth = float(latest_hour["Growth %"])
+        hour_value = int(latest_hour["Hour"])
 
         hourly_lines.append(
-            f"⏰ Current Hour: "
-            f"₹{hourly_today/100000:.2f}L"
+            f"⏰ {hour_value:02d}:00: {fmt_lakh(hourly_today)}"
         )
-
         hourly_lines.append(
-            f"📊 Same Hour LW: "
-            f"₹{hourly_lw/100000:.2f}L"
+            f"📊 Same Hour LW: {fmt_lakh(hourly_lw)}"
         )
-
         hourly_lines.append(
-            f"📈 Growth: "
-            f"{hourly_growth:+.1f}%"
+            f"📈 LW%: {fmt_lw_pct(hourly_growth)}"
         )
 
-    hourly_text = "\n".join(hourly_lines)
+    hourly_text = "\n".join(hourly_lines) if hourly_lines else "Hourly data unavailable"
 
     # =====================================================
-    # TARGET
+    # TARGET / PROJECTION
+    # LW% is added to the EOD projection because it is projected
+    # using the current-vs-LW sales growth rate. Achievement is
+    # against target, so it has no LW comparison.
     # =====================================================
 
     try:
-
-        target_row = target_summary[
+        target_row = target_summary.loc[
             target_summary["Metric"] == "Total"
         ].iloc[0]
 
         target = float(target_row["Target"])
-        eod_projection = float(
-            target_row["EOD Projection"]
-        )
-
-        achievement = float(
-            target_row["Ach %"]
-        )
+        eod_projection = float(target_row["EOD Projection"])
+        achievement = float(target_row["Ach %"])
 
         target_text = (
-            f"🎯 Target: ₹{target/100000:.2f}L\n"
-            f"🔮 EOD Projection: ₹{eod_projection/100000:.2f}L\n"
-            f"📊 Achievement: {achievement:.1f}%"
+            f"🎯 Target: {fmt_lakh(target)}\n"
+            f"🔮 EOD Projection: {fmt_lakh(eod_projection)} "
+            f"| LW%: {fmt_lw_pct(net_lw_growth)}\n"
+            f"📊 Achievement: {achievement:.0f}%"
         )
 
     except Exception:
-
         target_text = "🎯 Target information unavailable"
 
     # =====================================================
-    # MESSAGE
+    # KEY TAKEAWAY
+    # =====================================================
+
+    insight = str(insight_text).strip() if insight_text else ""
+    if not insight or insight.lower() == "insight not available":
+        if net_lw_growth > 0:
+            insight = f"Net Revenue is up {fmt_lw_pct(net_lw_growth)} vs Last Week."
+        elif net_lw_growth < 0:
+            insight = f"Net Revenue is down {fmt_lw_pct(net_lw_growth)} vs Last Week."
+        else:
+            insight = "Net Revenue is flat vs Last Week."
+
+    # =====================================================
+    # WHATSAPP MESSAGE
     # =====================================================
 
     message = f"""
@@ -3778,11 +3812,11 @@ def send_whatsapp_live():
 
 💰 BUSINESS OVERVIEW
 
-💵 Gross Sales: ₹{gross_sales/100000:.2f}L
-💵 Net Revenue: ₹{net_sales/100000:.2f}L
-🧾 Transactions: {transactions:,}
-🧺 AOV: ₹{aov:,.0f}
-📉 Discount: {discount_pct:.1f}%
+💵 Gross Sales: {fmt_lakh(gross_sales)} | LW%: {fmt_lw_pct(gross_lw_growth)}
+💵 Net Revenue: {fmt_lakh(net_sales)} | LW%: {fmt_lw_pct(net_lw_growth)}
+🧾 Transactions: {transactions:,} | LW%: {fmt_lw_pct(txn_lw_growth)}
+🧺 AOV: ₹{aov:,.0f} | LW%: {fmt_lw_pct(aov_lw_growth)}
+📉 Discount: {discount_pct:.1f}% | LW%: {fmt_lw_pct(discount_lw_growth)}
 
 🏪 BRAND CONTRIBUTION
 
@@ -3800,15 +3834,15 @@ def send_whatsapp_live():
 
 {target_text}
 
-🧠 INSIGHT
+🧠 KEY TAKEAWAY
 
-{insight_text}
+{insight}
 
 🤖 AI MIS Automation
-"""
+""".strip()
 
     # =====================================================
-    # SEND
+    # SEND WHATSAPP
     # =====================================================
 
     url = (
@@ -3816,13 +3850,12 @@ def send_whatsapp_live():
         f"{PHONE_NUMBER_ID}/messages"
     )
 
-    headers = {
+    request_headers = {
         "Authorization": f"Bearer {ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
 
     for recipient in RECIPIENTS:
-
         payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
@@ -3834,23 +3867,27 @@ def send_whatsapp_live():
             }
         }
 
-        response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
+        try:
+            response = requests.post(
+                url,
+                headers=request_headers,
+                json=payload,
+                timeout=30
+            )
 
-        print(
-            f"WhatsApp → {recipient} | "
-            f"Status : {response.status_code}"
-        )
+            print(
+                f"WhatsApp → {recipient} | "
+                f"Status: {response.status_code}"
+            )
 
-        if response.ok:
-            print("✅ WhatsApp Live Sales Sent")
-        else:
-            print("❌ WhatsApp Send Failed")
-            print(response.text)
+            if response.ok:
+                print("✅ WhatsApp Live Sales Sent")
+            else:
+                print("❌ WhatsApp Send Failed")
+                print(response.text)
+
+        except requests.RequestException as e:
+            print(f"❌ WhatsApp request failed for {recipient}: {e}")
 
     print("=" * 60)
 
@@ -3941,7 +3978,7 @@ def send_telegram_live():
 
     def fmt_pct(value):
         try:
-            return f"{float(value):+.1f}%"
+            return f"{float(value):+.0f}%"
         except:
             return "0.0%"
 
