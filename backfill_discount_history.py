@@ -13,6 +13,7 @@ carries on from the first month that is not archived yet.
 Months that have not ended yet (plus the archive grace period) are left for the nightly job.
 """
 import argparse
+import importlib
 import json
 import os
 import subprocess
@@ -24,6 +25,26 @@ from zoneinfo import ZoneInfo
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import write_discount_sheet as wd  # noqa: E402  (the same archive code the nightly job uses)
+
+
+# What the pull needs. Checked before anything is pulled, so a missing package or secret stops the job at once.
+PACKAGES = [("pandas", "pandas"), ("numpy", "numpy"), ("requests", "requests"), ("jwt", "pyjwt"),
+            ("gspread", "gspread"), ("google.oauth2", "google-auth")]
+SECRETS = ["API_KEY", "SECRET_KEY", "GOOGLE_CREDENTIALS"]
+
+
+def preflight(env=os.environ, importer=importlib.import_module):
+    """Returns the problems that would stop the pull (an empty list means all is set)."""
+    problems = []
+    for module, package in PACKAGES:
+        try:
+            importer(module)
+        except ImportError:
+            problems.append(f"Python package '{package}' is not installed (add it to the Install step)")
+    for name in SECRETS:
+        if not env.get(name):
+            problems.append(f"Secret {name} is not passed to the job (add it to the workflow's env)")
+    return problems
 
 
 def month_list(first, last):
@@ -45,11 +66,8 @@ def month_days(month):
 
 
 def archived_months(archive_dir):
-    path = os.path.join(archive_dir, "index.json")
-    if not os.path.exists(path):
-        return set()
-    with open(path, encoding="utf-8") as f:
-        return set(json.load(f).get("months", []))
+    """Months already archived: the archive files in the folder."""
+    return wd.archived_from_folder(archive_dir)
 
 
 def pull_month(month, rows_path, workers):
@@ -68,16 +86,31 @@ def archive_from_rows(rows_path, archive_dir, today):
     return set(wd.archive_closed_months(rows, archive_dir, today))
 
 
-def commit_and_push(month, archive_dir):
-    """Commits the archive folder and pushes it to the branch the job runs on."""
-    branch = os.environ.get("GITHUB_REF_NAME", "main")
+def set_identity():
+    """Sets the committer for the whole repository, so commits and rebases both have one."""
+    subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+    subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+
+
+def commit_and_push(month, archive_dir, branch=None):
+    """Commits the archive folder, rebases it onto the branch on GitHub and pushes. If both sides changed the archive
+    index, the index is rebuilt from the archive files, which is the same list either side would produce."""
+    branch = branch or os.environ.get("GITHUB_REF_NAME", "main")
+    set_identity()
     subprocess.run(["git", "add", archive_dir], check=True)
     if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode == 0:
         return
-    subprocess.run(["git", "-c", "user.name=github-actions[bot]",
-                    "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-                    "commit", "-m", f"Discount archive: {month}"], check=True)
-    subprocess.run(["git", "pull", "--rebase", "origin", branch], check=True)
+    subprocess.run(["git", "commit", "-m", f"Discount archive: {month}"], check=True)
+    subprocess.run(["git", "fetch", "origin", branch], check=True)
+    if subprocess.run(["git", "rebase", f"origin/{branch}"]).returncode != 0:
+        for _ in range(3):
+            wd.write_archive_index(archive_dir)
+            subprocess.run(["git", "add", archive_dir], check=True)
+            if subprocess.run(["git", "-c", "core.editor=true", "rebase", "--continue"]).returncode == 0:
+                break
+        else:
+            subprocess.run(["git", "rebase", "--abort"])
+            raise RuntimeError("The archive could not be rebased onto the branch on GitHub. See the log above.")
     subprocess.run(["git", "push", "origin", f"HEAD:{branch}"], check=True)
 
 
@@ -124,6 +157,12 @@ def main():
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--commit", action="store_true")
     args = ap.parse_args()
+    problems = preflight()
+    if problems:
+        print("Setup problems. Nothing was pulled:")
+        for line in problems:
+            print("  - " + line)
+        sys.exit(2)
     first = datetime.strptime(args.start, "%Y-%m-%d").date()
     last = datetime.strptime(args.end, "%Y-%m-%d").date()
     today = (datetime.now(ZoneInfo("Asia/Kolkata")) - timedelta(hours=5)).date()
