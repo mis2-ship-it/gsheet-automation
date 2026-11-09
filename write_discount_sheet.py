@@ -449,15 +449,31 @@ def archive_frame(lab, itm):
     return pd.concat([labels, items], ignore_index=True)[ARCHIVE_COLS]
 
 
+ARCHIVE_FILE_RE = re.compile(r"^(\d{4}-\d{2})\.csv\.gz$")
+
+
+def archived_from_folder(archive_dir):
+    """Months with an archive file in archive_dir. The files are the record; index.json lists them."""
+    if not os.path.isdir(archive_dir):
+        return set()
+    return {m.group(1) for f in os.listdir(archive_dir) if (m := ARCHIVE_FILE_RE.match(f))}
+
+
+def write_archive_index(archive_dir, months=None):
+    """Writes index.json: the archived months only (no date), so the same months always give the same file."""
+    months = sorted(archived_from_folder(archive_dir) if months is None else months)
+    os.makedirs(archive_dir, exist_ok=True)
+    with open(os.path.join(archive_dir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump({"months": months}, f, indent=1)
+        f.write("\n")
+    return months
+
+
 def archive_closed_months(rows, archive_dir, today):
     """Writes each month that has ended (plus the grace period) and has a row for every day, as one gzipped CSV in
     archive_dir. Months already archived are not written again. Returns the archived months, oldest first."""
     os.makedirs(archive_dir, exist_ok=True)
-    index_path = os.path.join(archive_dir, "index.json")
-    done = set()
-    if os.path.exists(index_path):
-        with open(index_path, encoding="utf-8") as f:
-            done = set(json.load(f).get("months", []))
+    done = archived_from_folder(archive_dir)
     for m in sorted(set(rows["day"].astype(str).str[:7])):
         if m in done or month_end(m) + timedelta(days=ARCHIVE_GRACE_DAYS) >= today:
             continue
@@ -469,9 +485,7 @@ def archive_closed_months(rows, archive_dir, today):
         archive_frame(lab, itm).to_csv(os.path.join(archive_dir, f"{m}.csv.gz"), index=False, compression="gzip")
         done.add(m)
         print(f"archive {m}: {len(lab)} label rows, {len(itm)} item rows")
-    with open(index_path, "w", encoding="utf-8") as f:
-        json.dump({"months": sorted(done), "updated": today.isoformat()}, f, indent=1)
-    return sorted(done)
+    return write_archive_index(archive_dir, sorted(done))
 
 
 def main():
