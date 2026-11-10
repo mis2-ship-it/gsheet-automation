@@ -68,11 +68,12 @@ svg text{font-family:Arial,Helvetica,sans-serif}
   <button data-tab="overview" class="on">Overview</button>
   <button data-tab="products">Product performance</button>
   <button data-tab="analysis">Discount analysis</button>
+  <button data-tab="compare">Compare</button>
 </nav>
 
 <div class="sticky">
   <div class="controls">
-    <label>Date <input id="anchor" type="date"></label>
+    <label>Date (day, or any day in the month) <input id="anchor" type="date"></label>
     <label>Period
       <select id="kind">
         <option value="daily">Daily</option>
@@ -81,6 +82,13 @@ svg text{font-family:Arial,Helvetica,sans-serif}
         <option value="mtd">Month to date</option>
         <option value="custom">Custom dates</option>
         <option value="live" id="optLive">Live (today so far)</option>
+      </select>
+    </label>
+    <label id="cmpWrap">Compare with
+      <select id="cmp">
+        <option value="auto" selected>Default: Daily same weekday last week · Weekly previous week · Monthly same month last year</option>
+        <option value="last">Previous period</option>
+        <option value="year">Same period last year</option>
       </select>
     </label>
     <label id="fromWrap" style="display:none">From <input id="dfrom" type="date"></label>
@@ -109,7 +117,7 @@ var OPTS = null;
 var LAST = { overview: null, products: null, analysis: null };
 var PAGE = 20, PPAGE = 25;
 var STATE = { tab: "overview", page: 0, searching: false,
-  codes: [], codeSearch: "", dd: false, timer: null,
+  codes: [], codeSearch: "", dd: false, timer: null, offerOpen: {}, cmpView: { mode: "day", periods: 5, metric: "disc" },
   psearch: "", pcat: "all", ppage: 0, catMetric: "net", catChannel: "all", band: { AOV: {}, Discount: {} } };
 // Category block state, one per tab: the same structure on Overview, Product performance and Discount analysis.
 var CB = { overview: { cats: null, search: "", open: {}, searching: false },
@@ -240,7 +248,7 @@ function fill(id, list, allLabel) {
   }).join("");
 }
 function syncPeriodUI() {
-  var custom = $("kind").value === "custom";
+  var custom = $("kind").value === "custom" || STATE.tab === "compare";
   $("fromWrap").style.display = custom ? "" : "none";
   $("toWrap").style.display = custom ? "" : "none";
   if (custom) {
@@ -266,7 +274,17 @@ function setOptions(o) {
 function params() {
   return { anchor: $("anchor").value, kind: $("kind").value, from: $("dfrom").value, to: $("dto").value,
     brand: $("brand").value, region: $("region").value, source: $("source").value, session: $("session").value,
-    codes: STATE.codes.slice() };
+    codes: STATE.codes.slice(), cmp: $("cmp").value,
+    mode: STATE.cmpView.mode, periods: STATE.cmpView.periods, metric: STATE.cmpView.metric };
+}
+// Each request has a number. An answer is shown only if it is for the latest choice on its tab, so a slow answer
+// to an earlier choice (for example Monthly, arriving after Live) cannot overwrite the current view.
+var REQ = { seq: 0, latest: { overview: 0, products: 0, analysis: 0 } };
+var TAB_OF = { overview: "overview", products: "products", analysis: "analysis", compare: "compare" };
+function answerFor(key, id, handler) {
+  return function (d) {
+    if (REQ.latest[key] === id && STATE.tab === TAB_OF[key]) handler(d);
+  };
 }
 function calc() {
   var p = params(), tab = STATE.tab;
@@ -277,10 +295,15 @@ function calc() {
   if (p.kind === "custom" && (!p.from || !p.to)) { status("Choose the from and to dates."); return; }
   status(tab === "overview" ? (p.kind === "live" ? "Calculating today so far…" : "Calculating…") : "Calculating…");
   var run = google.script.run.withFailureHandler(fail);
-  if (tab === "products") run.withSuccessHandler(onProducts).getProductData(p);
-  else if (tab === "analysis") run.withSuccessHandler(onBands).getBucketData(p);
-  else if (p.kind === "live") run.withSuccessHandler(onOverview).getDiscountLive(p);
-  else run.withSuccessHandler(onOverview).getDiscountData(p);
+  var id = ++REQ.seq;
+  if (tab === "products") { REQ.latest.products = id; run.withSuccessHandler(answerFor("products", id, onProducts)).getProductData(p); }
+  else if (tab === "analysis") { REQ.latest.analysis = id; run.withSuccessHandler(answerFor("analysis", id, onBands)).getBucketData(p); }
+  else if (tab === "compare") { REQ.latest.compare = id; run.withSuccessHandler(answerFor("compare", id, onCompare)).getCompareData(p); }
+  else {
+    REQ.latest.overview = id;
+    if (p.kind === "live") run.withSuccessHandler(answerFor("overview", id, onOverview)).getDiscountLive(p);
+    else run.withSuccessHandler(answerFor("overview", id, onOverview)).getDiscountData(p);
+  }
 }
 function scheduleCalc() { clearTimeout(STATE.timer); STATE.timer = setTimeout(calc, 500); }
 
@@ -291,6 +314,10 @@ function setTab(t) {
   $("session").disabled = t === "products";
   $("out").innerHTML = "";
   $("ptable").innerHTML = "";
+  $("cmpWrap").style.display = t === "overview" ? "" : "none";
+  $("kind").disabled = t === "compare";
+  syncPeriodUI();
+  if (t === "compare") { LAST.compare = null; $("out").innerHTML = renderCompare(); }
   calc();
 }
 
@@ -301,30 +328,34 @@ function catBlockHtml(scope, cats, allCats, title, note) {
   var q = st.search.trim().toLowerCase();
   var catOn = function (c) { return st.cats === null || st.cats.indexOf(c) >= 0; };
   var list = (cats || []).filter(function (g) { return catOn(g.cat) && (!q || g.cat.toLowerCase().indexOf(q) >= 0); });
+  var hasPrev = (cats || []).some(function (g) { return !!g.prev; });
   var checks = allCats.filter(function (c) { return !q || c.toLowerCase().indexOf(q) >= 0; }).slice(0, 300).map(function (c) {
     return "<label class='chk'><input type='checkbox' data-cb='" + scope + "' data-cat='" + attr(c) + "'" + (catOn(c) ? " checked" : "") + "> " + esc(c) + "</label>";
   }).join("") || "<span class='sub'>No category matches.</span>";
   var selected = st.cats === null ? allCats.length : st.cats.length;
+  var cells = function (c, p) {
+    return "<td>" + inr(c.inv) + "</td><td>" + inr(c.qty) + "</td><td>" + inr(c.gross) + "</td><td>" + inr(c.disc) + "</td><td>" +
+      inr(c.net) + "</td><td>" + dpct(c.disc, c.gross) + "</td>" + (hasPrev ? "<td>" + growth(c.net, p ? p.net : 0) + "</td>" : "");
+  };
   var body = "";
   list.forEach(function (g) {
-    var open = !!st.open[g.cat], c = g.cur;
+    var open = !!st.open[g.cat];
     body += "<tr class='clickable' data-cb='" + scope + "' data-catname='" + attr(g.cat) + "'><td class='l'>" + (open ? "▾ " : "▸ ") + esc(g.cat) + "</td>" +
-      "<td>" + inr(c.inv) + "</td><td>" + inr(c.qty) + "</td><td>" + inr(c.gross) + "</td><td>" + inr(c.disc) + "</td><td>" + inr(c.net) + "</td><td>" + dpct(c.disc, c.gross) + "</td></tr>";
-    if (open) {
-      g.items.forEach(function (x) {
-        var k = x.cur;
-        body += "<tr class='drill'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.item) + "</td><td>" + inr(k.inv) + "</td><td>" + inr(k.qty) +
-          "</td><td>" + inr(k.gross) + "</td><td>" + inr(k.disc) + "</td><td>" + inr(k.net) + "</td><td>" + dpct(k.disc, k.gross) + "</td></tr>";
-      });
-    }
+      cells(g.cur, g.prev) + "</tr>";
+    if (open) g.items.forEach(function (x) {
+      body += "<tr class='drill'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.item) + "</td>" + cells(x.cur, x.prev) + "</tr>";
+    });
   });
+  var head = "<th class='l'>Category</th><th>Txn</th><th>Qty</th><th>Gross</th><th>Discount</th><th>Net</th><th>Dis %</th>" +
+    (hasPrev ? "<th>Net vs last week</th>" : "");
+  var cols = hasPrev ? 8 : 7;
   return "<div class='section'><h2>" + title + "</h2><p class='note'>" + note + "</p>" +
     "<div class='grid2'><div><label>Search category<input data-cbsearch='" + scope + "' type='search' value='" + attr(st.search) + "' placeholder='e.g. Coffee'></label>" +
     "<p class='note'><button class='ghost' data-cb='" + scope + "' data-cat-all='1'>All</button><button class='ghost' data-cb='" + scope + "' data-cat-none='1'>None</button> " +
     selected + " of " + allCats.length + " selected</p></div>" +
     "<div class='clist'>" + checks + "</div></div>" +
-    "<div class='scroll'><table><thead><tr><th class='l'>Category</th><th>Txn</th><th>Qty</th><th>Gross</th><th>Discount</th><th>Net</th><th>Dis %</th></tr></thead><tbody>" +
-    (body || "<tr><td colspan='7' class='sub'>No categories for this selection.</td></tr>") + "</tbody></table></div></div>";
+    "<div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" +
+    (body || "<tr><td colspan='" + cols + "' class='sub'>No categories for this selection.</td></tr>") + "</tbody></table></div></div>";
 }
 function rerender(scope) {
   if (scope === "overview") renderOverview();
@@ -345,7 +376,9 @@ function onOverview(d) {
   LAST.overview = d;
   STATE.page = 0;
   var scope = d.meta.codes.length ? d.meta.codes.length + " selected code(s)" : "all discount codes";
-  status("Showing " + d.meta.cur + " against " + d.meta.prev + " (" + d.meta.note + "), " + scope + ".");
+  var curName = d.meta.curLabel || d.meta.cur, prevName = d.meta.prevLabel || d.meta.prev;
+  status("Showing " + curName + " against " + prevName + " (" + d.meta.note + "), " + scope + "." +
+    (d.meta.kind !== "live" && d.meta.prevHasData === false ? " No data for the comparison period yet, so the growth figures are blank." : ""));
   renderOverview();
 }
 function renderOverview() {
@@ -353,20 +386,58 @@ function renderOverview() {
   if (!d) return;
   var html;
   if (d.meta.kind === "live") {
-    html = liveKpiBlock(d) + codeBlock(d) + liveHourBlock(d);
+    html = liveKpiBlock(d) +
+      offersHtml(d, "By offer type", "Today so far, against the same hours last week. Click an offer type to see its codes.") +
+      codeBlock(d) + liveHourBlock(d) +
+      catBlockHtml("overview", d.cats, OPTS.categories, "By category: today so far, against the same hours last week",
+        "Click a category to see its products. Txn counts each order once in the category.");
   } else {
-    html = "<p class='note'>Discount codes: Swiggy and Zomato orders only.</p>" + overviewKpis(d) + overviewCharts(d) + codeBlock(d) + trendBlock(d) +
+    html = "<p class='note'>Discount codes: Swiggy and Zomato orders only.</p>" + overviewKpis(d) + overviewCharts(d) +
+      offersHtml(d, "By offer type", "Discount codes grouped by offer type, like the Swiggy offer-type sheet. Click an offer type to see its codes.") +
+      codeBlock(d) + trendBlock(d) +
       catBlockHtml("overview", d.cats, OPTS.categories, "By category",
         "Click a category to see its items. Txn counts each order once in the category.");
   }
   $("out").innerHTML = html;
   restoreFocus("overview");
 }
+// Offer types by platform (Swiggy, Zomato): orders, net, discount, discount %, and growth against the comparison period.
+function offersHtml(d, title, note) {
+  var byPlatform = d.offers || {};
+  var names = Object.keys(byPlatform);
+  if (!names.length) return "";
+  var cells = function (c, p) {
+    return "<td>" + inr(c.inv) + "</td><td>" + inr(c.net) + "</td><td>" + inr(c.disc) + "</td><td>" + dpct(c.disc, c.gross) +
+      "</td><td>" + growth(c.net, p.net) + "</td>";
+  };
+  var table = function (platform, offers) {
+    var sum = function (key) {
+      var t = { inv: 0, qty: 0, gross: 0, disc: 0, net: 0 };
+      offers.forEach(function (o) { var c = o[key]; t.inv += c.inv; t.gross += c.gross; t.disc += c.disc; t.net += c.net; });
+      return t;
+    };
+    var body = offers.map(function (o) {
+      var key = platform + "|" + o.type;
+      var open = !!STATE.offerOpen[key];
+      var line = "<tr class='clickable' data-offer='" + attr(key) + "'><td class='l'>" + (open ? "▾ " : "▸ ") + esc(o.type) + "</td>" +
+        cells(o.cur, o.prev) + "</tr>";
+      if (open) o.labels.forEach(function (x) {
+        line += "<tr class='drill'><td class='l'>&nbsp;&nbsp;&nbsp;&nbsp;" + esc(x.label) + "</td>" + cells(x.cur, x.prev) + "</tr>";
+      });
+      return line;
+    }).join("");
+    body += "<tr class='tot'><td class='l'>Total</td>" + cells(sum("cur"), sum("prev")) + "</tr>";
+    return "<h3>" + esc(platform) + "</h3><div class='scroll'><table><thead><tr><th class='l'>Offer type</th><th>Orders</th>" +
+      "<th>Net</th><th>Discount</th><th>Dis %</th><th>Net growth</th></tr></thead><tbody>" + body + "</tbody></table></div>";
+  };
+  return "<div class='section'><h2>" + title + "</h2><p class='note'>" + note + "</p>" +
+    names.map(function (n) { return table(n, byPlatform[n]); }).join("") + "</div>";
+}
 function overviewKpis(d) {
   var useAll = d.meta.codes.length === 0;
   var c = useAll ? d.overall.cur : d.totals.cur, p = useAll ? d.overall.prev : d.totals.prev;
   var aov = c.inv ? c.net / c.inv : 0, paov = p.inv ? p.net / p.inv : 0;
-  var vs = d.meta.kind === "custom" ? "vs previous period" : "vs previous";
+  var vs = d.meta.vs ? "vs " + d.meta.vs : "vs previous";
   return '<div class="kpis">' +
     kpiCard("Net revenue", inr(c.net), growth(c.net, p.net) + " " + vs) +
     kpiCard("Orders", inr(c.inv), growth(c.inv, p.inv) + " " + vs) +
@@ -599,6 +670,45 @@ function renderProductTable() {
     "<tbody>" + (body || "<tr><td colspan='" + span + "' class='sub'>No products for these filters.</td></tr>") + "</tbody></table></div>";
 }
 
+/* ---------- Compare: the same kind of period side by side, by platform, with the offer types down the side ---------- */
+var CMP_MODES = [["day", "Day on day (same weekday, week after week)"], ["week", "Weeks (Mon–Sun, WK numbers)"],
+                 ["months", "Same dates, earlier months"], ["year", "Same dates, earlier years"]];
+var CMP_METRICS = [["disc", "Discount ₹"], ["net", "Net sales"], ["inv", "Orders"]];
+function renderCompare() {
+  var v = STATE.cmpView;
+  var opts = function (list, sel) {
+    return list.map(function (o) {
+      return '<option value="' + o[0] + '"' + (String(sel) === String(o[0]) ? " selected" : "") + ">" + esc(o[1]) + "</option>";
+    }).join("");
+  };
+  var pers = [3, 5, 8].map(function (n) { return '<option value="' + n + '"' + (v.periods === n ? " selected" : "") + ">" + n + "</option>"; }).join("");
+  var controls = "<div class='section'><h2>Compare</h2><div class='frow'>" +
+    "<select id='cmpBy'>" + opts(CMP_MODES, v.mode) + "</select>" +
+    "<select id='cmpPeriods'>" + pers + "</select>" +
+    "<select id='cmpMetric'>" + opts(CMP_METRICS, v.metric) + "</select></div>" +
+    "<p class='note'>The last period is the one the Date falls in. For the earlier-months and earlier-years views, From and To set the " +
+    "dates to compare (if empty, the Date is used). Swiggy and Zomato are shown separately, with the same offer types as the Overview.</p>";
+  var d = LAST.compare;
+  if (!d) return controls + "<p class='note'>Loading…</p></div>";
+  var head = "<th class='l'>Offer type</th>" + d.columns.map(function (c) {
+    return "<th>" + esc(c.label) + (c.hasData ? "" : "<br><span class='sub'>no data yet</span>") + "</th>";
+  }).join("");
+  var tables = d.platforms.map(function (pl) {
+    var body = pl.types.map(function (t) {
+      return "<tr><td class='l'>" + esc(t.type) + "</td>" + t.values.map(function (x) { return "<td>" + inr(x) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+    body += "<tr class='tot'><td class='l'>Total</td>" + pl.total.map(function (x) { return "<td>" + inr(x) + "</td>"; }).join("") + "</tr>";
+    return "<h3>" + esc(pl.source) + "</h3><div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+  }).join("");
+  return controls + (tables || "<p class='note'>No sales in these periods for the filters chosen.</p>") + "</div>";
+}
+function onCompare(d) {
+  LAST.compare = d;
+  var names = { disc: "Discount ₹", net: "Net sales", inv: "Orders" };
+  status("Comparing " + d.columns.length + " periods: " + names[d.metric] + " by offer type.");
+  $("out").innerHTML = renderCompare();
+}
+
 /* ---------- Discount analysis: AOV and discount bands ---------- */
 function onBands(d) {
   LAST.analysis = d;
@@ -682,7 +792,16 @@ document.querySelectorAll("#tabs button").forEach(function (b) {
 document.addEventListener("change", function (e) {
   var t = e.target;
   if (t.id === "kind") { syncPeriodUI(); calc(); return; }
-  if (["anchor", "brand", "region", "source", "session", "dfrom", "dto"].indexOf(t.id) >= 0) { calc(); return; }
+  if (["anchor", "brand", "region", "source", "session", "dfrom", "dto", "cmp"].indexOf(t.id) >= 0) { calc(); return; }
+  if (t.id === "cmpBy" || t.id === "cmpPeriods" || t.id === "cmpMetric") {
+    if (t.id === "cmpBy") STATE.cmpView.mode = t.value;
+    if (t.id === "cmpPeriods") STATE.cmpView.periods = Number(t.value);
+    if (t.id === "cmpMetric") STATE.cmpView.metric = t.value;
+    LAST.compare = null;
+    $("out").innerHTML = renderCompare();
+    calc();
+    return;
+  }
   if (t.id === "pcat") { STATE.pcat = t.value; STATE.ppage = 0; renderProductTable(); return; }
   if (t.id === "catMetric") { STATE.catMetric = t.value; renderCategoryTable(); return; }
   if (t.id === "catChannel") { STATE.catChannel = t.value; renderCategoryTable(); return; }
@@ -730,6 +849,13 @@ document.addEventListener("click", function (e) {
   if (pg) { STATE.page += Number(pg.getAttribute("data-pg")); renderOverview(); return; }
   var pp = has("[data-pp]");
   if (pp) { STATE.ppage += Number(pp.getAttribute("data-pp")); renderProductTable(); return; }
+  var offerRow = has("[data-offer]");
+  if (offerRow) {
+    var ot = offerRow.getAttribute("data-offer");
+    STATE.offerOpen[ot] = !STATE.offerOpen[ot];
+    renderOverview();
+    return;
+  }
   var cbRow = has("[data-cb][data-catname]");
   if (cbRow) {
     var sc1 = cbRow.getAttribute("data-cb"), n = cbRow.getAttribute("data-catname");
