@@ -492,12 +492,15 @@ function compareColumns_(mode, n, anchor, from, to) {
   }
   return cols;
 }
-function metricOf_(cell, metric) { return metric === "net" ? cell.net : metric === "inv" ? cell.inv : cell.disc; }
+function metricOf_(cell, metric) {
+  if (metric === "discPct") return cell.gross ? (cell.disc / cell.gross) * 100 : null;
+  return metric === "net" ? cell.net : metric === "inv" ? cell.inv : cell.disc;
+}
 
 function computeCompare_(labelRows, p) {
   const mode = ["day", "week", "months", "year"].indexOf(p.mode) >= 0 ? p.mode : "day";
-  const metric = ["disc", "net", "inv"].indexOf(p.metric) >= 0 ? p.metric : "disc";
-  const cols = compareColumns_(mode, p.periods, p.anchor, p.from, p.to);
+  const metric = ["disc", "discPct", "net", "inv"].indexOf(p.metric) >= 0 ? p.metric : "disc";
+  const cols = compareColumns_(mode, p.periods, p.anchor, p.from, p.to);   // newest first: cols[0] is the latest period
   const f = { brand: p.brand || "all", region: p.region || "all", source: p.source || "all", session: p.session || "all" };
   const passF = r => (f.brand === "all" || r.brand === f.brand) && (f.region === "all" || r.region === f.region) &&
                      (f.source === "all" || r.source === f.source) && (f.session === "all" || r.session === f.session);
@@ -511,6 +514,8 @@ function computeCompare_(labelRows, p) {
       add_(m.get(r.label)[i], r);
     }
   });
+  // Highest to lowest on the latest period's value. A null value (no gross) sorts last.
+  const rank = v => (v == null ? -Infinity : v);
   const platforms = [...sources.keys()]
     .sort((x, y) => (x === "Swiggy" ? -1 : y === "Swiggy" ? 1 : x.localeCompare(y)))
     .map(src => {
@@ -521,10 +526,15 @@ function computeCompare_(labelRows, p) {
         const tv = types.get(t);
         cells.forEach((cell, i) => add_(tv[i], cell));
       }
+      // The total counts every code and offer type, so each period's total is the real total for that source.
+      const totalCells = cols.map(() => blank_());
+      for (const cells of types.values()) cells.forEach((cell, i) => add_(totalCells[i], cell));
+      const total = totalCells.map(c => metricOf_(c, metric));
+      // Shown: only codes and offer types with orders in the latest period, highest to lowest on the selected metric.
       const rows = [...types.entries()]
+        .filter(([, cells]) => cells[0].inv > 0)
         .map(([type, cells]) => ({ type: type, values: cells.map(c => metricOf_(c, metric)) }))
-        .sort((x, y) => y.values.reduce((s, v) => s + v, 0) - x.values.reduce((s, v) => s + v, 0));
-      const total = cols.map((_, i) => rows.reduce((s, r) => s + r.values[i], 0));
+        .sort((x, y) => { const a = rank(x.values[0]), b = rank(y.values[0]); return a === b ? 0 : (b > a ? 1 : -1); });
       return { source: src, types: rows, total: total };
     });
   return {
