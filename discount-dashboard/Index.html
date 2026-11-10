@@ -670,10 +670,15 @@ function renderProductTable() {
     "<tbody>" + (body || "<tr><td colspan='" + span + "' class='sub'>No products for these filters.</td></tr>") + "</tbody></table></div>";
 }
 
-/* ---------- Compare: the same kind of period side by side, by platform, with the offer types down the side ---------- */
+/* ---------- Compare: the same kind of period side by side, by platform. Swiggy by offer type, Zomato by voucher code ---------- */
 var CMP_MODES = [["day", "Day on day (same weekday, week after week)"], ["week", "Weeks (Mon–Sun, WK numbers)"],
                  ["months", "Same dates, earlier months"], ["year", "Same dates, earlier years"]];
-var CMP_METRICS = [["disc", "Discount ₹"], ["net", "Net sales"], ["inv", "Orders"]];
+var CMP_METRICS = [["disc", "Discount ₹"], ["discPct", "Dis %"], ["net", "Net sales"], ["inv", "Orders"]];
+// One figure in the Compare tables: money and counts as numbers, Dis % with a % sign.
+function cmpFmt(metric, v) {
+  if (v === null || v === undefined || isNaN(v)) return "—";
+  return metric === "discPct" ? v.toFixed(1) + "%" : inr(v);
+}
 function renderCompare() {
   var v = STATE.cmpView;
   var opts = function (list, sel) {
@@ -686,26 +691,31 @@ function renderCompare() {
     "<select id='cmpBy'>" + opts(CMP_MODES, v.mode) + "</select>" +
     "<select id='cmpPeriods'>" + pers + "</select>" +
     "<select id='cmpMetric'>" + opts(CMP_METRICS, v.metric) + "</select></div>" +
-    "<p class='note'>The last period is the one the Date falls in. For the earlier-months and earlier-years views, From and To set the " +
-    "dates to compare (if empty, the Date is used). Swiggy and Zomato are shown separately, with the same offer types as the Overview.</p>";
+    "<p class='note'>Columns run from the latest period (left) to the oldest (right). The latest period is the one the Date falls in. " +
+    "For the earlier-months and earlier-years views, From and To set the dates to compare (if empty, the Date is used). " +
+    "Only codes and offer types with orders in the latest period are shown, sorted highest to lowest on the selected metric for that period. " +
+    "The Total row counts every code, so it is the real total for each period.</p>";
   var d = LAST.compare;
   if (!d) return controls + "<p class='note'>Loading…</p></div>";
-  var head = "<th class='l'>Offer type</th>" + d.columns.map(function (c) {
+  var dateHead = d.columns.map(function (c) {
     return "<th>" + esc(c.label) + (c.hasData ? "" : "<br><span class='sub'>no data yet</span>") + "</th>";
   }).join("");
   var tables = d.platforms.map(function (pl) {
+    var first = pl.source === "Zomato" ? "Voucher code" : "Offer type";
     var body = pl.types.map(function (t) {
-      return "<tr><td class='l'>" + esc(t.type) + "</td>" + t.values.map(function (x) { return "<td>" + inr(x) + "</td>"; }).join("") + "</tr>";
+      return "<tr><td class='l'>" + esc(t.type) + "</td>" + t.values.map(function (x) { return "<td>" + cmpFmt(d.metric, x) + "</td>"; }).join("") + "</tr>";
     }).join("");
-    body += "<tr class='tot'><td class='l'>Total</td>" + pl.total.map(function (x) { return "<td>" + inr(x) + "</td>"; }).join("") + "</tr>";
-    return "<h3>" + esc(pl.source) + "</h3><div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody></table></div>";
+    if (!pl.types.length) body = "<tr><td class='sub' colspan='" + (d.columns.length + 1) + "'>No codes with orders in the latest period.</td></tr>";
+    body += "<tr class='tot'><td class='l'>Total</td>" + pl.total.map(function (x) { return "<td>" + cmpFmt(d.metric, x) + "</td>"; }).join("") + "</tr>";
+    return "<h3>" + esc(pl.source) + "</h3><div class='scroll'><table><thead><tr><th class='l'>" + first + "</th>" + dateHead +
+      "</tr></thead><tbody>" + body + "</tbody></table></div>";
   }).join("");
   return controls + (tables || "<p class='note'>No sales in these periods for the filters chosen.</p>") + "</div>";
 }
 function onCompare(d) {
   LAST.compare = d;
-  var names = { disc: "Discount ₹", net: "Net sales", inv: "Orders" };
-  status("Comparing " + d.columns.length + " periods: " + names[d.metric] + " by offer type.");
+  var names = { disc: "Discount ₹", discPct: "Dis %", net: "Net sales", inv: "Orders" };
+  status("Comparing " + d.columns.length + " periods, latest first: " + names[d.metric] + ".");
   $("out").innerHTML = renderCompare();
 }
 
