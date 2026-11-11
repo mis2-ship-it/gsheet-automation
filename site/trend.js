@@ -1,20 +1,129 @@
-/* ============ Sales, monthly: comparison chart (DoD %, WoW %, MoM %, YoY %) ============
-   Shown above the monthly view, with the page's filters (type, brand, region, source, session and store).
-   Metric: Sales (net ₹), Transactions, Discount (₹) or Dis % (the discount share of gross, shown as a value).
-   DoD %  each day against the same weekday last week. Mon–Sun tabs pick the weekdays to follow.
-   WoW %  each Mon–Sun week against the week before (shown on its Sunday).
-   MoM %  against the previous month, day by day (same day of the month).
-   YoY %  against the same month last year, day by day.
-   The current month is drawn with its comparable month, and the rest of the month is forecast (dotted line).
-   Loaded last, after the other sales scripts. It wraps salesPeriodView(), so the block sits above the monthly view. */
-const CHG = { k: null, metric: "sales", cmp: "dod", wd: [0, 1, 2, 3, 4, 5, 6] };
+/* ============ Sales, monthly: comparison chart (Month A vs Month B) ============
+   Month A is the month you look at (the latest is the month in progress). Month B is the month it is compared with.
+   Both are chosen from the dropdowns. MoM and YoY set Month B to the month before / the same month last year.
+   DoD %  each day against the same weekday last week, in each month.
+   WoW %  each Mon–Sun week against the week before, shown on its Sunday, in each month.
+   MoM / YoY %  each day of Month A against the same day of Month B.
+   Both lines carry growth labels. Forecast (dotted), for the rest of Month A:
+     the same day of Month B × (1 + Month A's growth so far against the same days of Month B).
+   Light (default) or dark, and Mobile / Desktop / Auto layout, are chosen at the top of the page.
+   Loaded last. It wraps salesPeriodView(), so the block sits above the monthly view. */
+const CHG = { a: null, b: null, cmp: "dod", metric: "sales", wd: [0, 1, 2, 3, 4, 5, 6] };
 const CHG_METRICS = [["sales", "Sales (net ₹)"], ["txn", "Transactions"], ["disc", "Discount (₹)"], ["discPct", "Dis %"]];
 const CHG_CMPS = [["dod", "DoD %"], ["wow", "WoW %"], ["mom", "MoM %"], ["yoy", "YoY %"]];
 const CHG_WD = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // Holidays drawn as a band on the chart. Confirm the dates for each year before relying on them.
 const CHG_HOLIDAYS = [{ from: "2026-11-07", to: "2026-11-09", name: "Diwali" }];
-// Colours: dark enough to read on white at small sizes.
-const CHG_C = { cur: "#1d4ed8", cmp: "#c2410c", text: "#0f172a", axis: "#334155", sub: "#475569", grid: "#cbd5e1", up: "#166534", down: "#b91c1c" };
+const CHG_PREF = { theme: "fb-sales-theme", layout: "fb-sales-layout" };
+
+/* ---- preferences: light is the default; layout Auto is desktop from 900px wide ---- */
+function chgApplyPrefs() {
+  const root = document.documentElement;
+  let theme = "light", layout = "auto";
+  try {
+    if (localStorage.getItem(CHG_PREF.theme) === "dark") theme = "dark";
+    const l = localStorage.getItem(CHG_PREF.layout);
+    if (l === "mobile" || l === "desktop" || l === "auto") layout = l;
+  } catch (e) { /* storage blocked: defaults */ }
+  root.setAttribute("data-theme", theme);
+  root.setAttribute("data-layout", layout);
+}
+function chgSetPref(kind, value) {
+  try { localStorage.setItem(kind === "theme" ? CHG_PREF.theme : CHG_PREF.layout, value); } catch (e) { /* not saved */ }
+  document.documentElement.setAttribute("data-" + kind, value);
+}
+function chgIsWide() {
+  const layout = document.documentElement.getAttribute("data-layout");
+  if (layout === "desktop") return true;
+  if (layout === "mobile") return false;
+  return !!(window.matchMedia && window.matchMedia("(min-width: 900px)").matches);
+}
+// Chart size: the drawing is made at the width it is shown at, so the text stays the same size on screen.
+function chgSize() {
+  return chgIsWide()
+    ? { W: 960, H: 340, L: 66, R: 16, T: 18, B: 40, fAx: 12, fLbl: 12, fDay: 11, fWk: 10 }
+    : { W: 360, H: 210, L: 42, R: 10, T: 14, B: 32, fAx: 8, fLbl: 8.5, fDay: 7.5, fWk: 7 };
+}
+// The Light / Dark and Mobile / Desktop / Auto switch, at the top of the page (above the header).
+function chgPrefBar() {
+  const old = document.getElementById("fb-prefs");
+  if (old && old.parentNode) old.parentNode.removeChild(old);
+  const app = document.querySelector(".app");
+  if (!app) return;
+  const theme = document.documentElement.getAttribute("data-theme"), layout = document.documentElement.getAttribute("data-layout");
+  const seg = (name, list, cur) => list.map(([v, t]) =>
+    `<button data-pref="${name}" data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join("");
+  const bar = document.createElement("div");
+  bar.id = "fb-prefs";
+  bar.className = "fb-prefs";
+  bar.innerHTML = `<span class="fb-lbl">Theme</span><div class="fb-seg">${seg("theme", [["light", "Light"], ["dark", "Dark"]], theme)}</div>` +
+    `<span class="fb-lbl">Layout</span><div class="fb-seg">${seg("layout", [["mobile", "Mobile"], ["desktop", "Desktop"], ["auto", "Auto"]], layout)}</div>`;
+  app.insertBefore(bar, app.firstChild);
+}
+
+(function chgStyle() {
+  if (document.getElementById("chg-style")) return;
+  const st = document.createElement("style");
+  st.id = "chg-style";
+  st.textContent = `html[data-theme="light"]{color-scheme:light;--cmp:#C2410C;--holiday:#FDE68A;--holiday-ink:#92400E}
+html[data-theme="dark"]{color-scheme:dark;--cmp:#FB923C;--holiday:#78350F;--holiday-ink:#FCD34D}
+html[data-layout="mobile"] .app{max-width:480px}
+html[data-layout="desktop"] .app{max-width:1120px}
+@media (min-width:900px){html[data-layout="auto"] .app{max-width:1120px}}
+.fb-prefs{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 16px 0;font-size:12px;color:var(--ink-2)}
+.fb-lbl{font-weight:600}
+.fb-seg{display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:var(--line)}
+.fb-seg button{padding:5px 11px;border-radius:8px;font-size:12px;color:var(--ink-2)}
+.fb-seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:600}
+.chg{margin:14px 16px 18px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink)}
+.chg:not(.chg-wide){max-width:420px}
+.chg.chg-wide{max-width:none}
+.chg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.chg-head h2{font-size:15px;margin:0;color:var(--ink)}
+.chg-months{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--ink-2)}
+.chg select{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+.chg select option{background:var(--surface);color:var(--ink)}
+.chg-seg{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.chg-seg button{padding:5px 11px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);font-size:12px}
+.chg-seg button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:#fff}
+.chg-wd button{min-width:38px}
+.chg-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:12px 0 8px}
+.chg-wide .chg-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+.chg-kpi{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.chg-fc{border-style:dashed}
+.chg-k{font-size:11px;color:var(--ink-2)}
+.chg-v{font-size:16px;font-weight:700;color:var(--ink)}
+.chg-d{font-size:11px;font-weight:600}
+.chg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;margin:8px 0}
+.chg-wide .chg-cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.chg-card{border:1px solid var(--line);border-radius:10px;padding:7px 8px}
+.chg-card .chg-v{font-size:13px}
+.chg-chart svg{display:block;width:100%;height:auto}
+.cs-ax{fill:var(--ink-2)}
+.cs-day{fill:var(--ink)}
+.cs-wk{fill:var(--ink-2)}
+.cs-grid{stroke:var(--line);stroke-width:.7}
+.cs-band{fill:var(--holiday);opacity:.6}
+.cs-holt{fill:var(--holiday-ink)}
+.cs-cur{fill:none;stroke:var(--brand);stroke-width:2.4}
+.cs-cmp{fill:none;stroke:var(--cmp);stroke-width:2;stroke-dasharray:6 3}
+.cs-fc{fill:none;stroke:var(--brand);stroke-width:2;stroke-dasharray:1.5 3;stroke-linecap:round}
+.cs-dot-cur{fill:var(--brand)}
+.cs-dot-cmp{fill:var(--cmp)}
+.cs-dot-fc{fill:var(--surface);stroke:var(--brand);stroke-width:1.4}
+.cs-up{fill:var(--up)}
+.cs-down{fill:var(--down)}
+.cs-val{fill:var(--ink)}
+.cs-cmpl{fill:var(--cmp)}
+.chg-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--ink);margin-top:6px;align-items:center}
+.chg-legend i{display:inline-block;width:18px;height:0;border-top:2.5px solid;margin-right:5px;vertical-align:middle}
+.chg-legend .lg-cur{border-color:var(--brand)}
+.chg-legend .lg-cmp{border-color:var(--cmp);border-top-style:dashed}
+.chg-legend .lg-fc{border-color:var(--brand);border-top-style:dotted}
+.chg-note{font-size:11px;color:var(--ink-2);margin:8px 0 0;line-height:1.5}
+.chg-selline{color:var(--ink)}`;
+  document.head.appendChild(st);
+})();
 
 // Every month with data, the current one included (the last one may still be in progress).
 function chgKeys() {
@@ -22,7 +131,6 @@ function chgKeys() {
   for (let k = 0; monStart(k) <= M.last_day; k++) out.push(k);
   return out;
 }
-
 // One pass over the rows: each day's totals, with the page's filters applied. Money is in paise in the rows.
 function chgDailyMap(lo, hi) {
   const m = new Map();
@@ -52,8 +160,8 @@ function chgVal(a, metric) {
   if (metric === "discPct") return a.gross ? (a.disc / a.gross) * 100 : null;
   return a.net / 100;
 }
-// Change from prev to cur, as a percentage. null when either side is missing.
-function chgChange(cur, prev, metric) {
+// Growth from prev to cur, as a percentage. null when either side is missing.
+function chgChange(cur, prev) {
   if (cur == null || prev == null || !prev) return null;
   return (cur / prev - 1) * 100;
 }
@@ -68,90 +176,101 @@ function chgDayOfIso(s) {
   return dayOf(Date.UTC(y, m - 1, d));
 }
 
-// Everything the block shows for one month: the days (actual, comparable and forecast), the weeks, and the totals.
-function chgModel(k) {
-  const ms = monStart(k), me = monEnd(k), L = me - ms + 1;
-  const complete = me <= M.last_day;
-  const lastIdx = Math.min(L - 1, M.last_day - ms);           // index of the last day with data in this month
+// Everything the block shows for Month A against Month B.
+function chgModel(a, b) {
   const pct = CHG.metric === "discPct", metric = CHG.metric, cmp = CHG.cmp;
-  const cmpK = cmp === "yoy" ? k - 12 : k - 1;                // the comparable month
-  const cms = monStart(cmpK), cmpL = monEnd(cmpK) - cms + 1;
-  const m = chgDailyMap(Math.max(0, monStart(k - 12) - 7), Math.min(M.last_day, mondayOf(me) + 6));
+  const ms = monStart(a), me = monEnd(a), L = me - ms + 1;
+  const complete = me <= M.last_day;
+  const lastIdx = Math.min(L - 1, M.last_day - ms);             // index of the last day with data in Month A
+  const bms = monStart(b), bme = monEnd(b), bL = bme - bms + 1;
+  const bRef = cmp === "yoy" ? b - 12 : b - 1;                  // what Month B is compared with (MoM / YoY)
+  const rms = monStart(bRef), rL = monEnd(bRef) - rms + 1;
+  const lo = Math.max(0, Math.min(ms, bms, rms) - 21);
+  const hi = Math.min(M.last_day, Math.max(me, bme) + 7);
+  const m = chgDailyMap(lo, hi);
   const val = d => (d < 0 || d > M.last_day) ? null : chgVal(chgSum(m, d, d), metric);
-  const range = (a, b) => chgVal(chgSum(m, a, b), metric);
+  const range = (x0, x1) => chgVal(chgSum(m, x0, x1), metric);
   const lastDay = Math.min(me, M.last_day);
 
-  const cur = [], comp = [], wdIdx = [];
+  const cur = [], bv = [], wdIdx = [];
   for (let i = 0; i < L; i++) {
     cur.push(i <= lastIdx ? val(ms + i) : null);
-    comp.push(i < cmpL ? val(cms + i) : null);
+    bv.push(i < bL ? val(bms + i) : null);
     wdIdx.push((toDate(ms + i).getUTCDay() + 6) % 7);
   }
 
-  // Mon–Sun weeks that start in the month (the last one may run past the last day with data).
+  // Mon–Sun weeks of Month A (the last one may run past the last day with data).
   const weeks = [];
   for (let w = mondayOf(ms); w <= lastDay; w += 7) {
     const c = range(w, w + 6), p = range(w - 7, w - 1);
-    weeks.push({ w, end: w + 6, cur: c, label: pct ? c : chgChange(c, p, metric), partial: w + 6 > M.last_day, isoWk: chgIsoWeek(w), prevAvail: p != null });
+    weeks.push({ w, end: w + 6, cur: c, label: pct ? c : chgChange(c, p), partial: w + 6 > M.last_day, isoWk: chgIsoWeek(w) });
   }
 
-  // Labels: the growth at each point, or the Dis % value for Dis %.
-  const labels = [];
+  // Growth labels on Month A.
+  const labA = new Array(L).fill(null);
   for (let i = 0; i < L; i++) {
-    let v = null;
-    if (cur[i] != null) {
-      if (pct) v = cur[i];
-      else if (cmp === "dod") v = chgChange(cur[i], val(ms + i - 7), metric);
-      else if (cmp === "mom" || cmp === "yoy") v = chgChange(cur[i], comp[i], metric);
-    }
-    labels.push(v);
+    if (cur[i] == null) continue;
+    if (pct) labA[i] = cur[i];
+    else if (cmp === "dod") labA[i] = chgChange(cur[i], val(ms + i - 7));
+    else if (cmp !== "wow") labA[i] = bv[i] != null ? chgChange(cur[i], bv[i]) : null;
+  }
+  if (cmp === "wow") for (const wk of weeks) { const i = wk.end - ms; if (i >= 0 && i < L && !wk.partial) labA[i] = wk.label; }
+
+  // Growth labels on Month B, against its own week, day or month before (the same rule as Month A).
+  const labB = new Array(L).fill(null);
+  for (let i = 0; i < L; i++) {
+    if (i >= bL || bv[i] == null) continue;
+    if (pct) labB[i] = bv[i];
+    else if (cmp === "dod") labB[i] = chgChange(bv[i], val(bms + i - 7));
+    else if (cmp !== "wow") labB[i] = i < rL ? chgChange(bv[i], val(rms + i)) : null;
   }
   if (cmp === "wow") {
-    labels.fill(null);
-    for (const wk of weeks) { const i = wk.end - ms; if (i >= 0 && i < L && !wk.partial) labels[i] = wk.label; }
-  }
-
-  // Totals. A month in progress is compared with the same days of the comparable month.
-  const curTotal = range(ms, ms + lastIdx);
-  const compFull = range(cms, cms + cmpL - 1);
-  const compSame = range(cms, cms + Math.min(lastIdx, cmpL - 1));
-  const curGrowth = pct ? null : chgChange(curTotal, complete ? compFull : compSame, metric);
-
-  // Forecast for the rest of the month: the comparable month's day pattern, scaled to this month's pace so far.
-  const fc = new Array(L).fill(null);
-  let fcTotal = null, fcGrowth = null, offset = null;
-  if (!complete) {
-    if (pct) {
-      offset = curTotal != null && compSame != null ? curTotal - compSame : null;
-      for (let i = lastIdx + 1; i < L; i++) fc[i] = comp[i] != null && offset != null ? comp[i] + offset : null;
-      fcTotal = compFull != null && offset != null ? compFull + offset : null;
-    } else {
-      let a = 0, b = 0;
-      for (let i = 0; i <= lastIdx; i++) {
-        if (cur[i] != null) a += cur[i];
-        if (i < cmpL && comp[i] != null) b += comp[i];
-      }
-      const ratio = b > 0 && a > 0 ? a / b : null;
-      const avg = a > 0 && lastIdx >= 0 ? a / (lastIdx + 1) : null;
-      let rest = 0;
-      for (let i = lastIdx + 1; i < L; i++) {
-        fc[i] = comp[i] != null && ratio != null ? comp[i] * ratio : avg;
-        if (fc[i] != null) rest += fc[i];
-      }
-      fcTotal = curTotal != null ? curTotal + rest : null;
-      fcGrowth = chgChange(fcTotal, compFull, metric);
+    const bLast = Math.min(bme, M.last_day);
+    for (let w = mondayOf(bms); w + 6 <= bLast; w += 7) {
+      const i = w + 6 - bms;
+      if (i < 0 || i >= L || i >= bL) continue;
+      const c = range(w, w + 6), p = range(w - 7, w - 1);
+      labB[i] = pct ? c : chgChange(c, p);
     }
   }
 
-  // Weekday tabs (DoD): the selected days so far, against the same days a week earlier.
+  // Totals. A month in progress is compared with the same days of Month B.
+  const curTotal = range(ms, ms + lastIdx);
+  const bFull = range(bms, bme);
+  const bSame = range(bms, bms + Math.min(lastIdx, bL - 1));
+  const curGrowth = pct ? null : chgChange(curTotal, complete ? bFull : bSame);
+
+  // Forecast for the rest of Month A: same day of Month B × (1 + growth so far).
+  const fc = new Array(L).fill(null);
+  let fcTotal = null, fcGrowth = null, growthSoFar = null, offset = null;
+  if (!complete && curTotal != null) {
+    if (pct) {
+      offset = bSame != null ? curTotal - bSame : null;
+      for (let i = lastIdx + 1; i < L; i++) fc[i] = bv[i] != null && offset != null ? bv[i] + offset : null;
+      fcTotal = bFull != null && offset != null ? bFull + offset : null;
+    } else if (bSame) {
+      growthSoFar = (curTotal / bSame - 1) * 100;
+      const f = 1 + growthSoFar / 100;
+      const avg = curTotal / (lastIdx + 1);                       // only if Month B has no value for a day
+      let rest = 0;
+      for (let i = lastIdx + 1; i < L; i++) {
+        fc[i] = bv[i] != null ? bv[i] * f : avg;
+        rest += fc[i];
+      }
+      fcTotal = curTotal + rest;
+      fcGrowth = bFull ? (fcTotal / bFull - 1) * 100 : null;
+    }
+  }
+
+  // DoD: the selected weekdays so far, against the same days a week earlier.
   let selSum = null;
   if (cmp === "dod") {
     const days = [];
     for (let i = 0; i <= lastIdx; i++) if (CHG.wd.includes(wdIdx[i])) days.push(i);
     if (pct) {
-      let g = 0, dd = 0;
-      for (const i of days) { const a = chgSum(m, ms + i, ms + i); g += a.gross; dd += a.disc; }
-      selSum = { days: days.length, pct: g ? (dd / g) * 100 : null };
+      let gr = 0, dd = 0;
+      for (const i of days) { const x = chgSum(m, ms + i, ms + i); gr += x.gross; dd += x.disc; }
+      selSum = { pct: gr ? (dd / gr) * 100 : null };
     } else {
       let c = 0, p = 0, n = 0;
       for (const i of days) {
@@ -163,12 +282,12 @@ function chgModel(k) {
   }
 
   const last = M.last_day;
-  const lastInMonth = last >= ms && last <= me;
+  const lastIn = last >= ms && last <= me;
   return {
-    k, ms, me, L, complete, lastIdx, metric, cmp, pct, cmpK, cur, comp, fc, labels, wdIdx, weeks, selSum,
+    a, b, ms, me, L, complete, lastIdx, metric, cmp, pct, bL, cur, bv, fc, labA, labB, wdIdx, weeks, selSum,
     holidays: CHG_HOLIDAYS.map(h => ({ name: h.name, a: chgDayOfIso(h.from), b: chgDayOfIso(h.to) })),
-    curTotal, compFull, compSame, curGrowth, fcTotal, fcGrowth,
-    last: lastInMonth ? { d: last, cur: val(last), growth: pct ? null : chgChange(val(last), val(last - 7), metric) } : null
+    curTotal, bFull, bSame, curGrowth, fcTotal, fcGrowth, growthSoFar,
+    last: lastIn ? { d: last, cur: val(last), growth: pct ? null : chgChange(val(last), val(last - 7)) } : null
   };
 }
 
@@ -177,104 +296,111 @@ const chgFmtVal = (v, metric) => v == null ? "—"
   : metric === "discPct" ? v.toFixed(1) + "%"
   : "₹" + (v / 100000).toFixed(2) + " L";
 const chgFmtChg = v => v == null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%";
-const chgColor = v => v == null ? CHG_C.sub : v >= 0 ? CHG_C.up : CHG_C.down;
+const chgColorVar = v => v == null ? "var(--ink-2)" : v >= 0 ? "var(--up)" : "var(--down)";
 const chgAxis = (v, metric) => metric === "txn" ? Math.round(v) + ""
   : metric === "discPct" ? v.toFixed(1) + "%"
   : "₹" + (v / 100000).toFixed(1) + "L";
 
-// The daily chart: current month, comparable month (dashed) and forecast (dotted), with the labels.
+// A growth label: Month A's labels are green or red by sign; Month B's labels use the comparison colour.
+function chgLabel(x, y, v, pct, who, S) {
+  const txt = pct ? v.toFixed(1) + "%" : chgFmtChg(v);
+  const cls = pct ? "cs-val" : who === "B" ? "cs-cmpl" : (v >= 0 ? "cs-up" : "cs-down");
+  return `<text class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-size="${S.fLbl}" font-weight="700">${txt}</text>`;
+}
+
+// The daily chart: Month A (solid), Month B (dashed), the forecast (dotted), the growth labels and the holidays.
 function chgChart(g) {
-  const W = 360, H = 200, L0 = 40, R0 = 10, T0 = 14, B0 = 30;
-  const n = g.L;
+  const S = chgSize(), W = S.W, H = S.H, L0 = S.L, R0 = S.R, T0 = S.T, B0 = S.B, n = g.L;
   const sel = i => g.cmp !== "dod" || CHG.wd.includes(g.wdIdx[i]);
-  const series = [];
-  for (const arr of [g.cur, g.comp, g.fc]) arr.forEach((v, i) => { if (v != null && sel(i)) series.push(v); });
-  if (!series.length) return "<p class=\"chg-note\">No sales for these days with these filters.</p>";
-  let lo = Math.min(...series), hi = Math.max(...series);
+  const pool = [];
+  for (let i = 0; i < n; i++) {
+    if (!sel(i)) continue;
+    if (g.cur[i] != null) pool.push(g.cur[i]);
+    if (g.bv[i] != null) pool.push(g.bv[i]);
+    if (g.fc[i] != null) pool.push(g.fc[i]);
+  }
+  if (!pool.length) return "<p class=\"chg-note\">No sales for these days with these filters.</p>";
+  let lo = Math.min(...pool), hi = Math.max(...pool);
   if (hi === lo) hi = lo + 1;
   const pad = (hi - lo) * 0.12;
   lo = Math.max(0, lo - pad); hi += pad;
   const x = i => L0 + (n <= 1 ? 0 : i * (W - L0 - R0) / (n - 1));
   const y = v => T0 + (1 - (v - lo) / (hi - lo)) * (H - T0 - B0);
-  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily ${g.metric}: current month, comparable month and forecast">`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${g.metric} by day: Month A, Month B and forecast">`;
   for (const h of g.holidays) {
     const a = Math.max(h.a, g.ms), b = Math.min(h.b, g.me);
     if (a > b) continue;
     const x1 = x(a - g.ms), x2 = x(b - g.ms);
-    s += `<rect x="${(x1 - 5).toFixed(1)}" y="${T0}" width="${(x2 - x1 + 10).toFixed(1)}" height="${H - T0 - B0}" fill="#fde68a" opacity=".5"/>`;
-    s += `<text x="${((x1 + x2) / 2).toFixed(1)}" y="${T0 + 9}" text-anchor="middle" font-size="8" fill="#78350f">${h.name}</text>`;
+    s += `<rect class="cs-band" x="${(x1 - 5).toFixed(1)}" y="${T0}" width="${(x2 - x1 + 10).toFixed(1)}" height="${H - T0 - B0}"/>`;
+    s += `<text class="cs-holt" x="${((x1 + x2) / 2).toFixed(1)}" y="${T0 + 10}" text-anchor="middle" font-size="${S.fWk + 1}">${h.name}</text>`;
   }
   for (let i = 0; i <= 3; i++) {
     const v = lo + (hi - lo) * i / 3;
-    s += `<line x1="${L0}" x2="${W - R0}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${CHG_C.grid}" stroke-width=".6"/>`;
-    s += `<text x="${L0 - 4}" y="${(y(v) + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="${CHG_C.axis}">${chgAxis(v, g.metric)}</text>`;
+    s += `<line class="cs-grid" x1="${L0}" x2="${W - R0}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>`;
+    s += `<text class="cs-ax" x="${L0 - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" font-size="${S.fAx}">${chgAxis(v, g.metric)}</text>`;
   }
-  const pathOf = arr => {
+  const path = arr => {
     const pts = [];
     arr.forEach((v, i) => { if (v != null && sel(i)) pts.push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`); });
     return pts;
   };
   const fcArr = g.fc.slice();
   if (!g.complete && g.cur[g.lastIdx] != null) fcArr[g.lastIdx] = g.cur[g.lastIdx];   // the forecast starts where the actuals end
-  const cmpPts = pathOf(g.comp), curPts = pathOf(g.cur), fcPts = pathOf(fcArr);
-  if (cmpPts.length > 1) s += `<polyline points="${cmpPts.join(" ")}" fill="none" stroke="${CHG_C.cmp}" stroke-width="1.8" stroke-dasharray="5 3"/>`;
-  if (curPts.length > 1) s += `<polyline points="${curPts.join(" ")}" fill="none" stroke="${CHG_C.cur}" stroke-width="2.2"/>`;
-  if (fcPts.length > 1) s += `<polyline points="${fcPts.join(" ")}" fill="none" stroke="${CHG_C.cur}" stroke-width="2" stroke-dasharray="1.5 3" stroke-linecap="round"/>`;
+  const bP = path(g.bv), curP = path(g.cur), fcP = path(fcArr);
+  if (bP.length > 1) s += `<polyline class="cs-cmp" points="${bP.join(" ")}"/>`;
+  if (curP.length > 1) s += `<polyline class="cs-cur" points="${curP.join(" ")}"/>`;
+  if (fcP.length > 1) s += `<polyline class="cs-fc" points="${fcP.join(" ")}"/>`;
   for (let i = 0; i < n; i++) {
     if (!sel(i)) continue;
-    if (g.comp[i] != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(g.comp[i]).toFixed(1)}" r="1.8" fill="${CHG_C.cmp}"/>`;
-    if (g.cur[i] != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(g.cur[i]).toFixed(1)}" r="2.6" fill="${CHG_C.cur}"/>`;
-    if (g.fc[i] != null) s += `<circle cx="${x(i).toFixed(1)}" cy="${y(g.fc[i]).toFixed(1)}" r="2.4" fill="#fff" stroke="${CHG_C.cur}" stroke-width="1.2"/>`;
+    if (g.bv[i] != null) s += `<circle class="cs-dot-cmp" cx="${x(i).toFixed(1)}" cy="${y(g.bv[i]).toFixed(1)}" r="2"/>`;
+    if (g.cur[i] != null) s += `<circle class="cs-dot-cur" cx="${x(i).toFixed(1)}" cy="${y(g.cur[i]).toFixed(1)}" r="2.8"/>`;
+    if (g.fc[i] != null) s += `<circle class="cs-dot-fc" cx="${x(i).toFixed(1)}" cy="${y(g.fc[i]).toFixed(1)}" r="2.6"/>`;
   }
   for (let i = 0; i < n; i++) {
-    if (!sel(i) || g.labels[i] == null || g.cur[i] == null) continue;
-    const ty = i % 2 === 0 ? y(g.cur[i]) - 7 : y(g.cur[i]) + 13;
-    const txt = g.pct ? g.labels[i].toFixed(1) + "%" : chgFmtChg(g.labels[i]);
-    const col = g.pct ? CHG_C.text : chgColor(g.labels[i]);
-    s += `<text x="${x(i).toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle" font-size="8" font-weight="700" fill="${col}">${txt}</text>`;
+    if (!sel(i)) continue;
+    if (g.labA[i] != null && g.cur[i] != null) s += chgLabel(x(i), y(g.cur[i]) - 8, g.labA[i], g.pct, "A", S);
+    if (g.labB[i] != null && g.bv[i] != null) s += chgLabel(x(i), y(g.bv[i]) + 15, g.labB[i], g.pct, "B", S);
   }
   for (let i = 0; i < n; i++) {
     const dt = toDate(g.ms + i);
-    s += `<text x="${x(i).toFixed(1)}" y="${H - 15}" text-anchor="middle" font-size="7.5" fill="${CHG_C.text}">${dt.getUTCDate()}</text>`;
-    s += `<text x="${x(i).toFixed(1)}" y="${H - 4}" text-anchor="middle" font-size="7" fill="${CHG_C.sub}">${"MTWTFSS"[g.wdIdx[i]]}</text>`;
+    s += `<text class="cs-day" x="${x(i).toFixed(1)}" y="${(H - 18).toFixed(1)}" text-anchor="middle" font-size="${S.fDay}">${dt.getUTCDate()}</text>`;
+    s += `<text class="cs-wk" x="${x(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="${S.fWk}">${"MTWTFSS"[g.wdIdx[i]]}</text>`;
   }
   return s + "</svg>";
 }
 
-// The whole block: month, metric and comparison choices, Mon–Sun tabs (DoD), the summary, week cards and the chart.
+// The whole block: the two month choices, metric and comparison, the summary, week cards, the chart and the notes.
 function chgBlock() {
   const keys = chgKeys();
   if (!keys.length) return "";
-  if (CHG.k === null || !keys.includes(CHG.k)) CHG.k = keys[keys.length - 1];
-  const g = chgModel(CHG.k);
-  const seg = (list, current, attr) => list.map(([v, t]) =>
-    `<button data-chg="${attr}" data-v="${v}" aria-pressed="${current === v}">${t}</button>`).join("");
-  const opts = keys.map(k => {
-    const done = monEnd(k) <= M.last_day;
-    return `<option value="${k}" ${k === g.k ? "selected" : ""}>${monLong(k)}${done ? "" : " (to date)"}</option>`;
-  }).join("");
+  if (CHG.a === null || !keys.includes(CHG.a)) CHG.a = keys[keys.length - 1];
+  if (CHG.b === null || !keys.includes(CHG.b)) CHG.b = keys.includes(CHG.a - 1) ? CHG.a - 1 : keys[0];
+  const a = CHG.a, b = CHG.b;
+  const g = chgModel(a, b);
+  const wide = chgIsWide();
+  const monthOpts = sel => keys.map(k => `<option value="${k}" ${k === sel ? "selected" : ""}>${monLong(k)}${monEnd(k) <= M.last_day ? "" : " (to date)"}</option>`).join("");
+  const seg = (list, cur, attr) => list.map(([v, t]) =>
+    `<button data-chg="${attr}" data-v="${v}" aria-pressed="${cur === v}">${t}</button>`).join("");
+  const A = monShort(a), B = monShort(b);
   const fmt = v => chgFmtVal(v, g.metric);
-  const cmpShort = monShort(g.cmpK), cmpName = monLong(g.cmpK);
-  const kpi = (label, value, sub, extra = "") =>
-    `<div class="chg-kpi ${extra}"><div class="chg-k">${label}</div><div class="chg-v">${value}</div>${sub}</div>`;
+  const kpi = (label, value, sub, extra) =>
+    `<div class="chg-kpi${extra || ""}"><div class="chg-k">${label}</div><div class="chg-v">${value}</div>${sub}</div>`;
   const kpis = [
-    kpi(monLong(g.k) + (g.complete ? "" : " (to date)"), fmt(g.curTotal),
-      g.pct ? "" : `<div class="chg-d" style="color:${chgColor(g.curGrowth)}">${chgFmtChg(g.curGrowth)} vs ${cmpShort}${g.complete ? "" : " (same days)"}</div>`),
-    kpi(`Comparable · ${cmpName}`, fmt(g.compFull),
-      g.complete ? "" : `<div class="chg-d">same days: ${fmt(g.compSame)}</div>`)
+    kpi(`${monLong(a)}${g.complete ? "" : " · to date"}`, fmt(g.curTotal),
+      g.pct || g.curGrowth == null ? "" : `<div class="chg-d" style="color:${chgColorVar(g.curGrowth)}">${chgFmtChg(g.curGrowth)} vs ${B}${g.complete ? "" : " (same days)"}</div>`, ""),
+    kpi(`Month B · ${monLong(b)}`, fmt(g.bFull),
+      g.complete ? "" : `<div class="chg-d" style="color:var(--ink-2)">same days: ${fmt(g.bSame)}</div>`, "")
   ];
   if (!g.complete) kpis.push(kpi("Forecast · month end", fmt(g.fcTotal),
-    g.pct ? "" : `<div class="chg-d" style="color:${chgColor(g.fcGrowth)}">${chgFmtChg(g.fcGrowth)} vs ${cmpShort}</div>`, "chg-fc"));
+    g.pct || g.fcGrowth == null ? "" : `<div class="chg-d" style="color:${chgColorVar(g.fcGrowth)}">${chgFmtChg(g.fcGrowth)} vs ${B}</div>`, " chg-fc"));
   if (g.last) kpis.push(kpi(`Last day · ${fmtDay(g.last.d)}`, fmt(g.last.cur),
-    g.pct || g.last.growth == null ? "" : `<div class="chg-d" style="color:${chgColor(g.last.growth)}">${chgFmtChg(g.last.growth)} DoD</div>`));
-
+    g.pct || g.last.growth == null ? "" : `<div class="chg-d" style="color:${chgColorVar(g.last.growth)}">${chgFmtChg(g.last.growth)} DoD</div>`, ""));
   const cards = g.weeks.map((x, i) => `<div class="chg-card">
       <div class="chg-k">WK ${x.isoWk} · ${fmtDay(x.w)}–${fmtDay(x.end)}${x.partial ? " · to date" : ""}</div>
       <div class="chg-v">${fmt(x.cur)}</div>
-      ${g.pct ? "" : `<div class="chg-d" style="color:${chgColor(x.label)}">${x.label == null
+      ${g.pct ? "" : `<div class="chg-d" style="color:${chgColorVar(x.label)}">${x.label == null
         ? (i === 0 ? "base week" : "—") : chgFmtChg(x.label) + " WoW"}</div>`}
     </div>`).join("");
-
   const wdTabs = g.cmp === "dod" ? `<div class="chg-seg chg-wd">${CHG_WD.map((n, i) =>
       `<button data-chg="wd" data-v="${i}" aria-pressed="${CHG.wd.includes(i)}">${n}</button>`).join("")}
       <button data-chg="wdall" data-v="all">All</button></div>` : "";
@@ -282,24 +408,29 @@ function chgBlock() {
   if (g.selSum) {
     selLine = g.pct
       ? `<p class="chg-note chg-selline">Dis % on the selected days: <b>${fmt(g.selSum.pct)}</b></p>`
-      : `<p class="chg-note chg-selline">${g.selSum.n} selected day(s) with a week-earlier figure: ${fmt(g.selSum.cur)} vs ${fmt(g.selSum.prev)} a week earlier · <b style="color:${chgColor(g.selSum.growth)}">${chgFmtChg(g.selSum.growth)}</b></p>`;
+      : `<p class="chg-note chg-selline">${g.selSum.n} selected day(s) with a week-earlier figure: ${fmt(g.selSum.cur)} vs ${fmt(g.selSum.prev)} a week earlier · <b style="color:${chgColorVar(g.selSum.growth)}">${chgFmtChg(g.selSum.growth)}</b></p>`;
   }
   const legend = `<div class="chg-legend">
-      <span><i class="ln cur"></i>${monShort(g.k)}${g.complete ? "" : " to date"}</span>
-      <span><i class="ln cmp"></i>${cmpShort} (comparable)</span>
-      ${g.complete ? "" : `<span><i class="ln fc"></i>Forecast</span>`}</div>`;
-  const note = {
-    dod: "DoD: each day against the same weekday last week. Tick the weekdays to follow their growth.",
-    wow: "WoW: Mon–Sun weeks, each against the week before (shown on its Sunday).",
-    mom: "MoM: each day against the same day of the previous month.",
-    yoy: "YoY: each day against the same day last year."
+      <span><i class="lg-cur"></i>${A}${g.complete ? "" : " to date"} (Month A)</span>
+      <span><i class="lg-cmp"></i>${B} (Month B)</span>
+      ${g.complete ? "" : `<span><i class="lg-fc"></i>Forecast</span>`}</div>`;
+  const cmpNote = {
+    dod: "DoD: each day against the same weekday last week, in each month. Tick the weekdays to follow their growth.",
+    wow: "WoW: Mon–Sun weeks, each against the week before, shown on its Sunday, in each month.",
+    mom: "MoM: each day of Month A against the same day of Month B. Month B's own labels are against the month before it.",
+    yoy: "YoY: each day of Month A against the same day of Month B. Month B's own labels are against the same month a year earlier."
   }[g.cmp];
-  const extra = [g.pct ? "Dis % shows the discount as a share of gross, not growth." : "",
-    g.complete ? "" : "Forecast: the rest of the month follows the comparable month's daily pattern, scaled to this month's pace so far."]
-    .filter(Boolean).join(" ");
-
-  return `<section class="chg">
-    <div class="chg-head"><h2>Sales comparison</h2><select data-chg-month>${opts}</select></div>
+  let fcNote = "";
+  if (!g.complete) {
+    if (g.pct) fcNote = `Forecast (dotted) for Dis %: the same day of ${B} plus the to-date difference in points.`;
+    else if (g.growthSoFar == null) fcNote = "Forecast needs sales in both months so far.";
+    else fcNote = `Forecast (dotted): each remaining day = the same day of ${B} × (1 ${g.growthSoFar >= 0 ? "+" : "−"} ${Math.abs(g.growthSoFar).toFixed(1)}%). ` +
+      `${Math.abs(g.growthSoFar).toFixed(1)}% is ${A}'s growth so far against the same days of ${B}.`;
+  }
+  return `<section class="chg${wide ? " chg-wide" : ""}">
+    <div class="chg-head"><h2>Sales comparison</h2></div>
+    <div class="chg-months"><span>Month A</span><select data-chg-a>${monthOpts(a)}</select>
+      <span>compared with Month B</span><select data-chg-b>${monthOpts(b)}</select></div>
     <div class="chg-seg">${seg(CHG_METRICS, g.metric, "metric")}</div>
     <div class="chg-seg">${seg(CHG_CMPS, g.cmp, "cmp")}</div>
     ${wdTabs}${selLine}
@@ -307,59 +438,54 @@ function chgBlock() {
     <div class="chg-cards">${cards}</div>
     <div class="chg-chart">${chgChart(g)}</div>
     ${legend}
-    <p class="chg-note">${note} ${extra}</p>
+    <p class="chg-note">${cmpNote}</p>
+    ${fcNote ? `<p class="chg-note">${fcNote}</p>` : ""}
   </section>`;
 }
 
-(function addChgStyle() {
-  if (document.getElementById("chg-style")) return;
-  const st = document.createElement("style");
-  st.id = "chg-style";
-  st.textContent = `.chg{max-width:420px;margin:12px 0 16px;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#1e293b}
-.chg-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.chg-head h2{font-size:14px;margin:0;color:#0f172a}
-.chg-seg{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
-.chg-seg button{padding:4px 8px;border-radius:14px;border:1px solid #94a3b8;background:transparent;font-size:11px;color:#1e293b}
-.chg-seg button[aria-pressed="true"]{background:#1d4ed8;border-color:#1d4ed8;color:#fff}
-.chg-wd button{min-width:34px}
-.chg-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:6px;margin:10px 0 6px}
-.chg-kpi{border:1px solid #cbd5e1;border-radius:9px;padding:6px 8px}
-.chg-fc{border-style:dashed}
-.chg-k{font-size:10.5px;color:#334155}
-.chg-v{font-size:14px;font-weight:700;color:#0f172a}
-.chg-d{font-size:10.5px;font-weight:600}
-.chg-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:6px;margin:6px 0}
-.chg-card{border:1px solid #cbd5e1;border-radius:9px;padding:6px}
-.chg-card .chg-v{font-size:12.5px}
-.chg-chart svg{display:block;width:100%;height:auto}
-.chg-legend{display:flex;gap:10px;flex-wrap:wrap;font-size:10.5px;color:#0f172a;margin-top:4px;align-items:center}
-.chg-legend .ln{display:inline-block;width:18px;height:0;border-top:2.5px solid;margin-right:4px;vertical-align:middle}
-.chg-legend .cur{border-color:#1d4ed8}
-.chg-legend .cmp{border-color:#c2410c;border-top-style:dashed}
-.chg-legend .fc{border-color:#1d4ed8;border-top-style:dotted}
-.chg-note{font-size:10.5px;color:#334155;margin:6px 0 0}
-.chg-selline{font-size:11px;color:#0f172a}`;
-  document.head.appendChild(st);
-})();
-
 document.addEventListener("click", e => {
+  const pref = e.target.closest && e.target.closest("[data-pref]");
+  if (pref) {
+    chgSetPref(pref.dataset.pref, pref.dataset.v);
+    chgPrefBar();
+    render();
+    return;
+  }
   const b = e.target.closest && e.target.closest("[data-chg]");
   if (!b) return;
   const t = b.dataset.chg, v = b.dataset.v;
   if (t === "metric") CHG.metric = v;
-  else if (t === "cmp") CHG.cmp = v;
+  else if (t === "cmp") {
+    CHG.cmp = v;
+    const keys = chgKeys();
+    if (v === "mom" && keys.includes(CHG.a - 1)) CHG.b = CHG.a - 1;       // MoM: Month B is the month before Month A
+    if (v === "yoy" && keys.includes(CHG.a - 12)) CHG.b = CHG.a - 12;     // YoY: Month B is the same month last year
+  }
   else if (t === "wd") {
     const i = +v, on = CHG.wd.includes(i);
-    if (on && CHG.wd.length === 1) return;                    // keep at least one weekday
-    CHG.wd = on ? CHG.wd.filter(x => x !== i) : [...CHG.wd, i].sort((a, b) => a - b);
+    if (on && CHG.wd.length === 1) return;                                 // keep at least one weekday
+    CHG.wd = on ? CHG.wd.filter(x => x !== i) : [...CHG.wd, i].sort((p, q) => p - q);
   }
   else if (t === "wdall") CHG.wd = [0, 1, 2, 3, 4, 5, 6];
   else return;
   render();
 });
 document.addEventListener("change", e => {
-  if (e.target.dataset && e.target.dataset.chgMonth !== undefined) { CHG.k = +e.target.value; render(); }
+  const d = e.target.dataset;
+  if (!d) return;
+  if (d.chgA !== undefined) { CHG.a = +e.target.value; render(); }
+  else if (d.chgB !== undefined) { CHG.b = +e.target.value; render(); }
 });
+if (window.matchMedia) {
+  const mq = window.matchMedia("(min-width: 900px)");
+  const again = () => { if (document.documentElement.getAttribute("data-layout") === "auto") render(); };
+  if (mq.addEventListener) mq.addEventListener("change", again);
+  else if (mq.addListener) mq.addListener(again);
+}
+
+// Start: the saved light or dark mode and layout, the switch at the top, then the block.
+chgApplyPrefs();
+chgPrefBar();
 
 // Wraps the monthly view: the comparison block goes above it.
 const salesPeriodViewChg = salesPeriodView;
@@ -367,3 +493,4 @@ salesPeriodView = function (kind) {
   const base = salesPeriodViewChg(kind);
   return kind === "monthly" ? chgBlock() + base : base;
 };
+if (typeof render === "function") render();
