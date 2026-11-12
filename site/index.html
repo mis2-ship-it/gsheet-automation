@@ -494,6 +494,10 @@ function salesPeriodView(kind) {
     ${bucketBlock(kind, key, "aov")}
     ${bucketBlock(kind, key, "disc")}`;
 }
+/* ============ Live: today so far, against a comparison date (default: the same day last month) ============ */
+let LIVE_CMP = null;                                   // day index of the comparison date; null = same day last month
+const isoOf = i => toDate(i).toISOString().slice(0, 10);
+const dayShort = i => toDate(i).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 function salesLiveView() {
   setPeriodBar("live", null, null);
   if (!M.has_live || !LIVE) {
@@ -502,17 +506,46 @@ function salesLiveView() {
       <p class="muted">Until then, use the Daily tab for completed days.</p></section>`;
   }
   const d = M.live_day;
-  const m = metrics(aggFor(LIVE.rows, d, d, salesPass));
+  if (LIVE_CMP === null) LIVE_CMP = shiftMonths(d, -1);
+  const c = LIVE_CMP;
+  const now = metrics(aggFor(LIVE.rows, d, d, salesPass));
+  const cmpAgg = aggFor(baseSales(), c, c, salesPass);
+  const hasCmp = c >= 0 && c <= M.last_day && cmpAgg.orders > 0;
+  const cm = hasCmp ? metrics(cmpAgg) : null;
+  const defs = [
+    ["Net sales", m => m.net, "money", true],
+    ["Txn", m => m.txn, "count", true],
+    ["AOV", m => m.aov, "money", true],
+    ["Gross", m => m.gross, "money", true],
+    ["Discount ₹", m => m.disc, "money", false],
+    ["Discount %", m => m.discPct, "pct", false]
+  ];
+  const fmt = (v, type) => type === "pct" ? v.toFixed(1) + "%" : type === "count" ? num(v) : inr(v);
+  const rowsHtml = defs.map(([label, get, type, good]) => {
+    const a = get(now), b = cm ? get(cm) : null;
+    const g = b === null ? null : type === "pct" ? pts(a, b) : rel(a, b);
+    return `<tr><td>${label}</td><td>${fmt(a, type)}</td><td>${b === null ? "—" : fmt(b, type)}</td>` +
+      `<td>${g === null ? "—" : dlt(g, type === "pct" ? " pts" : "%", good)}</td></tr>`;
+  }).join("");
+  const quick = (key, label) => {
+    const day = key === "month" ? shiftMonths(d, -1) : key === "week" ? d - 7 : d - 1;
+    return `<button data-livecmp-quick="${key}" aria-pressed="${c === day}">${label}</button>`;
+  };
   return `<section class="block"><h2>Live, so far today</h2>
-    <p class="sub">Partial day, from 9 AM to now. The same-hour comparison and the forecast to 5 AM come in the next update.</p>
-    <div class="kgrid">
-      <div class="kpi"><div class="kl">Net sales</div><div class="kv">${inr(m.net)}</div></div>
-      <div class="kpi"><div class="kl">Txn</div><div class="kv">${num(m.txn)}</div></div>
-      <div class="kpi"><div class="kl">AOV</div><div class="kv">${inr(m.aov)}</div></div>
-      <div class="kpi"><div class="kl">Discount</div><div class="kv">${m.discPct.toFixed(1)}%</div></div>
-    </div></section>`;
+    <p class="sub">${fmtLong(d)}, from 9 AM to now.</p>
+    <label class="field">Compare with (date)
+      <input type="date" data-livecmp value="${isoOf(c)}" min="${isoOf(0)}" max="${isoOf(M.last_day)}"
+        style="padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
+    </label>
+    <div class="kindseg" style="margin-top:10px">${quick("month", "Same day last month")}${quick("week", "Same weekday last week")}${quick("yday", "Yesterday")}</div>
+    <div class="scroll" style="margin-top:12px"><table class="tbl">
+      <thead><tr><th>Parameters</th><th>Today so far</th><th>${dayShort(c)}</th><th>Growth</th></tr></thead>
+      <tbody>${rowsHtml}</tbody></table></div>
+    <p class="muted" style="margin-top:10px">${hasCmp
+      ? "Today is a part day (9 AM to now) and the comparison date is the full day, so growth compares the day so far with a full day. Hour-by-hour comparison needs hourly sales in the live feed."
+      : "No sales on the comparison date for these filters. Pick another date."}</p>
+  </section>`;
 }
-
 /* ============ Ratings view (unchanged this phase) ============ */
 function ratingView(platformName) {
   const platform = M.platforms.indexOf(platformName);
@@ -665,6 +698,20 @@ document.addEventListener("change", async e => {
   render();
 });
 
+/* ============ Live comparison date ============ */
+document.addEventListener("change", e => {
+  if (e.target.dataset.livecmp === undefined || !e.target.value) return;
+  LIVE_CMP = dayOf(Date.parse(e.target.value + "T00:00:00Z"));
+  render();
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-livecmp-quick]");
+  if (!b || !M || !M.has_live) return;
+  const d = M.live_day, q = b.dataset.livecmpQuick;
+  LIVE_CMP = q === "month" ? shiftMonths(d, -1) : q === "week" ? d - 7 : d - 1;
+  render();
+});
+  
 /* ============ Boot ============ */
 (async function boot() {
   try {
