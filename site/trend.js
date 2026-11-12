@@ -65,11 +65,11 @@ function chgPrefBar() {
   if (document.getElementById("chg-style")) return;
   const st = document.createElement("style");
   st.id = "chg-style";
-  st.textContent = `html[data-theme="light"]{color-scheme:light;--cmp:#C2410C;--holiday:#FDE68A;--holiday-ink:#92400E}
-html[data-theme="dark"]{color-scheme:dark;--cmp:#FB923C;--holiday:#78350F;--holiday-ink:#FCD34D}
+  st.textContent = `html[data-theme="light"]{color-scheme:light;--cmp:root{--cmp:#6D28D9;--holiday:#FDE68A;--holiday-ink:#92400E}
+html[data-theme="dark"]{color-scheme:dark;--cmp:#C4B5FD;--holiday:#78350F;--holiday-ink:#FCD34D}
 html[data-layout="mobile"] .app{max-width:480px}
 html[data-layout="desktop"] .app{max-width:1120px}
-@media (min-width:900px){html[data-layout="auto"] .app{max-width:1120px}}
+@media (prefers-color-scheme:dark){html[data-theme="auto"]{--cmp:#C4B5FD;--holiday:#78350F;--holiday-ink:#FCD34D}}
 .fb-prefs{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 16px 0;font-size:12px;color:var(--ink-2)}
 .fb-lbl{font-weight:600}
 .fb-seg{display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:var(--line)}
@@ -301,10 +301,10 @@ const chgAxis = (v, metric) => metric === "txn" ? Math.round(v) + ""
   : metric === "discPct" ? v.toFixed(1) + "%"
   : "₹" + (v / 100000).toFixed(1) + "L";
 
-// A growth label: Month A's labels are green or red by sign; Month B's labels use the comparison colour.
+// A growth label: green for growth, red for drop (both months). Dis % labels are plain values.
 function chgLabel(x, y, v, pct, who, S) {
   const txt = pct ? v.toFixed(1) + "%" : chgFmtChg(v);
-  const cls = pct ? "cs-val" : who === "B" ? "cs-cmpl" : (v >= 0 ? "cs-up" : "cs-down");
+  const cls = pct ? "cs-val" : (v >= 0 ? "cs-up" : "cs-down");
   return `<text class="${cls}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-size="${S.fLbl}" font-weight="700">${txt}</text>`;
 }
 
