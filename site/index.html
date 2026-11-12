@@ -17,22 +17,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="layout.css">
 <style>
-:root {
-  --bg: #EEF3F2; --surface: #FFFFFF; --ink: #15201E; --ink-2: #5E6D6A; --line: #D5DFDC;
-  --up: #17704F; --down: #B1402C; --brand: #2D6A6E;
+/* Light: white background, dark text. Dark: dark background, light text. Each sets its own colour scheme. */
+:root, :root[data-theme="light"] {
+  --bg: #FFFFFF; --surface: #FFFFFF; --ink: #111827; --ink-2: #4B5563; --line: #D6DCE3;
+  --up: #15803D; --down: #B91C1C; --brand: #2D6A6E;
+  color-scheme: light;
   --serif: "Instrument Serif", Georgia, serif;
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
-  }
-}
 :root[data-theme="dark"] {
-  --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
+  --bg: #0B0F14; --surface: #131A22; --ink: #F3F4F6; --ink-2: #9CA3AF; --line: #2A3441; --up: #4ADE80; --down: #F87171;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="auto"] {
+    --bg: #0B0F14; --surface: #131A22; --ink: #F3F4F6; --ink-2: #9CA3AF; --line: #2A3441; --up: #4ADE80; --down: #F87171;
+    color-scheme: dark;
+  }
 }
 * { margin: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
