@@ -327,9 +327,11 @@ def main():
     every = [sales] + hourly_frames
     brands = ordered([b for f in every for b in f["Brand Name"]] + (list(ratings["Brand Name"]) if ratings is not None else []), BRAND_ORDER)
     bidx = {b: i for i, b in enumerate(brands)}
-    types = ordered([a[0] for a in store_attr.values()] + [t for f in every for t in f["Store Type"]], TYPE_ORDER)
+    rating_types = list(ratings["Store Type"]) if ratings is not None else []
+    rating_regions = list(ratings["Region"]) if ratings is not None else []
+    types = ordered([a[0] for a in store_attr.values()] + [t for f in every for t in f["Store Type"]] + rating_types, TYPE_ORDER)
     tidx = {t: i for i, t in enumerate(types)}
-    regions = ordered([a[1] for a in store_attr.values()] + [r for f in every for r in f["Region"]],
+    regions = ordered([a[1] for a in store_attr.values()] + [r for f in every for r in f["Region"]] + rating_regions,
                       ["KA", "TN", "MH", "ROI", "AP & TL", "Kerela", "Unmapped"])
     ridx = {r: i for i, r in enumerate(regions)}
     sources = ordered([s for f in every for s in f["Source"]], SOURCE_ORDER)
@@ -429,6 +431,10 @@ def main():
     has_ratings = False
     if ratings is not None:
         rt = ratings
+        unknown = rt["Brand Name"].map(bidx).isna() | rt["Store Type"].map(tidx).isna() | rt["Region"].map(ridx).isna()
+        if unknown.any():
+            print(f"Warning: {int(unknown.sum())} rating row(s) left out: brand, store type or region is not in the data.")
+            rt = rt[~unknown].copy()
         rated_flag = (pd.to_numeric(rt["Rated Orders"], errors="coerce").fillna(0).values > 0) & \
                      (pd.to_numeric(rt["Avg Rating"], errors="coerce").fillna(0).values > 0)
         orders_n = pd.to_numeric(rt["Orders"], errors="coerce").fillna(0).values
