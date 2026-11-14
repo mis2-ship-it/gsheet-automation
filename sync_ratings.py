@@ -9,7 +9,7 @@ first, then a name the header contains. The log prints the column chosen for eac
 so a wrong pick is easy to spot.
 
 Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type, Region,
-Orders (Orders Count), Rated Orders (1 when the row has a rating, else 0), Avg Rating,
+Orders (Orders Count), Rated Orders (Swiggy and Zomato: the Rated Orders column; Google: 1 per review), Avg Rating,
 Comments Group (the issue, blank when there is none), Item Name, Category Name and Review Text
 (the customer comment). build_site.py turns this into the ratings file.
 
@@ -45,8 +45,6 @@ FIELD_NAMES = {
     "rated": (["rated orders"], ["rated order", "rated"]),
     "rating": (["avg rating", "rating"], ["avg rating", "rating"]),
     "comments": (["comments group", "group comments"], ["comments group", "group comments"]),
-    "item": (["item name"], ["item name"]),
-    "category": (["category name", "category"], ["category name"]),
     "item": (["item", "item name", "item names", "items name", "items", "product name", "product", "menu item", "dish name"],
              ["item name", "item names", "product name"]),
     "category": (["category name", "category", "item category", "menu category", "product category"],
