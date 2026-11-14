@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light" data-layout="auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{var t=localStorage.getItem('fb-sales-theme');document.documentElement.setAttribute('data-theme',(t==='dark'||t==='auto')?t:'light');}catch(e){}</script>
 <meta name="robots" content="noindex, nofollow">
 <title>Frozen Bottle sales</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -15,28 +16,23 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="layout.css">
 <style>
-/* Light: white background, dark text. Dark: dark background, light text. Each sets its own colour scheme. */
-:root, :root[data-theme="light"] {
-  --bg: #FFFFFF; --surface: #FFFFFF; --ink: #111827; --ink-2: #4B5563; --line: #D6DCE3;
-  --up: #15803D; --down: #B91C1C; --brand: #2D6A6E;
-  color-scheme: light;
+:root {
+  --bg: #EEF3F2; --surface: #FFFFFF; --ink: #15201E; --ink-2: #5E6D6A; --line: #D5DFDC;
+  --up: #17704F; --down: #B1402C; --brand: #2D6A6E;
   --serif: "Instrument Serif", Georgia, serif;
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-:root[data-theme="dark"] {
-  --bg: #0B0F14; --surface: #131A22; --ink: #F3F4F6; --ink-2: #9CA3AF; --line: #2A3441; --up: #4ADE80; --down: #F87171;
-  color-scheme: dark;
-}
 @media (prefers-color-scheme: dark) {
-  :root[data-theme="auto"] {
-    --bg: #0B0F14; --surface: #131A22; --ink: #F3F4F6; --ink-2: #9CA3AF; --line: #2A3441; --up: #4ADE80; --down: #F87171;
-    color-scheme: dark;
+  :root:not([data-theme="light"]) {
+    --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
 }
 * { margin: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
@@ -494,10 +490,6 @@ function salesPeriodView(kind) {
     ${bucketBlock(kind, key, "aov")}
     ${bucketBlock(kind, key, "disc")}`;
 }
-/* ============ Live: today so far, against a comparison date (default: the same day last month) ============ */
-let LIVE_CMP = null;                                   // day index of the comparison date; null = same day last month
-const isoOf = i => toDate(i).toISOString().slice(0, 10);
-const dayShort = i => toDate(i).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 function salesLiveView() {
   setPeriodBar("live", null, null);
   if (!M.has_live || !LIVE) {
@@ -507,31 +499,6 @@ function salesLiveView() {
   }
   const d = M.live_day;
   const m = metrics(aggFor(LIVE.rows, d, d, salesPass));
-  if (LIVE_CMP === null) LIVE_CMP = shiftMonths(d, -1);
-  const c = LIVE_CMP;
-  const now = metrics(aggFor(LIVE.rows, d, d, salesPass));
-  const cmpAgg = aggFor(baseSales(), c, c, salesPass);
-  const hasCmp = c >= 0 && c <= M.last_day && cmpAgg.orders > 0;
-  const cm = hasCmp ? metrics(cmpAgg) : null;
-  const defs = [
-    ["Net sales", m => m.net, "money", true],
-    ["Txn", m => m.txn, "count", true],
-    ["AOV", m => m.aov, "money", true],
-    ["Gross", m => m.gross, "money", true],
-    ["Discount ₹", m => m.disc, "money", false],
-    ["Discount %", m => m.discPct, "pct", false]
-  ];
-  const fmt = (v, type) => type === "pct" ? v.toFixed(1) + "%" : type === "count" ? num(v) : inr(v);
-  const rowsHtml = defs.map(([label, get, type, good]) => {
-    const a = get(now), b = cm ? get(cm) : null;
-    const g = b === null ? null : type === "pct" ? pts(a, b) : rel(a, b);
-    return `<tr><td>${label}</td><td>${fmt(a, type)}</td><td>${b === null ? "—" : fmt(b, type)}</td>` +
-      `<td>${g === null ? "—" : dlt(g, type === "pct" ? " pts" : "%", good)}</td></tr>`;
-  }).join("");
-  const quick = (key, label) => {
-    const day = key === "month" ? shiftMonths(d, -1) : key === "week" ? d - 7 : d - 1;
-    return `<button data-livecmp-quick="${key}" aria-pressed="${c === day}">${label}</button>`;
-  };
   return `<section class="block"><h2>Live, so far today</h2>
     <p class="sub">Partial day, from 9 AM to now. The same-hour comparison and the forecast to 5 AM come in the next update.</p>
     <div class="kgrid">
@@ -540,19 +507,6 @@ function salesLiveView() {
       <div class="kpi"><div class="kl">AOV</div><div class="kv">${inr(m.aov)}</div></div>
       <div class="kpi"><div class="kl">Discount</div><div class="kv">${m.discPct.toFixed(1)}%</div></div>
     </div></section>`;
-    <p class="sub">${fmtLong(d)}, from 9 AM to now.</p>
-    <label class="field">Compare with (date)
-      <input type="date" data-livecmp value="${isoOf(c)}" min="${isoOf(0)}" max="${isoOf(M.last_day)}"
-        style="padding:10px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit">
-    </label>
-    <div class="kindseg" style="margin-top:10px">${quick("month", "Same day last month")}${quick("week", "Same weekday last week")}${quick("yday", "Yesterday")}</div>
-    <div class="scroll" style="margin-top:12px"><table class="tbl">
-      <thead><tr><th>Parameters</th><th>Today so far</th><th>${dayShort(c)}</th><th>Growth</th></tr></thead>
-      <tbody>${rowsHtml}</tbody></table></div>
-    <p class="muted" style="margin-top:10px">${hasCmp
-      ? "Today is a part day (9 AM to now) and the comparison date is the full day, so growth compares the day so far with a full day. Hour-by-hour comparison needs hourly sales in the live feed."
-      : "No sales on the comparison date for these filters. Pick another date."}</p>
-  </section>`;
 }
 
 /* ============ Ratings view (unchanged this phase) ============ */
@@ -707,20 +661,6 @@ document.addEventListener("change", async e => {
   render();
 });
 
-/* ============ Live comparison date ============ */
-document.addEventListener("change", e => {
-  if (e.target.dataset.livecmp === undefined || !e.target.value) return;
-  LIVE_CMP = dayOf(Date.parse(e.target.value + "T00:00:00Z"));
-  render();
-});
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-livecmp-quick]");
-  if (!b || !M || !M.has_live) return;
-  const d = M.live_day, q = b.dataset.livecmpQuick;
-  LIVE_CMP = q === "month" ? shiftMonths(d, -1) : q === "week" ? d - 7 : d - 1;
-  render();
-});
-  
 /* ============ Boot ============ */
 (async function boot() {
   try {
@@ -729,7 +669,7 @@ document.addEventListener("click", e => {
     ROLL = await loadGz("data/rollup.json.gz");
     AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
     DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
-    LIVE = null;   // live numbers now come from hourly.json.gz, loaded by live.js
+    LIVE = M.has_live ? await loadJson("data/live.json") : null;
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
     render();
   } catch (err) {
@@ -740,19 +680,6 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 </script>
-<script src="live.js"></script>
-<script src="ratings.js"></script>
-<script src="products.js"></script>
-<script src="compare.js"></script>
-<script src="slicer.js"></script>
-<script src="layout.js"></script>
-<script src="kpt.js"></script>
-<script src="sales2.js"></script>
-<script src="periods.js"></script>
-<script src="store.js"></script>
-<script src="spikes.js"></script>
-<script src="am.js"></script>
 <script src="trend.js"></script>
-<script src="calendar.js"></script>
 </body>
 </html>
