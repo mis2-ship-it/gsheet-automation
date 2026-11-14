@@ -6,7 +6,7 @@ Needs GOOGLE_CREDENTIALS (service account JSON, same secret as rista_live.py).
 The three sheets are shared 'anyone with the link'; the service account can read them.
 
 Output columns: Date (YYYY-MM-DD), Platform, Store Name, Brand Name, Store Type,
-Region, Orders, Rated Orders, Avg Rating, Category, Item Name. build_site.py turns this into the ratings files.
+Region, Orders, Rated Orders, Avg Rating. build_site.py turns this into the ratings file.
 
 Usage: python scripts/sync_ratings.py --out data/ratings.csv
 """
