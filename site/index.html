@@ -143,7 +143,7 @@ const CHART_N = { daily: 30, weekly: 26, monthly: 12 };
 
 /* ============ State ============ */
 const S = { top: "sales", sub: "daily", rkind: "daily", type: "all", brand: "all", region: "all", source: "all", session: "all", store: "all", sel: null };
-let M = null, ROLL = null, LIVE = null, RAT = null, AOVB = null, DISCB = null;
+let M = null, ROLL = null, LIVE = null, RAT = null, RATI = null, AOVB = null, DISCB = null;
 const STORE_ROWS = new Map();
 let DAY_WK = null, DAY_MON = null;
 
@@ -595,7 +595,52 @@ function ratingView(platformName) {
     }).join("");
     return `<section class="block"><h2>By ${title}${pos === 1 ? " (top 15)" : ""}</h2>${rowsHtml}</section>`;
   };
-  return kpis + dimBlock("brand", 2) + dimBlock("region", 4) + dimBlock("store", 1);
+  return kpis + dimBlock("brand", 2) + dimBlock("region", 4) + dimBlock("store", 1) + itemBlocks(platformName, cw, pw, pass);
+}
+
+/* ============ Rating by category and by product (Swiggy and Zomato; the sheets carry category and item name) ============ */
+const he = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+// Item rows: [day, store, brand, type, region, platform, category, item, rated, rating_sum_x100, orders]
+function itemAggBy(rows, from, to, pass, keyFn) {
+  const m = new Map();
+  for (const r of rows) {
+    if (r[0] < from || r[0] > to || !pass(r)) continue;
+    const k = keyFn(r);
+    let a = m.get(k);
+    if (!a) m.set(k, a = { rated: 0, rsum: 0, orders: 0 });
+    a.rated += r[8]; a.rsum += r[9]; a.orders += r[10];
+  }
+  return m;
+}
+function itemBlocks(platformName, cw, pw, pass) {
+  if (!RATI || platformName === "Google") return "";
+  const avgOf = a => (a.rated ? a.rsum / 100 / a.rated : null);
+  const covOf = a => (a.orders ? (a.rated / a.orders) * 100 : null);
+  const build = (title, keyFn, labelFn, subFn, limit) => {
+    const cur = itemAggBy(RATI.rows, cw[0], cw[1], pass, keyFn);
+    const prev = itemAggBy(RATI.rows, pw[0], pw[1], pass, keyFn);
+    let ks = [...cur.keys()].filter(k => cur.get(k).rated > 0).sort((a, b) => cur.get(b).rated - cur.get(a).rated);
+    if (limit) ks = ks.slice(0, limit);
+    if (!ks.length) return `<section class="block"><h2>${title}</h2><p class="muted">No ratings in this period for the selected filters.</p></section>`;
+    const rowsHtml = ks.map(k => {
+      const a = cur.get(k), b = prev.get(k) || { rated: 0, rsum: 0, orders: 0 };
+      const av = avgOf(a), bv = avgOf(b), cv = covOf(a);
+      return `<div class="srow">
+        <div class="sh"><span class="sname">${he(labelFn(k))}${subFn ? `<br><span class="sub">${he(subFn(k))}</span>` : ""}</span>
+          <span class="snet">${av === null ? "—" : av.toFixed(2)} ${bv !== null && av !== null ? dlt(av - bv, " pts", true, 2) : ""}</span></div>
+        <div class="smet">
+          <div class="mc"><i>Rated orders</i><b>${num(a.rated)}</b> ${b.rated ? dlt(rel(a.rated, b.rated), "%", true) : ""}</div>
+          <div class="mc"><i>Rating coverage</i><b>${cv === null ? "—" : cv.toFixed(1) + "%"}</b></div>
+        </div>
+      </div>`;
+    }).join("");
+    return `<section class="block"><h2>${title}</h2>${rowsHtml}</section>`;
+  };
+  const catName = i => M.rating_categories[i];
+  const itemName = i => M.rating_items[i];
+  return build("By category", r => r[6], catName, null, 0)
+       + build("By product (top 25 by rated orders)", r => r[6] + "|" + r[7],
+           k => itemName(+k.split("|")[1]), k => catName(+k.split("|")[0]), 25);
 }
 
 /* ============ Shell ============ */
@@ -723,6 +768,7 @@ document.addEventListener("click", e => {
     DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
     LIVE = M.has_live ? await loadJson("data/live.json") : null;
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
+    RATI = M.has_rating_items ? await loadGz("data/ratings_items.json.gz") : null;
     render();
   } catch (err) {
     document.getElementById("view").innerHTML = `<section class="empty"><h2>Could not load the data</h2><p class="muted">${err.message}</p></section>`;
