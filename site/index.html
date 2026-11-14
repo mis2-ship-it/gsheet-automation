@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light" data-layout="auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>try{var t=localStorage.getItem('fb-sales-theme');document.documentElement.setAttribute('data-theme',(t==='dark'||t==='auto')?t:'light');}catch(e){}</script>
 <meta name="robots" content="noindex, nofollow">
 <title>Frozen Bottle sales</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -15,7 +16,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="layout.css">
 <style>
 /* Light: white background, dark text. Dark: dark background, light text. Each sets its own colour scheme. */
 :root, :root[data-theme="light"] {
@@ -546,6 +546,7 @@ function salesLiveView() {
       : "No sales on the comparison date for these filters. Pick another date."}</p>
   </section>`;
 }
+
 /* ============ Ratings view (unchanged this phase) ============ */
 function ratingView(platformName) {
   const platform = M.platforms.indexOf(platformName);
@@ -711,7 +712,7 @@ document.addEventListener("click", e => {
   LIVE_CMP = q === "month" ? shiftMonths(d, -1) : q === "week" ? d - 7 : d - 1;
   render();
 });
-  
+
 /* ============ Boot ============ */
 (async function boot() {
   try {
@@ -720,7 +721,7 @@ document.addEventListener("click", e => {
     ROLL = await loadGz("data/rollup.json.gz");
     AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
     DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
-    LIVE = null;   // live numbers now come from hourly.json.gz, loaded by live.js
+    LIVE = M.has_live ? await loadJson("data/live.json") : null;
     RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
     render();
   } catch (err) {
@@ -731,19 +732,6 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 </script>
-<script src="live.js"></script>
-<script src="ratings.js"></script>
-<script src="products.js"></script>
-<script src="compare.js"></script>
-<script src="slicer.js"></script>
-<script src="layout.js"></script>
-<script src="kpt.js"></script>
-<script src="sales2.js"></script>
-<script src="periods.js"></script>
-<script src="store.js"></script>
-<script src="spikes.js"></script>
-<script src="am.js"></script>
 <script src="trend.js"></script>
-<script src="calendar.js"></script>
 </body>
 </html>
