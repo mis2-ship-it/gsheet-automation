@@ -239,6 +239,47 @@ def discount_payload(path, stores):
             "rows": rows, "irows": irows}
 
 
+CAMPAIGN_DATE_FORMATS = ["%Y-%m-%d", "%d-%m-%Y", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%Y", "%d/%m/%y"]
+
+
+def campaign_payload(path):
+    """Offline campaign days from data/campaign_days.csv.
+    Accepts Date or Business Date, and Campaign or Discount Code. Month is checked against the date if present.
+    Returns {"names": [...], "days": [[day, name_index], ...]}, or None when there is no file."""
+    if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+        return None
+    c = pd.read_csv(path, dtype=str, keep_default_na=False)
+    date_col = next((x for x in ["Date", "Business Date"] if x in c.columns), None)
+    if date_col is None:
+        raise SystemExit(f"{path}: needs a Date or Business Date column")
+    text = c[date_col].str.strip()
+    parsed = pd.Series(pd.NaT, index=c.index)
+    for fmt in CAMPAIGN_DATE_FORMATS:
+        todo = parsed.isna()
+        parsed[todo] = pd.to_datetime(text[todo], format=fmt, errors="coerce")
+    bad = (text != "") & parsed.isna()
+    if bad.any():
+        print(f"Warning: {int(bad.sum())} campaign date(s) could not be read and were left out: "
+              f"{sorted(set(text[bad]))[:5]}")
+    keep = parsed.notna().values
+    if "Month" in c.columns:
+        mon = pd.to_datetime(c["Month"].str.strip(), format="%b-%y", errors="coerce")
+        mism = keep & mon.notna().values & \
+            ((mon.dt.year.values != parsed.dt.year.values) | (mon.dt.month.values != parsed.dt.month.values))
+        if mism.any():
+            print(f"Warning: {int(mism.sum())} row(s) where the Month label does not match the date: "
+                  f"{sorted(set(c.loc[mism, 'Month']))[:5]}")
+    name_col = next((x for x in ["Campaign", "Discount Code"] if x in c.columns), None)
+    if name_col:
+        label = c[name_col].str.strip().replace("", "Offline campaign")
+    else:
+        label = pd.Series("Offline campaign", index=c.index)
+    days = sorted({(int((parsed[i] - BASE).days), label[i]) for i in c.index[keep]})
+    names = sorted({n for _, n in days})
+    idx = {n: i for i, n in enumerate(names)}
+    return {"names": names, "days": [[d, idx[n]] for d, n in days]}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--history", required=True)
@@ -249,6 +290,7 @@ def main():
     ap.add_argument("--kpt")
     ap.add_argument("--access")
     ap.add_argument("--discounts")
+    ap.add_argument("--campaigns", help="offline campaign days CSV (Date, Campaign)")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
     ap.add_argument("--icons-dir", default="site")
@@ -514,6 +556,15 @@ def main():
         comm_rows = cdf[["d", "p", "star", "b", "r", "st", "item", "cat", "text"]].values.tolist()
         dump(os.path.join(args.out, "comments.json.gz"), {"rows": comm_rows})
 
+    # Offline campaign days: data/campaigns.json for the Campaign tab.
+    camp = campaign_payload(args.campaigns)
+    camp_path = os.path.join(args.out, "campaigns.json")
+    if camp is not None:
+        with open(camp_path, "w", encoding="utf-8") as f:
+            json.dump(camp, f, separators=(",", ":"))
+    elif os.path.exists(camp_path):
+        os.remove(camp_path)
+
     # KPT and O2D tab: order timings from sync_kpt.py, limited to this login's stores.
     keep_names = set(json.load(open(args.only_stores, encoding="utf-8"))) if args.only_stores else None
     kpt = kpt_payload(args.kpt, keep_names, args.access)
@@ -551,6 +602,7 @@ def main():
         "ams": ams,
         "has_kpt": kpt is not None,
         "has_discounts": disc is not None,
+        "has_campaigns": camp is not None,
         "kpt_last_day": kpt["lastDay"] if kpt is not None else None,
         "has_products": has_ratings and bool(prod_rows),
         "product_counts": product_counts,
