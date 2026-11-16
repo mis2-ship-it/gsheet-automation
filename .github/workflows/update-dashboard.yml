@@ -44,6 +44,23 @@ jobs:
           restore-keys: |
             sales-data-
 
+      - name: Check campaign calendar
+        run: |
+          test -s data/campaign_days.csv || { echo "data/campaign_days.csv is missing or empty"; exit 1; }
+          echo "Campaign rows: $(( $(wc -l < data/campaign_days.csv) - 1 ))"
+    
+      # In your existing build step, add the --campaigns line to the command you already have.
+      # Keep all your other arguments unchanged.
+      - name: Build dashboard data
+        run: |
+          python scripts/build_site.py \
+            --campaigns data/campaign_days.csv \
+            --out site/data
+    
+      - name: Check campaigns.json was built
+        run: |
+          test -s site/data/campaigns.json || { echo "site/data/campaigns.json was not built: check --campaigns in the build step"; exit 1; }
+
       - name: Completed days from Rista (nightly only)
         id: nightly
         if: github.event.schedule == '30 1 * * *' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'nightly')
