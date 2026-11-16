@@ -290,7 +290,7 @@ def main():
     ap.add_argument("--kpt")
     ap.add_argument("--access")
     ap.add_argument("--discounts")
-    ap.add_argument("--campaigns", help="offline campaign days CSV (Date, Campaign)")
+    ap.add_argument("--campaigns", default="data/campaign_days.csv", help="offline campaign days CSV (Date, Campaign)")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--only-stores", help="JSON file with a list of store names: build only those stores")
     ap.add_argument("--icons-dir", default="site")
@@ -562,8 +562,11 @@ def main():
     if camp is not None:
         with open(camp_path, "w", encoding="utf-8") as f:
             json.dump(camp, f, separators=(",", ":"))
-    elif os.path.exists(camp_path):
-        os.remove(camp_path)
+        print(f"campaigns: {len(camp['days'])} days written to {camp_path}")
+    else:
+        print(f"campaigns: no calendar at {args.campaigns}; campaigns.json not written")
+        if os.path.exists(camp_path):
+            os.remove(camp_path)
 
     # KPT and O2D tab: order timings from sync_kpt.py, limited to this login's stores.
     keep_names = set(json.load(open(args.only_stores, encoding="utf-8"))) if args.only_stores else None
