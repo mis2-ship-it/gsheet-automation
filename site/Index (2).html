@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Frozen Bottle sales</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2D6A6E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="FB Sales">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="layout.css">
+<style>
+:root {
+  --bg: #EEF3F2; --surface: #FFFFFF; --ink: #15201E; --ink-2: #5E6D6A; --line: #D5DFDC;
+  --up: #17704F; --down: #B1402C; --brand: #2D6A6E;
+  --serif: "Instrument Serif", Georgia, serif;
+  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0E1716; --surface: #152220; --ink: #E7EFED; --ink-2: #93A4A1; --line: #263734; --up: #5CC596; --down: #EC8A74;
+}
+* { margin: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+button, select { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.app { max-width: 480px; margin: 0 auto; padding: 0 0 48px; }
+.top { padding: 18px 16px 0; }
+.scope { color: var(--ink-2); font-size: 13px; margin-bottom: 12px; }
+.l1 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--line); }
+.l1 button { padding: 12px 0; border-radius: 12px; font-size: 17px; font-weight: 600; color: var(--ink-2); }
+.l1 button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.l2 { display: flex; gap: 22px; margin-top: 14px; overflow-x: auto; border-bottom: 1px solid var(--line); scrollbar-width: none; }
+.l2::-webkit-scrollbar { display: none; }
+.l2 button { position: relative; padding: 10px 0 12px; color: var(--ink-2); font-size: 15px; white-space: nowrap; }
+.l2 button[aria-current="page"] { color: var(--ink); font-weight: 600; }
+.l2 button[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); }
+
+.filters { padding: 14px 16px 0; display: grid; gap: 10px; }
+.seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 11px; background: var(--line); }
+.seg3 button { padding: 8px 0; border-radius: 9px; font-size: 14px; color: var(--ink-2); }
+.seg3 button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+.fgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fgrid .wide { grid-column: 1 / -1; }
+.field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.field select { width: 100%; padding: 10px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font-size: 14px; }
+
+.periodbar { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 14px 16px 0; }
+.periodbar .arrow { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 18px; }
+.periodbar .plabel { text-align: center; font-weight: 600; font-size: 15px; }
+.periodbar .latest { padding: 9px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--ink-2); }
+.kindseg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; border-radius: 11px; background: var(--line); margin: 14px 16px 0; }
+.kindseg button { padding: 8px 0; border-radius: 9px; font-size: 14px; color: var(--ink-2); }
+.kindseg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; }
+
+main { padding: 0 16px; }
+.kgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; }
+.kl { color: var(--ink-2); font-size: 13px; }
+.kv { font-family: var(--serif); font-size: 27px; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.cmp { font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 4px; color: var(--ink-2); }
+.d { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.d.up { color: var(--up); }
+.d.down { color: var(--down); }
+.d.n { color: var(--ink-2); }
+
+.block { padding: 20px 0 6px; border-bottom: 1px solid var(--line); }
+.block:last-child { border-bottom: 0; }
+h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.sub { color: var(--ink-2); font-size: 12px; margin-bottom: 10px; }
+.muted { color: var(--ink-2); font-size: 13px; }
+.chart { display: block; width: 100%; height: auto; }
+.axis { display: flex; justify-content: space-between; margin-top: 6px; color: var(--ink-2); font-size: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+
+.scroll { overflow-x: auto; margin: 0 -2px 8px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th, .tbl td { padding: 7px 6px; border-top: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl th { color: var(--ink-2); font-weight: 600; font-size: 11.5px; border-top: 0; padding-bottom: 6px; }
+.tbl td:first-child, .tbl th:first-child { text-align: left; }
+.tbl td:first-child, .tbl th:first-child { position: sticky; left: 0; background: var(--bg); z-index: 1; }
+.tbl tr.tot td { font-weight: 600; }
+.srow { padding: 12px 0; }
+.srow + .srow { border-top: 1px solid var(--line); }
+
+.empty { margin-top: 16px; padding: 18px; border-radius: 14px; border: 1px dashed var(--line); }
+.empty p + p { margin-top: 8px; }
+.note { margin: 22px 16px 0; font-size: 12px; color: var(--ink-2); line-height: 1.55; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <p class="scope" id="scope">Loading data</p>
+    <div class="l1" id="l1"></div>
+    <nav class="l2" id="l2"></nav>
+  </header>
+  <section class="filters">
+    <div class="seg3" id="types" role="group" aria-label="Store type"></div>
+    <div class="fgrid" id="fields"></div>
+  </section>
+  <div id="periodwrap"></div>
+  <main id="view"></main>
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+/* ============ Constants ============ */
+const SUBS = {
+  sales: [["live", "Live"], ["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"]],
+  rating: [["swiggy", "Swiggy"], ["zomato", "Zomato"], ["google", "Google"]]
+};
+const KIND_NAME = { daily: "Day", weekly: "Week", monthly: "Month" };
+const SRC_COLOR = ["#1F4E5A", "#E07A3F", "#C4413B", "#9AA7A4", "#6B5B95"];
+const CHART_N = { daily: 30, weekly: 26, monthly: 12 };
+
+/* Row layouts (see scripts/build_site.py) */
+// sales:   [day, store, brand, type, region, source, session, net_paise, gross_paise, disc_paise, orders]
+// buckets: [day, brand, type, region, source, bucket, orders, net_paise]
+// ratings: [day, store, brand, type, region, platform, rated, rating_sum_x100, orders]
+
+/* ============ State ============ */
+const S = { top: "sales", sub: "daily", rkind: "daily", type: "all", brand: "all", region: "all", source: "all", session: "all", store: "all", sel: null };
+let M = null, ROLL = null, LIVE = null, RAT = null, AOVB = null, DISCB = null;
+const STORE_ROWS = new Map();
+let DAY_WK = null, DAY_MON = null;
+
+/* ============ Data loading ============ */
+async function loadGz(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} (${res.status})`);
+  const body = res.body.pipeThrough(new DecompressionStream("gzip"));
+  return new Response(body).json();
+}
+async function loadJson(url) {
+  const res = await fetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`${url} (${res.status})`);
+  return res.json();
+}
+async function ensureStore(i) {
+  if (!STORE_ROWS.has(i)) {
+    const data = await loadGz(`data/stores/${i}.json.gz`);
+    STORE_ROWS.set(i, data.rows);
+  }
+}
+
+/* ============ Dates (day 0 = manifest base date) ============ */
+const EPOCH = Date.UTC(2025, 0, 1);
+const DAY = 86400000;
+const toDate = i => new Date(EPOCH + i * DAY);
+const dayOf = ms => Math.round((ms - EPOCH) / DAY);
+const fmtDay = i => toDate(i).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+const fmtLong = i => toDate(i).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const monStart = k => dayOf(Date.UTC(2025, k, 1));
+const monEnd = k => dayOf(Date.UTC(2025, k + 1, 0));
+const monLong = k => new Date(Date.UTC(2025, k, 1)).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" });
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monShort = k => `${MON[k % 12]} ${String(2025 + Math.floor(k / 12)).slice(2)}`;
+const mondayOf = d => d - ((toDate(d).getUTCDay() + 6) % 7);
+// Same date, n months earlier (n negative). Feb 29 and 31st dates move to the month's last day.
+function shiftMonths(i, n) {
+  const dt = toDate(i);
+  const y = dt.getUTCFullYear(), m = dt.getUTCMonth() + n, d = dt.getUTCDate();
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return dayOf(Date.UTC(y, m, Math.min(d, last)));
+}
+function buildDayTables() {
+  const N = 1400;
+  DAY_WK = new Int32Array(N);
+  DAY_MON = new Int32Array(N);
+  for (let d = 0; d < N; d++) {
+    DAY_WK[d] = mondayOf(d);
+    const dt = toDate(d);
+    DAY_MON[d] = (dt.getUTCFullYear() - 2025) * 12 + dt.getUTCMonth();
+  }
+}
+const periodKey = (kind, d) => (kind === "daily" ? d : kind === "weekly" ? DAY_WK[d] : DAY_MON[d]);
+const windowOf = (kind, k) => (kind === "daily" ? [k, k] : kind === "weekly" ? [k, k + 6] : [monStart(k), monEnd(k)]);
+const periodLabel = (kind, k) => (kind === "daily" ? fmtLong(k) : kind === "weekly" ? `${fmtDay(k)} to ${fmtDay(k + 6)}` : monLong(k));
+function periodKeys(kind, last = M.last_day) {
+  const keys = [];
+  if (kind === "daily") { for (let d = 0; d <= last; d++) keys.push(d); }
+  else if (kind === "weekly") { for (let m = 5; m + 6 <= last; m += 7) keys.push(m); }   // 5 = Mon 6 Jan 2025
+  else { for (let k = 0; monEnd(k) <= last; k++) keys.push(k); }
+  return keys;
+}
+
+/* ============ Filters ============ */
+function salesPass(r) {
+  if (S.type !== "all" && r[3] !== +S.type) return false;
+  if (S.brand !== "all" && r[2] !== +S.brand) return false;
+  if (S.region !== "all" && r[4] !== +S.region) return false;
+  if (S.source !== "all" && r[5] !== +S.source) return false;
+  if (S.session !== "all" && r[6] !== +S.session) return false;
+  if (S.store !== "all" && r[1] !== +S.store) return false;
+  return true;
+}
+function ratingPass(r, platform) {
+  if (r[5] !== platform) return false;
+  if (S.type !== "all" && r[3] !== +S.type) return false;
+  if (S.brand !== "all" && r[2] !== +S.brand) return false;
+  if (S.region !== "all" && r[4] !== +S.region) return false;
+  if (S.store !== "all" && r[1] !== +S.store) return false;
+  return true;
+}
+const baseSales = () => (S.store === "all" ? ROLL.rows : (STORE_ROWS.get(+S.store) || []));
+
+/* Dropdowns follow each other: a store list shows only stores in the chosen region, brand and type. */
+function eligible(skip) {
+  return M.stores.filter(s =>
+    (skip === "region" || S.region === "all" || s.region === M.regions[+S.region]) &&
+    (skip === "brand" || S.brand === "all" || s.brands.includes(+S.brand)) &&
+    (skip === "type" || S.type === "all" || s.type === M.types[+S.type]) &&
+    (skip === "store" || S.store === "all" || s.i === +S.store));
+}
+function optionSets() {
+  const brands = new Set();
+  eligible("brand").forEach(s => s.brands.forEach(b => brands.add(b)));
+  const regions = new Set(eligible("region").map(s => s.region));
+  return { brands, regions, stores: eligible("store") };
+}
+function sanitize() {
+  for (let pass = 0; pass < 2; pass++) {
+    const o = optionSets();
+    if (S.brand !== "all" && !o.brands.has(+S.brand)) S.brand = "all";
+    if (S.region !== "all" && !o.regions.has(M.regions[+S.region])) S.region = "all";
+    if (S.store !== "all" && !o.stores.some(s => s.i === +S.store)) S.store = "all";
+  }
+}
+
+/* ============ Aggregation ============ */
+const EMPTY_A = { net: 0, gross: 0, disc: 0, orders: 0, netIn: 0 };
+function aggFor(rows, from, to, pass) {
+  const a = { net: 0, gross: 0, disc: 0, orders: 0, netIn: 0 };
+  for (const r of rows) {
+    if (r[0] < from || r[0] > to || !pass(r)) continue;
+    a.net += r[7]; a.gross += r[8]; a.disc += r[9]; a.orders += r[10];
+    if (r[5] === 0) a.netIn += r[7];
+  }
+  return a;
+}
+function aggByDim(rows, from, to, pos, pass) {
+  const m = new Map();
+  for (const r of rows) {
+    if (r[0] < from || r[0] > to || !pass(r)) continue;
+    const k = r[pos];
+    let a = m.get(k);
+    if (!a) m.set(k, a = { net: 0, gross: 0, disc: 0, orders: 0, netIn: 0 });
+    a.net += r[7]; a.gross += r[8]; a.disc += r[9]; a.orders += r[10];
+    if (r[5] === 0) a.netIn += r[7];
+  }
+  return m;
+}
+function ratingAgg(rows, from, to, pass) {
+  const a = { rated: 0, rsum: 0, orders: 0 };
+  for (const r of rows) {
+    if (r[0] < from || r[0] > to || !pass(r)) continue;
+    a.rated += r[6]; a.rsum += r[7]; a.orders += r[8];
+  }
+  return a;
+}
+function ratingByDim(rows, from, to, pos, pass) {
+  const m = new Map();
+  for (const r of rows) {
+    if (r[0] < from || r[0] > to || !pass(r)) continue;
+    const k = r[pos];
+    let a = m.get(k);
+    if (!a) m.set(k, a = { rated: 0, rsum: 0, orders: 0 });
+    a.rated += r[6]; a.rsum += r[7]; a.orders += r[8];
+  }
+  return m;
+}
+
+/* ============ Formatting ============ */
+const inr = n => {
+  const a = Math.abs(n);
+  if (a >= 1e7) return "₹" + (n / 1e7).toFixed(2) + " Cr";
+  if (a >= 1e5) return "₹" + (n / 1e5).toFixed(2) + " L";
+  return "₹" + Math.round(n).toLocaleString("en-IN");
+};
+const num = n => Math.round(n).toLocaleString("en-IN");
+const rel = (c, p) => (p ? ((c - p) / p) * 100 : null);
+const pts = (c, p) => (p || p === 0 ? c - p : null);
+const dlt = (v, unit, good, digits = 1) => {
+  if (v === null || !isFinite(v)) return "";
+  if (unit === "%" && Math.abs(v) > 999) return `<span class="d n">(n/m)</span>`;
+  const cls = good === null ? "n" : (v >= 0) === good ? "up" : "down";
+  const arrow = v > 0 ? "▲" : v < 0 ? "▼" : "•";
+  return `<span class="d ${cls}">(${arrow} ${Math.abs(v).toFixed(digits)}${unit})</span>`;
+};
+const metrics = a => ({
+  gross: a.gross / 100,
+  disc: a.disc / 100,
+  net: a.net / 100,
+  txn: a.orders,
+  aov: a.orders ? a.net / 100 / a.orders : 0,
+  discPct: a.gross ? (a.disc / a.gross) * 100 : 0,
+  offPct: a.net ? (a.netIn / a.net) * 100 : 0,
+  onPct: a.net ? 100 - (a.netIn / a.net) * 100 : 0
+});
+
+/* ============ Overall table (same layout as the daily/weekly/monthly KPI sheet) ============ */
+function overallCols(kind, key) {
+  if (kind === "daily" || kind === "weekly") {
+    const starts = [key, key - 7, key - 14, shiftMonths(key, -1), shiftMonths(key, -12)];
+    const len = kind === "daily" ? 0 : 6;
+    return {
+      heads: kind === "daily" ? ["Today", "Last Week", "Last 2 Week", "Last Month", "Last Year"]
+                              : ["This Week", "Last Week", "Last 2 Week", "Last Month", "Last Year"],
+      wins: starts.map(s => [s, s + len]),
+      growth: ["LW GW %", "L2W %", "MoM %", "LY %"]
+    };
+  }
+  return {
+    heads: ["This Month", "Last Month", "2 Months Back", "Last Year"],
+    wins: [key, key - 1, key - 2, key - 12].map(k => [monStart(k), monEnd(k)]),
+    growth: ["vs Last Month", "vs 2 Months", "vs Last Year"]
+  };
+}
+function overallTable(kind, key) {
+  const c = overallCols(kind, key);
+  const rows = baseSales();
+  const ms = c.wins.map(([f, t]) => (f < 0 || t > M.last_day ? null : metrics(aggFor(rows, f, t, salesPass))));
+  const defs = [
+    ["Gross (₹)", m => m.gross, true, "money"],
+    ["Discount (₹)", m => m.disc, false, "money"],
+    ["Net (₹)", m => m.net, true, "money"],
+    ["Txn", m => m.txn, true, "count"],
+    ["AOV (₹)", m => m.aov, true, "money"],
+    ["Discount %", m => m.discPct, false, "pct"],
+    ["Offline %", m => m.offPct, null, "pct"],
+    ["Online %", m => m.onPct, null, "pct"]
+  ];
+  const body = defs.map(([label, get, good, type]) => {
+    const vals = ms.map(m => (m ? get(m) : null));
+    const cells = vals.map(v => `<td>${v === null ? "—" : type === "pct" ? v.toFixed(1) + "%" : num(v)}</td>`).join("");
+    const grow = c.growth.map((_, j) => {
+      const cur = vals[0], other = vals[j + 1];
+      if (cur === null || other === null) return "<td>—</td>";
+      const g = type === "pct" ? pts(cur, other) : rel(cur, other);
+      const unit = type === "pct" ? " pts" : "%";
+      return `<td>${g === null ? "—" : dlt(g, unit, good)}</td>`;
+    }).join("");
+    return `<tr><td>${label}</td>${cells}${grow}</tr>`;
+  }).join("");
+  return `<div class="scroll"><table class="tbl">
+    <thead><tr><th>Parameters</th>${c.heads.map(h => `<th>${h}</th>`).join("")}${c.growth.map(g => `<th>${g}</th>`).join("")}</tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+
+/* ============ Summary tables by brand, region, source, session ============ */
+function sumWins(kind, key) {
+  if (kind === "daily") return { cur: [key, key], prev: [key - 7, key - 7], c: "Today", p: "LW" };
+  if (kind === "weekly") return { cur: [key, key + 6], prev: [key - 7, key - 1], c: "This Week", p: "LW" };
+  return { cur: [monStart(key), monEnd(key)], prev: [monStart(key - 1), monEnd(key - 1)], c: "This Month", p: "LM" };
+}
+function nameOf(pos, k) {
+  if (pos === 2) return M.brands[k];
+  if (pos === 4) return M.regions[k];
+  if (pos === 5) return M.sources[k] === "In Store" ? "Offline (in store)" : M.sources[k];
+  if (pos === 6) return M.sessions[k];
+  return String(k);
+}
+function summaryTable(kind, key, pos) {
+  const w = sumWins(kind, key);
+  const rows = baseSales();
+  const cur = aggByDim(rows, w.cur[0], w.cur[1], pos, salesPass);
+  const prev = aggByDim(rows, w.prev[0], w.prev[1], pos, salesPass);
+  const keysAll = [...new Set([...cur.keys(), ...prev.keys()])]
+    .filter(k => (cur.get(k) || EMPTY_A).net || (prev.get(k) || EMPTY_A).net)
+    .sort((a, b) => (cur.get(b) || EMPTY_A).net - (cur.get(a) || EMPTY_A).net);
+  const line = (name, c, p, cls) => {
+    const cm = metrics(c), pm = metrics(p);
+    return `<tr class="${cls || ""}"><td>${name}</td><td>${num(cm.net)}</td><td>${num(pm.net)}</td>
+      <td>${dlt(rel(cm.net, pm.net), "%", true)}</td><td>${cm.discPct.toFixed(1)}%</td><td>${pm.discPct.toFixed(1)}%</td>
+      <td>${dlt(pts(cm.discPct, pm.discPct), " pts", false)}</td></tr>`;
+  };
+  const total = line("Total", aggFor(rows, w.cur[0], w.cur[1], salesPass), aggFor(rows, w.prev[0], w.prev[1], salesPass), "tot");
+  const body = total + keysAll.map(k => line(nameOf(pos, k), cur.get(k) || EMPTY_A, prev.get(k) || EMPTY_A)).join("");
+  return `<div class="scroll"><table class="tbl">
+    <thead><tr><th></th><th>${w.c} Rev</th><th>${w.p} Rev</th><th>Growth %</th><th>${w.c} Dis %</th><th>${w.p} Dis %</th><th>Dis Change %</th></tr></thead>
+    <tbody>${body}</tbody></table></div>`;
+}
+function summaryBlock(kind, key, title, pos) {
+  return `<section class="block"><h2>By ${title}</h2><p class="sub">Revenue in ₹. Brackets show change against ${sumWins(kind, key).p}.</p>${summaryTable(kind, key, pos)}</section>`;
+}
+
+/* ============ AOV and discount buckets: order contribution | orders ============ */
+function bucketTable(kind, key, which) {
+  const data = which === "aov" ? AOVB : DISCB;
+  const labels = which === "aov" ? M.aov_labels : M.disc_labels;
+  const [from, to] = windowOf(kind, key);
+  const cols = S.source === "all" ? M.sources.map((_, j) => j) : [+S.source];
+  const totals = {}, cells = {};
+  for (const r of data.rows) {
+    if (r[0] < from || r[0] > to) continue;
+    if (S.brand !== "all" && r[1] !== +S.brand) continue;
+    if (S.type !== "all" && r[2] !== +S.type) continue;
+    if (S.region !== "all" && r[3] !== +S.region) continue;
+    totals[r[4]] = (totals[r[4]] || 0) + r[6];
+    cells[r[5]] = cells[r[5]] || {};
+    cells[r[5]][r[4]] = (cells[r[5]][r[4]] || 0) + r[6];
+  }
+  const head = cols.map(j => `<th>${M.sources[j] === "In Store" ? "Offline" : M.sources[j]}</th>`).join("");
+  const body = labels.map((lab, bk) => `<tr><td>${lab}</td>${cols.map(j => {
+    const o = (cells[bk] || {})[j] || 0, t = totals[j] || 0;
+    return `<td>${t ? (o / t * 100).toFixed(1) + "%" : "—"} <span class="muted">(${num(o)})</span></td>`;
+  }).join("")}</tr>`).join("");
+  const tot = `<tr class="tot"><td>Total</td>${cols.map(j => `<td>100% <span class="muted">(${num(totals[j] || 0)})</span></td>`).join("")}</tr>`;
+  return `<div class="scroll"><table class="tbl"><thead><tr><th>${which === "aov" ? "AOV ₹" : "Discount"}</th>${head}</tr></thead>
+    <tbody>${body}${tot}</tbody></table></div>`;
+}
+function bucketBlock(kind, key, which) {
+  const title = which === "aov" ? "AOV bucket" : "Discount bucket";
+  if (!AOVB || !DISCB) return `<section class="block"><h2>${title}</h2><p class="muted">Bucket data is not loaded yet.</p></section>`;
+  return `<section class="block"><h2>${title}</h2><p class="sub">Each cell shows the share of that source's orders, and the number of orders. Follows brand, region, store type and the selected period.</p>${bucketTable(kind, key, which)}</section>`;
+}
+
+/* ============ Trend chart ============ */
+function trendBlock(kind, keys, idx, rows, pass) {
+  const N = CHART_N[kind];
+  const ck = keys.slice(Math.max(0, idx - N + 1), idx + 1);
+  const lo = windowOf(kind, ck[0])[0], hi = windowOf(kind, ck[ck.length - 1])[1];
+  const m = new Map(ck.map(k => [k, { net: 0, src: [0, 0, 0, 0, 0] }]));
+  for (const r of rows) {
+    if (r[0] < lo || r[0] > hi || !pass(r)) continue;
+    const a = m.get(periodKey(kind, r[0]));
+    if (a) { a.net += r[7]; a.src[r[5]] += r[7]; }
+  }
+  const max = Math.max(...[...m.values()].map(a => a.net), 1) * 1.08;
+  const W = 340, H = 170, bw = W / ck.length;
+  let bars = "";
+  ck.forEach((k, i) => {
+    const a = m.get(k);
+    let y = H;
+    const x = (i * bw + bw * 0.18).toFixed(1), w = (bw * 0.64).toFixed(1);
+    a.src.forEach((v, j) => {
+      if (!v) return;
+      const h = (v / max) * H;
+      y -= h;
+      bars += `<rect x="${x}" y="${y.toFixed(1)}" width="${w}" height="${h.toFixed(1)}" fill="${SRC_COLOR[j]}" opacity="${k === keys[idx] ? 1 : 0.6}"/>`;
+    });
+    bars += `<rect data-k="${k}" x="${(i * bw).toFixed(1)}" y="0" width="${bw.toFixed(1)}" height="${H}" fill="transparent"/>`;
+  });
+  const lab = k => (kind === "monthly" ? monShort(k) : fmtDay(k));
+  const mid = ck[Math.floor(ck.length / 2)];
+  const legend = M.sources.map((n, j) => `<span><i class="sw" style="--c:${SRC_COLOR[j]}"></i>${n === "In Store" ? "Offline (in store)" : n}</span>`).join("");
+  return `<section class="block">
+    <h2>Net sales, last ${ck.length} ${kind === "daily" ? "days" : kind === "weekly" ? "weeks" : "months"}</h2>
+    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Net sales trend">${bars}</svg>
+    <div class="axis"><span>${lab(ck[0])}</span><span>${lab(mid)}</span><span>${lab(ck[ck.length - 1])}</span></div>
+    <div class="legend">${legend}</div>
+    <p class="muted" style="margin-top:8px">Tap a bar to open that period.</p>
+  </section>`;
+}
+
+/* ============ Sales views ============ */
+function salesPeriodView(kind) {
+  const keys = periodKeys(kind);
+  const key = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
+  const idx = keys.indexOf(key);
+  setPeriodBar(kind, key, keys);
+  const cols = overallCols(kind, key);
+  return `
+    <section class="block"><h2>Overall</h2><p class="sub">Values in ₹ except Txn and %. Brackets show the change against the column named in the heading.</p>${overallTable(kind, key)}</section>
+    ${trendBlock(kind, keys, idx, baseSales(), salesPass)}
+    ${summaryBlock(kind, key, "brand", 2)}
+    ${summaryBlock(kind, key, "region", 4)}
+    ${summaryBlock(kind, key, "source", 5)}
+    ${summaryBlock(kind, key, "session", 6)}
+    ${bucketBlock(kind, key, "aov")}
+    ${bucketBlock(kind, key, "disc")}`;
+}
+function salesLiveView() {
+  setPeriodBar("live", null, null);
+  if (!M.has_live || !LIVE) {
+    return `<section class="empty"><h2>Live sales</h2>
+      <p>Live sales are not connected yet. Once the live sync runs, today's business day appears here with the same filters.</p>
+      <p class="muted">Until then, use the Daily tab for completed days.</p></section>`;
+  }
+  const d = M.live_day;
+  const m = metrics(aggFor(LIVE.rows, d, d, salesPass));
+  return `<section class="block"><h2>Live, so far today</h2>
+    <p class="sub">Partial day, from 9 AM to now. The same-hour comparison and the forecast to 5 AM come in the next update.</p>
+    <div class="kgrid">
+      <div class="kpi"><div class="kl">Net sales</div><div class="kv">${inr(m.net)}</div></div>
+      <div class="kpi"><div class="kl">Txn</div><div class="kv">${num(m.txn)}</div></div>
+      <div class="kpi"><div class="kl">AOV</div><div class="kv">${inr(m.aov)}</div></div>
+      <div class="kpi"><div class="kl">Discount</div><div class="kv">${m.discPct.toFixed(1)}%</div></div>
+    </div></section>`;
+}
+
+/* ============ Ratings view (unchanged this phase) ============ */
+function ratingView(platformName) {
+  const platform = M.platforms.indexOf(platformName);
+  const kind = S.rkind;
+  setPeriodBar(kind, null, null, true);
+  if (!M.has_ratings || !RAT) {
+    return `<section class="empty"><h2>${platformName} ratings</h2>
+      <p>${platformName} ratings are not connected yet. Once the ratings sync runs, this page shows the average rating, rated orders, coverage and the same brand, region and store breakdowns.</p>
+      <p class="muted">The filters above are ready and will apply once the data arrives.</p></section>`;
+  }
+  const keys = periodKeys(kind, M.ratings_last_day ?? M.last_day);
+  const key = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
+  const idx = keys.indexOf(key);
+  const cw = windowOf(kind, key), pw = windowOf(kind, kind === "weekly" ? key - 7 : key - 1);
+  const pass = r => ratingPass(r, platform);
+  setPeriodBar(kind, key, keys, true);
+  const c = ratingAgg(RAT.rows, cw[0], cw[1], pass);
+  const p = ratingAgg(RAT.rows, pw[0], pw[1], pass);
+  const avg = a => (a.rated ? a.rsum / 100 / a.rated : null);
+  const coverage = a => (a.orders ? (a.rated / a.orders) * 100 : null);
+  const isGoogle = platformName === "Google";
+  const card = (label, value, delta) => `<div class="kpi"><div class="kl">${label}</div><div class="kv">${value}</div><div class="cmp">${delta}</div></div>`;
+  const ca = avg(c), pa = avg(p);
+  const kpis = `<div class="kgrid">
+    ${card("Average rating", ca === null ? "—" : ca.toFixed(2), pa !== null && ca !== null ? dlt(ca - pa, " pts", true, 2) : "")}
+    ${card(isGoogle ? "Reviews" : "Rated orders", num(c.rated), p.rated ? dlt(rel(c.rated, p.rated), "%", true) : "")}
+    ${card("Orders", isGoogle ? "n/a" : num(c.orders), !isGoogle && p.orders ? dlt(rel(c.orders, p.orders), "%", true) : "")}
+    ${card("Rating coverage", isGoogle || coverage(c) === null ? "n/a" : coverage(c).toFixed(1) + "%", !isGoogle && coverage(p) !== null && coverage(c) !== null ? dlt(pts(coverage(c), coverage(p)), " pts", true) : "")}
+  </div>`;
+  const dimBlock = (title, pos) => {
+    const cur = ratingByDim(RAT.rows, cw[0], cw[1], pos, pass);
+    const prev = ratingByDim(RAT.rows, pw[0], pw[1], pos, pass);
+    let keysD = [...cur.keys()].filter(k => cur.get(k).rated > 0).sort((a, b) => cur.get(b).rated - cur.get(a).rated);
+    if (pos === 1) keysD = keysD.slice(0, 15);
+    if (!keysD.length) return `<section class="block"><h2>By ${title}</h2><p class="muted">No ratings in this period for the selected filters.</p></section>`;
+    const rowsHtml = keysD.map(k => {
+      const a = cur.get(k), b = prev.get(k) || { rated: 0, rsum: 0, orders: 0 };
+      const av = avg(a), bv = avg(b);
+      return `<div class="srow">
+        <div class="sh"><span class="sname">${nameOf(pos, k)}</span><span class="snet">${av === null ? "—" : av.toFixed(2)} ${bv !== null && av !== null ? dlt(av - bv, " pts", true, 2) : ""}</span></div>
+        <div class="smet">
+          <div class="mc"><i>${isGoogle ? "Reviews" : "Rated orders"}</i><b>${num(a.rated)}</b> ${b.rated ? dlt(rel(a.rated, b.rated), "%", true) : ""}</div>
+          ${isGoogle ? "" : `<div class="mc"><i>Rating coverage</i><b>${coverage(a) === null ? "—" : coverage(a).toFixed(1) + "%"}</b></div>`}
+        </div>
+      </div>`;
+    }).join("");
+    return `<section class="block"><h2>By ${title}${pos === 1 ? " (top 15)" : ""}</h2>${rowsHtml}</section>`;
+  };
+  return kpis + dimBlock("brand", 2) + dimBlock("region", 4) + dimBlock("store", 1);
+}
+
+/* ============ Shell ============ */
+let PERIOD = { kind: "daily", key: null, keys: null, ratingMode: false };
+function setPeriodBar(kind, key, keys, ratingMode = false) {
+  PERIOD = { kind, key, keys, ratingMode };
+}
+function renderPeriodBar() {
+  const wrap = document.getElementById("periodwrap");
+  const showNav = PERIOD.keys && PERIOD.key !== null;
+  const kindBar = PERIOD.ratingMode
+    ? `<div class="kindseg" role="group" aria-label="Period">${["daily", "weekly", "monthly"].map(k =>
+        `<button data-rkind="${k}" aria-pressed="${S.rkind === k}">${KIND_NAME[k]}</button>`).join("")}</div>` : "";
+  const nav = showNav ? `<div class="periodbar">
+      <button class="arrow" data-nav="-1" aria-label="Previous period">‹</button>
+      <div class="plabel">${periodLabel(PERIOD.kind, PERIOD.key)}</div>
+      <button class="latest" data-nav="latest">Latest</button>
+      <button class="arrow" data-nav="1" aria-label="Next period">›</button>
+    </div>` : "";
+  wrap.innerHTML = kindBar + nav;
+}
+function renderHeader() {
+  document.getElementById("scope").textContent = `Sales data up to ${fmtLong(M.last_day)}${M.has_live ? "" : ". Live not connected yet"}`;
+  document.getElementById("l1").innerHTML = ["sales", "rating"].map(t =>
+    `<button data-top="${t}" aria-pressed="${S.top === t}">${t === "sales" ? "Sales" : "Rating"}</button>`).join("");
+  document.getElementById("l2").innerHTML = SUBS[S.top].map(([id, label]) =>
+    `<button data-sub="${id}" ${S.sub === id ? 'aria-current="page"' : ""}>${label}</button>`).join("");
+}
+function renderFilters() {
+  const o = optionSets();
+  document.getElementById("types").innerHTML = [["all", "All"]].concat(M.types.map((t, i) => [String(i), t]).filter(([, t]) => t !== "Unmapped"))
+    .map(([v, label]) => `<button data-type="${v}" aria-pressed="${S.type === v}">${label}</button>`).join("");
+  const opt = (v, label, cur) => `<option value="${v}" ${String(cur) === String(v) ? "selected" : ""}>${label}</option>`;
+  const brandOpts = [opt("all", "All brands", S.brand)].concat(M.brands.map((b, i) => (o.brands.has(i) ? opt(i, b, S.brand) : ""))).join("");
+  const regionOpts = [opt("all", "All regions", S.region)].concat(M.regions.map((r, i) => (o.regions.has(r) ? opt(i, r, S.region) : ""))).join("");
+  const storeOpts = [opt("all", "All stores", S.store)].concat(o.stores.slice().sort((a, b) => a.name.localeCompare(b.name)).map(s => opt(s.i, s.name, S.store))).join("");
+  let html = `
+    <label class="field">Brand<select data-filter="brand">${brandOpts}</select></label>
+    <label class="field">Region<select data-filter="region">${regionOpts}</select></label>`;
+  if (S.top === "sales") {
+    const sourceOpts = [opt("all", "All sources", S.source)].concat(M.sources.map((s, i) => opt(i, s === "In Store" ? "Offline (in store)" : s, S.source))).join("");
+    const sessionOpts = [opt("all", "All sessions", S.session)].concat(M.sessions.map((s, i) => opt(i, s, S.session))).join("");
+    html += `<label class="field">Source<select data-filter="source">${sourceOpts}</select></label>
+    <label class="field">Session<select data-filter="session">${sessionOpts}</select></label>`;
+  }
+  html += `<label class="field wide">Store name<select data-filter="store">${storeOpts}</select></label>`;
+  document.getElementById("fields").innerHTML = html;
+}
+function renderNote() {
+  const st = M.stats;
+  document.getElementById("note").textContent =
+    `COCO means company-owned and FOFO means franchise. Online is Swiggy, Zomato, Ownly and Others. ` +
+    `Store-type tags are missing for ${st.unmapped_store_type_share_2026_pct}% of 2026 sales; those rows count under All only. ` +
+    `Buckets follow brand, region, store type and period; they do not follow store or session.`;
+}
+function render() {
+  if (!M) return;
+  renderHeader();
+  renderFilters();
+  let html;
+  if (S.top === "sales") {
+    html = S.sub === "live" ? salesLiveView() : salesPeriodView(S.sub);
+  } else {
+    html = ratingView({ swiggy: "Swiggy", zomato: "Zomato", google: "Google" }[S.sub]);
+  }
+  renderPeriodBar();
+  document.getElementById("view").innerHTML = html;
+  renderNote();
+}
+
+/* ============ Events ============ */
+document.addEventListener("click", async e => {
+  const el = e.target.closest("[data-top],[data-sub],[data-type],[data-nav],[data-k],[data-rkind]");
+  if (!el) return;
+  const d = el.dataset;
+  if (d.top) { S.top = d.top; S.sub = d.top === "sales" ? "daily" : "swiggy"; S.sel = null; }
+  if (d.sub) { S.sub = d.sub; S.sel = null; }
+  if (d.type !== undefined) { S.type = d.type; sanitize(); }
+  if (d.rkind) { S.rkind = d.rkind; S.sel = null; }
+  if (d.k !== undefined) { S.sel = +d.k; }
+  if (d.nav !== undefined) {
+    const kind = S.top === "rating" ? S.rkind : (S.sub === "live" ? "daily" : S.sub);
+    const last = S.top === "rating" ? (M.ratings_last_day ?? M.last_day) : M.last_day;
+    const keys = periodKeys(kind, last);
+    if (d.nav === "latest") S.sel = null;
+    else {
+      const cur = S.sel !== null && keys.includes(S.sel) ? S.sel : keys[keys.length - 1];
+      const i = keys.indexOf(cur) + Number(d.nav);
+      if (i >= 0 && i < keys.length) S.sel = keys[i];
+    }
+  }
+  render();
+});
+document.addEventListener("change", async e => {
+  const f = e.target.dataset.filter;
+  if (!f) return;
+  S[f] = e.target.value;
+  S.sel = null;
+  sanitize();
+  if (S.store !== "all") await ensureStore(+S.store);
+  render();
+});
+
+/* ============ Boot ============ */
+(async function boot() {
+  try {
+    M = await loadJson("data/manifest.json");
+    buildDayTables();
+    ROLL = await loadGz("data/rollup.json.gz");
+    AOVB = await loadGz("data/aov_buckets.json.gz").catch(() => null);
+    DISCB = await loadGz("data/disc_buckets.json.gz").catch(() => null);
+    LIVE = null;   // live numbers now come from hourly.json.gz, loaded by live.js
+    RAT = M.has_ratings ? await loadGz("data/ratings.json.gz") : null;
+    render();
+  } catch (err) {
+    document.getElementById("view").innerHTML = `<section class="empty"><h2>Could not load the data</h2><p class="muted">${err.message}</p></section>`;
+  }
+})();
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+</script>
+<script src="live.js"></script>
+<script src="ratings.js"></script>
+<script src="products.js"></script>
+<script src="compare.js"></script>
+<script src="slicer.js"></script>
+<script src="layout.js"></script>
+<script src="kpt.js"></script>
+<script src="sales2.js"></script>
+<script src="periods.js"></script>
+<script src="store.js"></script>
+<script src="spikes.js"></script>
+<script src="am.js"></script>
+<script src="trend.js"></script>
+<script src="calendar.js"></script>
+<script src="campaign.js"></script>
+</body>
+</html>
