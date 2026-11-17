@@ -4,7 +4,7 @@
    Click a store to open a window with its net sales by brand and source (against last week, or last month on the Monthly tab).
    Loaded last. It wraps salesPeriodView(). Everything is inside one function, so no name can clash with another script. */
 (function () {
-  const INS = { loaded: false, loading: false, error: null, amOpen: new Set(), store: null };
+  const INS = { loaded: false, loading: false, error: null, amOpen: new Set(), store: null, channel: "all" };
   const INS_KINDS = ["daily", "weekly", "monthly"];
   const insEsc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const insP = v => (v === null || !isFinite(v) ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%");
@@ -65,7 +65,11 @@
   }
 
   // One line per store: the current period, its three comparisons, and the month-to-date figures.
-  function insStores(kind, key) {
+  // channel: "all", "offline" (the In Store source) or "online" (every other source).
+  function insStores(kind, key, channel) {
+    const off = M.sources.indexOf("In Store");
+    const pick = channel === "offline" ? (r => r[5] === off) : channel === "online" ? (r => r[5] !== off) : null;
+    const chNet = (rows, from, to) => insNet(rows, from, to, pick);
     const K = insKeys(kind, key);
     const win = k => (k === null ? null : windowOf(kind, k));
     const cur = win(key), w = win(K.wow), m = win(K.mom), y = win(K.yoy);
@@ -74,16 +78,16 @@
     for (const s of M.stores) {
       const rows = STORE_ROWS.get(s.i);
       if (!rows) continue;
-      const c = insNet(rows, cur[0], cur[1]);
+      const c = chNet(rows, cur[0], cur[1]);
       if (c === null) continue;
       out.push({
         i: s.i, name: s.name, a: s.a, cur: c,
-        wowN: w ? insNet(rows, w[0], w[1]) : null,
-        momN: m ? insNet(rows, m[0], m[1]) : null,
-        yoyN: y ? insNet(rows, y[0], y[1]) : null,
-        mtdCur: insNet(rows, mt.cur[0], mt.cur[1]),
-        mtdMom: insNet(rows, mt.mom[0], mt.mom[1]),
-        mtdYoy: insNet(rows, mt.yoy[0], mt.yoy[1])
+        wowN: w ? chNet(rows, w[0], w[1]) : null,
+        momN: m ? chNet(rows, m[0], m[1]) : null,
+        yoyN: y ? chNet(rows, y[0], y[1]) : null,
+        mtdCur: chNet(rows, mt.cur[0], mt.cur[1]),
+        mtdMom: chNet(rows, mt.mom[0], mt.mom[1]),
+        mtdYoy: chNet(rows, mt.yoy[0], mt.yoy[1])
       });
     }
     return out;
@@ -123,9 +127,15 @@
     return `<tr><td>${insEsc(s.name)}</td>${insCells(s.cur, s.wowN, s.momN, s.yoyN)}</tr>`;
   };
 
-  function insAmTable(list) {
+  function insAmTable(kind, key) {
+    const list = insStores(kind, key, INS.channel);
+    const ch = INS.channel;
+    const chBtn = (c, label) => `<button data-ins-channel="${c}" aria-pressed="${ch === c}">${label}</button>`;
+    const tabs = `<div class="reg-filter">${chBtn("all", "All")}${chBtn("offline", "Offline (In Store)")}${chBtn("online", "Online (other sources)")}</div>`;
+    const hasOffline = M.sources.indexOf("In Store") >= 0;
+    if (ch === "offline" && !hasOffline) return tabs + `<p class="muted">The data has no In Store source, so there are no offline sales.</p>`;
     const ams = insAmRows(list);
-    if (!ams.length) return `<p class="muted">No sales by area manager for this period.</p>`;
+    if (!ams.length) return tabs + `<p class="muted">No sales by area manager for this period.</p>`;
     const body = ams.map(x => {
       const open = INS.amOpen.has(x.a);
       let html = `<tr class="ins-am"><td><button data-ins-am="${x.a}">${open ? "▾" : "▸"} ${insEsc(x.name)}</button></td>` +
@@ -136,7 +146,7 @@
       }
       return html;
     }).join("");
-    return insTable("Area manager", body);
+    return tabs + insTable("Area manager", body);
   }
 
   // The store window: net sales by brand and source, with growth against the comparison period.
@@ -205,7 +215,7 @@
       `<section class="block"><h2>Bottom stores</h2><p class="sub">Ranked by ${tb.cmp} growth in net sales.</p>` +
       (bottomRows ? insTable("Store", bottomRows) : `<p class="muted">Fewer than six stores have sales in this period.</p>`) + `</section>` +
       `<section class="block"><h2>By area manager</h2>` +
-      `<p class="sub">Click a manager to see its stores. Click a store to see it by brand and source.</p>${insAmTable(list)}</section>`;
+      `<p class="sub">Click a manager to see its stores. Click a store to see it by brand and source.</p>${insAmTable(kind, key)}</section>`;
   }
 
   // Removes an older "By area manager" table from the page, so there is one table (this one).
@@ -315,6 +325,12 @@
   };
 
   document.addEventListener("click", e => {
+    const ch = e.target.closest && e.target.closest("[data-ins-channel]");
+    if (ch) {
+      INS.channel = ch.dataset.insChannel;
+      render();
+      return;
+    }
     const rm = e.target.closest && e.target.closest("[data-reg-metric]");
     if (rm) {
       REG.metric = rm.dataset.regMetric;
@@ -363,5 +379,5 @@
   })();
 
   // For checks in the browser console and in the tests.
-  window.FB_INS = { INS, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
+  window.FB_INS = { INS, insStores, insAmRows, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
 })();
