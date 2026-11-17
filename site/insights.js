@@ -49,11 +49,27 @@
     return any ? t / 100 : null;
   }
 
-  // One line per store: the current period and its three comparisons.
+  // Month to date: the 1st of the month up to the reference day (the selected day; the end of the week or month on
+  // the Weekly and Monthly tabs, but never after the last day of data). MoM and YoY compare the same days last month and last year.
+  const insMonthKey = d => (toDate(d).getUTCFullYear() - 2025) * 12 + toDate(d).getUTCMonth();
+  const insIsMonthEnd = d => d === monEnd(insMonthKey(d));
+  function insBack(ref, back) {
+    if (insIsMonthEnd(ref)) return monEnd(insMonthKey(ref) - back);
+    return shiftMonths(ref, -back);
+  }
+  function insMtdWindows(kind, key) {
+    const ref0 = kind === "monthly" ? monEnd(insMonthKey(key)) : kind === "weekly" ? key + 6 : key;
+    const ref = Math.min(ref0, M.last_day);
+    const span = d => [monStart(insMonthKey(d)), d];
+    return { cur: span(ref), mom: span(insBack(ref, 1)), yoy: span(insBack(ref, 12)) };
+  }
+
+  // One line per store: the current period, its three comparisons, and the month-to-date figures.
   function insStores(kind, key) {
     const K = insKeys(kind, key);
     const win = k => (k === null ? null : windowOf(kind, k));
     const cur = win(key), w = win(K.wow), m = win(K.mom), y = win(K.yoy);
+    const mt = insMtdWindows(kind, key);
     const out = [];
     for (const s of M.stores) {
       const rows = STORE_ROWS.get(s.i);
@@ -64,7 +80,10 @@
         i: s.i, name: s.name, a: s.a, cur: c,
         wowN: w ? insNet(rows, w[0], w[1]) : null,
         momN: m ? insNet(rows, m[0], m[1]) : null,
-        yoyN: y ? insNet(rows, y[0], y[1]) : null
+        yoyN: y ? insNet(rows, y[0], y[1]) : null,
+        mtdCur: insNet(rows, mt.cur[0], mt.cur[1]),
+        mtdMom: insNet(rows, mt.mom[0], mt.mom[1]),
+        mtdYoy: insNet(rows, mt.yoy[0], mt.yoy[1])
       });
     }
     return out;
@@ -208,24 +227,45 @@
     return html.slice(0, end + 10) + block + html.slice(end + 10);
   }
 
-  // Region and store performance: stores grouped by region. Each store shows its sales, and for each comparison
-  // the comparison sales and the growth. The filter on top chooses All, WoW, MoM or YoY.
+  // Region and store performance. WoW compares the selected day (or week, or month) with the same period a week earlier.
+  // MoM and YoY compare month to date (the 1st to the selected day) with the same days last month and last year.
   const REG = { metric: "all" };
   const REG_LABEL = { wow: "WoW", mom: "MoM", yoy: "YoY" };
-  // Total for a set of stores. For each comparison: the comparison sales of the stores that have one, and their current sales.
+  const REG_SPEC = { wow: { base: "cur", prev: "wowN" }, mom: { base: "mtdCur", prev: "mtdMom" }, yoy: { base: "mtdCur", prev: "mtdYoy" } };
+  const regSum = (rows, f) => rows.reduce((a, s) => a + (s[f] || 0), 0);
+  // Total for a set of stores: the current sales, the month to date, and for each comparison the base and the comparison
+  // sales of the stores that have both.
   function regTotal(rows) {
-    const t = { cur: rows.reduce((a, s) => a + s.cur, 0) };
-    for (const c of ["wow", "mom", "yoy"]) {
-      const comp = rows.filter(s => s[c + "N"] !== null);
-      t[c + "N"] = comp.length ? comp.reduce((a, s) => a + s[c + "N"], 0) : null;
-      t[c + "C"] = comp.length ? comp.reduce((a, s) => a + s.cur, 0) : null;
+    const t = { cur: regSum(rows, "cur"), mtdCur: regSum(rows, "mtdCur") };
+    for (const c of Object.keys(REG_SPEC)) {
+      const { base, prev } = REG_SPEC[c];
+      const comp = rows.filter(s => s[base] !== null && s[prev] !== null);
+      t[c] = { base: comp.length ? regSum(comp, base) : null, prev: comp.length ? regSum(comp, prev) : null };
     }
     return t;
   }
-  const regCmpStore = s => ({ wow: { prev: s.wowN, g: insG(s.cur, s.wowN) }, mom: { prev: s.momN, g: insG(s.cur, s.momN) }, yoy: { prev: s.yoyN, g: insG(s.cur, s.yoyN) } });
-  const regCmpTotal = t => ({ wow: { prev: t.wowN, g: insG(t.wowC, t.wowN) }, mom: { prev: t.momN, g: insG(t.momC, t.momN) }, yoy: { prev: t.yoyN, g: insG(t.yoyC, t.yoyN) } });
-  function regCells(cur, cmp, cols) {
-    return `<td>${insRs(cur)}</td>` + cols.map(c => `<td>${insRs(cmp[c].prev)}</td><td style="color:${insC(cmp[c].g)}">${insP(cmp[c].g)}</td>`).join("");
+  const regCmpStore = s => {
+    const o = {};
+    for (const c of Object.keys(REG_SPEC)) o[c] = { prev: s[REG_SPEC[c].prev], g: insG(s[REG_SPEC[c].base], s[REG_SPEC[c].prev]) };
+    return o;
+  };
+  const regCmpTotal = t => {
+    const o = {};
+    for (const c of Object.keys(REG_SPEC)) o[c] = { prev: t[c].prev, g: insG(t[c].base, t[c].prev) };
+    return o;
+  };
+  // Cells after the store name. A single WoW shows the day's sales; a single MoM or YoY shows the month to date;
+  // All shows the day's sales with WoW, then the month to date with MoM and YoY.
+  function regCells(day, mtd, cmp, cols) {
+    const g = c => `<td>${insRs(cmp[c].prev)}</td><td style="color:${insC(cmp[c].g)}">${insP(cmp[c].g)}</td>`;
+    if (cols.length === 1 && cols[0] === "wow") return `<td>${insRs(day)}</td>` + g("wow");
+    if (cols.length === 1) return `<td>${insRs(mtd)}</td>` + g(cols[0]);
+    return `<td>${insRs(day)}</td>` + g("wow") + `<td>${insRs(mtd)}</td>` + g("mom") + g("yoy");
+  }
+  function regHead(cols) {
+    if (cols.length === 1 && cols[0] === "wow") return ["Sales", "WoW sales", "WoW%"];
+    if (cols.length === 1) return ["MTD sales", `${REG_LABEL[cols[0]]} sales`, `${REG_LABEL[cols[0]]}%`];
+    return ["Sales", "WoW sales", "WoW%", "MTD sales", "MoM sales", "MoM%", "YoY sales", "YoY%"];
   }
   function regBlock(kind, key) {
     if (!M || !M.stores || !M.stores.length) return "";
@@ -239,22 +279,24 @@
       groups.get(r).push(s);
     }
     const cols = REG.metric === "all" ? ["wow", "mom", "yoy"] : [REG.metric];
-    const span = 2 + cols.length * 2;
+    const heads = regHead(cols);
+    const span = 1 + heads.length;
     const regions = [...groups.entries()]
       .map(([name, rows]) => ({ name, rows: rows.slice().sort((p, q) => q.cur - p.cur), tot: regTotal(rows) }))
       .sort((p, q) => q.tot.cur - p.tot.cur);
     const all = regTotal(list);
-    const head = `<tr><th>Store</th><th>Sales</th>` + cols.map(c => `<th>${REG_LABEL[c]} sales</th><th>${REG_LABEL[c]}%</th>`).join("") + `</tr>`;
+    const headRow = `<tr><th>Store</th>${heads.map(h => `<th>${h}</th>`).join("")}</tr>`;
     const body = regions.map(g =>
       `<tr class="reg-head"><td colspan="${span}">${insEsc(g.name)}</td></tr>` +
-      g.rows.map(s => `<tr><td>${insEsc(s.name)}</td>${regCells(s.cur, regCmpStore(s), cols)}</tr>`).join("") +
-      `<tr class="reg-total"><td>Total ${insEsc(g.name)}</td>${regCells(g.tot.cur, regCmpTotal(g.tot), cols)}</tr>`
-    ).join("") + `<tr class="reg-total"><td>All regions</td>${regCells(all.cur, regCmpTotal(all), cols)}</tr>`;
+      g.rows.map(s => `<tr><td>${insEsc(s.name)}</td>${regCells(s.cur, s.mtdCur, regCmpStore(s), cols)}</tr>`).join("") +
+      `<tr class="reg-total"><td>Total ${insEsc(g.name)}</td>${regCells(g.tot.cur, g.tot.mtdCur, regCmpTotal(g.tot), cols)}</tr>`
+    ).join("") + `<tr class="reg-total"><td>All regions</td>${regCells(all.cur, all.mtdCur, regCmpTotal(all), cols)}</tr>`;
     const btn = (m, label) => `<button data-reg-metric="${m}" aria-pressed="${REG.metric === m}">${label}</button>`;
     return `<section class="block"><h2>Region and store performance</h2>` +
-      `<p class="sub">Sales for this period, with the comparison sales and growth for each store.</p>` +
+      `<p class="sub">WoW: this period against the same period a week earlier. MoM and YoY: month to date (1st to the selected day) ` +
+      `against the same days last month and last year.</p>` +
       `<div class="reg-filter">${btn("all", "All")}${btn("wow", "WoW")}${btn("mom", "MoM")}${btn("yoy", "YoY")}</div>` +
-      `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${body || `<tr><td colspan="${span}" class="muted">No store sales in this period.</td></tr>`}</tbody></table></div>` +
+      `<div class="scroll"><table class="tbl"><thead>${headRow}</thead><tbody>${body || `<tr><td colspan="${span}" class="muted">No store sales in this period.</td></tr>`}</tbody></table></div>` +
       `</section>`;
   }
 
@@ -321,5 +363,5 @@
   })();
 
   // For checks in the browser console and in the tests.
-  window.FB_INS = { INS, REG, regBlock, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
+  window.FB_INS = { INS, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
 })();
