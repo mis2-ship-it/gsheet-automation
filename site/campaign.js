@@ -54,6 +54,19 @@ function campSum(map, from, to) {
   return a;
 }
 
+// The campaign day before d (in the current discount-code filter) that has sales: its date and sales (rupees).
+function campPrevCampaign(d, map) {
+  const days = CAMP.days
+    .filter(([x, n]) => (CAMP.name === null || CAMP.names[n] === CAMP.name) && x < d)
+    .map(([x]) => x)
+    .sort((p, q) => q - p);
+  for (const x of days) {
+    const cur = campSum(map, x, x);
+    if (cur.n > 0) return { d: x, net: cur.net / 100 };
+  }
+  return null;
+}
+
 // Everything shown for one campaign month. Money is in rupees here.
 function campModel(k, map) {
   const ms = monStart(k), lastDay = Math.min(monEnd(k), M.last_day);
@@ -68,13 +81,18 @@ function campModel(k, map) {
     const cur = campSum(map, c.d, c.d), prev = campSum(map, c.d - 7, c.d - 7);
     const hasData = cur.n > 0;
     const prevOk = prev.n > 0 && prev.net > 0;
+    const last = campPrevCampaign(c.d, map);
+    const net = hasData ? cur.net / 100 : null;
     return {
       d: c.d, name: c.name, hasData,
-      net: hasData ? cur.net / 100 : null,
+      net,
       orders: cur.orders, gross: cur.gross, disc: cur.disc,
       prev: prevOk ? prev.net / 100 : null,
       growth: hasData && prevOk ? (cur.net / prev.net - 1) * 100 : null,
-      dispct: cur.gross ? (cur.disc / cur.gross) * 100 : null
+      dispct: cur.gross ? (cur.disc / cur.gross) * 100 : null,
+      lastD: last ? last.d : null,
+      lastNet: last ? last.net : null,
+      growthLast: hasData && last && last.net ? (net / last.net - 1) * 100 : null
     };
   });
   const withData = rows.filter(r => r.hasData);
@@ -100,8 +118,14 @@ function campModel(k, map) {
   const graded = rows.filter(r => r.growth !== null);
   const best = graded.length ? graded.reduce((p, q) => (q.growth > p.growth ? q : p)) : null;
   const worst = graded.length ? graded.reduce((p, q) => (q.growth < p.growth ? q : p)) : null;
+  const withLast = withData.filter(r => r.lastNet !== null);
+  const lastCur = withLast.reduce((s, r) => s + r.net, 0);
+  const lastSum = withLast.reduce((s, r) => s + r.lastNet, 0);
   return {
     k, rows, n, pairs: pairs.length, campAvg, prevAvg, lift,
+    total: campNet, pairCur, pairPrev, lastCur, lastSum,
+    growthLastTotal: lastSum ? (lastCur / lastSum - 1) * 100 : null,
+    dispctCamp: campGross ? (campDisc / campGross) * 100 : null,
     otherAvg, otherN: oN,
     baseLift: campAvg != null && otherAvg ? (campAvg / otherAvg - 1) * 100 : null,
     dispctCamp: campGross ? (campDisc / campGross) * 100 : null,
@@ -192,9 +216,21 @@ function cpTable(A) {
   if (!A.rows.length) return cpNoData("No campaign days in this month.");
   const body = A.rows.map(r => r.hasData
     ? `<tr><td>${fmtLong(r.d)}</td><td>${cpEsc(r.name)}</td><td>${cpRs(r.net)}</td><td>${r.prev === null ? "—" : cpRs(r.prev)}</td>` +
-      `<td style="color:${cpColour(r.growth)}">${cpPct(r.growth)}</td><td>${r.dispct === null ? "—" : r.dispct.toFixed(1) + "%"}</td><td>${num(r.orders)}</td></tr>`
-    : `<tr><td>${fmtLong(r.d)}</td><td>${cpEsc(r.name)}</td><td colspan="5" class="muted">No sales yet</td></tr>`).join("");
-  return `<div class="scroll"><table class="tbl"><thead><tr><th>Date</th><th>Campaign</th><th>Sales</th><th>Same day last week</th><th>Growth</th><th>Dis %</th><th>Orders</th></tr></thead><tbody>${body}</tbody></table></div>`;
+      `<td style="color:${cpColour(r.growth)}">${cpPct(r.growth)}</td>` +
+      `<td>${r.lastNet === null ? "—" : `${cpRs(r.lastNet)}<br><span class="muted">${fmtDay(r.lastD)}</span>`}</td>` +
+      `<td style="color:${cpColour(r.growthLast)}">${cpPct(r.growthLast)}</td>` +
+      `<td>${r.dispct === null ? "—" : r.dispct.toFixed(1) + "%"}</td><td>${num(r.orders)}</td></tr>`
+    : `<tr><td>${fmtLong(r.d)}</td><td>${cpEsc(r.name)}</td><td colspan="7" class="muted">No sales yet</td></tr>`).join("");
+  const ordersTotal = A.rows.filter(r => r.hasData).reduce((s, r) => s + r.orders, 0);
+  const total = `<tr class="cp-total"><td><b>Total</b></td><td></td><td><b>${cpRs(A.total)}</b></td>` +
+    `<td>${A.pairPrev ? cpRs(A.pairPrev) : "—"}</td><td style="color:${cpColour(A.lift)}">${cpPct(A.lift)}</td>` +
+    `<td>${A.lastSum ? cpRs(A.lastSum) : "—"}</td><td style="color:${cpColour(A.growthLastTotal)}">${cpPct(A.growthLastTotal)}</td>` +
+    `<td>${A.dispctCamp === null ? "—" : A.dispctCamp.toFixed(1) + "%"}</td><td>${num(ordersTotal)}</td></tr>`;
+  return `<div class="scroll"><table class="tbl"><thead><tr><th>Date</th><th>Campaign</th><th>Sales</th><th>Same day last week</th>` +
+    `<th>Growth</th><th>Last campaign sales</th><th>Growth vs last campaign</th><th>Dis %</th><th>Orders</th></tr></thead>` +
+    `<tbody>${body}${total}</tbody></table></div>` +
+    `<p class="muted" style="margin-top:6px">Last-week totals cover the campaign days that have a figure a week earlier. ` +
+    `Last campaign sales is the sales on the previous campaign day in this discount code (or any code, if All campaigns).</p>`;
 }
 
 // Written points for the page, from the numbers above. Only what the data shows.
@@ -224,6 +260,18 @@ function cpInsights(A, B, la, lb, timeline) {
       `${up} of ${lifts.length} months were above last week.`);
   }
   return out;
+}
+
+// Top tiles for Month A: total campaign-day sales, average per campaign day, and growth on the last campaign (Month B).
+function cpTop(A, B, la, lb) {
+  const tile = (label, value, sub, colour) =>
+    `<div class="cp-card"><div class="kl">${label}</div><div class="cp-big"${colour ? ` style="color:${colour}"` : ""}>${value}</div><div class="cmp">${sub}</div></div>`;
+  const g = A.campAvg !== null && B.campAvg ? (A.campAvg / B.campAvg - 1) * 100 : null;
+  return `<div class="cp-tiles">` +
+    tile("Total campaign days sales", cpRs(A.total), `${A.n} campaign day(s) with sales`) +
+    tile("Average per campaign day", cpRs(A.campAvg), `${cpEsc(lb)}: ${cpRs(B.campAvg)}`) +
+    tile("Growth on last campaign", cpPct(g), `${cpEsc(la)} average against ${cpEsc(lb)}`, cpColour(g)) +
+    `</div>`;
 }
 
 function cpCard(m, title) {
@@ -269,6 +317,7 @@ function campaignView() {
     .concat(codes.map(c => `<option value="${cpEsc(c)}" ${CAMP.name === c ? "selected" : ""}>${cpEsc(c)}</option>`)).join("");
   const insights = cpInsights(A, B, la, lb, timeline);
   return `
+    <section class="block"><h2>${cpEsc(la)}: totals</h2>${cpTop(A, B, la, lb)}</section>
     <section class="block">
       <h2>Campaign months</h2>
       <p class="sub">Campaign days against the same weekday last week, and against the other days of the same month.</p>
@@ -294,6 +343,8 @@ function campaignView() {
   st.id = "camp-style";
   st.textContent = `.cp-pick{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
 .cp-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.cp-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}
+.cp-total td{border-top:2px solid var(--line)}
 .cp-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;font-size:13px}
 .cp-big{font-family:var(--serif);font-size:20px;margin:2px 0 8px}
 .cp-row{display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-top:1px solid var(--line);color:var(--ink-2)}
