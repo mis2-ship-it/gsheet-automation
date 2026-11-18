@@ -4,7 +4,9 @@
    Click a store to open a window with its net sales by brand and source (against last week, or last month on the Monthly tab).
    Loaded last. It wraps salesPeriodView(). Everything is inside one function, so no name can clash with another script. */
 (function () {
-  const INS = { loaded: false, loading: false, error: null, amOpen: new Set(), store: null, channel: "all" };
+  const INS = { loaded: false, loading: false, error: null, amOpen: new Set(), store: null, channel: "all", done: 0, total: 0, cache: null };
+  const INS_PARALLEL = 8;
+  const insLoadingNote = () => `<span id="ins-progress">Loading store data${INS.total ? `: ${INS.done} of ${INS.total} stores` : ""}.</span>`;
   const INS_KINDS = ["daily", "weekly", "monthly"];
   const insEsc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const insP = v => (v === null || !isFinite(v) ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%");
@@ -12,24 +14,46 @@
   const insG = (cur, prev) => (cur === null || prev === null || !prev ? null : (cur / prev - 1) * 100);
   const insRs = v => (v === null ? "—" : "₹" + num(v));
 
-  // Every store file, loaded once. The page is redrawn when they are all in.
+  // Every store file, loaded once: several at a time, so the wait is not one file after another.
+  function insProgress() {
+    const el = document.getElementById("ins-progress");
+    if (el) el.textContent = `Loading store data: ${INS.done} of ${INS.total} stores.`;
+  }
   async function insLoad() {
     if (INS.loaded || INS.loading || !M) return;
     INS.loading = true;
-    try {
-      for (const s of M.stores) {
-        if (!STORE_ROWS.has(s.i)) {
-          const data = await loadGz(`data/stores/${s.i}.json.gz`);
-          STORE_ROWS.set(s.i, data.rows);
-        }
+    INS.error = null;
+    const todo = M.stores.filter(s => !STORE_ROWS.has(s.i));
+    INS.total = todo.length;
+    INS.done = 0;
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const s = todo[next++];
+        const data = await loadGz(`data/stores/${s.i}.json.gz`);
+        STORE_ROWS.set(s.i, data.rows);
+        INS.done++;
+        insProgress();
       }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(INS_PARALLEL, todo.length) }, worker));
       INS.loaded = true;
     } catch (err) {
       INS.error = err.message;
     }
     INS.loading = false;
-    render();
+    if (typeof ROLL !== "undefined" && ROLL) render();
   }
+
+  // Start the store files as soon as the page's main data is in, so they are ready when a table is opened.
+  (function insPrefetch(tries) {
+    if (typeof M !== "undefined" && M && M.stores && typeof ROLL !== "undefined" && ROLL) {
+      insLoad();
+      return;
+    }
+    if (tries < 600) setTimeout(() => insPrefetch(tries + 1), 100);
+  })(0);
 
   // Comparison periods: last week (WoW), last month (MoM), last year (YoY). The Monthly tab has no week.
   function insKeys(kind, key) {
@@ -67,6 +91,13 @@
   // One line per store: the current period, its three comparisons, and the month-to-date figures.
   // channel: "all", "offline" (the In Store source) or "online" (every other source).
   function insStores(kind, key, channel) {
+    const ck = `${kind}|${key}|${channel}`;
+    if (INS.cache && INS.cache.has(ck)) return INS.cache.get(ck);
+    const result = insStoresCalc(kind, key, channel);
+    if (INS.cache) INS.cache.set(ck, result);
+    return result;
+  }
+  function insStoresCalc(kind, key, channel) {
     const off = M.sources.indexOf("In Store");
     const pick = channel === "offline" ? (r => r[5] === off) : channel === "online" ? (r => r[5] !== off) : null;
     const chNet = (rows, from, to) => insNet(rows, from, to, pick);
@@ -199,11 +230,11 @@
         `Rebuild the data with the new build_site.py, then reload.</p></section>`;
     }
     if (INS.error) {
-      return `<section class="block"><h2>Top and bottom stores</h2><p class="muted">Store data could not be loaded: ${insEsc(INS.error)}</p></section>`;
+      return `<section class="block"><h2>Top and bottom stores</h2><p class="muted">Store data could not be loaded: ${insEsc(INS.error)}. Reload the page.</p></section>`;
     }
     if (!INS.loaded) {
       insLoad();
-      return `<section class="block"><h2>Top and bottom stores</h2><p class="muted">Loading store data.</p></section>`;
+      return `<section class="block"><h2>Top and bottom stores</h2><p class="muted">${insLoadingNote()}</p></section>`;
     }
     const list = insStores(kind, key);
     const tb = insTopBottom(list, kind);
@@ -279,7 +310,7 @@
   }
   function regBlock(kind, key) {
     if (!M || !M.stores || !M.stores.length) return "";
-    if (!INS.loaded) return `<section class="block"><h2>Region and store performance</h2><p class="muted">Loading store data.</p></section>`;
+    if (!INS.loaded) return `<section class="block"><h2>Region and store performance</h2><p class="muted">${insLoadingNote()}</p></section>`;
     const regionOf = new Map(M.stores.map(s => [s.i, s.region || "Unmapped"]));
     const list = insStores(kind, key).filter(s => s.cur > 0);
     const groups = new Map();
@@ -313,6 +344,7 @@
   const salesPeriodViewIns = salesPeriodView;
   salesPeriodView = function (kind) {
     const base = salesPeriodViewIns(kind);
+    INS.cache = new Map();
     if (!INS_KINDS.includes(kind) || typeof PERIOD === "undefined" || !PERIOD || PERIOD.key == null) return base;
     let block;
     try {
