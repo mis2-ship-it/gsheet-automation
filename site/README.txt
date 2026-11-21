@@ -37,3 +37,9 @@ SAME DAY (YoY and MoM)
 
 EXCEL COLOURS
   Growth figures in the Excel file are green when up (or flat) and red when down, in the same colours as the dashboard.
+
+EXCEL LAYOUT
+  Sheets: "Region wise" (one sheet with every table side by side, each table's name above its columns,
+  All regions and then each region), then a "<table> Store" sheet for each table (each region with its stores).
+  Headers wrap, columns fit their figures, and the header and the first column stay in view.
+  Growth is green when up (or flat) and red when down.

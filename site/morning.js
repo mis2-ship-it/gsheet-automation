@@ -347,18 +347,23 @@
   }
   const MC_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<fonts count="6">
+<fonts count="9">
 <font><sz val="11"/><name val="Calibri"/></font>
 <font><b/><sz val="11"/><name val="Calibri"/></font>
 <font><sz val="11"/><color rgb="FF15803D"/><name val="Calibri"/></font>
 <font><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font>
 <font><b/><sz val="11"/><color rgb="FF15803D"/><name val="Calibri"/></font>
 <font><b/><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>
+<font><b/><sz val="14"/><color rgb="FF2D6A6E"/><name val="Calibri"/></font>
+<font><i/><sz val="10"/><color rgb="FF5E6D6A"/><name val="Calibri"/></font>
 </fonts>
-<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
+<fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FF2D6A6E"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFEEF3F2"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="10">
+<cellXfs count="18">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="10" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
@@ -369,46 +374,114 @@
 <xf numFmtId="10" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
 <xf numFmtId="10" fontId="4" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
 <xf numFmtId="10" fontId="5" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="0" fontId="6" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="7" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="8" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="3" fontId="1" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>
+<xf numFmtId="10" fontId="4" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>
+<xf numFmtId="10" fontId="5" fillId="3" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>
+<xf numFmtId="0" fontId="6" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="left" vertical="center" wrapText="1"/></xf>
 </cellXfs>
 </styleSheet>`;
-  // Cells: text (style 0 plain, 1 bold); numbers (3 plain, 4 bold); percentages (2 plain, 5 bold; the value is a fraction).
-  const xs = (v, s = 0) => ({ t: "s", v: String(v), s });
-  const xn = (v, s = 3) => (mcOk(v) ? { t: "n", v: String(v), s } : xs("—", 0));
-  const xp = (v, s = 2) => (mcOk(v) ? { t: "n", v: String(v / 100), s } : xs("—", 0));
-  // Growth: green for up (or flat), red for down. Style 6 and 7 are regular, 8 and 9 bold.
-  const xg = (v, bold) => (mcOk(v) ? { t: "n", v: String(v / 100), s: bold ? (v >= 0 ? 8 : 9) : (v >= 0 ? 6 : 7) } : xs("—", 0));
+  // Cells. Styles: 0 plain text, 3 number, 6/7 growth green/red, 10 header, 11 title, 12 note, 13 region name,
+  // 14 region number, 15/16 region growth green/red, 17 header (first column). Growth is green when up or flat.
+  const xtext = (v, s = 0) => ({ t: "s", v: String(v), s });
+  function mcCellFor(val, kind, growth) {
+    const region = kind !== "store";
+    if (!mcOk(val)) return xtext("—", region ? 13 : 0);
+    if (growth) return { t: "n", v: String(val / 100), s: region ? (val >= 0 ? 15 : 16) : (val >= 0 ? 6 : 7) };
+    return { t: "n", v: String(val), s: region ? 14 : 3 };
+  }
   const mcCol = i => { let s = "", n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   function mcCellXml(cell, ref) {
     if (!cell) return "";
     if (cell.t === "n") return `<c r="${ref}" s="${cell.s}"><v>${cell.v}</v></c>`;
     return `<c r="${ref}" s="${cell.s}" t="inlineStr"><is><t xml:space="preserve">${mcEsc(cell.v)}</t></is></c>`;
   }
-  function mcSheetXml(rows) {
-    const body = rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((cell, ci) => mcCellXml(cell, mcCol(ci) + (ri + 1))).join("") + `</row>`).join("");
-    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+  // The text width of a cell as it is shown (for the column widths).
+  function mcShown(cell) {
+    if (cell.t === "s") return String(cell.v).length + 2;
+    const n = Number(cell.v);
+    if ([2, 5, 6, 7, 8, 9, 15, 16].includes(cell.s)) return (n * 100).toFixed(2).length + 3;
+    return Math.round(n).toLocaleString("en-IN").length + 2;
   }
-  // The rows of one table: a region-wise section first, then region + store.
-  function mcSheetRows(block, g) {
-    const cellFor = (c, obj, bold) => (c.g ? xg(obj[c.k], bold) : xn(obj[c.k], bold ? 4 : 3));
-    const header = first => [xs(first, 1), ...block.cols.map(c => xs(c.h, 1))];
-    const rows = [[xs(block.title, 1)], [xs(block.sub, 0)], [], [xs("Region wise", 1)], header("Region")];
-    rows.push([xs("All regions", 1), ...block.cols.map(c => cellFor(c, g.all, true))]);
-    for (const r of g.groups) rows.push([xs(r.name, 1), ...block.cols.map(c => cellFor(c, r.tot, true))]);
-    rows.push([], [xs("Region + store", 1)], header("Region / Store"));
-    for (const r of g.groups) {
-      rows.push([xs(r.name, 1), ...block.cols.map(c => cellFor(c, r.tot, true))]);
-      for (const s of r.stores) rows.push([xs("   " + s.name, 0), ...block.cols.map(c => cellFor(c, s, false))]);
+  // A sheet: title, note, a blank row, the header (row 4), then the body. Columns are as wide as their figures,
+  // the header wraps, and the first column and the header stay in view.
+  function mcBuild(name, title, sub, headers, body) {
+    const rows = [[xtext(title, 11)], [xtext(sub, 12)], [], headers.map((h, i) => xtext(h, i === 0 ? 17 : 10)), ...body];
+    const widths = headers.map((h, ci) => {
+      let w = ci === 0 ? String(h).length + 2 : 12;
+      for (const r of body) if (r[ci]) w = Math.max(w, mcShown(r[ci]));
+      return Math.min(ci === 0 ? 42 : 26, Math.max(ci === 0 ? 16 : 12, w));
+    });
+    const lines = Math.max(...headers.map((h, ci) => Math.ceil(String(h).length / Math.max(6, widths[ci] - 1))));
+    return { name, rows, widths, headerRow: 4, headerHeight: Math.max(30, 15 * lines + 6), freeze: true };
+  }
+  function mcSheetXml(sh) {
+    const hdr = sh.headerRow || 0;
+    const rowsXml = sh.rows.map((r, ri) => {
+      const rn = ri + 1;
+      const ht = hdr && rn === hdr && sh.headerHeight ? ` ht="${sh.headerHeight}" customHeight="1"` : "";
+      return `<row r="${rn}"${ht}>` + r.map((cell, ci) => mcCellXml(cell, mcCol(ci) + rn)).join("") + `</row>`;
+    }).join("");
+    const views = sh.freeze && hdr
+      ? `<sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="${hdr}" topLeftCell="B${hdr + 1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>`
+      : "";
+    const cols = sh.widths ? `<cols>${sh.widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("")}</cols>` : "";
+    const merges = sh.merges && sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map(r => `<mergeCell ref="${r}"/>`).join("")}</mergeCells>` : "";
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${views}${cols}<sheetData>${rowsXml}</sheetData>${merges}</worksheet>`;
+  }
+  // One Region wise sheet for every table: each table's columns side by side, with the table's name above them.
+  // Rows: All regions, then each region (largest MTD first). A region a table does not hold shows —.
+  function mcRegionWiseSheet(c, blocks) {
+    const per = blocks.map(b => ({ b, g: mcGroup(c.list, b) }));
+    const names = mcSummary(c, blocks).rows.map(r => r.name);
+    const groupRow = [xtext("", 10)], headerRow = [xtext("Region", 17)], merges = [];
+    let col = 1;
+    for (const { b } of per) {
+      groupRow.push(xtext(b.title, 10));
+      for (let i = 1; i < b.cols.length; i++) groupRow.push(xtext("", 10));
+      if (b.cols.length > 1) merges.push(`${mcCol(col)}4:${mcCol(col + b.cols.length - 1)}4`);
+      for (const cc of b.cols) headerRow.push(xtext(cc.h, 10));
+      col += b.cols.length;
     }
-    return rows;
+    const body = names.map(name => {
+      const row = [xtext(name, 13)];
+      for (const { b, g } of per) {
+        const obj = name === "All regions" ? g.all : ((g.groups.find(x => x.name === name) || { tot: {} }).tot);
+        for (const cc of b.cols) row.push(mcCellFor(obj[cc.k], "region", cc.g));
+      }
+      return row;
+    });
+    const headers = headerRow.map(h => h.v);
+    const widths = headers.map((h, ci) => {
+      let w = ci === 0 ? h.length + 2 : 12;
+      for (const r of body) if (r[ci]) w = Math.max(w, mcShown(r[ci]));
+      return Math.min(ci === 0 ? 42 : 26, Math.max(ci === 0 ? 16 : 12, w));
+    });
+    const lines = Math.max(...headers.map((h, ci) => Math.ceil(h.length / Math.max(6, widths[ci] - 1))));
+    return {
+      name: "Region wise",
+      rows: [[xtext("Morning Call: region wise, all tables", 11)], [xtext(`${fmtLong(c.ref)}. One row per region.`, 12)], [], groupRow, headerRow, ...body],
+      widths, headerRow: 5, headerHeight: Math.max(30, 15 * lines + 6), freeze: true, merges
+    };
   }
-  // The Summary sheet: one row per region, with the key figure from each table.
-  function mcSummarySheetRows(s, c) {
-    const rows = [[xs("Morning Call: region wise summary, " + fmtLong(c.ref), 1)], [xs("One row per region, with the key figure from each table.", 0)], [],
-      [xs("Region", 1), ...s.cols.map(col => xs(col.h, 1))]];
-    for (const r of s.rows) rows.push([xs(r.name, 1), ...r.vals.map((v, j) => (s.cols[j].g ? xg(v, true) : xn(v, 4)))]);
-    return rows;
+  // Region + store, for one table: each region, then its stores.
+  function mcStoreSheet(b, g) {
+    const headers = ["Region / Store", ...b.cols.map(c => c.h)];
+    const body = [];
+    for (const r of g.groups) {
+      body.push([xtext(r.name, 13), ...b.cols.map(c => mcCellFor(r.tot[c.k], "region", c.g))]);
+      for (const s of r.stores) body.push([xtext("   " + s.name, 0), ...b.cols.map(c => mcCellFor(s[c.k], "store", c.g))]);
+    }
+    return mcBuild(`${b.sheet} Store`, `${b.title}: region + store`, b.sub, headers, body);
   }
-  // sheets: [{name, rows}] -> the bytes of an .xlsx file.
+  // Kept for compatibility: the rows of the region + store sheet for one table.
+  function mcSheetRows(block, g) {
+    return mcStoreSheet(block, g).rows;
+  }
+  // sheets: [{name, rows, widths?, headerRow?, ...}] -> the bytes of an .xlsx file.
   function mcXlsx(sheets) {
     const enc = new TextEncoder();
     const files = [];
@@ -418,14 +491,13 @@
     add("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${mcEsc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("")}</sheets></workbook>`);
     add("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("")}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
     add("xl/styles.xml", MC_STYLES);
-    sheets.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, mcSheetXml(s.rows)));
+    sheets.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, mcSheetXml(s)));
     return mcZip(files);
   }
-  // The Summary sheet, then one sheet per table, from the current figures.
-  function mcWorkbook(c, blocks, summary) {
-    const sum = summary || mcSummary(c, blocks);
-    const sheets = [{ name: "Summary", rows: mcSummarySheetRows(sum, c) }];
-    for (const b of blocks) sheets.push({ name: b.sheet, rows: mcSheetRows(b, mcGroup(c.list, b)) });
+  // One Region wise sheet for all tables, then a Store sheet for each table.
+  function mcWorkbook(c, blocks) {
+    const sheets = [mcRegionWiseSheet(c, blocks)];
+    for (const b of blocks) sheets.push(mcStoreSheet(b, mcGroup(c.list, b)));
     return mcXlsx(sheets);
   }
   function mcDownload(bytes, name) {
@@ -443,7 +515,7 @@
   document.addEventListener("click", e => {
     const b = e.target.closest && e.target.closest("[data-mc-xlsx]");
     if (!b || !MC.last) return;
-    mcDownload(mcWorkbook(MC.last.c, MC.last.blocks, MC.last.summary), `Morning_Call_${mcIso(MC.last.c.ref)}.xlsx`);
+    mcDownload(mcWorkbook(MC.last.c, MC.last.blocks), `Morning_Call_${mcIso(MC.last.c.ref)}.xlsx`);
   });
 
   // Tab and wiring: the Morning Call tab is added to the Sales tabs; every other tab is left as it is.
@@ -455,5 +527,5 @@
     return kind === "morning" ? morningView() : salesPeriodViewMc(kind);
   };
 
-  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcWorkbook, mcSummary, mcLateMap, mcLoadHourly, morningView };
+  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcWorkbook, mcSummary, mcRegionWiseSheet, mcStoreSheet, mcLateMap, mcLoadHourly, morningView };
 })();
