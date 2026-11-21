@@ -55,10 +55,27 @@
     if (tries < 600) setTimeout(() => insPrefetch(tries + 1), 100);
   })(0);
 
-  // Comparison periods: last week (WoW), last month (MoM), last year (YoY). The Monthly tab has no week.
+  // Same day: the same weekday in the same week of the month, `backMonths` months earlier.
+  // Weeks run Monday to Sunday and week 1 is the week that holds the 1st. If that weekday falls outside the target
+  // month, the nearest week inside it is used. Example: Thu 19 Nov 2026 (week 4) is Thu 20 Nov 2025, and Thu 22 Oct 2026.
+  function insSameWeekday(d, backMonths) {
+    const dt = toDate(d);
+    const dom = dt.getUTCDate();
+    const monIdx = v => (v + 6) % 7;                       // Monday = 0 ... Sunday = 6
+    const offOf = key => monIdx(toDate(monStart(key)).getUTCDay());
+    const curKey = insMonthKey(d), tKey = curKey - backMonths;
+    const w = Math.floor((dom - 1 + offOf(curKey)) / 7);   // week of the month, from 0
+    const wd = monIdx(dt.getUTCDay());
+    const days = monEnd(tKey) - monStart(tKey) + 1;
+    let day = 1 - offOf(tKey) + 7 * w + wd;
+    if (day < 1) day += 7;
+    if (day > days) day -= 7;
+    return monStart(tKey) + day - 1;
+  }
+
+  // Comparison periods: last week (WoW), same day last month (MoM), same day last year (YoY). The Monthly tab has no week.
   function insKeys(kind, key) {
-    if (kind === "daily") return { wow: key - 7, mom: shiftMonths(key, -1), yoy: shiftMonths(key, -12) };
-    if (kind === "weekly") return { wow: key - 7, mom: mondayOf(shiftMonths(key, -1)), yoy: mondayOf(shiftMonths(key, -12)) };
+    if (kind === "daily" || kind === "weekly") return { wow: key - 7, mom: insSameWeekday(key, 1), yoy: insSameWeekday(key, 12) };
     return { wow: null, mom: key - 1, yoy: key - 12 };
   }
 
@@ -411,5 +428,5 @@
   })();
 
   // For checks in the browser console and in the tests.
-  window.FB_INS = { INS, insStores, insAmRows, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
+  window.FB_INS = { INS, insSameWeekday, insStores, insAmRows, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
 })();

@@ -53,6 +53,7 @@
     const curKey = mcMonthKey(ref), prevKey = curKey - 1, yearKey = (toDate(ref).getUTCFullYear() - 2025) * 12;
     const dom = mcDom(ref), dim = mcDim(ref), balance = dim - dom;
     const ly = shiftMonths(ref, -12), lm = shiftMonths(ref, -1);
+    const lyDay = window.FB_INS.insSameWeekday(ref, 12), lmDay = window.FB_INS.insSameWeekday(ref, 1);
     const lateMap = mcLateMap([ref - 7, ref]);
     const list = [];
     for (const s of M.stores) {
@@ -65,8 +66,11 @@
       v.trend = mcOk(v.novMtd) ? v.novMtd / dom * balance + v.novMtd : null;
       v.trendVsOct = mcG(v.trend, v.octFull);
       v.mom = mcG(v.novMtd, v.octSame);
-      v.yoyLy = mcNet(R, ly, ly);
-      v.yoyTy = mcNet(R, ref, ref);
+      v.dayCur = mcNet(R, ref, ref);
+      v.momDayPrev = mcNet(R, lmDay, lmDay);
+      v.momDay = mcG(v.dayCur, v.momDayPrev);
+      v.yoyLy = mcNet(R, lyDay, lyDay);
+      v.yoyTy = v.dayCur;
       v.yoy = mcG(v.yoyTy, v.yoyLy);
       v.ytdLy = mcNet(R, monStart(yearKey - 12), ly);
       v.ytdTy = mcNet(R, monStart(yearKey), ref);
@@ -89,6 +93,7 @@
   // The tables. c = the numbers for each store; each column names the number it shows, or a growth between two.
   function mcBlocks(c) {
     const ref = c.ref, ref7 = ref - 7, ly = shiftMonths(ref, -12), lm = shiftMonths(ref, -1);
+    const lyDay = window.FB_INS.insSameWeekday(ref, 12), lmDay = window.FB_INS.insSameWeekday(ref, 1);
     const curKey = mcMonthKey(ref), prevKey = curKey - 1;
     const dl = d => toDate(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
     const sCur = ref - (c.dom - 1), sPrev = monStart(prevKey);
@@ -103,13 +108,16 @@
           { k: "novMtd", h: `MTD (${dl(sCur)} to ${dl(ref)})` },
           { k: "mom", h: "MoM %", g: ["novMtd", "octSame"] },
           { k: "trend", h: `Trend (${curName} projection)` },
-          { k: "trendVsOct", h: "Trend vs full last month %", g: ["trend", "octFull"] }
+          { k: "trendVsOct", h: "Trend vs full last month %", g: ["trend", "octFull"] },
+          { k: "dayCur", h: `Same day (${dl(ref)})` },
+          { k: "momDayPrev", h: `Same day last month (${dl(lmDay)})` },
+          { k: "momDay", h: "Same day MoM %", g: ["dayCur", "momDayPrev"] }
         ] },
       { id: "yoy", sheet: "YoY", title: "YoY (same day and YTD)",
-        sub: `Same day: ${dl(ly)} against ${dl(ref)}. YTD: 1 Jan to the same date, each year.`,
+        sub: `Same day: the same weekday in the same week of the year before, ${dl(lyDay)} against ${dl(ref)}. YTD: 1 Jan to the same date, each year.`,
         main: "ytdTy", sort: "yoy",
         cols: [
-          { k: "yoyLy", h: `Same day last year (${dl(ly)})` },
+          { k: "yoyLy", h: `Same day last year (${dl(lyDay)})` },
           { k: "yoyTy", h: `Same day (${dl(ref)})` },
           { k: "yoy", h: "YoY %", g: ["yoyTy", "yoyLy"] },
           { k: "ytdLy", h: `YTD last year (1 Jan to ${dl(ly)})` },
@@ -188,14 +196,56 @@
     const v = obj[c.k];
     return c.g ? `<td style="color:${mcC(v)}">${mcP(v)}</td>` : `<td>${mcRs(v)}</td>`;
   }
-  function mcTable(block, g) {
+  // Region-wise: one row per region, with the region totals (no stores).
+  function mcRegionTable(block, g) {
+    const head = `<tr><th>Region</th>${block.cols.map(c => `<th>${mcEsc(c.h)}</th>`).join("")}</tr>`;
+    const rows = [`<tr class="reg-total"><td>All regions</td>${block.cols.map(c => mcCell(c, g.all)).join("")}</tr>`]
+      .concat(g.groups.map(r => `<tr><td>${mcEsc(r.name)}</td>${block.cols.map(c => mcCell(c, r.tot)).join("")}</tr>`));
+    return `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${rows.join("")}</tbody></table></div>`;
+  }
+  // Region + store: each region row with its totals, and its stores underneath.
+  function mcStoreTable(block, g) {
     const head = `<tr><th>Region / Store</th>${block.cols.map(c => `<th>${mcEsc(c.h)}</th>`).join("")}</tr>`;
-    const rows = [`<tr class="reg-total"><td>All regions</td>${block.cols.map(c => mcCell(c, g.all)).join("")}</tr>`];
+    const rows = [];
     for (const r of g.groups) {
       rows.push(`<tr class="reg-head"><td>${mcEsc(r.name)}</td>${block.cols.map(c => mcCell(c, r.tot)).join("")}</tr>`);
       for (const s of r.stores) rows.push(`<tr><td>&nbsp;&nbsp;${mcEsc(s.name)}</td>${block.cols.map(c => mcCell(c, s)).join("")}</tr>`);
     }
     return `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${rows.join("")}</tbody></table></div>`;
+  }
+
+  // The region-wise summary: one row per region, with the key figure from each table.
+  const MC_SUMMARY = [
+    { h: "MTD sales", id: "mom", k: "novMtd" },
+    { h: "MoM %", id: "mom", k: "mom", g: true },
+    { h: "Same day MoM %", id: "mom", k: "momDay", g: true },
+    { h: "Trend (projection)", id: "mom", k: "trend" },
+    { h: "Same day YoY %", id: "yoy", k: "yoy", g: true },
+    { h: "YTD YoY %", id: "yoy", k: "ytdYoy", g: true },
+    { h: "WoW %", id: "wow", k: "wow", g: true },
+    { h: "FTD %", id: "ftd", k: "ftd", g: true },
+    { h: "Late Night %", id: "late", k: "ln", g: true }
+  ];
+  function mcSummary(c, blocks) {
+    const grp = {};
+    for (const b of blocks) grp[b.id] = mcGroup(c.list, b);
+    const totOf = (id, name) => (name === "All regions" ? grp[id].all : ((grp[id].groups.find(g => g.name === name) || { tot: {} }).tot));
+    const names = new Set();
+    for (const b of blocks) for (const g of grp[b.id].groups) names.add(g.name);
+    const sortVal = v => (mcOk(v) ? v : -Infinity);
+    const order = Array.from(names).sort((x, y) => {
+      const p = sortVal(totOf("mom", x).novMtd), q = sortVal(totOf("mom", y).novMtd);
+      return p === q ? 0 : q > p ? 1 : -1;
+    });
+    const rowFor = name => ({ name, vals: MC_SUMMARY.map(m => totOf(m.id, name)[m.k]) });
+    return { cols: MC_SUMMARY, rows: [rowFor("All regions")].concat(order.map(rowFor)) };
+  }
+  function mcSummaryTable(s) {
+    const head = `<tr><th>Region</th>${s.cols.map(c => `<th>${mcEsc(c.h)}</th>`).join("")}</tr>`;
+    const cell = (c, v) => (c.g ? `<td style="color:${mcC(v)}">${mcP(v)}</td>` : `<td>${mcRs(v)}</td>`);
+    const body = s.rows.map((r, i) => `<tr${i === 0 ? ' class="reg-total"' : ""}><td>${mcEsc(r.name)}</td>` +
+      r.vals.map((v, j) => cell(s.cols[j], v)).join("") + `</tr>`).join("");
+    return `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
 
   async function mcLoadHourly() {
@@ -226,7 +276,8 @@
     if (M.has_hourly && !MC.hourly && !MC.hourlyLoading && !MC.hourlyError) mcLoadHourly();
     const c = mcCompute();
     const blocks = mcBlocks(c);
-    MC.last = { c, blocks };
+    const summary = mcSummary(c, blocks);
+    MC.last = { c, blocks, summary };
     let late = "";
     if (!M.has_hourly) late = "The hourly file is not in the data, so Late Night shows —.";
     else if (MC.hourlyError) late = `Hourly data could not be loaded: ${mcEsc(MC.hourlyError)}`;
@@ -235,8 +286,14 @@
       `<p class="sub">Reference day: the latest day of data. The Sales filters above apply to every table.</p>` +
       `<button data-mc-xlsx="1" class="mc-btn">Download Excel</button>` +
       (late ? `<p class="muted">${late}</p>` : "") + `</section>` +
-      blocks.map(b => `<section class="block"><h2>${mcEsc(b.title)}</h2><p class="sub">${mcEsc(b.sub)}</p>` +
-        `${mcTable(b, mcGroup(c.list, b))}</section>`).join("");
+      `<section class="block"><h2>Region wise summary</h2>` +
+      `<p class="sub">One row per region, with the key figure from each table below.</p>${mcSummaryTable(summary)}</section>` +
+      blocks.map(b => {
+        const g = mcGroup(c.list, b);
+        return `<section class="block"><h2>${mcEsc(b.title)}</h2><p class="sub">${mcEsc(b.sub)}</p>` +
+          `<p class="sub"><b>Region wise</b></p>${mcRegionTable(b, g)}` +
+          `<p class="sub"><b>Region + store</b></p>${mcStoreTable(b, g)}</section>`;
+      }).join("");
   }
 
   // ---- Excel (.xlsx), written here with no outside library ----
@@ -290,23 +347,36 @@
   }
   const MC_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>
+<fonts count="6">
+<font><sz val="11"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><name val="Calibri"/></font>
+<font><sz val="11"/><color rgb="FF15803D"/><name val="Calibri"/></font>
+<font><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><color rgb="FF15803D"/><name val="Calibri"/></font>
+<font><b/><sz val="11"/><color rgb="FFB91C1C"/><name val="Calibri"/></font>
+</fonts>
 <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="6">
+<cellXfs count="10">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="10" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="3" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="3" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
 <xf numFmtId="10" fontId="1" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="10" fontId="2" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="10" fontId="3" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="10" fontId="4" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
+<xf numFmtId="10" fontId="5" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1"/>
 </cellXfs>
 </styleSheet>`;
   // Cells: text (style 0 plain, 1 bold); numbers (3 plain, 4 bold); percentages (2 plain, 5 bold; the value is a fraction).
   const xs = (v, s = 0) => ({ t: "s", v: String(v), s });
   const xn = (v, s = 3) => (mcOk(v) ? { t: "n", v: String(v), s } : xs("—", 0));
   const xp = (v, s = 2) => (mcOk(v) ? { t: "n", v: String(v / 100), s } : xs("—", 0));
+  // Growth: green for up (or flat), red for down. Style 6 and 7 are regular, 8 and 9 bold.
+  const xg = (v, bold) => (mcOk(v) ? { t: "n", v: String(v / 100), s: bold ? (v >= 0 ? 8 : 9) : (v >= 0 ? 6 : 7) } : xs("—", 0));
   const mcCol = i => { let s = "", n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   function mcCellXml(cell, ref) {
     if (!cell) return "";
@@ -317,15 +387,25 @@
     const body = rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((cell, ci) => mcCellXml(cell, mcCol(ci) + (ri + 1))).join("") + `</row>`).join("");
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
   }
-  // The rows of one table, as Excel cells: title, note, header, All regions, then each region and its stores.
+  // The rows of one table: a region-wise section first, then region + store.
   function mcSheetRows(block, g) {
-    const rows = [[xs(block.title, 1)], [xs(block.sub, 0)], [], [xs("Region / Store", 1), ...block.cols.map(c => xs(c.h, 1))]];
-    const cellFor = (c, obj, bold) => (c.g ? xp(obj[c.k], bold ? 5 : 2) : xn(obj[c.k], bold ? 4 : 3));
+    const cellFor = (c, obj, bold) => (c.g ? xg(obj[c.k], bold) : xn(obj[c.k], bold ? 4 : 3));
+    const header = first => [xs(first, 1), ...block.cols.map(c => xs(c.h, 1))];
+    const rows = [[xs(block.title, 1)], [xs(block.sub, 0)], [], [xs("Region wise", 1)], header("Region")];
     rows.push([xs("All regions", 1), ...block.cols.map(c => cellFor(c, g.all, true))]);
+    for (const r of g.groups) rows.push([xs(r.name, 1), ...block.cols.map(c => cellFor(c, r.tot, true))]);
+    rows.push([], [xs("Region + store", 1)], header("Region / Store"));
     for (const r of g.groups) {
       rows.push([xs(r.name, 1), ...block.cols.map(c => cellFor(c, r.tot, true))]);
       for (const s of r.stores) rows.push([xs("   " + s.name, 0), ...block.cols.map(c => cellFor(c, s, false))]);
     }
+    return rows;
+  }
+  // The Summary sheet: one row per region, with the key figure from each table.
+  function mcSummarySheetRows(s, c) {
+    const rows = [[xs("Morning Call: region wise summary, " + fmtLong(c.ref), 1)], [xs("One row per region, with the key figure from each table.", 0)], [],
+      [xs("Region", 1), ...s.cols.map(col => xs(col.h, 1))]];
+    for (const r of s.rows) rows.push([xs(r.name, 1), ...r.vals.map((v, j) => (s.cols[j].g ? xg(v, true) : xn(v, 4)))]);
     return rows;
   }
   // sheets: [{name, rows}] -> the bytes of an .xlsx file.
@@ -341,9 +421,12 @@
     sheets.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, mcSheetXml(s.rows)));
     return mcZip(files);
   }
-  // One sheet per table, from the current figures.
-  function mcWorkbook(c, blocks) {
-    return mcXlsx(blocks.map(b => ({ name: b.sheet, rows: mcSheetRows(b, mcGroup(c.list, b)) })));
+  // The Summary sheet, then one sheet per table, from the current figures.
+  function mcWorkbook(c, blocks, summary) {
+    const sum = summary || mcSummary(c, blocks);
+    const sheets = [{ name: "Summary", rows: mcSummarySheetRows(sum, c) }];
+    for (const b of blocks) sheets.push({ name: b.sheet, rows: mcSheetRows(b, mcGroup(c.list, b)) });
+    return mcXlsx(sheets);
   }
   function mcDownload(bytes, name) {
     const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -360,7 +443,7 @@
   document.addEventListener("click", e => {
     const b = e.target.closest && e.target.closest("[data-mc-xlsx]");
     if (!b || !MC.last) return;
-    mcDownload(mcWorkbook(MC.last.c, MC.last.blocks), `Morning_Call_${mcIso(MC.last.c.ref)}.xlsx`);
+    mcDownload(mcWorkbook(MC.last.c, MC.last.blocks, MC.last.summary), `Morning_Call_${mcIso(MC.last.c.ref)}.xlsx`);
   });
 
   // Tab and wiring: the Morning Call tab is added to the Sales tabs; every other tab is left as it is.
@@ -372,5 +455,5 @@
     return kind === "morning" ? morningView() : salesPeriodViewMc(kind);
   };
 
-  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcLateMap, mcLoadHourly, morningView };
+  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcWorkbook, mcSummary, mcLateMap, mcLoadHourly, morningView };
 })();
