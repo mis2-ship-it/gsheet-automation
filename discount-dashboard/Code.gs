@@ -48,7 +48,7 @@ function dateText_(v) {
    archive if it is listed there, otherwise from the Sheet, so nothing is counted twice.
    Set ARCHIVE_REPO_ to your repository ("owner/name"). For a private repository, add the token as the script
    property GITHUB_TOKEN (Project Settings > Script properties). */
-const ARCHIVE_REPO_ = "OWNER/REPO";
+const ARCHIVE_REPO_ = "mis2-ship-it/gsheet-automation";
 const ARCHIVE_BRANCH_ = "main";
 const ARCHIVE_PATH_ = "data/discount/archive";
 let ARCHIVE_MEMO_ = null;        // one request: the archive index, and the months already read
@@ -476,11 +476,11 @@ function compareColumns_(mode, n, anchor, from, to) {
   if (mode === "week") {
     const m = mondayOf_(a);
     for (let k = count - 1; k >= 0; k--) { const s0 = m - 7 * k; cols.push({ win: [s0, s0 + 6], label: weekLabel_(s0) }); }
-    return cols;
+    return cols.reverse();
   }
   if (mode === "day") {
     for (let k = count - 1; k >= 0; k--) { const d = a - 7 * k; cols.push({ win: [d, d], label: dayLabel_(d) }); }
-    return cols;
+    return cols.reverse();
   }
   const step = mode === "year" ? 12 : 1;
   const f0 = isDate_(from) ? dn_(from) : a;
@@ -490,7 +490,7 @@ function compareColumns_(mode, n, anchor, from, to) {
     const l = addMonthsDn_(lo, -step * k), h = addMonthsDn_(hi, -step * k);
     cols.push({ win: [l, h], label: rangeLabel_(l, h) });
   }
-  return cols;
+  return cols.reverse();
 }
 function metricOf_(cell, metric) {
   if (metric === "discPct") return cell.gross ? (cell.disc / cell.gross) * 100 : null;
@@ -770,17 +770,30 @@ function monthSpan_(key, anchor) {
   const endDay = key === String(anchor).slice(0, 7) ? Number(String(anchor).slice(8, 10)) : lastDay;
   return "1–" + endDay + " " + MONTH_NAMES_[p[1] - 1];
 }
+// The date of a Disc_Cat row as YYYY-MM-DD ("" for older rows that have no day).
+function dayText_(x) {
+  if (x instanceof Date) return Utilities.formatDate(x, "UTC", "yyyy-MM-dd");
+  return x ? String(x).slice(0, 10) : "";
+}
+// Category months are cut at the same day of the month as the date chosen: 1–23 Nov against 1–23 Oct, 1–23 Sep, 1–23 Aug.
+function catMonthSpan_(key, anchor) {
+  const p = key.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(p[0], p[1], 0)).getUTCDate();
+  const endDay = Math.min(Number(String(anchor).slice(8, 10)), lastDay);
+  return "1–" + endDay + " " + MONTH_NAMES_[p[1] - 1];
+}
 function loadCat_(read) {
   const rd = read || readTab_;
   return rd("Disc_Cat").map(v => ({
     month: String(v[0]).slice(0, 7), brand: String(v[1]), region: String(v[2]), source: String(v[3]),
     channel: String(v[4]), cat: String(v[5]), inv: Number(v[6]) || 0, qty: Number(v[7]) || 0,
-    gross: Number(v[8]) || 0, disc: Number(v[9]) || 0, net: Number(v[10]) || 0
+    gross: Number(v[8]) || 0, disc: Number(v[9]) || 0, net: Number(v[10]) || 0, day: dayText_(v[11])
   })).filter(r => r.month.length === 7);
 }
 // Cells per category: [current month, last month, last 2 months, last 3 months], for all channels, Offline and Online.
 function computeCategoryMonths_(rows, p) {
   const f = pFilter_(p);
+  const capDay = Number(String(p.anchor).slice(8, 10));
   const keys = [0, 1, 2, 3].map(b => monthKeyOf_(p.anchor, b));
   const idx = new Map(keys.map((k, i) => [k, i]));
   const blankCells = () => keys.map(() => ({ net: 0, orders: 0, qty: 0, gross: 0, disc: 0 }));
@@ -791,6 +804,7 @@ function computeCategoryMonths_(rows, p) {
   for (const r of rows) {
     const i = idx.get(r.month);
     if (i === undefined || !passP_(r, f)) continue;
+    if (r.day && Number(r.day.slice(8, 10)) > capDay) continue;   // the same day of the month as the date chosen
     hasData[i] = true;
     const chKey = r.channel === "Offline" ? "offline" : "online";
     if (r.cat === ALL_CATEGORIES_) {
@@ -803,7 +817,7 @@ function computeCategoryMonths_(rows, p) {
   }
   const categories = [...cats.values()].sort((x, y) => y.cells.all[0].net - x.cells.all[0].net);
   return {
-    months: keys.map(k => ({ key: k, label: monthLabel_(k), span: monthSpan_(k, p.anchor) })),
+    months: keys.map(k => ({ key: k, label: monthLabel_(k), span: catMonthSpan_(k, p.anchor) })),
     hasData: hasData, categories: categories, totals: totals
   };
 }

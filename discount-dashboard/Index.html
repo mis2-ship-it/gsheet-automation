@@ -539,7 +539,7 @@ var CAT_CHANNELS = [["all", "All channels"], ["offline", "Offline (In Store)"], 
 var CAT_HEAD = ["Current Month", "Last Month", "Last 2 Month", "Last 3 Month"];
 function renderCategorySection(cm) {
   var missing = cm.months.filter(function (m, i) { return !cm.hasData[i]; }).map(function (m) { return m.label; });
-  var note = "Calendar months from the full sales data. Current month = the month of the date you chose, up to that date. " +
+  var note = "Calendar months, each cut at the same day as the date you chose: 1–23 Nov is compared with 1–23 Oct, 1–23 Sep and 1–23 Aug. " +
     "Offline = In Store; Online = every other source." + (missing.length ? " No data yet for: " + missing.join(", ") + "." : "");
   var opts = function (list, sel) {
     return list.map(function (o) { return '<option value="' + o[0] + '"' + (sel === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("");
