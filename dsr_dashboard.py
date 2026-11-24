@@ -73,7 +73,6 @@ EMAIL_CONFIG = {
         'bhaskar@eatfit.in, '
         'scm@frozenbottle.in, '
         'prasanth.a@frozenbottle.in, '
-        'sandeep.ss@eatfit.in, '
         'sonal.raj@curefoods.in, '
         'Ops.all@frozenbottle.in, '
         'mayank.agarwal@curefoods.in'
