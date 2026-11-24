@@ -20,14 +20,24 @@ const cpWeekday = d => toDate(d).toLocaleDateString("en-IN", { weekday: "short",
 async function campLoad() {
   if (CAMP.days || CAMP.loading) return;
   CAMP.loading = true;
+  let j = null;
   try {
-    const j = await loadJson("data/campaigns.json");
-    CAMP.names = j ? j.names : [];
-    CAMP.days = j ? j.days : [];
+    j = await loadJson("data/campaigns.json");
   } catch (err) {
-    CAMP.error = err.message;
-    CAMP.days = [];
+    j = null;   // the server sent a web page instead of the file
   }
+  if (j && Array.isArray(j.days)) {
+    CAMP.source = "served";
+  } else if (typeof window !== "undefined" && window.CAMP_CALENDAR) {
+    j = window.CAMP_CALENDAR;
+    CAMP.source = "built-in";
+  } else {
+    j = null;
+    CAMP.source = "none";
+  }
+  CAMP.names = j ? j.names : [];
+  CAMP.days = j ? j.days : [];
+  CAMP.error = null;
   CAMP.loading = false;
   render();
 }
@@ -287,6 +297,12 @@ function cpCard(m, title) {
 
 function campaignView() {
   setPeriodBar("campaign", null, null);
+  const note = CAMP.source === "built-in"
+    ? `<p class="muted">Showing the built-in campaign calendar (data/campaigns.json is not being served). Refresh it from the CSV with make_campaign_calendar.py.</p>`
+    : "";
+  return note + campaignViewBody();
+}
+function campaignViewBody() {
   if (!CAMP.days) {
     campLoad();
     return `<section class="empty"><h2>Campaign</h2><p class="muted">Loading the campaign days.</p></section>`;

@@ -75,8 +75,8 @@
 
   // Comparison periods: last week (WoW), same day last month (MoM), same day last year (YoY). The Monthly tab has no week.
   function insKeys(kind, key) {
-    if (kind === "daily" || kind === "weekly") return { wow: key - 7, mom: insSameWeekday(key, 1), yoy: insSameWeekday(key, 12) };
-    return { wow: null, mom: key - 1, yoy: key - 12 };
+    if (kind === "daily" || kind === "weekly") return { wow: key - 7, l2w: key - 14, mom: insSameWeekday(key, 1), yoy: insSameWeekday(key, 12) };
+    return { wow: null, l2w: null, mom: key - 1, yoy: key - 12 };
   }
 
   // Net sales (rupees) over a range of days, with the page filters and an optional extra test; null when there are no rows.
@@ -120,7 +120,7 @@
     const chNet = (rows, from, to) => insNet(rows, from, to, pick);
     const K = insKeys(kind, key);
     const win = k => (k === null ? null : windowOf(kind, k));
-    const cur = win(key), w = win(K.wow), m = win(K.mom), y = win(K.yoy);
+    const cur = win(key), w = win(K.wow), w2 = win(K.l2w), m = win(K.mom), y = win(K.yoy);
     const mt = insMtdWindows(kind, key);
     const out = [];
     for (const s of M.stores) {
@@ -131,6 +131,7 @@
       out.push({
         i: s.i, name: s.name, a: s.a, cur: c,
         wowN: w ? chNet(rows, w[0], w[1]) : null,
+        l2wN: w2 ? chNet(rows, w2[0], w2[1]) : null,
         momN: m ? chNet(rows, m[0], m[1]) : null,
         yoyN: y ? chNet(rows, y[0], y[1]) : null,
         mtdCur: chNet(rows, mt.cur[0], mt.cur[1]),
@@ -156,45 +157,59 @@
       const st = list.filter(s => s.a === a);
       if (!st.length) return;
       const sum = f => st.reduce((t, s) => t + (s[f] || 0), 0);
-      out.push({ a, name, cur: sum("cur"), wowN: sum("wowN"), momN: sum("momN"), yoyN: sum("yoyN"),
+      out.push({ a, name, cur: sum("cur"), wowN: sum("wowN"), l2wN: sum("l2wN"), momN: sum("momN"), yoyN: sum("yoyN"),
         stores: st.slice().sort((p, q) => q.cur - p.cur) });
     });
     return out.filter(x => x.cur > 0).sort((p, q) => q.cur - p.cur);
   }
 
-  const insCells = (cur, wowN, momN, yoyN) =>
+  const insCells = (cur, wowN, l2wN, momN, yoyN) =>
     `<td>${insRs(cur)}</td>` +
     `<td style="color:${insC(insG(cur, wowN))}">${insP(insG(cur, wowN))}</td>` +
+    `<td style="color:${insC(insG(cur, l2wN))}">${insP(insG(cur, l2wN))}</td>` +
     `<td style="color:${insC(insG(cur, momN))}">${insP(insG(cur, momN))}</td>` +
     `<td style="color:${insC(insG(cur, yoyN))}">${insP(insG(cur, yoyN))}</td>`;
   const insTable = (first, body) =>
-    `<div class="scroll"><table class="tbl"><thead><tr><th>${first}</th><th>Net ₹</th><th>WoW</th><th>MoM</th><th>YoY</th></tr></thead>` +
+    `<div class="scroll"><table class="tbl"><thead><tr><th>${first}</th><th>Net ₹</th><th>WoW</th><th>L2W</th><th>MoM</th><th>YoY</th></tr></thead>` +
     `<tbody>${body}</tbody></table></div>`;
   const insStoreRow = x => {
     const s = x.s;
-    return `<tr><td>${insEsc(s.name)}</td>${insCells(s.cur, s.wowN, s.momN, s.yoyN)}</tr>`;
+    return `<tr><td>${insEsc(s.name)}</td>${insCells(s.cur, s.wowN, s.l2wN, s.momN, s.yoyN)}</tr>`;
   };
 
+  // Area managers, with three column groups side by side: All sales, Offline (In Store) and Online (other sources).
+  // Each group shows Net, WoW, L2W, MoM and YoY. Click a manager to see its stores.
   function insAmTable(kind, key) {
-    const list = insStores(kind, key, INS.channel);
-    const ch = INS.channel;
-    const chBtn = (c, label) => `<button data-ins-channel="${c}" aria-pressed="${ch === c}">${label}</button>`;
-    const tabs = `<div class="reg-filter">${chBtn("all", "All")}${chBtn("offline", "Offline (In Store)")}${chBtn("online", "Online (other sources)")}</div>`;
-    const hasOffline = M.sources.indexOf("In Store") >= 0;
-    if (ch === "offline" && !hasOffline) return tabs + `<p class="muted">The data has no In Store source, so there are no offline sales.</p>`;
-    const ams = insAmRows(list);
-    if (!ams.length) return tabs + `<p class="muted">No sales by area manager for this period.</p>`;
-    const body = ams.map(x => {
-      const open = INS.amOpen.has(x.a);
-      let html = `<tr class="ins-am"><td><button data-ins-am="${x.a}">${open ? "▾" : "▸"} ${insEsc(x.name)}</button></td>` +
-        `${insCells(x.cur, x.wowN, x.momN, x.yoyN)}</tr>`;
+    const groups = [["all", "All sales"], ["offline", "Offline (In Store)"], ["online", "Online (other sources)"]];
+    const per = groups.map(([ch, label]) => {
+      const list = insStores(kind, key, ch);
+      return { ch, label, list, ams: insAmRows(list) };
+    });
+    if (!per[0].ams.length) return `<p class="muted">No sales by area manager for this period.</p>`;
+    const sumOf = list => {
+      const f = k => list.reduce((t2, s) => t2 + (s[k] || 0), 0);
+      const ok = list.length > 0;
+      return ok ? { cur: f("cur"), wowN: f("wowN"), l2wN: f("l2wN"), momN: f("momN"), yoyN: f("yoyN") } : null;
+    };
+    const blank = `<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>`;
+    const cellsOf = x => (x ? insCells(x.cur, x.wowN, x.l2wN, x.momN, x.yoyN) : blank);
+    const head1 = `<tr><th rowspan="2">Area manager</th>${per.map(p => `<th colspan="5">${p.label}</th>`).join("")}</tr>`;
+    const head2 = `<tr>${per.map(() => "<th>Net ₹</th><th>WoW</th><th>L2W</th><th>MoM</th><th>YoY</th>").join("")}</tr>`;
+    const totals = per.map(p => sumOf(p.list));
+    let body = `<tr class="reg-total"><td>All areas</td>${totals.map(cellsOf).join("")}</tr>`;
+    for (const x0 of per[0].ams) {
+      const open = INS.amOpen.has(x0.a);
+      const perAm = per.map(p => p.ams.find(x => x.a === x0.a) || null);
+      body += `<tr class="ins-am"><td><button data-ins-am="${x0.a}">${open ? "▾" : "▸"} ${insEsc(x0.name)}</button></td>${perAm.map(cellsOf).join("")}</tr>`;
       if (open) {
-        html += x.stores.map(s => `<tr class="ins-st"><td><button data-ins-store="${s.i}">${insEsc(s.name)}</button></td>` +
-          `${insCells(s.cur, s.wowN, s.momN, s.yoyN)}</tr>`).join("");
+        for (const s0 of x0.stores) {
+          const perSt = per.map(p => p.list.find(s => s.i === s0.i) || null);
+          body += `<tr class="ins-st"><td><button data-ins-store="${s0.i}">${insEsc(s0.name)}</button></td>${perSt.map(cellsOf).join("")}</tr>`;
+        }
       }
-      return html;
-    }).join("");
-    return tabs + insTable("Area manager", body);
+    }
+    return `<div class="scroll"><table class="tbl ins-groups"><thead>${head1}${head2}</thead><tbody>${body}</tbody></table></div>` +
+      (M.sources.indexOf("In Store") < 0 ? `<p class="muted">The data has no In Store source, so the Offline columns are empty.</p>` : "");
   }
 
   // The store window: net sales by brand and source, with growth against the comparison period.
@@ -289,7 +304,7 @@
   // MoM and YoY compare month to date (the 1st to the selected day) with the same days last month and last year.
   const REG = { metric: "all" };
   const REG_LABEL = { wow: "WoW", mom: "MoM", yoy: "YoY" };
-  const REG_SPEC = { wow: { base: "cur", prev: "wowN" }, mom: { base: "mtdCur", prev: "mtdMom" }, yoy: { base: "mtdCur", prev: "mtdYoy" } };
+  const REG_SPEC = { wow: { base: "cur", prev: "wowN" }, l2w: { base: "cur", prev: "l2wN" }, mom: { base: "mtdCur", prev: "mtdMom" }, yoy: { base: "mtdCur", prev: "mtdYoy" } };
   const regSum = (rows, f) => rows.reduce((a, s) => a + (s[f] || 0), 0);
   // Total for a set of stores: the current sales, the month to date, and for each comparison the base and the comparison
   // sales of the stores that have both.
@@ -316,14 +331,15 @@
   // All shows the day's sales with WoW, then the month to date with MoM and YoY.
   function regCells(day, mtd, cmp, cols) {
     const g = c => `<td>${insRs(cmp[c].prev)}</td><td style="color:${insC(cmp[c].g)}">${insP(cmp[c].g)}</td>`;
-    if (cols.length === 1 && cols[0] === "wow") return `<td>${insRs(day)}</td>` + g("wow");
+    if (cols.length === 1 && (cols[0] === "wow" || cols[0] === "l2w")) return `<td>${insRs(day)}</td>` + g(cols[0]);
     if (cols.length === 1) return `<td>${insRs(mtd)}</td>` + g(cols[0]);
-    return `<td>${insRs(day)}</td>` + g("wow") + `<td>${insRs(mtd)}</td>` + g("mom") + g("yoy");
+    return `<td>${insRs(day)}</td>` + g("wow") + g("l2w") + `<td>${insRs(mtd)}</td>` + g("mom") + g("yoy");
   }
   function regHead(cols) {
     if (cols.length === 1 && cols[0] === "wow") return ["Sales", "WoW sales", "WoW%"];
+    if (cols.length === 1 && cols[0] === "l2w") return ["Sales", "L2W sales", "L2W%"];
     if (cols.length === 1) return ["MTD sales", `${REG_LABEL[cols[0]]} sales`, `${REG_LABEL[cols[0]]}%`];
-    return ["Sales", "WoW sales", "WoW%", "MTD sales", "MoM sales", "MoM%", "YoY sales", "YoY%"];
+    return ["Sales", "WoW sales", "WoW%", "L2W sales", "L2W%", "MTD sales", "MoM sales", "MoM%", "YoY sales", "YoY%"];
   }
   function regBlock(kind, key) {
     if (!M || !M.stores || !M.stores.length) return "";
@@ -336,7 +352,7 @@
       if (!groups.has(r)) groups.set(r, []);
       groups.get(r).push(s);
     }
-    const cols = REG.metric === "all" ? ["wow", "mom", "yoy"] : [REG.metric];
+    const cols = REG.metric === "all" ? ["wow", "l2w", "mom", "yoy"] : [REG.metric];
     const heads = regHead(cols);
     const span = 1 + heads.length;
     const regions = [...groups.entries()]
@@ -353,7 +369,7 @@
     return `<section class="block"><h2>Region and store performance</h2>` +
       `<p class="sub">WoW: this period against the same period a week earlier. MoM and YoY: month to date (1st to the selected day) ` +
       `against the same days last month and last year.</p>` +
-      `<div class="reg-filter">${btn("all", "All")}${btn("wow", "WoW")}${btn("mom", "MoM")}${btn("yoy", "YoY")}</div>` +
+      `<div class="reg-filter">${btn("all", "All")}${btn("wow", "WoW")}${btn("l2w", "L2W")}${btn("mom", "MoM")}${btn("yoy", "YoY")}</div>` +
       `<div class="scroll"><table class="tbl"><thead>${headRow}</thead><tbody>${body || `<tr><td colspan="${span}" class="muted">No store sales in this period.</td></tr>`}</tbody></table></div>` +
       `</section>`;
   }

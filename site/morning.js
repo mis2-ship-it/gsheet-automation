@@ -50,7 +50,7 @@
   // Every number the tables need, for each store, on the reference day.
   function mcCompute() {
     const ref = M.last_day;
-    const curKey = mcMonthKey(ref), prevKey = curKey - 1, yearKey = (toDate(ref).getUTCFullYear() - 2025) * 12;
+    const curKey = mcMonthKey(ref), prevKey = curKey - 1;
     const dom = mcDom(ref), dim = mcDim(ref), balance = dim - dom;
     const ly = shiftMonths(ref, -12), lm = shiftMonths(ref, -1);
     const lyDay = window.FB_INS.insSameWeekday(ref, 12), lmDay = window.FB_INS.insSameWeekday(ref, 1);
@@ -67,13 +67,15 @@
       v.trendVsOct = mcG(v.trend, v.octFull);
       v.mom = mcG(v.novMtd, v.octSame);
       v.dayCur = mcNet(R, ref, ref);
+      v.l2wPrev = mcNet(R, ref - 14, ref - 14);
+      v.l2w = mcG(v.dayCur, v.l2wPrev);
       v.momDayPrev = mcNet(R, lmDay, lmDay);
       v.momDay = mcG(v.dayCur, v.momDayPrev);
       v.yoyLy = mcNet(R, lyDay, lyDay);
       v.yoyTy = v.dayCur;
       v.yoy = mcG(v.yoyTy, v.yoyLy);
-      v.ytdLy = mcNet(R, monStart(yearKey - 12), ly);
-      v.ytdTy = mcNet(R, monStart(yearKey), ref);
+      v.ytdLy = mcNet(R, monStart(curKey - 12), ly);
+      v.ytdTy = mcNet(R, monStart(curKey), ref);
       v.ytdYoy = mcG(v.ytdTy, v.ytdLy);
       v.wowPrev = mcNet(R, ref - 7, ref - 7);
       v.wowCur = mcNet(R, ref, ref);
@@ -91,7 +93,7 @@
   }
 
   // The tables. c = the numbers for each store; each column names the number it shows, or a growth between two.
-  function mcBlocks(c) {
+  function mcBlocksBase(c) {
     const ref = c.ref, ref7 = ref - 7, ly = shiftMonths(ref, -12), lm = shiftMonths(ref, -1);
     const lyDay = window.FB_INS.insSameWeekday(ref, 12), lmDay = window.FB_INS.insSameWeekday(ref, 1);
     const curKey = mcMonthKey(ref), prevKey = curKey - 1;
@@ -114,14 +116,14 @@
           { k: "momDay", h: "Same day MoM %", g: ["dayCur", "momDayPrev"] }
         ] },
       { id: "yoy", sheet: "YoY", title: "YoY (same day and YTD)",
-        sub: `Same day: the same weekday in the same week of the year before, ${dl(lyDay)} against ${dl(ref)}. YTD: 1 Jan to the same date, each year.`,
+        sub: `Same day: the same weekday in the same week of the year before, ${dl(lyDay)} against ${dl(ref)}. YTD: from ${dl(sCur)} to the same date, each year.`,
         main: "ytdTy", sort: "yoy",
         cols: [
           { k: "yoyLy", h: `Same day last year (${dl(lyDay)})` },
           { k: "yoyTy", h: `Same day (${dl(ref)})` },
           { k: "yoy", h: "YoY %", g: ["yoyTy", "yoyLy"] },
-          { k: "ytdLy", h: `YTD last year (1 Jan to ${dl(ly)})` },
-          { k: "ytdTy", h: `YTD (1 Jan to ${dl(ref)})` },
+          { k: "ytdLy", h: `YTD last year (${dl(sCur)} to ${dl(ly)})` },
+          { k: "ytdTy", h: `YTD (${dl(sCur)} to ${dl(ref)})` },
           { k: "ytdYoy", h: "YTD YoY %", g: ["ytdTy", "ytdLy"] }
         ] },
       { id: "wow", sheet: "WoW", title: "WoW (same weekday)", sub: `${dl(ref7)} against ${dl(ref)}.`, main: "wowCur", sort: "wow",
@@ -145,6 +147,21 @@
           { k: "ln", h: "Growth %", g: ["lnCur", "lnPrev"] }
         ] }
     ];
+  }
+
+  // Every table shows the growth metrics: WoW, L2W, same day MoM and same day YoY.
+  const MC_GROWTH = [
+    { k: "wow", h: "WoW %", g: ["wowCur", "wowPrev"] },
+    { k: "l2w", h: "L2W %", g: ["dayCur", "l2wPrev"] },
+    { k: "momDay", h: "Same day MoM %", g: ["dayCur", "momDayPrev"] },
+    { k: "yoy", h: "Same day YoY %", g: ["yoyTy", "yoyLy"] }
+  ];
+  function mcWithGrowth(b) {
+    const keys = new Set(b.cols.map(c => c.k));
+    return Object.assign({}, b, { cols: b.cols.concat(MC_GROWTH.filter(c => !keys.has(c.k))) });
+  }
+  function mcBlocks(c) {
+    return mcBlocksBase(c).map(mcWithGrowth);
   }
 
   // Totals for a set of stores. A growth total uses only the stores that have both figures.
@@ -224,7 +241,8 @@
     { h: "YTD YoY %", id: "yoy", k: "ytdYoy", g: true },
     { h: "WoW %", id: "wow", k: "wow", g: true },
     { h: "FTD %", id: "ftd", k: "ftd", g: true },
-    { h: "Late Night %", id: "late", k: "ln", g: true }
+    { h: "Late Night %", id: "late", k: "ln", g: true },
+    { h: "L2W %", id: "wow", k: "l2w", g: true }
   ];
   function mcSummary(c, blocks) {
     const grp = {};
