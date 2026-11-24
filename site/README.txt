@@ -1,45 +1,38 @@
-SALES: MORNING CALL SUB-TAB
+SALES > METRICS: SWIGGY AND ZOMATO FUNNEL AND ADS
 
 WHAT IT SHOWS
-  Sales > Morning Call. Region-wise, store-wise tables for the latest day of data:
-  - MoM (MTD): month to date (1st to the reference day) against the same days last month.
-    Shows the full last month as a reference, and the trend for the month.
-    Trend = month to date ÷ days elapsed × balance days + month to date.
-  - YoY (same day and YTD): the same day last year against the reference day, and year to date.
-  - WoW (same weekday): the reference day against the same weekday a week earlier.
-  - FTD vs Pre FTD: the reference day against the day before.
-  - Late Night sale (0–5 AM): needs the hourly data, which covers the last 14 business days.
-  Each table has a Region wise section (one row per region), then a Region + store section.
-  A Region wise summary at the top shows the key figure from each table, one row per region.
-  The Sales filters above the tables apply to every table.
-  Download Excel: a Summary sheet first, then one sheet per table, with the same two sections.
+  A "Metrics" sub-tab under Sales.
+  - Comparison A and comparison B, each a from and to date (defaults: the last 7 days, and the 7 days before).
+  - Filters: source (All, Swiggy, Zomato), brand, store type and region. They apply to the whole tab.
+  - A summary table: Menu Open, Orders, M2O%, C2O%, Clicks, Ad Orders, Organic%, In-Organic%, and the A vs B change.
+  - Three line charts, A solid and B dashed, drawn by day of the period (Day 1, Day 2 ...):
+      M2O% and C2O%;  Organic% and In-Organic%;  Clicks (left scale) and Ad Orders (right scale).
+  - A day-by-day table for comparison A and one for B, with Date, Menu Open, Orders, M2O%, C2O%, Clicks,
+    Ad Orders, Organic% and In-Organic%.
+
+CALCULATIONS (ratios come from the sums, never averaged)
+  Menu Open = Zomato menu_opens | Swiggy menu_sessions
+  Orders    = Zomato order_makes | Swiggy order_session  (funnel orders)
+  Cart      = Zomato cart_built  | Swiggy cart_session
+  M2O%      = Orders / Menu Open
+  C2O%      = Orders / Cart
+  Clicks    = ad clicks (Zomato clicks | Swiggy clicks)
+  Ad Orders = Zomato ad_orders | Swiggy ads_orders
+  In-Organic% = Ad Orders / Orders;  Organic% = 1 - In-Organic%
 
 FILES
-  site/morning.js       new, loaded after insights.js
-  site/index.html       adds one line: <script src="morning.js"></script> after insights.js
-  site/insights.js      needed by the Morning Call (the store data and filters)
-  site/campaign.js      unchanged
+  repo-root/build_metrics.py   builds data/metrics.json.gz from the four tabs (an xlsx file now; the Google Sheet with --gsheet)
+  site/metrics.js              the Metrics tab (loaded after productmix.js)
+  site/index.html              adds: <script src="metrics.js"></script> after productmix.js
+  tests/test_metrics.js        checks the tab against the raw figures
+  tests/make_metrics_expected.py   writes the test fixtures from the workbook (keep tests/fixtures/ out of git)
+
+TO CONNECT THE DATA (not yet done)
+  1. Share the Google Sheet with the service account used by the discount sheet writer.
+  2. In the sales workflow, after the data sync, run:
+       python build_metrics.py --gsheet <sheet id> --creds <service account json> --out data/metrics.json.gz
+  3. build_groups.py has to copy data/metrics.json.gz into each login's data folder, as for the other data.
+     The metrics have brand, region and store type but no store names. Decide whether each login sees all regions.
 
 DEPLOY
-  Upload site/morning.js and site/index.html next to the page, then hard-refresh.
-
-NOTES
-  The reference day is the latest day of data.
-  Late Night shows — for days outside the hourly data.
-
-SAME DAY (YoY and MoM)
-  Same day = the same weekday in the same week of the month. Weeks run Monday to Sunday, and week 1 is the
-  week that holds the 1st. Example: Thu 19 Nov 2026 (week 4) compares with Thu 20 Nov 2025 (last year) and
-  Thu 22 Oct 2026 (last month).
-  Used for: the Morning Call same-day MoM and YoY, and the MoM and YoY columns of the area manager, top stores
-  and daily/weekly tables. Month to date and YTD still compare calendar dates.
-  Files changed: site/morning.js and site/insights.js (both are in this zip).
-
-EXCEL COLOURS
-  Growth figures in the Excel file are green when up (or flat) and red when down, in the same colours as the dashboard.
-
-EXCEL LAYOUT
-  Sheets: "Region wise" (one sheet with every table side by side, each table's name above its columns,
-  All regions and then each region), then a "<table> Store" sheet for each table (each region with its stores).
-  Headers wrap, columns fit their figures, and the header and the first column stay in view.
-  Growth is green when up (or flat) and red when down.
+  Upload site/metrics.js and site/index.html next to the page, then hard-refresh.
