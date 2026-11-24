@@ -5,7 +5,8 @@
    The page's Sales filters apply. Download as Excel: one sheet per table.
    Loaded after insights.js. It wraps salesPeriodView() for the Morning Call tab only. */
 (function () {
-  const MC = { hourly: null, hourlyDays: null, hourlyLoading: false, hourlyError: null, last: null };
+  const MC = { hourly: null, hourlyDays: null, hourlyLoading: false, hourlyError: null, last: null, srcPick: null, regOpen: new Set() };
+  const chanOk = r => (window.FB_CHAN_OK ? window.FB_CHAN_OK(r) : true);
   const MC_LATE_FROM = 15, MC_LATE_TO = 19;   // hour 0 is 9 AM, so hours 15 to 19 are 0 to 5 AM
   const mcEsc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const mcOk = v => v !== null && v !== undefined && isFinite(v);
@@ -23,7 +24,7 @@
     if (!rows) return null;
     let t = 0, any = false;
     for (const r of rows) {
-      if (r[0] < from || r[0] > to || !salesPass(r)) continue;
+      if (r[0] < from || r[0] > to || !salesPass(r) || !chanOk(r) || (MC.srcPick && !MC.srcPick(r))) continue;
       t += r[7]; any = true;
     }
     return any ? t / 100 : null;
@@ -34,7 +35,7 @@
     const m = new Map();
     if (!MC.hourly) return m;
     for (const r of MC.hourly) {
-      if (!days.includes(r[0]) || r[7] < MC_LATE_FROM || r[7] > MC_LATE_TO || !salesPass(r)) continue;
+      if (!days.includes(r[0]) || r[7] < MC_LATE_FROM || r[7] > MC_LATE_TO || !salesPass(r) || !chanOk(r) || (MC.srcPick && !MC.srcPick(r))) continue;
       const k = r[1] + "|" + r[0];
       m.set(k, (m.get(k) || 0) + r[8]);
     }
@@ -98,7 +99,7 @@
     const lyDay = window.FB_INS.insSameWeekday(ref, 12), lmDay = window.FB_INS.insSameWeekday(ref, 1);
     const curKey = mcMonthKey(ref), prevKey = curKey - 1;
     const dl = d => toDate(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
-    const sCur = ref - (c.dom - 1), sPrev = monStart(prevKey);
+    const sCur = ref - (c.dom - 1), sPrev = monStart(prevKey), sLy = monStart(curKey - 12);
     const prevName = monLong(prevKey), curName = monLong(curKey);
     return [
       { id: "mom", sheet: "MoM MTD", title: "MoM (MTD)",
@@ -116,13 +117,13 @@
           { k: "momDay", h: "Same day MoM %", g: ["dayCur", "momDayPrev"] }
         ] },
       { id: "yoy", sheet: "YoY", title: "YoY (same day and YTD)",
-        sub: `Same day: the same weekday in the same week of the year before, ${dl(lyDay)} against ${dl(ref)}. YTD: from ${dl(sCur)} to the same date, each year.`,
+        sub: `Same day: the same weekday in the same week of the year before, ${dl(lyDay)} against ${dl(ref)}. YTD: ${dl(sLy)} to ${dl(ly)} last year, ${dl(sCur)} to ${dl(ref)} this year.`,
         main: "ytdTy", sort: "yoy",
         cols: [
           { k: "yoyLy", h: `Same day last year (${dl(lyDay)})` },
           { k: "yoyTy", h: `Same day (${dl(ref)})` },
           { k: "yoy", h: "YoY %", g: ["yoyTy", "yoyLy"] },
-          { k: "ytdLy", h: `YTD last year (${dl(sCur)} to ${dl(ly)})` },
+          { k: "ytdLy", h: `YTD last year (${dl(sLy)} to ${dl(ly)})` },
           { k: "ytdTy", h: `YTD (${dl(sCur)} to ${dl(ref)})` },
           { k: "ytdYoy", h: "YTD YoY %", g: ["ytdTy", "ytdLy"] }
         ] },
@@ -214,10 +215,48 @@
     return c.g ? `<td style="color:${mcC(v)}">${mcP(v)}</td>` : `<td>${mcRs(v)}</td>`;
   }
   // Region-wise: one row per region, with the region totals (no stores).
-  function mcRegionTable(block, g) {
+  // The sources shown under a region: the named ones, then everything else.
+  function mcSourceGroups() {
+    const named = ["In Store", "Swiggy", "Zomato", "Ownly"];
+    const idx = n => M.sources.indexOf(n);
+    const namedIdx = named.map(idx).filter(i => i >= 0);
+    const groups = named.map(n => ({ label: n, pick: r => idx(n) >= 0 && r[5] === idx(n) }));
+    groups.push({ label: "Others (rest of the sources)", pick: r => !namedIdx.includes(r[5]) });
+    return groups;
+  }
+  // Totals for each source, table and region: { source: { tableId: { region: totals } } }. "All regions" is included.
+  function mcSourceTotals(blocks) {
+    const out = {};
+    for (const g of mcSourceGroups()) {
+      MC.srcPick = g.pick;
+      let list;
+      try { list = mcCompute().list; } finally { MC.srcPick = null; }
+      out[g.label] = {};
+      for (const b of blocks) {
+        const grp = mcGroup(list, b);
+        const byRegion = { "All regions": grp.all };
+        for (const r of grp.groups) byRegion[r.name] = r.tot;
+        out[g.label][b.id] = byRegion;
+      }
+    }
+    return out;
+  }
+
+  // Region wise, for one table: All regions, then each region. Click a region to show its sources.
+  function mcRegionTable(block, g, srcT) {
     const head = `<tr><th>Region</th>${block.cols.map(c => `<th>${mcEsc(c.h)}</th>`).join("")}</tr>`;
-    const rows = [`<tr class="reg-total"><td>All regions</td>${block.cols.map(c => mcCell(c, g.all)).join("")}</tr>`]
-      .concat(g.groups.map(r => `<tr><td>${mcEsc(r.name)}</td>${block.cols.map(c => mcCell(c, r.tot)).join("")}</tr>`));
+    const rows = [`<tr class="reg-total"><td>All regions</td>${block.cols.map(c => mcCell(c, g.all)).join("")}</tr>`];
+    for (const r of g.groups) {
+      const open = MC.regOpen.has(r.name);
+      rows.push(`<tr class="ins-am"><td><button data-mc-region="${mcEsc(r.name)}">${open ? "▾" : "▸"} ${mcEsc(r.name)}</button></td>` +
+        `${block.cols.map(c => mcCell(c, r.tot)).join("")}</tr>`);
+      if (open && srcT) {
+        for (const label of Object.keys(srcT)) {
+          const tot = ((srcT[label][block.id] || {})[r.name]) || {};
+          rows.push(`<tr class="ins-st"><td>${mcEsc(label)}</td>${block.cols.map(c => mcCell(c, tot)).join("")}</tr>`);
+        }
+      }
+    }
     return `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${rows.join("")}</tbody></table></div>`;
   }
   // Region + store: each region row with its totals, and its stores underneath.
@@ -295,12 +334,13 @@
     const c = mcCompute();
     const blocks = mcBlocks(c);
     const summary = mcSummary(c, blocks);
+    const srcT = MC.regOpen.size ? mcSourceTotals(blocks) : null;
     MC.last = { c, blocks, summary };
     let late = "";
     if (!M.has_hourly) late = "The hourly file is not in the data, so Late Night shows —.";
     else if (MC.hourlyError) late = `Hourly data could not be loaded: ${mcEsc(MC.hourlyError)}`;
     else if (!MC.hourly) late = "Loading hourly data for Late Night.";
-    return `<section class="block"><h2>Morning Call: ${fmtLong(c.ref)}</h2>` +
+    return (window.FB_CHAN_BAR ? window.FB_CHAN_BAR() : "") + `<section class="block"><h2>Morning Call: ${fmtLong(c.ref)}</h2>` +
       `<p class="sub">Reference day: the latest day of data. The Sales filters above apply to every table.</p>` +
       `<button data-mc-xlsx="1" class="mc-btn">Download Excel</button>` +
       (late ? `<p class="muted">${late}</p>` : "") + `</section>` +
@@ -309,7 +349,7 @@
       blocks.map(b => {
         const g = mcGroup(c.list, b);
         return `<section class="block"><h2>${mcEsc(b.title)}</h2><p class="sub">${mcEsc(b.sub)}</p>` +
-          `<p class="sub"><b>Region wise</b></p>${mcRegionTable(b, g)}` +
+          `<p class="sub"><b>Region wise</b> <span class="muted">(click a region to see its sources)</span></p>${mcRegionTable(b, g, srcT)}` +
           `<p class="sub"><b>Region + store</b></p>${mcStoreTable(b, g)}</section>`;
       }).join("");
   }
@@ -452,7 +492,8 @@
   }
   // One Region wise sheet for every table: each table's columns side by side, with the table's name above them.
   // Rows: All regions, then each region (largest MTD first). A region a table does not hold shows —.
-  function mcRegionWiseSheet(c, blocks) {
+  // The Region wise sheet, with every table side by side. With sources, each region is followed by its sources.
+  function mcRegionWiseSheet(c, blocks, srcT) {
     const per = blocks.map(b => ({ b, g: mcGroup(c.list, b) }));
     const names = mcSummary(c, blocks).rows.map(r => r.name);
     const groupRow = [xtext("", 10)], headerRow = [xtext("Region", 17)], merges = [];
@@ -464,14 +505,25 @@
       for (const cc of b.cols) headerRow.push(xtext(cc.h, 10));
       col += b.cols.length;
     }
-    const body = names.map(name => {
+    const body = [];
+    for (const name of names) {
       const row = [xtext(name, 13)];
       for (const { b, g } of per) {
         const obj = name === "All regions" ? g.all : ((g.groups.find(x => x.name === name) || { tot: {} }).tot);
         for (const cc of b.cols) row.push(mcCellFor(obj[cc.k], "region", cc.g));
       }
-      return row;
-    });
+      body.push(row);
+      if (srcT) {
+        for (const label of Object.keys(srcT)) {
+          const r2 = [xtext("   " + label, 0)];
+          for (const { b } of per) {
+            const obj = ((srcT[label][b.id] || {})[name]) || {};
+            for (const cc of b.cols) r2.push(mcCellFor(obj[cc.k], "store", cc.g));
+          }
+          body.push(r2);
+        }
+      }
+    }
     const headers = headerRow.map(h => h.v);
     const widths = headers.map((h, ci) => {
       let w = ci === 0 ? h.length + 2 : 12;
@@ -480,8 +532,10 @@
     });
     const lines = Math.max(...headers.map((h, ci) => Math.ceil(h.length / Math.max(6, widths[ci] - 1))));
     return {
-      name: "Region wise",
-      rows: [[xtext("Morning Call: region wise, all tables", 11)], [xtext(`${fmtLong(c.ref)}. One row per region.`, 12)], [], groupRow, headerRow, ...body],
+      name: srcT ? "Region + source" : "Region wise",
+      rows: [[xtext(srcT ? "Morning Call: region + source, all tables" : "Morning Call: region wise, all tables", 11)],
+             [xtext(`${fmtLong(c.ref)}. ${srcT ? "Each region is followed by its sources." : "One row per region."}`, 12)],
+             [], groupRow, headerRow, ...body],
       widths, headerRow: 5, headerHeight: Math.max(30, 15 * lines + 6), freeze: true, merges
     };
   }
@@ -513,8 +567,10 @@
     return mcZip(files);
   }
   // One Region wise sheet for all tables, then a Store sheet for each table.
+  // The Region wise and Region + source sheets for all tables, then a Store sheet for each table.
   function mcWorkbook(c, blocks) {
-    const sheets = [mcRegionWiseSheet(c, blocks)];
+    const srcT = mcSourceTotals(blocks);
+    const sheets = [mcRegionWiseSheet(c, blocks, null), mcRegionWiseSheet(c, blocks, srcT)];
     for (const b of blocks) sheets.push(mcStoreSheet(b, mcGroup(c.list, b)));
     return mcXlsx(sheets);
   }
@@ -531,6 +587,13 @@
   }
 
   document.addEventListener("click", e => {
+    const rg = e.target.closest && e.target.closest("[data-mc-region]");
+    if (rg) {
+      const nm = rg.dataset.mcRegion;
+      if (MC.regOpen.has(nm)) MC.regOpen.delete(nm); else MC.regOpen.add(nm);
+      render();
+      return;
+    }
     const b = e.target.closest && e.target.closest("[data-mc-xlsx]");
     if (!b || !MC.last) return;
     mcDownload(mcWorkbook(MC.last.c, MC.last.blocks), `Morning_Call_${mcIso(MC.last.c.ref)}.xlsx`);
@@ -545,5 +608,5 @@
     return kind === "morning" ? morningView() : salesPeriodViewMc(kind);
   };
 
-  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcWorkbook, mcSummary, mcRegionWiseSheet, mcStoreSheet, mcLateMap, mcLoadHourly, morningView };
+  window.FB_MORNING = { MC, mcSourceTotals, mcSourceGroups, mcCompute, mcBlocks, mcGroup, mcTotalsOf, mcSheetRows, mcXlsx, mcWorkbook, mcSummary, mcRegionWiseSheet, mcStoreSheet, mcLateMap, mcLoadHourly, morningView };
 })();

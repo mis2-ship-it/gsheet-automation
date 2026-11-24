@@ -15,6 +15,20 @@
   const insRs = v => (v === null ? "—" : "₹" + num(v));
 
   // Every store file, loaded once: several at a time, so the wait is not one file after another.
+  // The channel chosen above the tables: all sources, Offline (In Store), or Online (every other source).
+  const SALES_CH = { value: "all" };
+  function chanOk(r) {
+    const v = SALES_CH.value;
+    if (v === "all") return true;
+    const off = M.sources.indexOf("In Store");
+    return v === "offline" ? r[5] === off : r[5] !== off;
+  }
+  function chanBar() {
+    const btn = (v, label) => `<button data-chan="${v}" aria-pressed="${SALES_CH.value === v}">${label}</button>`;
+    return `<div class="reg-filter chan-bar"><span class="muted">Channel:</span>${btn("all", "All sources")}` +
+      `${btn("offline", "Offline (In Store)")}${btn("online", "Online (other sources)")}</div>`;
+  }
+
   function insProgress() {
     const el = document.getElementById("ins-progress");
     if (el) el.textContent = `Loading store data: ${INS.done} of ${INS.total} stores.`;
@@ -83,7 +97,7 @@
   function insNet(rows, from, to, extra) {
     let t = 0, any = false;
     for (const r of rows) {
-      if (r[0] < from || r[0] > to || !salesPass(r)) continue;
+      if (r[0] < from || r[0] > to || !salesPass(r) || !chanOk(r)) continue;
       if (extra && !extra(r)) continue;
       t += r[7]; any = true;
     }
@@ -386,10 +400,16 @@
     } catch (err) {
       block = `<section class="block"><h2>Top and bottom stores</h2><p class="muted">This block could not be built: ${insEsc(err.message)}</p></section>`;
     }
-    return insPlace(insRemoveOldAm(base), block);
+    return chanBar() + insPlace(insRemoveOldAm(base), block);
   };
 
   document.addEventListener("click", e => {
+    const sc = e.target.closest && e.target.closest("[data-chan]");
+    if (sc) {
+      SALES_CH.value = sc.dataset.chan;
+      render();
+      return;
+    }
     const ch = e.target.closest && e.target.closest("[data-ins-channel]");
     if (ch) {
       INS.channel = ch.dataset.insChannel;
@@ -444,5 +464,8 @@
   })();
 
   // For checks in the browser console and in the tests.
+  window.FB_CHAN_OK = chanOk;
+  window.FB_CHAN_BAR = chanBar;
+  window.FB_SALES_CH = SALES_CH;
   window.FB_INS = { INS, insSameWeekday, insStores, insAmRows, REG, regBlock, insMtdWindows, insLoad, insKeys, insNet, insStores, insTopBottom, insAmRows, insDetail, insBlock, insOverlay, insRemoveOldAm, insPlace };
 })();
