@@ -57,7 +57,7 @@ DISC_LABELS = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-
 DISC_EDGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 PRODUCT_DAYS = 62
 DEFAULT_STORE_TYPE = "COCO"
-CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net"]
+CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net", "Day"]
 PMONTH_COLS = ["Month", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
 ITEM_HOUR_COLS = ["Date", "Hour", "Brand", "Region", "Source", "Session", "Label", "Item", "Category",
                   "Invoices", "Qty", "Gross", "Discount", "Net", "Lines"]
@@ -224,9 +224,10 @@ def build_category_tab(rows):
     r = products_only(clean_numbers(rows))
     r["invoiceNumber"] = r["invoiceNumber"].astype(str)
     r["Month"] = r["day"].str[:7]
+    r["Day"] = r["day"].str[:10]
     r["Channel"] = np.where(r["source"].str.strip().str.lower().isin(["in store", "in-store", "instore"]),
                             "Offline", "Online")
-    keys = ["Month", "brand", "region", "source", "Channel"]
+    keys = ["Month", "Day", "brand", "region", "source", "Channel"]
 
     def agg(frame, extra):
         return (frame.groupby(keys + extra)
