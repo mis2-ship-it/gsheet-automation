@@ -84,7 +84,7 @@ jobs:
 
       # The script's own checks run first, so a broken script fails before any API calls.
       - name: Check the script
-        run: python tests/test_cancel_sales.py
+        run: python test/test_cancel_sales.py
 
       - name: Pull the cancelled orders
         id: pull
