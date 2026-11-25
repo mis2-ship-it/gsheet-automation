@@ -20,15 +20,18 @@ Output in --out:
 """
 import argparse
 import csv
+import gzip
 import json
 import os
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 import pandas as pd
+import requests
 
-from sync_sales import RISTA, active_branches, get_json, load_maps, session_for_hour
+from sync_sales import RISTA, active_branches, headers, load_maps, session_for_hour
 
 CANCEL_STATUSES = ("voided", "cancelled")
 CLOSED = "closed"
@@ -79,14 +82,38 @@ def days_between(start, end):
     return [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((d1 - d0).days + 1)]
 
 
+def get_json(url, params=None, retries=3):
+    """One request. Retries only server errors (429 and 5xx), with a growing pause.
+    404 and 204 mean no orders for that branch and day, so it is an empty day, with no retry.
+    Other client errors (400, 401, 403) fail at once, since retrying cannot fix them."""
+    last = None
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, headers=headers(), params=params, timeout=30)
+        except requests.RequestException as e:
+            last = str(e)
+        else:
+            if r.status_code == 200:
+                return r.json()
+            if r.status_code in (404, 204):
+                return {"data": [], "lastKey": None}
+            if r.status_code == 429 or r.status_code >= 500:
+                last = f"HTTP {r.status_code}"
+            else:
+                raise RuntimeError(f"{url} {params}: HTTP {r.status_code}")
+        time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"{url} {params}: {last}")
+
+
 def fetch_branch_day(branch, day, endpoint):
-    """Every order for one branch and one day, following lastKey pages (the same paging as the sales sync)."""
-    rows, last_key = [], None
+    """Every order for one branch and one day, following lastKey pages. Returns (orders, requests made)."""
+    rows, last_key, pages = [], None, 0
     while True:
         params = {"branch": branch, "day": day}
         if last_key:
             params["lastKey"] = last_key
         js = get_json(f"{RISTA}{endpoint}", params=params)
+        pages += 1
         data = js.get("data", []) if isinstance(js, dict) else (js or [])
         if not data:
             break
@@ -94,27 +121,62 @@ def fetch_branch_day(branch, day, endpoint):
         last_key = js.get("lastKey") if isinstance(js, dict) else None
         if not last_key:
             break
-    return rows
+    return rows, pages
 
 
-def pull(days, branches, endpoint, workers):
-    """All orders for the days and branches, as raw records. Failed branch-days are returned as errors."""
+def checkpoint_path(raw_dir, branch, day):
+    return os.path.join(raw_dir, day, f"{branch}.json.gz")
+
+
+def pull(days, branches, endpoint, workers, raw_dir, fresh=False, progress_every=25):
+    """All orders for the days and branches, as raw records. Each branch-day is saved as it finishes,
+    so a stopped run can be started again and skips the branch-days it already has (unless fresh=True).
+    Returns (orders, errors, stats)."""
     raw, errors = [], []
+    stats = {"branch_days": 0, "from_saved": 0, "requests": 0, "empty": 0}
+    total = len(days) * len(branches)
+    started = time.time()
     jobs = {}
+
+    def job(branch, day):
+        path = checkpoint_path(raw_dir, branch, day)
+        if not fresh and os.path.exists(path):
+            with gzip.open(path, "rt", encoding="utf-8") as fh:
+                saved = json.load(fh)
+            return saved["rows"], saved["pages"], True
+        rows, pages = fetch_branch_day(branch, day, endpoint)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with gzip.open(path, "wt", encoding="utf-8") as fh:
+            json.dump({"rows": rows, "pages": pages}, fh, default=str)
+        return rows, pages, False
+
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for day in days:
             for b in branches:
-                jobs[ex.submit(fetch_branch_day, b, day, endpoint)] = (b, day)
+                jobs[ex.submit(job, b, day)] = (b, day)
         for fut in as_completed(jobs):
             b, day = jobs[fut]
+            stats["branch_days"] += 1
             try:
-                for r in fut.result():
+                rows, pages, from_saved = fut.result()
+                for r in rows:
                     r["_branch_pull"] = b
                     r["_day_pull"] = day
                     raw.append(r)
+                stats["requests"] += 0 if from_saved else pages
+                stats["from_saved"] += 1 if from_saved else 0
+                stats["empty"] += 1 if not rows else 0
             except Exception as e:
                 errors.append({"branch": b, "day": day, "error": str(e)[:200]})
-    return raw, errors
+            done = stats["branch_days"]
+            if done % progress_every == 0 or done == total:
+                elapsed = time.time() - started
+                per = elapsed / done
+                left = (total - done) * per
+                print(f"{done}/{total} branch-days | {elapsed / 60:.1f} min | requests {stats['requests']} | "
+                      f"saved {stats['from_saved']} | empty {stats['empty']} | errors {len(errors)} | "
+                      f"about {left / 60:.0f} min left", flush=True)
+    return raw, errors, stats
 
 
 def build_rows(raw, reasons, maps, status_field, reason_field, cancel_statuses):
@@ -165,7 +227,9 @@ def main(argv=None):
     ap.add_argument("--cancel-statuses", default="Voided,Cancelled")
     ap.add_argument("--reasons", default="data/cancel_reasons.csv")
     ap.add_argument("--branches", default="", help="comma list of branch codes, to test on a few branches")
-    ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--workers", type=int, default=8, help="parallel requests (raise only if the API allows it)")
+    ap.add_argument("--fresh", action="store_true", help="ignore saved branch-days and pull again")
+    ap.add_argument("--progress-every", type=int, default=25, help="print progress every N branch-days")
     a = ap.parse_args(argv)
 
     reasons = load_reasons(a.reasons)
@@ -176,8 +240,10 @@ def main(argv=None):
     os.makedirs(a.out, exist_ok=True)
     tag = f"{a.start}_{a.end}"
 
-    raw, errors = pull(days, branches, a.endpoint, a.workers)
-    print(f"pulled {len(raw)} orders for {len(days)} day(s) and {len(branches)} branch(es)")
+    raw_dir = os.path.join(a.out, "raw", a.endpoint.strip("/").replace("/", "_") or "root")
+    raw, errors, stats = pull(days, branches, a.endpoint, a.workers, raw_dir, a.fresh, a.progress_every)
+    print(f"pulled {len(raw)} orders for {len(days)} day(s) and {len(branches)} branch(es); "
+          f"{stats['requests']} requests, {stats['from_saved']} branch-days from saved files, {stats['empty']} empty")
     if errors:
         pd.DataFrame(errors).to_csv(os.path.join(a.out, "cancel_errors.csv"), index=False)
         print(f"{len(errors)} branch-day pulls failed, see cancel_errors.csv")
