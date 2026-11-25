@@ -782,6 +782,70 @@ function catMonthSpan_(key, anchor) {
   const endDay = Math.min(Number(String(anchor).slice(8, 10)), lastDay);
   return "1–" + endDay + " " + MONTH_NAMES_[p[1] - 1];
 }
+// The full month's span, for the last 3 months (not cut to the date chosen).
+function fullMonthSpan_(key) {
+  const p = key.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(p[0], p[1], 0)).getUTCDate();
+  return "1–" + lastDay + " " + MONTH_NAMES_[p[1] - 1];
+}
+// Product detail: the rows of Disc_Cat_Item (top 10 items per category, the rest as "(other items)").
+const CAT_TOP_ITEMS_ = 10;
+function loadCatItem_(read) {
+  const rd = read || readTab_;
+  let v;
+  try { v = rd("Disc_Cat_Item"); } catch (e) { return []; }
+  return v.map(x => ({
+    month: String(x[0]).slice(0, 7), day: dayText_(x[0]), brand: String(x[1]), region: String(x[2]),
+    source: String(x[3]), channel: String(x[4]), cat: String(x[5]), item: String(x[6]), inv: Number(x[7]) || 0,
+    qty: Number(x[8]) || 0, gross: Number(x[9]) || 0, disc: Number(x[10]) || 0, net: Number(x[11]) || 0
+  })).filter(r => r.month.length === 7);
+}
+// Adds each category's items to the category months: the same filters and the same months and cut as the
+// category table. Each item has its cells for all, offline and online.
+function attachCategoryItems_(cm, rows, p) {
+  const f = pFilter_(p);
+  const capDay = Number(String(p.anchor).slice(8, 10));
+  const keys = cm.months.map(m => m.key);
+  const idx = new Map(keys.map((k, i) => [k, i]));
+  const blank = () => ({ all: keys.map(() => ({ net: 0, orders: 0, qty: 0, gross: 0, disc: 0 })),
+                         offline: keys.map(() => ({ net: 0, orders: 0, qty: 0, gross: 0, disc: 0 })),
+                         online: keys.map(() => ({ net: 0, orders: 0, qty: 0, gross: 0, disc: 0 })) });
+  const add = (cell, r) => { cell.net += r.net; cell.orders += r.inv; cell.qty += r.qty; cell.gross += r.gross; cell.disc += r.disc; };
+  const byCat = new Map();
+  for (const r of rows) {
+    const i = idx.get(r.month);
+    if (i === undefined || !passP_(r, f)) continue;
+    if (i < 3 && r.day && Number(r.day.slice(8, 10)) > capDay) continue;
+    if (!byCat.has(r.cat)) byCat.set(r.cat, new Map());
+    const items = byCat.get(r.cat);
+    if (!items.has(r.item)) items.set(r.item, blank());
+    const cells = items.get(r.item);
+    const chKey = r.channel === "Offline" ? "offline" : "online";
+    add(cells.all[i], r);
+    add(cells[chKey][i], r);
+  }
+  const sumInto = (acc, cells) => {
+    for (const k of ["all", "offline", "online"]) {
+      keys.forEach((_, i) => {
+        acc[k][i].net += cells[k][i].net; acc[k][i].orders += cells[k][i].orders; acc[k][i].qty += cells[k][i].qty;
+        acc[k][i].gross += cells[k][i].gross; acc[k][i].disc += cells[k][i].disc;
+      });
+    }
+  };
+  for (const cat of cm.categories) {
+    const items = [...(byCat.get(cat.cat) || new Map()).entries()].map(([name, cells]) => ({ name, cells }));
+    items.sort((a, b) => b.cells.all[0].net - a.cells.all[0].net);
+    const top = items.slice(0, CAT_TOP_ITEMS_);
+    const rest = items.slice(CAT_TOP_ITEMS_);
+    if (rest.length) {
+      const other = blank();
+      for (const it of rest) sumInto(other, it.cells);
+      top.push({ name: "(other items)", cells: other });
+    }
+    cat.items = top;
+  }
+  return cm;
+}
 function loadCat_(read) {
   const rd = read || readTab_;
   return rd("Disc_Cat").map(v => ({
@@ -804,7 +868,7 @@ function computeCategoryMonths_(rows, p) {
   for (const r of rows) {
     const i = idx.get(r.month);
     if (i === undefined || !passP_(r, f)) continue;
-    if (r.day && Number(r.day.slice(8, 10)) > capDay) continue;   // the same day of the month as the date chosen
+    if (i < 3 && r.day && Number(r.day.slice(8, 10)) > capDay) continue;   // last month and last 2 months: same day; last 3 months: full month
     hasData[i] = true;
     const chKey = r.channel === "Offline" ? "offline" : "online";
     if (r.cat === ALL_CATEGORIES_) {
@@ -817,7 +881,7 @@ function computeCategoryMonths_(rows, p) {
   }
   const categories = [...cats.values()].sort((x, y) => y.cells.all[0].net - x.cells.all[0].net);
   return {
-    months: keys.map(k => ({ key: k, label: monthLabel_(k), span: catMonthSpan_(k, p.anchor) })),
+    months: keys.map((k, i) => ({ key: k, label: monthLabel_(k), span: i < 3 ? catMonthSpan_(k, p.anchor) : fullMonthSpan_(k) })),
     hasData: hasData, categories: categories, totals: totals
   };
 }
@@ -891,7 +955,7 @@ function getProductData(p) {
   const base = (p.kind === "monthly" || !p.kind)
     ? computeProductsMonthly_(loadProdMonth_(), p)
     : computeProducts_(loadProd_(), p);
-  base.categoryMonths = computeCategoryMonths_(loadCat_(), p);
+  base.categoryMonths = attachCategoryItems_(computeCategoryMonths_(loadCat_(), p), loadCatItem_(), p);
   return base;
 }
 // Analysis tab: the bands, and the category block for the same period (all orders, from Disc_Prod).

@@ -570,10 +570,23 @@ function renderCategoryTable() {
   var total = "<tr class='tot'><td class='l'>Total</td>" + cm.totals[ch].map(function (c) {
     return "<td>" + fmtCat(metric, catValue(c, metric)) + "</td>";
   }).join("") + "</tr>";
+  STATE.catOpen = STATE.catOpen || {};
+  var cellsHtml = function (arr) {
+    return arr.map(function (cell) { return "<td>" + fmtCat(metric, catValue(cell, metric)) + "</td>"; }).join("");
+  };
   var rows = cm.categories.map(function (c) {
-    return "<tr><td class='l'>" + esc(c.cat) + "</td>" + c.cells[ch].map(function (cell) {
-      return "<td>" + fmtCat(metric, catValue(cell, metric)) + "</td>";
-    }).join("") + "</tr>";
+    var hasItems = !!(c.items && c.items.length);
+    var open = hasItems && !!STATE.catOpen[c.cat];
+    var caret = hasItems ? (open ? "&#9662; " : "&#9656; ") : "";
+    var out = "<tr class='cat-row'" + (hasItems ? " data-cat-open='" + esc(c.cat) + "' style='cursor:pointer'" : "") +
+      "><td class='l'>" + caret + esc(c.cat) + "</td>" + cellsHtml(c.cells[ch]) + "</tr>";
+    if (open) {
+      out += c.items.map(function (it) {
+        return "<tr class='item-row' style='font-size:12px;opacity:.9'><td class='l' style='padding-left:22px'>" +
+          esc(it.name) + "</td>" + cellsHtml(it.cells[ch]) + "</tr>";
+      }).join("");
+    }
+    return out;
   }).join("");
   box.innerHTML = "<div class='scroll'><table><thead><tr>" + head + "</tr></thead><tbody>" + total + rows + "</tbody></table></div>";
 }
@@ -847,6 +860,14 @@ document.addEventListener("keydown", function (e) {
   if (e.key === "Escape" && STATE.dd) { STATE.dd = false; renderCodePicker(); }
 });
 document.addEventListener("click", function (e) {
+  var catRow = e.target.closest && e.target.closest("[data-cat-open]");
+  if (catRow) {
+    var catName = catRow.getAttribute("data-cat-open");
+    STATE.catOpen = STATE.catOpen || {};
+    STATE.catOpen[catName] = !STATE.catOpen[catName];
+    renderCategoryTable();
+    return;
+  }
   var el = e.target;
   var has = function (sel) { return el.closest ? el.closest(sel) : null; };
   var box = has("#codebox");
