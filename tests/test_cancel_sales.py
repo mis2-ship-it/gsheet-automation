@@ -48,7 +48,7 @@ MAPS = ({"B1": "COCO", "B2": "FOFO"}, {"B1": "KA", "B2": "TN"},
 
 
 def fake_get(url, params=None):
-    if url.endswith("/sale"):
+    if url.endswith("/sale") or url.endswith("/sales/page"):
         if params["branch"] == "B3":
             raise RuntimeError("HTTP 500")
         key = (params["branch"], params["day"], params.get("lastKey"))
