@@ -1,21 +1,29 @@
-METRICS: CLEAR LOAD ERRORS, AND LOADING THE FILE FROM YOUR COMPUTER
-
-WHY "Failed to fetch" APPEARED
-  The page asks the server for data/metrics.json.gz. The browser never got an answer, which happens when the
-  request is sent to the login page or the file is not published for this login. Metrics data is not published
-  yet, because the sales workflow does not copy it into the login data folders yet.
+MORNING CALL ON YESTERDAY, AND THE PRODUCT MIX AND METRICS LOAD ERRORS
 
 WHAT CHANGED
-  site/metrics.js          the error now says what happened and what to do
-  The Metrics tab has a "Load the metrics file" control, so the file can be loaded straight from your computer.
-  Use metrics.json.gz (produced by build_metrics.py from the workbook). Nothing needs publishing for this to work.
+  The Morning Call reference day is yesterday: the last completed business day (a business day starts at 05:00 IST).
+  Today's figures are still being collected, which is why most of the Morning Call was blank.
+  The product mix uses the same reference day.
+  The product mix shows the same clear message as Metrics, and has a "Load the product mix file" control.
+
+WHY "Failed to fetch" APPEARS (Metrics and Product mix)
+  The page asks the server for data/metrics.json.gz and data/product_mix.json.gz. Neither file is published for
+  this login yet, so the browser gets no response. Until the sales workflow publishes them, load the file on the page:
+    Metrics:      Sales > Metrics > "Load the metrics file" > choose metrics.json.gz
+    Product mix:  Sales > Morning Call > Product mix > "Load the product mix file" > choose product_mix.json.gz
+  The product mix file is made from data/product_rows.csv (the discount job's product rows), for example:
+    python build_product_mix.py --rows data/product_rows.csv --out product_mix.json.gz
 
 FILES
-  site/metrics.js             replaces the current metrics.js
-  tests/test_metrics_load.js  checks the two failure messages and loading a file
+  site/morning.js        replaces the current morning.js
+  site/productmix.js     replaces the current productmix.js
+  site/insights.js       unchanged (included so the tests run from one folder)
+  tests/                 test_mc_metrics.js, test_source.js, test_mc_refday.js, test_pm.js, test_pm_load.js
+  tests/fixtures/        synthetic data only
 
-TESTS
-  node tests/test_metrics_load.js   expected: 9 passed, 0 failed
-  The earlier test_metrics.js still passes (29 of 29).
-
-Only data files from your own workbook should be loaded; do not commit metrics.json.gz to git.
+RUN THE TESTS (from the repo root)
+  node tests/test_mc_metrics.js   30 passed
+  node tests/test_source.js       17 passed
+  node tests/test_mc_refday.js     6 passed
+  node tests/test_pm.js           11 passed
+  node tests/test_pm_load.js       6 passed

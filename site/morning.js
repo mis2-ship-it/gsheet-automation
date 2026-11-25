@@ -7,6 +7,7 @@
   const MC = { hourly: null, hourlyDays: null, hourlyLoading: false, hourlyError: null, last: null,
                srcPick: null, regOpen: new Set(), metric: "net" };
   const MC_LATE_FROM = 15, MC_LATE_TO = 19;   // hour 0 is 9 AM, so hours 15 to 19 are 0 to 5 AM
+  const MC_EPOCH = Date.UTC(2025, 0, 1);
   // The numbers each row carries: net sales (₹), gross (₹), discount (₹) and orders.
   const MC_VALUE_KEYS = ["octFull", "octSame", "novMtd", "trend", "dayCur", "momDayPrev", "yoyLy", "yoyTy",
                          "ytdLy", "ytdTy", "wowPrev", "wowCur", "l2wPrev", "ftdPre", "ftdCur", "lnPrev", "lnCur"];
@@ -30,6 +31,22 @@
   const mcIso = d => toDate(d).toISOString().slice(0, 10);
   const isGrowth = c => !!(MC_GROWTH_PAIRS[c.k] || c.g);
   const metricName = m => (MC_METRICS.find(x => x[0] === m) || MC_METRICS[0])[1];
+
+  // The reference day is yesterday: the last completed business day (a business day starts at 05:00 IST),
+  // and never after the last day of data. window.FB_MC_REF (a day number) and window.FB_MC_NOW (a date) are for tests.
+  function mcRefDay() {
+    if (typeof window.FB_MC_REF === "number") return window.FB_MC_REF;
+    const now = window.FB_MC_NOW ? new Date(window.FB_MC_NOW) : new Date();
+    const parts = {};
+    for (const p of new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit",
+                                                      day: "2-digit", hour: "2-digit", hour12: false }).formatToParts(now)) {
+      parts[p.type] = p.value;
+    }
+    let today = Date.UTC(+parts.year, +parts.month - 1, +parts.day);
+    if (+parts.hour % 24 < 5) today -= 86400000;     // before 05:00 it is still the previous business day
+    const todayIdx = Math.round((today - MC_EPOCH) / 86400000);
+    return Math.min(M.last_day, todayIdx - 1);
+  }
 
   // ---- numbers: a record is { n, g, d, o } (net, gross and discount in ₹, orders as a count), or null ----
   function mcSumRecs(recs) {
@@ -126,7 +143,7 @@
 
   // Every number the tables need, for each store, on the reference day.
   function mcCompute() {
-    const ref = M.last_day;
+    const ref = mcRefDay();
     const curKey = mcMonthKey(ref), prevKey = curKey - 1;
     const dom = mcDom(ref), dim = mcDim(ref), balance = dim - dom;
     const ly = shiftMonths(ref, -12), lm = shiftMonths(ref, -1);
@@ -411,7 +428,7 @@
     const chan = window.FB_CHAN_BAR ? window.FB_CHAN_BAR() : "";
     return chan + mcMetricBar() +
       `<section class="block"><h2>Morning Call: ${fmtLong(c.ref)}</h2>` +
-      `<p class="sub">Reference day: the latest day of data. The Sales filters, the channel above and the metric above apply to every table. Showing: ${metricName(MC.metric)}.</p>` +
+      `<p class="sub">Reference day: yesterday, the last completed business day. The Sales filters, the channel above and the metric above apply to every table. Showing: ${metricName(MC.metric)}.</p>` +
       `<button data-mc-xlsx="1" class="mc-btn">Download Excel</button>` +
       (late ? `<p class="muted">${late}</p>` : "") + `</section>` +
       `<section class="block"><h2>Region wise summary</h2>` +
@@ -726,6 +743,7 @@
     return kind === "morning" ? morningView() : salesPeriodViewMc(kind);
   };
 
-  window.FB_MORNING = { MC, mcCompute, mcBlocks, mcGroup, mcTotals, mcCellVal, mcVal, mcGrowth, mcSourceTotals, mcSourceGroups,
+  window.FB_MC_REF_DAY = () => mcRefDay();
+  window.FB_MORNING = { MC, mcRefDay, mcCompute, mcBlocks, mcGroup, mcTotals, mcCellVal, mcVal, mcGrowth, mcSourceTotals, mcSourceGroups,
                         mcSummary, mcSheetRows, mcXlsx, mcWorkbook, mcAmGroups, mcLateMap, mcLoadHourly: mcLoadHourlyOnce, morningView };
 })();

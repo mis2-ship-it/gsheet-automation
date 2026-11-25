@@ -15,16 +15,58 @@
   const pmRs = paise => (pmOk(paise) ? "₹" + num(paise / 100) : "—");
   const PM_EPOCH = Date.UTC(2025, 0, 1);
 
+  // Says why the file could not be loaded, in terms the user can act on.
+  function pmErrorText(err) {
+    const msg = String((err && err.message) || err || "");
+    if (/Failed to fetch|NetworkError|Load failed|TypeError/i.test(msg))
+      return "The browser could not reach data/product_mix.json.gz. The file is not published for this login yet, or the login session has expired. Reload the page, or load the file below.";
+    if (/\(404\)/.test(msg)) return "data/product_mix.json.gz is not on the server yet. Load the file below.";
+    return "Product mix could not be loaded (" + msg + "). Load the file below.";
+  }
+  // Sets the data, after checking it is product mix data.
+  function pmUse(d) {
+    if (!d || !Array.isArray(d.rows) || !Array.isArray(d.categories) || !d.ref)
+      throw new Error("this is not a product mix file (product_mix.json.gz from build_product_mix.py)");
+    PM.data = d;
+    PM.error = null;
+  }
+  // Reads a file chosen on the page: gzip (.gz) or plain JSON.
+  async function pmParse(buf, name) {
+    let text;
+    if (/\.gz$/i.test(name || "")) {
+      const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+      text = await new Response(stream).text();
+    } else {
+      text = new TextDecoder().decode(buf);
+    }
+    return JSON.parse(text);
+  }
   async function pmLoad() {
     if (PM.data || PM.loading) return;
     PM.loading = true;
     try {
-      PM.data = await loadGz("data/product_mix.json.gz");
+      pmUse(await loadGz("data/product_mix.json.gz"));
     } catch (err) {
-      PM.error = err.message;
+      PM.error = pmErrorText(err);
     }
     PM.loading = false;
     render();
+  }
+  async function pmPickFile(file) {
+    if (!file) return;
+    PM.loading = true;
+    PM.error = null;
+    try {
+      pmUse(await pmParse(await file.arrayBuffer(), file.name));
+    } catch (err) {
+      PM.error = "That file could not be read as product mix data: " + err.message;
+    }
+    PM.loading = false;
+    render();
+  }
+  function pmUploadControl() {
+    return `<label class="mt-f"><span class="muted">Load the product mix file (product_mix.json.gz)</span>` +
+      `<input type="file" data-pm-file="1" accept=".gz,.json,application/gzip,application/json"></label>`;
   }
 
   // Does a product row pass the Sales filters and the channel bar? Rows are matched by name.
@@ -43,7 +85,8 @@
   // Net sales by category for the reference day and the same weekday a week earlier.
   function pmCompute() {
     const d = PM.data;
-    const refDay = Math.round((Date.parse(d.ref + "T00:00:00Z") - PM_EPOCH) / 86400000);
+    // The Morning Call's reference day (yesterday), when the page has it; otherwise the latest day in the file.
+    const refDay = window.FB_MC_REF_DAY ? window.FB_MC_REF_DAY() : Math.round((Date.parse(d.ref + "T00:00:00Z") - PM_EPOCH) / 86400000);
     const prevDay = refDay - 7;
     const n = d.categories.length;
     const zero = () => d.categories.map(() => ({ net: 0, gross: 0, disc: 0, qty: 0, orders: 0 }));
@@ -70,8 +113,8 @@
     if (!PM.data) {
       if (!PM.error) pmLoad();
       return `<section class="block"><h2>Product mix: week on week</h2>` +
-        (PM.error ? `<p class="muted">Product mix data could not be loaded: ${pmEsc(PM.error)}</p>`
-                  : `<p class="muted">Loading the product mix.</p>`) + `</section>`;
+        (PM.error ? `<p class="muted">${pmEsc(PM.error)}</p>` : `<p class="muted">Loading the product mix.</p>`) +
+        `<div class="mt-bar">${pmUploadControl()}</div></section>`;
     }
     const c = pmCompute();
     const rows = c.rows.map(x => `<tr><td>${pmEsc(x.name)}</td><td>${pmRs(x.cur)}</td>` +
@@ -85,7 +128,8 @@
     return `<section class="block"><h2>Product mix: week on week</h2>` +
       `<p class="sub">Category sales for ${pmEsc(fmtDay(c.refDay))} against the same weekday a week earlier. Mix = the category's share of the total. ` +
       `The Sales filters and the channel bar above apply.</p>` +
-      `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${total}${rows}</tbody></table></div></section>`;
+      `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${total}${rows}</tbody></table></div>` +
+      `<div class="mt-bar">${pmUploadControl()}</div></section>`;
   }
 
   // Shown on the Morning Call only, under the other tables.
@@ -96,5 +140,10 @@
     return base + pmBlock();
   };
 
-  window.FB_PM = { PM, pmCompute, pmPass };
+  document.addEventListener("change", e => {
+    const el = e.target && e.target.dataset ? e.target : null;
+    if (el && el.dataset.pmFile) pmPickFile(el.files && el.files[0]);
+  });
+
+  window.FB_PM = { PM, pmCompute, pmPass, pmParse, pmUse, pmErrorText };
 })();
