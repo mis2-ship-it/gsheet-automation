@@ -25,7 +25,7 @@ const mondayOf = d => d - ((toDate(d).getUTCDay() + 6) % 7);
 const shiftMonths = (d, n) => { const t = toDate(d); let y = t.getUTCFullYear(), m = t.getUTCMonth() + n; const dom = t.getUTCDate(); y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; const dim = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return dayIdx(y, m + 1, Math.min(dom, dim)); };
 const windowOf = (kind, k) => (kind === 'daily' ? [k, k] : kind === 'weekly' ? [k, k + 6] : [monStart(k), monEnd(k)]);
 const OLD = '<section class="block"><h2>Overall</h2><p>o</p></section><section class="block"><h2>By session</h2><p>s</p></section>';
-const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout, TextEncoder: util.TextEncoder,
+const ctx = { FB_MC_REF: 682, console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout, TextEncoder: util.TextEncoder,
   M: { last_day: 682, sources: D.sources, brands: ['Frozen Bottle', 'Madno'], ams: ['Unassigned', 'Akash', 'Ravi'],
        stores: [0, 1, 2, 3].map(i => ({ i, name: 'Store ' + i, a: { 0: 1, 1: 1, 2: 0, 3: 2 }[i], region: i === 2 ? 'TN' : 'KA', brands: [i === 2 || i === 3 ? 1 : 0] })) },
   S: { store: 'all', type: 'all', brand: 'all', region: 'all', source: 'all', session: 'all' },

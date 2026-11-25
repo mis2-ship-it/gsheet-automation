@@ -1,11 +1,15 @@
 const fs = require('fs'), vm = require('vm'), zlib = require('zlib');
+const path = require('path');
+const SITE = path.join(__dirname, '..', 'site');
+const FIX = path.join(__dirname, 'fixtures');
+
 let pass = 0, fail = 0;
 const check = (n, c, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (x ? '  [' + x + ']' : '')); };
-const PMD = JSON.parse(zlib.gunzipSync(fs.readFileSync('/tmp/pm/product_mix_test.json.gz')).toString('utf8'));
-const E = JSON.parse(fs.readFileSync('/tmp/pm/pm_expected.json', 'utf8'));
+const PMD = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FIX, 'product_mix_test.json.gz'))).toString('utf8'));
+const E = JSON.parse(fs.readFileSync(path.join(FIX, 'pm_expected.json'), 'utf8'));
 const EPOCH_MS = Date.UTC(2025, 0, 1);
 const fmtDay = d => new Date(EPOCH_MS + d * 86400000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout,
+const ctx = { document: { addEventListener() {} }, Blob, Response, DecompressionStream, TextDecoder, TextEncoder, console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout,
   M: { brands: ['Madno', 'Frozen Bottle'], regions: ['KA', 'TN'], sources: ['In Store', 'Swiggy', 'Zomato', 'Ownly', 'Dunzo'] },
   S: { store: 'all', type: 'all', brand: 'all', region: 'all', source: 'all', session: 'all' },
   num: n => Math.round(n).toLocaleString('en-IN'), fmtDay,
@@ -14,7 +18,7 @@ const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date
   salesPeriodView: k => 'BASE:' + k, setPeriodBar() {} };
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('/tmp/pm/productmix.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(path.join(SITE, 'productmix.js'), 'utf8'), ctx);
 const run = s => vm.runInContext(s, ctx);
 (async () => {
   const first = run("salesPeriodView('morning')");
