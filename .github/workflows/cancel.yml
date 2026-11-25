@@ -35,6 +35,16 @@ on:
         default: "status"
         required: false
         type: string
+      workers:
+        description: "Parallel requests (raise only if the API allows it)"
+        default: "8"
+        required: false
+        type: string
+      fresh:
+        description: "Ignore saved branch-days and pull again"
+        default: false
+        required: false
+        type: boolean
 
 permissions:
   contents: read
@@ -58,6 +68,8 @@ jobs:
       ENDPOINT: ${{ inputs.endpoint }}
       REASON_FIELD: ${{ inputs.reason_field }}
       STATUS_FIELD: ${{ inputs.status_field }}
+      WORKERS: ${{ inputs.workers }}
+      FRESH: ${{ inputs.fresh }}
     steps:
       - uses: actions/checkout@v4
 
@@ -84,15 +96,35 @@ jobs:
 
       # The script's own checks run first, so a broken script fails before any API calls.
       - name: Check the script
-        run: python tests/test_cancel_sales.py
+        run: |
+          python tests/test_cancel_sales.py
+          python tests/test_cancel_speed.py
+
+      # Branch-days already pulled by an earlier run are kept in the cache, so a run that stops can carry on.
+      - name: Restore the saved branch-days
+        uses: actions/cache/restore@v4
+        with:
+          path: data/cancel/raw
+          key: cancel-raw-${{ github.run_id }}
+          restore-keys: |
+            cancel-raw-
 
       - name: Pull the cancelled orders
         id: pull
         run: |
           ARGS=(--from "$FROM_DAY" --to "$TO_DAY" --out data/cancel
-                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "$STATUS_FIELD")
+                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "$STATUS_FIELD"
+                --workers "$WORKERS")
           if [ -n "$BRANCHES" ]; then ARGS+=(--branches "$BRANCHES"); fi
+          if [ "$FRESH" = "true" ]; then ARGS+=(--fresh); fi
           python cancel_sales.py "${ARGS[@]}"
+
+      - name: Save the branch-days for the next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/cancel/raw
+          key: cancel-raw-${{ github.run_id }}
 
       # The first lines of the results go to the job log, so the counts are visible without downloading.
       - name: Show the summary
@@ -114,6 +146,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cancel-${{ inputs.from }}-to-${{ inputs.to }}
-          path: data/cancel/
+          path: |
+            data/cancel/
+            !data/cancel/raw/
           retention-days: 30
           if-no-files-found: warn
