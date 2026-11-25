@@ -88,8 +88,11 @@ print(f"📅 pMTD Range: {pmtd_start.strftime('%Y-%m-%d')} to {pmtd_end.strftime
 # =========================================================
 try:
     help_ws = spreadsheet.worksheet("Help Sheet")
-    help_df = pd.DataFrame(help_ws.get_all_records())
-    help_df.columns = help_df.columns.str.strip()
+    all_rows = help_ws.get_all_values()
+    
+    # Extract only Columns A:C (Store table) so blank columns D & E don't cause duplicate header errors
+    store_rows = [row[:3] for row in all_rows if len(row) >= 3 and any(cell.strip() for cell in row[:3])]
+    help_df = pd.DataFrame(store_rows[1:], columns=[h.strip() for h in store_rows[0]])
     
     branch_col = None
     for col in help_df.columns:
@@ -100,7 +103,10 @@ try:
     if not branch_col:
         branch_col = help_df.columns[0]
         
-    valid_branches = help_df[branch_col].dropna().astype(str).str.strip().unique().tolist()
+    valid_branches = [
+        b.strip() for b in help_df[branch_col].dropna().astype(str).unique().tolist()
+        if b.strip() and b.strip().lower() != "branchcode"
+    ]
     print(f"✅ Loaded {len(valid_branches)} store branch codes from Help Sheet.")
 except Exception as e:
     print(f"❌ Error loading Help Sheet: {e}")
