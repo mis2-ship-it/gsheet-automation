@@ -19,19 +19,61 @@
   const mtChg = (a, b) => (a === null || b === null || !b || !isFinite(a) || !isFinite(b) ? null : (a / b - 1) * 100);
   const mtPctChg = v => (v === null ? "—" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(1) + "%");
 
+  // Says why the file could not be loaded, in terms the user can act on.
+  function mtErrorText(err) {
+    const msg = String((err && err.message) || err || "");
+    if (/Failed to fetch|NetworkError|Load failed|TypeError/i.test(msg))
+      return "The browser could not reach data/metrics.json.gz. The file is not published for this login yet, or the login session has expired. Reload the page, or load the file below.";
+    if (/\(404\)/.test(msg)) return "data/metrics.json.gz is not on the server yet. Load the file below.";
+    return "Metrics could not be loaded (" + msg + "). Load the file below.";
+  }
+  // Sets the data and the default comparison periods (A = the last 7 days, B = the 7 days before).
+  function mtUse(d) {
+    if (!d || !Array.isArray(d.rows) || !Array.isArray(d.sources) || !d.rows.length)
+      throw new Error("this is not a metrics file (metrics.json.gz from build_metrics.py)");
+    MT.data = d;
+    MT.error = null;
+    const last = Math.max(...d.rows.map(r => r[0]));
+    MT.a = { from: last - 6, to: last };
+    MT.b = { from: last - 13, to: last - 7 };
+  }
+  // Reads a file chosen on the page: gzip (.gz) or plain JSON.
+  async function mtParse(buf, name) {
+    let text;
+    if (/\.gz$/i.test(name || "")) {
+      const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"));
+      text = await new Response(stream).text();
+    } else {
+      text = new TextDecoder().decode(buf);
+    }
+    return JSON.parse(text);
+  }
   async function mtLoad() {
     if (MT.data || MT.loading) return;
     MT.loading = true;
     try {
-      MT.data = await loadGz("data/metrics.json.gz");
-      const last = Math.max(...MT.data.rows.map(r => r[0]));
-      MT.a = { from: last - 6, to: last };
-      MT.b = { from: last - 13, to: last - 7 };
+      mtUse(await loadGz("data/metrics.json.gz"));
     } catch (err) {
-      MT.error = err.message;
+      MT.error = mtErrorText(err);
     }
     MT.loading = false;
     render();
+  }
+  async function mtPickFile(file) {
+    if (!file) return;
+    MT.loading = true;
+    MT.error = null;
+    try {
+      mtUse(await mtParse(await file.arrayBuffer(), file.name));
+    } catch (err) {
+      MT.error = "That file could not be read as metrics data: " + err.message;
+    }
+    MT.loading = false;
+    render();
+  }
+  function mtUploadControl() {
+    return `<label class="mt-f"><span class="muted">Load the metrics file (metrics.json.gz)</span>` +
+      `<input type="file" data-mt-file="1" accept=".gz,.json,application/gzip,application/json"></label>`;
   }
 
   // Does a row pass the filters? Row: [day, source, brand, region, storeType, menuOpen, cart, orders, clicks, adOrders].
@@ -176,14 +218,16 @@
     return `<div class="mt-bar"><div class="mt-row"><b>Comparison A</b>${date("a.from", "From", MT.a.from)}${date("a.to", "To", MT.a.to)}` +
       `<b>Comparison B</b>${date("b.from", "From", MT.b.from)}${date("b.to", "To", MT.b.to)}</div>` +
       `<div class="mt-row">${sel("source", "Source", ["Swiggy", "Zomato"])}${sel("brand", "Brand", d.brands)}` +
-      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}</div></div>`;
+      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}</div>` +
+      `<div class="mt-row">${mtUploadControl()}</div></div>`;
   }
 
   function metricsView() {
     setPeriodBar("metrics", null, null);
     if (!MT.data) {
-      if (!MT.error) mtLoad();
-      return `<section class="block"><h2>Metrics</h2>` + (MT.error ? `<p class="muted">Metrics could not be loaded: ${mtEsc(MT.error)}</p>` : `<p class="muted">Loading the metrics.</p>`) + `</section>`;
+      if (!MT.error && !MT.loading) mtLoad();
+      const note = MT.error ? `<p class="muted">${mtEsc(MT.error)}</p>` : `<p class="muted">Loading the metrics.</p>`;
+      return `<section class="block"><h2>Metrics</h2>${note}<div class="mt-bar">${mtUploadControl()}</div></section>`;
     }
     const sum = mtSummary();
     return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters.</p>${mtFilters()}</section>` +
@@ -195,6 +239,7 @@
   // Filters and dates change the page.
   document.addEventListener("change", e => {
     const el = e.target && e.target.dataset ? e.target : null;
+    if (el && el.dataset.mtFile) { mtPickFile(el.files && el.files[0]); return; }
     if (!el || !el.dataset.mt) return;
     const k = el.dataset.mt;
     if (k.indexOf(".") > 0) {
@@ -230,5 +275,5 @@
     SUBS.sales.push(["metrics", "Metrics"]);
   }
 
-  window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad };
+  window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad, mtUse, mtParse, mtErrorText };
 })();
