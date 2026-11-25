@@ -57,6 +57,44 @@ DISC_LABELS = ["0%", "1%-10%", "10%-20%", "20%-30%", "30%-40%", "40%-50%", "50%-
 DISC_EDGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 PRODUCT_DAYS = 62
 DEFAULT_STORE_TYPE = "COCO"
+CAT_ITEM_COLS = ["Date", "Brand", "Region", "Source", "Channel", "Category", "Item",
+                 "Invoices", "Qty", "Gross", "Discount", "Net"]
+TOP_ITEMS = 10                     # product rows under each category: the top items by net sales, the rest together
+OTHER_ITEMS = "(other items)"
+CAT_ITEM_MONTHS = 4                # the last four calendar months, as the category table
+
+
+def build_cat_item_tab(rows):
+    """Product detail under each category: one row per day, brand, region, source, channel, category and item.
+    The top TOP_ITEMS items of each category (by net sales over the months kept) are named; the rest are
+    grouped as OTHER_ITEMS, so the item rows add up to the category totals."""
+    if rows is None or rows.empty:
+        return pd.DataFrame(columns=CAT_ITEM_COLS)
+    r = products_only(clean_numbers(rows)).copy()
+    months = sorted(r["day"].astype(str).str[:7].unique())[-CAT_ITEM_MONTHS:]
+    r = r[r["day"].astype(str).str[:7].isin(months)].copy()
+    if r.empty:
+        return pd.DataFrame(columns=CAT_ITEM_COLS)
+    r["day"] = r["day"].astype(str).str[:10]
+    r["Channel"] = np.where(r["source"].str.strip().str.lower().isin(["in store", "in-store", "instore"]),
+                            "Offline", "Online")
+    by_item = r.groupby(["category", "item"], as_index=False)["net"].sum()
+    by_item = by_item.sort_values(["category", "net"], ascending=[True, False])
+    by_item["rank"] = by_item.groupby("category").cumcount() + 1
+    top = by_item[by_item["rank"] <= TOP_ITEMS][["category", "item"]].assign(keep=1)
+    r = r.merge(top, on=["category", "item"], how="left")
+    r["Item"] = r["item"].where(r["keep"].notna(), OTHER_ITEMS)
+    out = (r.groupby(["day", "brand", "region", "source", "Channel", "category", "Item"], as_index=False)
+             .agg(Invoices=("invoiceNumber", "nunique"), Qty=("qty", "sum"), Gross=("gross", "sum"),
+                  Discount=("disc", "sum"), Net=("net", "sum")))
+    out = out.rename(columns={"day": "Date", "brand": "Brand", "region": "Region", "source": "Source",
+                              "category": "Category"})
+    for c in ["Qty", "Gross", "Discount", "Net"]:
+        out[c] = out[c].astype(float).round(2)
+    out["Invoices"] = out["Invoices"].astype(int)
+    return out[CAT_ITEM_COLS]
+
+
 CAT_COLS = ["Month", "Brand", "Region", "Source", "Channel", "Category", "Orders", "Qty", "Gross", "Discount", "Net", "Day"]
 PMONTH_COLS = ["Month", "Brand", "Region", "Source", "Discounted", "Category", "Item", "Orders", "Qty", "Gross", "Discount", "Net"]
 ITEM_HOUR_COLS = ["Date", "Hour", "Brand", "Region", "Source", "Session", "Label", "Item", "Category",
@@ -563,10 +601,12 @@ def main():
     print(f"{len(lab)} label rows, {len(itm)} item rows, days {lab['Date'].min()} to {lab['Date'].max()}")
     print(f"product tabs (last {args.product_days} days): bucket {len(bucket)}, product {len(prod)}, "
           f"product by bucket {len(pbucket)} rows")
+    cat_item_tab = build_cat_item_tab(product_rows)
     total_cells = (len(lab) * len(LABEL_COLS) + len(itm) * len(ITEM_COLS) + len(hour) * len(HOUR_COLS)
                    + len(bucket) * len(BUCKET_COLS) + len(prod) * len(PROD_COLS) + len(pbucket) * len(PBUCKET_COLS)
                    + len(recon_tab) * len(RECON_NAMES) + len(cat_tab) * len(CAT_COLS)
-                   + len(prod_month_tab) * len(PMONTH_COLS) + len(item_hour_tab) * len(ITEM_HOUR_COLS))
+                   + len(prod_month_tab) * len(PMONTH_COLS) + len(item_hour_tab) * len(ITEM_HOUR_COLS)
+                   + len(cat_item_tab) * len(CAT_ITEM_COLS))
     print(f"cells written: about {total_cells:,} of the Google Sheets limit of 10,000,000")
     if total_cells > 8_000_000:
         print("WARNING: close to the Google Sheets cell limit. Lower --product-days or --keep-days.")
@@ -575,6 +615,7 @@ def main():
     tabs.append(("Disc_Cat", cat_tab))
     tabs.append(("Disc_Prod_Month", prod_month_tab))
     tabs.append(("Disc_Item_Hour", item_hour_tab))
+    tabs.append(("Disc_Cat_Item", cat_item_tab))
     if recon_rows is not None:
         tabs.append(("Disc_Recon", recon_tab))
     write_sheet(tabs)
