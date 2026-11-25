@@ -1,38 +1,24 @@
-SALES > METRICS: SWIGGY AND ZOMATO FUNNEL AND ADS
+MORNING CALL: STORES BY AREA MANAGER, GROWTH METRIC FILTER, EXCEL GROUPING
 
-WHAT IT SHOWS
-  A "Metrics" sub-tab under Sales.
-  - Comparison A and comparison B, each a from and to date (defaults: the last 7 days, and the 7 days before).
-  - Filters: source (All, Swiggy, Zomato), brand, store type and region. They apply to the whole tab.
-  - A summary table: Menu Open, Orders, M2O%, C2O%, Clicks, Ad Orders, Organic%, In-Organic%, and the A vs B change.
-  - Three line charts, A solid and B dashed, drawn by day of the period (Day 1, Day 2 ...):
-      M2O% and C2O%;  Organic% and In-Organic%;  Clicks (left scale) and Ad Orders (right scale).
-  - A day-by-day table for comparison A and one for B, with Date, Menu Open, Orders, M2O%, C2O%, Clicks,
-    Ad Orders, Organic% and In-Organic%.
+WHAT CHANGED (Morning Call only)
+  Stores by area manager: each area manager's row, with its stores listed underneath it on the page.
+  In Excel the stores are grouped under the manager and collapsed, so the + expands them.
+  Growth metric filter (Net Sales, Dis %, Orders, AOV) above the tables. It changes every Morning Call
+  table on the page and the Excel file (the Excel file shows the metric selected when you download).
+  Dis % growth is in points and a fall in discount is shown in green. Growth headers say (pts) in Dis % mode.
+  The channel bar (All sources, Offline, Online) sits at the top, as before.
 
-CALCULATIONS (ratios come from the sums, never averaged)
-  Menu Open = Zomato menu_opens | Swiggy menu_sessions
-  Orders    = Zomato order_makes | Swiggy order_session  (funnel orders)
-  Cart      = Zomato cart_built  | Swiggy cart_session
-  M2O%      = Orders / Menu Open
-  C2O%      = Orders / Cart
-  Clicks    = ad clicks (Zomato clicks | Swiggy clicks)
-  Ad Orders = Zomato ad_orders | Swiggy ads_orders
-  In-Organic% = Ad Orders / Orders;  Organic% = 1 - In-Organic%
+FILES (replace or add in the repo)
+  site/morning.js          replaces the current morning.js
+  site/insights.js         unchanged in this round (included so the tests run from one folder)
+  tests/test_mc_metrics.js new: checks each metric, the area manager table and the Excel grouping
+  tests/test_source.js     the earlier source and channel checks, now with repo-relative paths
+  tests/fixtures/          synthetic data only (no company figures)
 
-FILES
-  repo-root/build_metrics.py   builds data/metrics.json.gz from the four tabs (an xlsx file now; the Google Sheet with --gsheet)
-  site/metrics.js              the Metrics tab (loaded after productmix.js)
-  site/index.html              adds: <script src="metrics.js"></script> after productmix.js
-  tests/test_metrics.js        checks the tab against the raw figures
-  tests/make_metrics_expected.py   writes the test fixtures from the workbook (keep tests/fixtures/ out of git)
+RUN THE TESTS (from the repo root)
+  node tests/test_mc_metrics.js     expected: 30 passed, 0 failed
+  node tests/test_source.js         expected: 17 passed, 0 failed
 
-TO CONNECT THE DATA (not yet done)
-  1. Share the Google Sheet with the service account used by the discount sheet writer.
-  2. In the sales workflow, after the data sync, run:
-       python build_metrics.py --gsheet <sheet id> --creds <service account json> --out data/metrics.json.gz
-  3. build_groups.py has to copy data/metrics.json.gz into each login's data folder, as for the other data.
-     The metrics have brand, region and store type but no store names. Decide whether each login sees all regions.
-
-DEPLOY
-  Upload site/metrics.js and site/index.html next to the page, then hard-refresh.
+NOT YET
+  The metric filter is on the Morning Call only. The Sales tabs (Daily, Weekly, Monthly) keep Net Sales.
+  The Product mix table keeps Net Sales (its mix share only makes sense for Net Sales and Orders).
