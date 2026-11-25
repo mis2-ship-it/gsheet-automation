@@ -1,0 +1,119 @@
+name: Cancellation pull
+
+# Pulls voided and cancelled orders (with the reason) from Rista's /sale endpoint for a date range.
+# Kept apart from the Closed sales history. The output is uploaded as an artifact, not committed.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "First business day, YYYY-MM-DD"
+        default: "2025-04-01"
+        required: true
+        type: string
+      to:
+        description: "Last business day, YYYY-MM-DD"
+        default: "2025-04-30"
+        required: true
+        type: string
+      branches:
+        description: "Optional comma list of branch codes (leave empty for all active branches)"
+        default: ""
+        required: false
+        type: string
+      endpoint:
+        description: "Rista endpoint for orders"
+        default: "/sale"
+        required: false
+        type: string
+      reason_field:
+        description: "Name of the cancel reason field in the response"
+        default: "reason"
+        required: false
+        type: string
+      status_field:
+        description: "Name of the status field in the response"
+        default: "status"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Its own group, so a cancellation pull never waits for, or blocks, the sales dashboard job.
+concurrency:
+  group: cancel-pull
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180          # a month of branch-days takes a while
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      FROM_DAY: ${{ inputs.from }}
+      TO_DAY: ${{ inputs.to }}
+      BRANCHES: ${{ inputs.branches }}
+      ENDPOINT: ${{ inputs.endpoint }}
+      REASON_FIELD: ${{ inputs.reason_field }}
+      STATUS_FIELD: ${{ inputs.status_field }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+
+      - name: Check the dates
+        run: |
+          for d in "$FROM_DAY" "$TO_DAY"; do
+            if ! [[ "$d" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::'$d' is not a date in YYYY-MM-DD form"
+              exit 1
+            fi
+          done
+          if [[ "$FROM_DAY" > "$TO_DAY" ]]; then
+            echo "::error::from ($FROM_DAY) is after to ($TO_DAY)"
+            exit 1
+          fi
+          echo "Pulling $FROM_DAY to $TO_DAY"
+
+      # The script's own checks run first, so a broken script fails before any API calls.
+      - name: Check the script
+        run: python tests/test_cancel_sales.py
+
+      - name: Pull the cancelled orders
+        id: pull
+        run: |
+          ARGS=(--from "$FROM_DAY" --to "$TO_DAY" --out data/cancel
+                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "$STATUS_FIELD")
+          if [ -n "$BRANCHES" ]; then ARGS+=(--branches "$BRANCHES"); fi
+          python cancel_sales.py "${ARGS[@]}"
+
+      # The first lines of the results go to the job log, so the counts are visible without downloading.
+      - name: Show the summary
+        if: always()
+        run: |
+          for f in data/cancel/status_seen_*.csv data/cancel/cancel_reasons_seen_*.csv; do
+            [ -f "$f" ] || continue
+            echo "== $f"
+            head -40 "$f"
+          done
+          if [ -f data/cancel/cancel_errors.csv ]; then
+            echo "== branch-days that failed"
+            cat data/cancel/cancel_errors.csv
+          fi
+
+      # Uploaded even when some branch-days failed, so the results can be checked.
+      - name: Save the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cancel-${{ inputs.from }}-to-${{ inputs.to }}
+          path: data/cancel/
+          retention-days: 30
+          if-no-files-found: warn
