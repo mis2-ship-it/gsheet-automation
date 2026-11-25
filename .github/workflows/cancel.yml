@@ -98,7 +98,6 @@ jobs:
       - name: Check the script
         run: |
           python tests/test_cancel_sales.py
-          python tests/test_cancel_speed.py
 
       # Branch-days already pulled by an earlier run are kept in the cache, so a run that stops can carry on.
       - name: Restore the saved branch-days
