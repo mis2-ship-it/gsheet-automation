@@ -236,11 +236,13 @@ def probe_candidates(branch, day):
                 data = (js.get("data", []) if isinstance(js, dict) else (js or [])) or []
                 row["orders"] = len(data)
                 if data:
-                    keys = sorted(data[0].keys())
+                    flat = [flatten(d) for d in data]
+                    keys = sorted(flat[0].keys())
                     row["fields"] = ",".join(keys)
-                    row["reason_fields"] = ",".join(k for k in keys if "reason" in k.lower() or "cancel" in k.lower())
+                    row["reason_fields"] = ",".join(k for k in keys if "reason" in k.lower() or "remark" in k.lower()
+                                                    or "status" in k.lower())
                     row["statuses"] = ";".join(f"{s}={n}" for s, n in Counter(
-                        str(d.get("status", "")) for d in data).most_common())
+                        status_label(d) for d in flat).most_common())
                 row["message"] = "" if data else "200 with no orders for this branch and day"
             else:
                 row["message"] = (r.text or "")[:300]
@@ -263,21 +265,84 @@ def detect_reason_key(raw, reason_field):
     return None
 
 
+def flatten(rec, prefix=""):
+    """The record with nested fields as dotted names: {"statusInfo": {"reason": x}} -> {"statusInfo.reason": x}."""
+    out = {}
+    for k, v in rec.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            out.update(flatten(v, key + "."))
+        else:
+            out[key] = v
+    return out
+
+
+# The reason and its notes. The Sales Page report shows them as statusInfo.reason, statusInfo.sourceReason and
+# statusInfo.remarks; a flat record has them as reason, sourceReason and remarks.
+REASON_KEYS = ("statusInfo.reason", "reason")
+SOURCE_REASON_KEYS = ("statusInfo.sourceReason", "sourceReason")
+REMARK_KEYS = ("statusInfo.remarks", "remarks")
+
+
+def status_fields(flat, status_field="auto"):
+    """The fields that hold an order status: a field named status, top-level or nested (statusInfo.status).
+    With a name given, only that field."""
+    if status_field != "auto":
+        return [status_field] if status_field in flat else []
+    return [k for k in flat if k.lower() == "status" or k.lower().endswith(".status")]
+
+
+def is_cancelled(flat, status_field, cancel_words):
+    """Cancelled when any status field contains one of the words (cancel, void), in any case."""
+    return any(w in str(flat[k] or "").lower() for k in status_fields(flat, status_field) for w in cancel_words)
+
+
+def status_label(flat, status_field="auto"):
+    """The status fields and their values, for example 'status=Closed | statusInfo.status=Cancelled'."""
+    parts = [f"{k}={flat[k]}" for k in status_fields(flat, status_field)]
+    return " | ".join(parts) or "(no status field)"
+
+
+def first_value(flat, keys):
+    for k in keys:
+        v = flat.get(k)
+        if v not in (None, ""):
+            return str(v).strip()
+    return ""
+
+
+def reason_parts(flat, reason_field="auto"):
+    """(reason, source reason, remarks). A reason field given by name is tried first. With auto, a field with
+    'reason' in its name (for example cancelReason) is used when statusInfo.reason is not there."""
+    keys = (reason_field,) + REASON_KEYS if reason_field != "auto" else REASON_KEYS
+    reason = first_value(flat, keys)
+    if not reason and reason_field == "auto":
+        for k, v in flat.items():
+            if "reason" in k.lower() and "source" not in k.lower() and v not in (None, ""):
+                reason = str(v).strip()
+                break
+    return reason, first_value(flat, SOURCE_REASON_KEYS), first_value(flat, REMARK_KEYS)
+
+
 def build_rows(raw, reasons, maps, status_field, reason_field, cancel_statuses):
-    """One record per cancelled order, plus the status and reason counts over every order."""
+    """One record per cancelled order, plus the status and reason counts over every order.
+    An order is cancelled when a status field says cancel or void. Its reason text is the reason, source reason and
+    remarks together, so a reason such as 'as the ordered item(s) are now out of stock' is found."""
     store_type, region, source, brand = maps
     status_count, reason_count, cancelled = {}, {}, []
-    for i, r in enumerate(raw):
-        status = str(r.get(status_field, "") or "").strip()
-        status_count[status] = status_count.get(status, 0) + 1
-        if status.lower() not in cancel_statuses:
+    for i, rec in enumerate(raw):
+        r = flatten(rec)
+        label = status_label(r, status_field)
+        status_count[label] = status_count.get(label, 0) + 1
+        if not is_cancelled(r, status_field, cancel_statuses):
             continue
-        reason = str(r.get(reason_field, "") or "").strip()
-        bucket, listed = classify(reason, reasons)
+        reason, source_reason, remarks = reason_parts(r, reason_field)
+        text = " | ".join(p for p in (reason, source_reason, remarks) if p)
+        bucket, listed = classify(text, reasons)
         biz, hour = business_day(r.get("invoiceDate"))
         branch = str(r.get("branchName") or r.get("_branch_pull") or "").strip()
         channel = str(r.get("channel") or "").strip()
-        reason_count[reason or "(blank)"] = reason_count.get(reason or "(blank)", 0) + 1
+        reason_count[text or "(blank)"] = reason_count.get(text or "(blank)", 0) + 1
         cancelled.append({
             "Invoice No": str(r.get("invoiceNumber") or r.get("invoiceNo") or f"{branch}-{r.get('_day_pull')}-{i}"),
             "Date": biz or r.get("_day_pull"),
@@ -288,8 +353,10 @@ def build_rows(raw, reasons, maps, status_field, reason_field, cancel_statuses):
             "Store Type": store_type.get(branch, "Unmapped"),
             "Region": region.get(branch, "Unmapped"),
             "Channel": channel,
-            "Status": status,
+            "Status": label,
             "Reason": reason or "(blank)",
+            "Source Reason": source_reason,
+            "Remarks": remarks,
             "Bucket": bucket,
             "Listed": "Yes" if listed else "No",
             "Orders": 1,
@@ -311,9 +378,9 @@ def main(argv=None):
     ap.add_argument("--out", default="data/cancel")
     ap.add_argument("--probe", action="store_true", help="try each candidate request once and report what works")
     ap.add_argument("--endpoint", default=DEFAULT_ENDPOINT, help="Rista endpoint for orders")
-    ap.add_argument("--status-field", default="status")
+    ap.add_argument("--status-field", default="auto", help="the status field name, or auto to find every status field")
     ap.add_argument("--reason-field", default="auto", help="the reason field name, or auto to find it")
-    ap.add_argument("--cancel-statuses", default="Voided,Cancelled")
+    ap.add_argument("--cancel-statuses", default="cancel,void", help="a status containing one of these is cancelled")
     ap.add_argument("--reasons", default="data/cancel_reasons.csv")
     ap.add_argument("--branches", default="", help="comma list of branch codes (for a test run)")
     ap.add_argument("--workers", type=int, default=8, help="parallel requests (raise only if the API allows it)")
@@ -354,19 +421,20 @@ def main(argv=None):
         print("Run again with --probe to see which request the API accepts.")
         return 2
 
-    keys = sorted({k for r in raw[:200] for k in r.keys() if not k.startswith("_")})
+    keys = sorted({k for r in raw[:200] for k in flatten(r).keys() if not k.startswith("_")})
     with open(os.path.join(a.out, "cancel_raw_sample.json"), "w", encoding="utf-8") as fh:
         json.dump({"keys": keys, "sample": [{k: v for k, v in r.items() if not k.startswith("_")} for r in raw[:3]]},
                   fh, indent=2, default=str)
-    if raw and a.status_field not in keys:
-        print(f"status field '{a.status_field}' not in the response. Keys seen: {keys}")
+    flat0 = flatten(raw[0]) if raw else {}
+    if raw and not status_fields(flat0, a.status_field):
+        print(f"no status field in the response. Keys seen: {keys}")
         return 2
-    reason_key = detect_reason_key(raw, a.reason_field) if raw else (a.reason_field if a.reason_field != "auto" else "reason")
-    if raw and reason_key not in keys:
-        print(f"reason field '{reason_key}' not in the response. Keys seen: {keys}")
+    if raw and a.reason_field != "auto" and a.reason_field not in flat0:
+        print(f"reason field '{a.reason_field}' not in the response. Keys seen: {keys}")
         return 2
+    print(f"status fields used: {status_fields(flat0, a.status_field)}; reason fields: {', '.join(REASON_KEYS)}")
 
-    cancelled, status_count, reason_count = build_rows(raw, reasons, maps, a.status_field, reason_key, cancel_set)
+    cancelled, status_count, reason_count = build_rows(raw, reasons, maps, a.status_field, a.reason_field, cancel_set)
     pd.DataFrame(sorted(status_count.items(), key=lambda x: -x[1]), columns=["Status", "Orders"]) \
         .to_csv(os.path.join(a.out, f"status_seen_{tag}.csv"), index=False)
     inv = pd.DataFrame(cancelled)
@@ -389,7 +457,7 @@ def main(argv=None):
     listed = int((inv["Listed"] == "Yes").sum()) if len(inv) else 0
     others = int((inv["Bucket"] == OTHERS).sum()) if len(inv) else 0
     print(f"cancelled orders: {len(inv)} (listed reasons {listed}, Others {others})")
-    print(f"status values seen: {len(status_count)} (see status_seen_{tag}.csv); reason field used: {reason_key}")
+    print(f"status values seen: {len(status_count)} (see status_seen_{tag}.csv); reason fields: {", ".join(REASON_KEYS)}")
     return 1 if errors else 0
 
 
