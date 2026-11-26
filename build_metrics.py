@@ -15,7 +15,7 @@ Definitions (ratios are taken from the sums, never averaged):
 Usage:  python build_metrics.py --xlsx Metrics_Data.xlsx --out data/metrics.json.gz
         (or --gsheet <sheet id> with a service account, see read_gsheet)
 """
-import argparse, datetime as dt, gzip, json, os
+import argparse, datetime as dt, gzip, json, os, re
 
 import pandas as pd
 
@@ -24,13 +24,22 @@ UNMAPPED = "Unmapped"
 TABS = {"Z_Funnel", "Z_Ads", "S_Funnel", "S_Ads"}
 
 
+EXCEL_EPOCH = dt.date(1899, 12, 30)   # Google Sheets' date serial numbers count days from here
+
+
 def iso_day(x):
-    """A date as YYYY-MM-DD. Accepts datetimes, ISO text, and day-first or month-first text."""
-    if pd.isna(x):
+    """A date as YYYY-MM-DD. Accepts datetimes, ISO text, day-first or month-first text, and Google Sheets' date
+    serial numbers. Blank cells give None."""
+    if x is None or (not isinstance(x, str) and pd.isna(x)) or (isinstance(x, str) and x.strip() == ""):
         return None
     if isinstance(x, (dt.date, dt.datetime, pd.Timestamp)):
         return pd.Timestamp(x).strftime("%Y-%m-%d")
-    s = str(x).strip()[:10]
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        return (EXCEL_EPOCH + dt.timedelta(days=int(x))).isoformat()
+    s = str(x).strip()
+    if re.fullmatch(r"\d+(\.\d+)?", s):
+        return (EXCEL_EPOCH + dt.timedelta(days=int(float(s)))).isoformat()
+    s = s[:10]
     for f in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
         try:
             return dt.datetime.strptime(s, f).strftime("%Y-%m-%d")
@@ -45,7 +54,9 @@ def text(x):
 
 
 def num(series):
-    return pd.to_numeric(series, errors="coerce").fillna(0.0)
+    """A number. Text such as "1,234" (how a sheet can show numbers) is read as 1234; blanks count as 0."""
+    s = series.astype(str).str.replace(",", "", regex=False).str.strip()
+    return pd.to_numeric(s, errors="coerce").fillna(0.0)
 
 
 def normalise(frames):
@@ -75,7 +86,8 @@ def normalise(frames):
         "store": sa["Store Name"].map(text),
         "menu_open": 0.0, "cart": 0.0, "orders": 0.0,
         "clicks": num(sa["clicks"]), "ad_orders": num(sa["ads_orders"])})
-    return pd.concat([z_funnel, z_ads, s_funnel, s_ads], ignore_index=True)
+    out = pd.concat([z_funnel, z_ads, s_funnel, s_ads], ignore_index=True)
+    return out[out["date"].notna()].reset_index(drop=True)
 
 
 def aggregate(rows):
@@ -111,15 +123,32 @@ def read_xlsx(path):
     return {name: pd.read_excel(path, sheet_name=name) for name in TABS}
 
 
-def read_gsheet(sheet_id, creds_json):
-    """Reads the four tabs from the Google Sheet with a service account (gspread). Values as displayed."""
+def read_gsheet(sheet_id, creds):
+    """Reads the four tabs from the Google Sheet with a service account. creds is the path to the key file, or the key
+    itself as text (the GOOGLE_CREDENTIALS secret). Values are read as the sheet stores them: dates as serial numbers."""
     import gspread
-    gc = gspread.service_account(filename=creds_json)
-    sh = gc.open_by_key(sheet_id)
+    if creds.strip().startswith("{"):
+        gc = gspread.service_account_from_dict(json.loads(creds))
+    else:
+        gc = gspread.service_account(filename=creds)
+    try:
+        sh = gc.open_by_key(sheet_id)
+    except Exception as e:
+        raise SystemExit(f"could not open the Google Sheet {sheet_id}: {e}. "
+                         "Share the sheet with the service account email (Viewer is enough).")
+    names = [w.title for w in sh.worksheets()]
+    missing = sorted(TABS - set(names))
+    if missing:
+        raise SystemExit(f"tabs missing in the Google Sheet: {missing}. Tabs found: {names}")
     out = {}
-    for name in TABS:
-        recs = sh.worksheet(name).get_all_records(value_render_option="UNFORMATTED_VALUE")
-        out[name] = pd.DataFrame(recs)
+    for name in sorted(TABS):
+        vals = sh.worksheet(name).get_all_values(value_render_option="UNFORMATTED_VALUE")
+        head = [str(h).strip() for h in vals[0]]
+        dup = sorted({h for h in head if h and head.count(h) > 1})
+        if dup:
+            raise SystemExit(f"{name}: duplicate column names {dup}")
+        rows = [list(r) + [""] * (len(head) - len(r)) for r in vals[1:]]
+        out[name] = pd.DataFrame(rows, columns=head)
     return out
 
 
@@ -127,7 +156,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--xlsx")
     ap.add_argument("--gsheet")
-    ap.add_argument("--creds", default="service_account.json")
+    ap.add_argument("--creds", default=os.environ.get("GOOGLE_CREDENTIALS") or "service_account.json")
     ap.add_argument("--out", default="data/metrics.json.gz")
     a = ap.parse_args()
     frames = read_xlsx(a.xlsx) if a.xlsx else read_gsheet(a.gsheet, a.creds)
