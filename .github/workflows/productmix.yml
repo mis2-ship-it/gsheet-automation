@@ -1,10 +1,19 @@
 name: Product mix build
 
-# Builds product_mix.json.gz (the Morning Call's product mix) from the product rows of the discount job.
-# Run it after the "Discount Code, product and reconciliation rows" workflow has finished.
-# The file is uploaded as an artifact; it is not committed.
+# Builds product_mix.json.gz (the Morning Call's product mix) from the sales/page product rows.
+# It pulls the product rows itself (the last 14 days up to yesterday), so it does not depend on the discount
+# job's cache. Run it manually; the file is uploaded as an artifact, not committed.
 on:
   workflow_dispatch:
+    inputs:
+      from:
+        description: "First day, YYYY-MM-DD (empty = 14 days before the last day)"
+        required: false
+        default: ""
+      to:
+        description: "Last day, YYYY-MM-DD (empty = yesterday, India time)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -16,7 +25,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,21 +40,27 @@ jobs:
       - name: Install
         run: pip install pandas numpy requests pyjwt gspread google-auth
 
-      # The product rows are saved by the discount job under the cache key discount-v2-.
-      - name: Restore the product rows
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            data/discount_rows.csv
-            data/product_rows.csv
-          key: discount-v2-${{ github.run_id }}
-          restore-keys: |
-            discount-v2-
+      - name: Work out the days
+        id: days
+        run: |
+          to="${{ inputs.to }}"
+          from="${{ inputs.from }}"
+          if [ -z "$to" ]; then to=$(TZ=Asia/Kolkata date -d "yesterday" +%F); fi
+          if [ -z "$from" ]; then from=$(date -d "$to -13 days" +%F); fi
+          echo "from=$from" >> "$GITHUB_OUTPUT"
+          echo "to=$to" >> "$GITHUB_OUTPUT"
+          echo "Pulling product rows from $from to $to"
+
+      - name: Pull the product rows (sales/page)
+        run: >
+          python sync_discounts.py --out data/discount_rows.csv --products-out data/product_rows.csv
+          --recon-out data/product_recon.csv
+          --from "${{ steps.days.outputs.from }}" --to "${{ steps.days.outputs.to }}"
 
       - name: Check the product rows are there
         run: |
           if [ ! -s data/product_rows.csv ]; then
-            echo "::error::data/product_rows.csv is missing. Run the Discount Code, product and reconciliation rows workflow first."
+            echo "::error::data/product_rows.csv was not written. Check the pull step above."
             exit 1
           fi
           echo "product rows: $(wc -l < data/product_rows.csv) lines"
