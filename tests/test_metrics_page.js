@@ -57,7 +57,7 @@ const rawOrders = (fn) => DATA.rows.filter(r => fn(r) && r[0] >= run('FB_MT.MT.a
   // 5. the charts show the values on every point, with a tooltip
   const page = run("salesPeriodView('metrics')");
   check('each chart point has a value label and a tooltip', page.includes('<title>') && page.includes('<circle') && /font-size="10"[^>]*>[0-9.,]+%?</.test(page));
-  check('the tooltip gives the series, the period and the value', /<title>M2O% \(A\) · Day 1: [0-9.]+%<\/title>/.test(page));
+  check('the tooltip gives the series, the date and the value', /<title>M2O% \(A\) · \d{1,2} \w{3}: [0-9.]+%<\/title>/.test(page));
   // 6. the uploaded file is kept in this browser across a reload
   run("FB_MT.MT.data = null; FB_MT.MT.error = null; FB_MT.MT.savedName = null"); store.clear();
   loadImpl = async () => { throw new TypeError('Failed to fetch'); };
