@@ -1,0 +1,66 @@
+name: Product mix build
+
+# Builds product_mix.json.gz (the Morning Call's product mix) from the product rows of the discount job.
+# Run it after the "Discount Code, product and reconciliation rows" workflow has finished.
+# The file is uploaded as an artifact; it is not committed.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-mix
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+
+      # The product rows are saved by the discount job under the cache key discount-v2-.
+      - name: Restore the product rows
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/discount_rows.csv
+            data/product_rows.csv
+          key: discount-v2-${{ github.run_id }}
+          restore-keys: |
+            discount-v2-
+
+      - name: Check the product rows are there
+        run: |
+          if [ ! -s data/product_rows.csv ]; then
+            echo "::error::data/product_rows.csv is missing. Run the Discount Code, product and reconciliation rows workflow first."
+            exit 1
+          fi
+          echo "product rows: $(wc -l < data/product_rows.csv) lines"
+
+      - name: Build the product mix
+        run: python build_product_mix.py --rows data/product_rows.csv --out product_mix.json.gz
+
+      - name: Show the result
+        run: |
+          python - << 'PY'
+          import gzip, json
+          d = json.load(gzip.open("product_mix.json.gz", "rt"))
+          print("latest day:", d["ref"], "| categories:", len(d["categories"]), "| rows:", len(d["rows"]))
+          PY
+
+      - name: Save the product mix
+        uses: actions/upload-artifact@v4
+        with:
+          name: product-mix-${{ github.run_id }}
+          path: product_mix.json.gz
+          retention-days: 30
+          if-no-files-found: error
