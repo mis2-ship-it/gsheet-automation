@@ -73,6 +73,18 @@ def metrics_for_group(path_in, path_out, stores):
     print(f"metrics for {label}: {len(kept)} rows -> {path_out}")
 
 
+def cancel_for_group(path_in, path_out, stores):
+    """One login's cancelled orders: all of them (stores=None), or only the rows of that login's stores (by Branch)."""
+    df = pd.read_csv(path_in, dtype=str, keep_default_na=False)
+    if stores is not None and "Branch" in df.columns:
+        allowed = set(stores)
+        df = df[df["Branch"].map(clean).isin(allowed)]
+    os.makedirs(os.path.dirname(path_out) or ".", exist_ok=True)
+    df.to_csv(path_out, index=False, compression="gzip")
+    label = "all stores" if stores is None else f"{df['Branch'].nunique() if len(df) else 0} stores"
+    print(f"cancel orders for {label}: {len(df)} rows -> {path_out}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--access", required=True)
@@ -84,6 +96,7 @@ def main():
     ap.add_argument("--kpt")
     ap.add_argument("--metrics", help="data/metrics.json.gz: cut to each login's stores")
     ap.add_argument("--product-mix", help="data/product_mix.json.gz: given to the all-stores login only")
+    ap.add_argument("--cancel", help="data/cancel_orders.csv.gz: cut to each login's stores")
     ap.add_argument("--discounts")
     ap.add_argument("--site", default="site")
     ap.add_argument("--functions", default="functions")
@@ -143,6 +156,8 @@ def main():
             os.makedirs(out, exist_ok=True)
             shutil.copyfile(args.product_mix, os.path.join(out, "product_mix.json.gz"))
             print("product mix: all-stores login only")
+        if args.cancel and os.path.exists(args.cancel):
+            cancel_for_group(args.cancel, os.path.join(out, "cancel_orders.csv.gz"), stores)
     refused = sum(1 for t in emails.values() if t is None)
     print(f"done: {len(groups)} data sets; {len(emails) - refused} logins with stores; {refused} refused")
 
