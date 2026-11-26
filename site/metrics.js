@@ -185,9 +185,11 @@
   }
 
   // ---- charts: day 1, 2 ... of each period; A solid, B dashed ----
+  // Each point shows its value. The solid line's value sits above its point and the dashed line's value below it,
+  // so two lines on the same axis do not cover each other. A long period is drawn wider and scrolls sideways.
   function mtChart(series, leftFmt, rightFmt) {
-    const W = 720, H = 240, L = 56, R = series.some(s => s.axis === "R") ? 56 : 14, T = 14, B = 30;
     const n = Math.max(1, ...series.map(s => s.values.length));
+    const W = Math.max(720, 46 * n + 70), H = 260, L = 56, R = series.some(s => s.axis === "R") ? 60 : 16, T = 22, B = 30;
     const pw = W - L - R, ph = H - T - B;
     const extent = axis => {
       const vs = series.filter(s => s.axis === axis).flatMap(s => s.values).filter(v => v !== null && isFinite(v));
@@ -200,21 +202,23 @@
     const x = k => L + (n <= 1 ? 0 : (k / (n - 1)) * pw);
     const y = (axis, v) => { const [lo, hi] = ext[axis]; return T + (1 - (v - lo) / (hi - lo)) * ph; };
     const fmtFor = s => (s.name.indexOf("%") >= 0 ? v => v.toFixed(2) + "%" : v => Math.round(v).toLocaleString("en-IN"));
-    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">`;
+    const widthAttr = n > 12 ? `${W}px` : "100%";
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="${widthAttr}" role="img">`;
     for (let g = 0; g <= 4; g++) {
       const yy = T + (g / 4) * ph;
       svg += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--line)" stroke-width="1"/>`;
       const lv = ext.L[1] - (g / 4) * (ext.L[1] - ext.L[0]);
       svg += `<text x="${L - 6}" y="${yy + 4}" text-anchor="end" font-size="10" style="fill:var(--ink-2)">${leftFmt(lv)}</text>`;
-      if (R > 14) {
+      if (R > 16) {
         const rv = ext.R[1] - (g / 4) * (ext.R[1] - ext.R[0]);
         svg += `<text x="${W - R + 6}" y="${yy + 4}" font-size="10" style="fill:var(--ink-2)">${rightFmt(rv)}</text>`;
       }
     }
-    for (let k = 0; k < n; k += Math.max(1, Math.floor(n / 7))) {
+    const step = Math.max(1, Math.ceil(n / 12));
+    for (let k = 0; k < n; k += step) {
       svg += `<text x="${x(k)}" y="${H - 10}" text-anchor="middle" font-size="10" style="fill:var(--ink-2)">Day ${k + 1}</text>`;
     }
-    series.forEach((s, si) => {
+    series.forEach(s => {
       const f = fmtFor(s);
       let path = "", pen = false;
       s.values.forEach((v, k) => {
@@ -225,13 +229,15 @@
       if (path) svg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? 'stroke-dasharray="6 4"' : ""}/>`;
       s.values.forEach((v, k) => {
         if (v === null || !isFinite(v)) return;
-        const px = x(k).toFixed(1), py = y(s.axis, v);
+        const px = x(k), py = y(s.axis, v);
         const tip = mtEsc(`${s.name}${s.dash ? " (B)" : " (A)"} · Day ${k + 1}: ${f(v)}`);
-        svg += `<circle cx="${px}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"><title>${tip}</title></circle>`;
-        svg += `<text x="${px}" y="${(py - 7 - (si % 2) * 10).toFixed(1)}" text-anchor="middle" font-size="9" style="fill:${s.color}">${mtEsc(f(v))}</text>`;
+        const ly = s.dash ? py + 18 : py - 9;
+        svg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.5" fill="${s.color}"><title>${tip}</title></circle>`;
+        svg += `<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" ` +
+          `style="fill:${s.color};stroke:#0b1020;stroke-width:3px;paint-order:stroke">${mtEsc(f(v))}</text>`;
       });
     });
-    return svg + "</svg>";
+    return `<div style="overflow-x:auto">${svg}</svg></div>`;
   }
   function mtLegend(series) {
     return `<div class="legend">${series.map(s => `<span><i class="sw" style="--c:${s.color}"></i>${mtEsc(s.name)}${s.dash ? " (B, dashed)" : " (A)"}</span>`).join("")}</div>`;
@@ -366,5 +372,5 @@
   }
 
   window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad, mtUse, mtParse, mtErrorText, mtPageFilters, mtPickFile,
-                   mtRemember, mtForget, mtFromStorage };
+                   mtRemember, mtForget, mtFromStorage, mtChart };
 })();
