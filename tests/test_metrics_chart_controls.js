@@ -27,6 +27,7 @@ vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'site', 'm
 const run = s => vm.runInContext(s, ctx);
 const fire = (type, target) => (handlers[type] || []).forEach(f => f({ target }));
 const lbl = day => new Date(Date.UTC(2025, 0, 1) + day * 86400000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+const clickT = (key, m) => (handlers.click || []).forEach(f => f({ target: { closest: sel => (sel === '[data-mtc-toggle]' ? { dataset: { mtcToggle: key, metric: m } } : null) } }));
 const sec = (html, title) => html.split('<section class="block">').find(x => x.includes('<h2>' + title + '</h2>')) || '';
 (async () => {
   loadImpl = async () => DATA;
@@ -34,19 +35,19 @@ const sec = (html, title) => html.split('<section class="block">').find(x => x.i
   for (let i = 0; i < 100 && !run('FB_MT.MT.data'); i++) await new Promise(r => setTimeout(r, 5));
   let page = run("salesPeriodView('metrics')");
   check('each chart has a source selector', ['m2o', 'org', 'clk'].every(k => page.includes(`data-mtc-src="${k}"`)));
-  check('each chart has its metric toggles', page.includes('data-mtc-show="m2o" data-metric="C2O%"') && page.includes('data-mtc-show="org" data-metric="Organic%"') && page.includes('data-mtc-show="clk" data-metric="Ad Orders"'));
+  check('each chart has its metric buttons', page.includes('data-mtc-toggle="m2o" data-metric="C2O%"') && page.includes('data-mtc-toggle="org" data-metric="Organic%"') && page.includes('data-mtc-toggle="clk" data-metric="Ad Orders"'));
   // 1. toggle C2O% off: the M2O% and C2O% chart shows M2O% only
-  fire('change', { dataset: { mtcShow: 'm2o', metric: 'C2O%' }, checked: false });
+  clickT('m2o', 'C2O%');
   page = run("salesPeriodView('metrics')");
   const m2oSec = sec(page, 'M2O% and C2O%');
   check('toggling C2O% off hides it from that chart', !m2oSec.includes('<title>C2O%') && m2oSec.includes('<title>M2O%'));
   check('the other charts are unchanged by it', sec(page, 'Organic% and In-Organic%').includes('<title>Organic%') && sec(page, 'Clicks and Ad Orders').includes('<title>Clicks'));
   // 2. both off: a message, and no chart
-  fire('change', { dataset: { mtcShow: 'm2o', metric: 'M2O%' }, checked: false });
+  clickT('m2o', 'M2O%');
   page = run("salesPeriodView('metrics')");
   check('with no metric chosen the chart says so', sec(page, 'M2O% and C2O%').includes('Pick at least one metric above.'));
-  fire('change', { dataset: { mtcShow: 'm2o', metric: 'M2O%' }, checked: true });
-  fire('change', { dataset: { mtcShow: 'm2o', metric: 'C2O%' }, checked: true });
+  clickT('m2o', 'M2O%');
+  clickT('m2o', 'C2O%');
   // 3. the source of one chart: Swiggy only, the others stay All
   const sw = DATA.sources.indexOf('Swiggy');
   const A = run('FB_MT.MT.a.from');
