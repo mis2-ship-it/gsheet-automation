@@ -102,7 +102,10 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           METRICS_SHEET_ID: 1s9tNe9QnlOzbOgsrus-pvlZzulRDxGft
-        run: python build_metrics.py --gsheet "$METRICS_SHEET_ID" --out data/metrics.json.gz
+        run: |
+          # remove the old file first: if the sheet cannot be read, the page must say so, not show old data
+          rm -f data/metrics.json.gz
+          python build_metrics.py --gsheet "$METRICS_SHEET_ID" --out data/metrics.json.gz
 
       - name: Build one data set per login
         run: |
@@ -111,6 +114,7 @@ jobs:
           if [ -f data/new_hourly.csv.gz ]; then EXTRA="$EXTRA --new-hourly data/new_hourly.csv.gz"; fi
           if [ -f data/metrics.json.gz ]; then EXTRA="$EXTRA --metrics data/metrics.json.gz"; fi
           if [ -f data/product_mix.json.gz ]; then EXTRA="$EXTRA --product-mix data/product_mix.json.gz"; fi
+          if [ -f data/cancel_orders.csv.gz ]; then EXTRA="$EXTRA --cancel data/cancel_orders.csv.gz"; fi
           python build_groups.py --access data/access.csv --history historical_data/historical_sales.csv.gz $EXTRA \
             --live data/live_sales.csv --ratings data/ratings.csv --kpt data/kpt_orders.csv --discounts data/discount_rows.csv
 
@@ -132,4 +136,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy site --project-name=frozenbottle-sales --branch=main
+
 
