@@ -49,5 +49,12 @@ check("the status shows the fields it came from", by["C2"]["Status"] == "status=
 check("every order is counted in the status totals", sum(status_count.values()) == 5, str(status_count))
 check("a flat layout (reason at the top) still works", cs.reason_parts({"reason": "out of stock"})[0] == "out of stock")
 check("a field named cancelReason is found by its name", cs.reason_parts({"cancelReason": "merchant device"})[0] == "merchant device")
+check("a fulfillment status of Cancelled counts as cancelled",
+      cs.is_cancelled({"status": "Closed", "fulfillmentStatus": "Cancelled"}, "auto", ("cancel", "void")))
+check("a Closed order with a Delivered fulfillment status is not cancelled",
+      not cs.is_cancelled({"status": "Closed", "fulfillmentStatus": "Delivered"}, "auto", ("cancel", "void")))
+check("a Closed order whose reason text says Cancelled is not cancelled (reason text is not a status)",
+      not cs.is_cancelled({"status": "Closed", "statusInfo.reason": "Cancelled by swiggy", "statusInfo.status": "Closed"},
+                          "auto", ("cancel", "void")))
 print(f"{PASS} passed, {FAIL} failed")
 sys.exit(1 if FAIL else 0)
