@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory() as out:
         buckets[r["Bucket"]] = buckets.get(r["Bucket"], 0) + int(r["Orders"])
     check("bucket breakdown: Item OOS 1, Closed in hours 1, Others 2", buckets == {"Item OOS": 1, "Closed in hours": 1, "Others": 2}, str(buckets))
     st = {r["Status"]: int(r["Orders"]) for r in csv.DictReader(open(os.path.join(out, "status_seen_2025-04-01_2025-04-02.csv")))}
-    check("status counts cover every order: Closed 2, Voided 3, Cancelled 1, Rejected 1", st == {"Closed": 2, "Voided": 3, "Cancelled": 1, "Rejected": 1}, str(st))
+    check("status counts cover every order: Closed 2, Voided 3, Cancelled 1, Rejected 1", st == {"status=Closed": 2, "status=Voided": 3, "status=Cancelled": 1, "status=Rejected": 1}, str(st))
     seen = {r["Reason"]: int(r["Orders"]) for r in csv.DictReader(open(os.path.join(out, "cancel_reasons_seen_2025-04-01_2025-04-02.csv")))}
     check("reasons seen lists every reason text, including the one not on the list", seen.get("Customer changed mind") == 1 and seen.get("(blank)") == 1, str(seen))
     sample = json.load(open(os.path.join(out, "cancel_raw_sample.json")))

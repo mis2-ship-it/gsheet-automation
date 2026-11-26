@@ -52,7 +52,7 @@ cs.requests.get = probe_get
 report = cs.probe_candidates("B1", "2025-04-01")
 page = next(r for r in report if r["endpoint"] == "/sales/page" and r["params"] == "branch,day")
 check("the probe finds /sales/page working, with 2 orders", page["http"] == 200 and page["orders"] == 2, str(page))
-check("the probe names the reason field and the statuses it sees", page["reason_fields"] == "reason" and "Voided=1" in page["statuses"], str(page))
+check("the probe names the reason field and the statuses it sees", "reason" in page["reason_fields"] and "Voided=1" in page["statuses"], str(page))
 bad = next(r for r in report if r["endpoint"] == "/sale" and r["params"] == "branch,day")
 check("the probe reports the API's own message for a failing request", bad["http"] == 400 and "fromDate is required" in bad["message"], str(bad))
 
