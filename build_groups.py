@@ -43,6 +43,36 @@ def branches_with_data(paths):
     return names
 
 
+def metrics_for_group(path_in, path_out, stores):
+    """Writes one login's metrics file. stores=None (all stores): the file is copied as it is. Otherwise only the rows
+    of that login's stores are kept, and the store list in the file is cut to those stores too."""
+    import gzip
+    with gzip.open(path_in, "rt", encoding="utf-8") as f:
+        d = json.load(f)
+    rows, names = d.get("rows", []), d.get("stores")
+    if stores is None:
+        kept, out_stores = rows, names
+    elif names is None:
+        kept, out_stores = [], []          # an old file has no store names: a store-limited login sees none of it
+    else:
+        allowed = set(stores)
+        src = [r for r in rows if len(r) > 10 and r[10] is not None and 0 <= r[10] < len(names)
+               and clean(names[r[10]]) in allowed]
+        used = sorted({names[r[10]] for r in src})
+        pos = {n: i for i, n in enumerate(used)}
+        kept = [r[:10] + [pos[names[r[10]]]] for r in src]
+        out_stores = used
+    out = dict(d)
+    out["rows"] = kept
+    if names is not None:
+        out["stores"] = out_stores
+    os.makedirs(os.path.dirname(path_out) or ".", exist_ok=True)
+    with gzip.open(path_out, "wt", encoding="utf-8") as f:
+        json.dump(out, f, separators=(",", ":"))
+    label = "all stores" if stores is None else f"{len(out_stores)} stores"
+    print(f"metrics for {label}: {len(kept)} rows -> {path_out}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--access", required=True)
@@ -52,7 +82,8 @@ def main():
     ap.add_argument("--live")
     ap.add_argument("--ratings")
     ap.add_argument("--kpt")
-    ap.add_argument("--discounts")
+    ap.add_argument("--metrics", help="data/metrics.json.gz: cut to each login's stores")
+    ap.add_argument("--product-mix", help="data/product_mix.json.gz: given to the all-stores login only")
     ap.add_argument("--site", default="site")
     ap.add_argument("--functions", default="functions")
     args = ap.parse_args()
@@ -95,7 +126,7 @@ def main():
         cmd = [sys.executable, "build_site.py", "--history", args.history, "--out", out, "--icons-dir", args.site]
         cmd += ["--access", args.access]
         for flag, value in [("--new", args.new), ("--new-hourly", args.new_hourly),
-                            ("--live", args.live), ("--ratings", args.ratings), ("--kpt", args.kpt), ("--discounts", args.discounts)]:
+                            ("--live", args.live), ("--ratings", args.ratings), ("--kpt", args.kpt)]:
             if value:
                 cmd += [flag, value]
         if stores is not None:
@@ -105,6 +136,12 @@ def main():
             cmd += ["--only-stores", lst]
         print(f"building {label}")
         subprocess.run(cmd, check=True)
+        if args.metrics and os.path.exists(args.metrics):
+            metrics_for_group(args.metrics, os.path.join(out, "metrics.json.gz"), stores)
+        if args.product_mix and os.path.exists(args.product_mix) and stores is None:
+            os.makedirs(out, exist_ok=True)
+            shutil.copyfile(args.product_mix, os.path.join(out, "product_mix.json.gz"))
+            print("product mix: all-stores login only")
     refused = sum(1 for t in emails.values() if t is None)
     print(f"done: {len(groups)} data sets; {len(emails) - refused} logins with stores; {refused} refused")
 
