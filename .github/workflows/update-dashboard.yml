@@ -95,6 +95,15 @@ jobs:
           restore-keys: |
             discount-rows-
 
+      # Metrics: read the Google Sheet (shared with the service account) and build data/metrics.json.gz.
+      # If the sheet cannot be read, the build goes on without a new metrics file (the Metrics tab says so).
+      - name: Metrics from the Google Sheet
+        continue-on-error: true
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          METRICS_SHEET_ID: 1s9tNe9QnlOzbOgsrus-pvlZzulRDxGft
+        run: python build_metrics.py --gsheet "$METRICS_SHEET_ID" --out data/metrics.json.gz
+
       - name: Build one data set per login
         run: |
           EXTRA=""
