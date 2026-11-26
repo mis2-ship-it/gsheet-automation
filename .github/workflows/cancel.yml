@@ -32,7 +32,7 @@ on:
         type: string
       status_field:
         description: "Name of the status field in the response"
-        default: "status"
+        default: "auto"
         required: false
         type: string
       probe:
@@ -127,7 +127,7 @@ jobs:
         if: ${{ !inputs.probe }}
         run: |
           ARGS=(--from "$FROM_DAY" --to "$TO_DAY" --out data/cancel
-                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "$STATUS_FIELD"
+                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "${{ inputs.status_field }}"
                 --workers "$WORKERS")
           if [ -n "$BRANCHES" ]; then ARGS+=(--branches "$BRANCHES"); fi
           if [ "$FRESH" = "true" ]; then ARGS+=(--fresh); fi
