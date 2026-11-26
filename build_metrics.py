@@ -54,28 +54,32 @@ def normalise(frames):
     z_funnel = pd.DataFrame({
         "date": zf["Aggregation"].map(iso_day), "source": "Zomato",
         "brand": zf["Brand Name"].map(text), "region": zf["Region"].map(text), "store_type": zf["Store Type"].map(text),
+        "store": zf["Store Name"].map(text),
         "menu_open": num(zf["menu_opens"]), "cart": num(zf["cart_built"]), "orders": num(zf["order_makes"]),
         "clicks": 0.0, "ad_orders": 0.0})
     z_ads = pd.DataFrame({
         "date": za["duration"].map(iso_day), "source": "Zomato",
         "brand": za["Brand Name"].map(text), "region": za["Region"].map(text), "store_type": za["Store Type"].map(text),
+        "store": za["Store Name"].map(text),
         "menu_open": 0.0, "cart": 0.0, "orders": 0.0,
         "clicks": num(za["clicks"]), "ad_orders": num(za["ad_orders"])})
     s_funnel = pd.DataFrame({
         "date": sf["date"].map(iso_day), "source": "Swiggy",
         "brand": sf["Brand Name"].map(text), "region": sf["Region"].map(text), "store_type": sf["Store Type"].map(text),
+        "store": sf["Store Name"].map(text),
         "menu_open": num(sf["menu_sessions"]), "cart": num(sf["cart_session"]), "orders": num(sf["order_session"]),
         "clicks": 0.0, "ad_orders": 0.0})
     s_ads = pd.DataFrame({
         "date": sa["dt"].map(iso_day), "source": "Swiggy",
         "brand": sa["Brand Name"].map(text), "region": sa["Region"].map(text), "store_type": sa["Store Type"].map(text),
+        "store": sa["Store Name"].map(text),
         "menu_open": 0.0, "cart": 0.0, "orders": 0.0,
         "clicks": num(sa["clicks"]), "ad_orders": num(sa["ads_orders"])})
     return pd.concat([z_funnel, z_ads, s_funnel, s_ads], ignore_index=True)
 
 
 def aggregate(rows):
-    keys = ["date", "source", "brand", "region", "store_type"]
+    keys = ["date", "source", "brand", "region", "store_type", "store"]
     return rows.groupby(keys, as_index=False)[["menu_open", "cart", "orders", "clicks", "ad_orders"]].sum()
 
 
@@ -86,18 +90,20 @@ def build(frames):
     brands = sorted(rows["brand"].unique())
     regions = sorted(rows["region"].unique())
     types = sorted(rows["store_type"].unique())
+    stores = sorted(rows["store"].unique())
     idx = lambda vals: {v: i for i, v in enumerate(vals)}
-    si, bi, ri, ti = idx(sources), idx(brands), idx(regions), idx(types)
+    si, bi, ri, ti, sti = idx(sources), idx(brands), idx(regions), idx(types), idx(stores)
     out = []
     for _, r in rows.iterrows():
         d = (dt.date.fromisoformat(r["date"]) - EPOCH).days
         out.append([d, si[r["source"]], bi[r["brand"]], ri[r["region"]], ti[r["store_type"]],
                     round(r["menu_open"], 2), round(r["cart"], 2), round(r["orders"], 2),
-                    round(r["clicks"], 2), round(r["ad_orders"], 2)])
+                    round(r["clicks"], 2), round(r["ad_orders"], 2), sti[r["store"]]])
     out.sort()
     return {"epoch": "2025-01-01", "sources": sources, "brands": brands, "regions": regions, "storeTypes": types,
+            "stores": stores,
             "dateMin": rows["date"].min(), "dateMax": rows["date"].max(),
-            "fields": ["day", "source", "brand", "region", "storeType", "menuOpen", "cart", "orders", "clicks", "adOrders"],
+            "fields": ["day", "source", "brand", "region", "storeType", "menuOpen", "cart", "orders", "clicks", "adOrders", "store"],
             "rows": out}
 
 
