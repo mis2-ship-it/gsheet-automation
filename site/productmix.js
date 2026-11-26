@@ -41,6 +41,34 @@
     }
     return JSON.parse(text);
   }
+  // The uploaded file is kept in this browser (localStorage), so it is still there after a refresh.
+  const PM_KEY = "fb-product-mix-file";
+  function pmB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function pmUnB64(text) {
+    const bin = atob(text);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  function pmRemember(buf, name) {
+    try { localStorage.setItem(PM_KEY, JSON.stringify({ name, data: pmB64(buf), saved: new Date().toISOString() })); } catch (e) { /* no storage: used for this visit only */ }
+  }
+  function pmForget() {
+    try { localStorage.removeItem(PM_KEY); } catch (e) { /* nothing to remove */ }
+  }
+  async function pmFromStorage() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(PM_KEY) || "null"); } catch (e) { saved = null; }
+    if (!saved || !saved.data) return false;
+    pmUse(await pmParse(pmUnB64(saved.data), saved.name));
+    PM.savedName = saved.name;
+    return true;
+  }
   async function pmLoad() {
     if (PM.data || PM.loading) return;
     PM.loading = true;
@@ -48,6 +76,7 @@
       pmUse(await loadGz("data/product_mix.json.gz"));
     } catch (err) {
       PM.error = pmErrorText(err);
+      try { if (await pmFromStorage()) PM.error = null; } catch (e2) { /* the saved file cannot be used */ }
     }
     PM.loading = false;
     render();
@@ -57,15 +86,24 @@
     PM.loading = true;
     PM.error = null;
     try {
-      pmUse(await pmParse(await file.arrayBuffer(), file.name));
+      const buf = await file.arrayBuffer();
+      pmUse(await pmParse(buf, file.name));
+      pmRemember(buf, file.name);
+      PM.savedName = file.name;
     } catch (err) {
       PM.error = "That file could not be read as product mix data: " + err.message;
     }
     PM.loading = false;
     render();
   }
+  function pmSavedNote() {
+    if (!PM.savedName) return "";
+    return `<span class="muted">Using the file saved in this browser: ${pmEsc(PM.savedName)}. </span>` +
+      `<button class="ghost" data-pm-forget="1">Remove this file</button> `;
+  }
   function pmUploadControl() {
-    return `<label class="mt-f"><span class="muted">Load the product mix file (product_mix.json.gz)</span>` +
+    return `<div>${pmSavedNote()}</div>` +
+      `<label class="mt-f"><span class="muted">Load the product mix file (product_mix.json.gz)</span>` +
       `<input type="file" data-pm-file="1" accept=".gz,.json,application/gzip,application/json"></label>`;
   }
 
@@ -144,6 +182,15 @@
     const el = e.target && e.target.dataset ? e.target : null;
     if (el && el.dataset.pmFile) pmPickFile(el.files && el.files[0]);
   });
+  // Remove the saved file: the page then tries the server again.
+  document.addEventListener("click", e => {
+    if (!(e.target && e.target.closest && e.target.closest("[data-pm-forget]"))) return;
+    pmForget();
+    PM.data = null;
+    PM.savedName = null;
+    PM.error = null;
+    render();
+  });
 
-  window.FB_PM = { PM, pmCompute, pmPass, pmParse, pmUse, pmErrorText };
+  window.FB_PM = { PM, pmCompute, pmPass, pmParse, pmUse, pmErrorText, pmPickFile, pmLoad, pmRemember, pmForget, pmFromStorage, pmUploadControl };
 })();
