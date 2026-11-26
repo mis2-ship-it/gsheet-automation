@@ -6,7 +6,7 @@
    Data: data/metrics.json.gz, built by build_metrics.py from the Metrics sheet. Loaded after productmix.js.
    It wraps salesPeriodView() for the Metrics tab only. */
 (function () {
-  const MT = { data: null, loading: false, error: null, a: null, b: null, brand: "all", type: "all", region: "all", source: "all" };
+  const MT = { data: null, loading: false, error: null, a: null, b: null, brand: "all", type: "all", region: "all", source: "all", store: "all", chart: { m2o: { src: "all", show: { "M2O%": true, "C2O%": true } }, org: { src: "all", show: { "Organic%": true, "In-Organic%": true } }, clk: { src: "all", show: { "Clicks": true, "Ad Orders": true } } } };
   const MT_EPOCH = Date.UTC(2025, 0, 1);
   const COL = { m2o: "#2D6A6E", c2o: "#E07A3F", org: "#7A5CC2", inorg: "#C4413B", clicks: "#3C8DBC", ad: "#8A9B0F" };
   const mtEsc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -142,6 +142,7 @@
     if (MT.brand !== "all" && d.brands[r[2]] !== MT.brand) return false;
     if (MT.region !== "all" && d.regions[r[3]] !== MT.region) return false;
     if (MT.type !== "all" && d.storeTypes[r[4]] !== MT.type) return false;
+    if (MT.store !== "all" && (!d.stores || d.stores[r[10]] !== MT.store)) return false;
     if (p.source && d.sources.includes(p.source) && d.sources[r[1]] !== p.source) return false;
     if (p.brand && d.brands.includes(p.brand) && d.brands[r[2]] !== p.brand) return false;
     if (p.region && d.regions.includes(p.region) && d.regions[r[3]] !== p.region) return false;
@@ -150,11 +151,12 @@
     return true;
   }
   // Sums per day for the filtered rows.
-  function mtByDay() {
+  function mtByDay(src) {
     const m = new Map();
     const pf = mtPageFilters();
     for (const r of MT.data.rows) {
       if (!mtPass(r, pf)) continue;
+      if (src && src !== "all" && MT.data.sources[r[1]] !== src) continue;
       const x = m.get(r[0]) || { menuOpen: 0, cart: 0, orders: 0, clicks: 0, adOrders: 0 };
       x.menuOpen += r[5]; x.cart += r[6]; x.orders += r[7]; x.clicks += r[8]; x.adOrders += r[9];
       m.set(r[0], x);
@@ -187,7 +189,7 @@
   // ---- charts: day 1, 2 ... of each period; A solid, B dashed ----
   // Each point shows its value. The solid line's value sits above its point and the dashed line's value below it,
   // so two lines on the same axis do not cover each other. A long period is drawn wider and scrolls sideways.
-  function mtChart(series, leftFmt, rightFmt) {
+  function mtChart(series, leftFmt, rightFmt, xLabels) {
     const n = Math.max(1, ...series.map(s => s.values.length));
     const W = Math.max(720, 46 * n + 70), H = 260, L = 56, R = series.some(s => s.axis === "R") ? 60 : 16, T = 22, B = 30;
     const pw = W - L - R, ph = H - T - B;
@@ -203,6 +205,7 @@
     const y = (axis, v) => { const [lo, hi] = ext[axis]; return T + (1 - (v - lo) / (hi - lo)) * ph; };
     const fmtFor = s => (s.name.indexOf("%") >= 0 ? v => v.toFixed(2) + "%" : v => Math.round(v).toLocaleString("en-IN"));
     const widthAttr = n > 12 ? `${W}px` : "100%";
+    const xLabel = k => (xLabels && xLabels[k]) || `Day ${k + 1}`;
     let svg = `<svg viewBox="0 0 ${W} ${H}" width="${widthAttr}" role="img">`;
     for (let g = 0; g <= 4; g++) {
       const yy = T + (g / 4) * ph;
@@ -216,7 +219,7 @@
     }
     const step = Math.max(1, Math.ceil(n / 12));
     for (let k = 0; k < n; k += step) {
-      svg += `<text x="${x(k)}" y="${H - 10}" text-anchor="middle" font-size="10" style="fill:var(--ink-2)">Day ${k + 1}</text>`;
+      svg += `<text x="${x(k)}" y="${H - 10}" text-anchor="middle" font-size="10" style="fill:var(--ink-2)">${mtEsc(xLabel(k))}</text>`;
     }
     series.forEach(s => {
       const f = fmtFor(s);
@@ -230,7 +233,7 @@
       s.values.forEach((v, k) => {
         if (v === null || !isFinite(v)) return;
         const px = x(k), py = y(s.axis, v);
-        const tip = mtEsc(`${s.name}${s.dash ? " (B)" : " (A)"} · Day ${k + 1}: ${f(v)}`);
+        const tip = mtEsc(`${s.name}${s.dash ? " (B)" : " (A)"} · ${(s.labels && s.labels[k]) || xLabel(k)}: ${f(v)}`);
         const ly = s.dash ? py + 18 : py - 9;
         svg += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3.5" fill="${s.color}"><title>${tip}</title></circle>`;
         svg += `<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" font-size="10" font-weight="600" ` +
@@ -243,29 +246,52 @@
     return `<div class="legend">${series.map(s => `<span><i class="sw" style="--c:${s.color}"></i>${mtEsc(s.name)}${s.dash ? " (B, dashed)" : " (A)"}</span>`).join("")}</div>`;
   }
 
+  // The three charts. Each has its own source (Swiggy + Zomato, Swiggy or Zomato) and its own metric toggles.
+  const MT_CHART_DEFS = [
+    { key: "m2o", title: "M2O% and C2O%", kind: "pct", list: [
+        { name: "M2O%", color: COL.m2o, axis: "L", field: "m2o" },
+        { name: "C2O%", color: COL.c2o, axis: "L", field: "c2o" }] },
+    { key: "org", title: "Organic% and In-Organic%", kind: "pct",
+      note: "In-Organic% = Ad Orders ÷ Orders. Organic% = 1 − In-Organic%.", list: [
+        { name: "Organic%", color: COL.org, axis: "L", field: "org" },
+        { name: "In-Organic%", color: COL.inorg, axis: "L", field: "inOrg" }] },
+    { key: "clk", title: "Clicks and Ad Orders", kind: "num", list: [
+        { name: "Clicks", color: COL.clicks, axis: "L", field: "clicks" },
+        { name: "Ad Orders", color: COL.ad, axis: "R", field: "adOrders" }] }
+  ];
+  // The series of one chart: the chosen metrics, each for period A (solid) and period B (dashed), with the dates.
+  function mtChartData(def) {
+    const st = MT.chart[def.key];
+    const byDay = mtByDay(st.src);
+    const a = mtPeriod(MT.a, byDay), b = mtPeriod(MT.b, byDay);
+    const series = [];
+    for (const m of def.list) {
+      if (!st.show[m.name]) continue;
+      series.push({ name: m.name, color: m.color, axis: m.axis, dash: false,
+                    values: a.days.map(d => d[m.field]), labels: a.days.map(d => mtLabel(d.day)) });
+      series.push({ name: m.name, color: m.color, axis: m.axis, dash: true,
+                    values: b.days.map(d => d[m.field]), labels: b.days.map(d => mtLabel(d.day)) });
+    }
+    return { series, a, b, st };
+  }
+  function mtChartCard(def) {
+    const { series, a, b, st } = mtChartData(def);
+    const srcOpts = [["all", "Swiggy + Zomato"], ["Swiggy", "Swiggy"], ["Zomato", "Zomato"]]
+      .map(([v, l]) => `<option value="${v}"${st.src === v ? " selected" : ""}>${l}</option>`).join("");
+    const chips = def.list.map(m => `<label><input type="checkbox" data-mtc-show="${def.key}" data-metric="${mtEsc(m.name)}"` +
+      `${st.show[m.name] ? " checked" : ""}> ${mtEsc(m.name)}</label>`).join("");
+    const fmt = def.kind === "pct" ? (v => v.toFixed(1) + "%") : (v => Math.round(v).toLocaleString("en-IN"));
+    const body = series.length
+      ? mtChart(series, fmt, fmt, a.days.map(d => mtLabel(d.day))) + mtLegend(series)
+      : `<p class="muted">Pick at least one metric above.</p>`;
+    return `<section class="block"><div class="mt-head"><h2>${def.title}</h2>` +
+      `<label class="mt-f"><span class="muted">Source</span><select data-mtc-src="${def.key}">${srcOpts}</select></label></div>` +
+      `<div class="mt-chips">${chips}</div>` +
+      `<p class="sub">A: ${mtLabel(MT.a.from)} to ${mtLabel(MT.a.to)} · B: ${mtLabel(MT.b.from)} to ${mtLabel(MT.b.to)}</p>` +
+      body + (def.note ? `<p class="muted">${def.note}</p>` : "") + `</section>`;
+  }
   function mtCharts(sum) {
-    const pick = (p, k) => p.days.map(d => d[k]);
-    const s1 = [
-      { name: "M2O%", color: COL.m2o, axis: "L", values: pick(sum.a, "m2o"), dash: false },
-      { name: "C2O%", color: COL.c2o, axis: "L", values: pick(sum.a, "c2o"), dash: false },
-      { name: "M2O%", color: COL.m2o, axis: "L", values: pick(sum.b, "m2o"), dash: true },
-      { name: "C2O%", color: COL.c2o, axis: "L", values: pick(sum.b, "c2o"), dash: true }];
-    const s2 = [
-      { name: "Organic%", color: COL.org, axis: "L", values: pick(sum.a, "org"), dash: false },
-      { name: "In-Organic%", color: COL.inorg, axis: "L", values: pick(sum.a, "inOrg"), dash: false },
-      { name: "Organic%", color: COL.org, axis: "L", values: pick(sum.b, "org"), dash: true },
-      { name: "In-Organic%", color: COL.inorg, axis: "L", values: pick(sum.b, "inOrg"), dash: true }];
-    const s3 = [
-      { name: "Clicks (left)", color: COL.clicks, axis: "L", values: pick(sum.a, "clicks"), dash: false },
-      { name: "Ad Orders (right)", color: COL.ad, axis: "R", values: pick(sum.a, "adOrders"), dash: false },
-      { name: "Clicks (left)", color: COL.clicks, axis: "L", values: pick(sum.b, "clicks"), dash: true },
-      { name: "Ad Orders (right)", color: COL.ad, axis: "R", values: pick(sum.b, "adOrders"), dash: true }];
-    const pctAxis = v => v.toFixed(1) + "%";
-    const numAxis = v => Math.round(v).toLocaleString("en-IN");
-    return `<section class="block"><h2>M2O% and C2O%</h2>${mtChart(s1, pctAxis, pctAxis)}${mtLegend(s1)}</section>` +
-           `<section class="block"><h2>Organic% and In-Organic%</h2>${mtChart(s2, pctAxis, pctAxis)}${mtLegend(s2)}` +
-           `<p class="muted">In-Organic% = Ad Orders ÷ Orders. Organic% = 1 − In-Organic%.</p></section>` +
-           `<section class="block"><h2>Clicks and Ad Orders</h2>${mtChart(s3, numAxis, numAxis)}${mtLegend(s3)}</section>`;
+    return MT_CHART_DEFS.map(mtChartCard).join("");
   }
 
   function mtSummaryTable(sum) {
@@ -294,11 +320,13 @@
     const sel = (key, label, opts) => `<label class="mt-f"><span class="muted">${label}</span><select data-mt="${key}">` +
       `<option value="all"${MT[key] === "all" ? " selected" : ""}>All</option>` +
       opts.map(o => `<option value="${mtEsc(o)}"${MT[key] === o ? " selected" : ""}>${mtEsc(o)}</option>`).join("") + `</select></label>`;
+    const storeNames = d.stores ? [...new Set(d.stores)].sort() : [];
+    const storeSel = storeNames.length ? sel("store", "Store name", storeNames) : "";
     const date = (key, label, v) => `<label class="mt-f"><span class="muted">${label}</span><input type="date" data-mt="${key}" value="${mtIso(v)}"></label>`;
     return `<div class="mt-bar"><div class="mt-row"><b>Comparison A</b>${date("a.from", "From", MT.a.from)}${date("a.to", "To", MT.a.to)}` +
       `<b>Comparison B</b>${date("b.from", "From", MT.b.from)}${date("b.to", "To", MT.b.to)}</div>` +
       `<div class="mt-row">${sel("source", "Source", ["Swiggy", "Zomato"])}${sel("brand", "Brand", d.brands)}` +
-      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}</div>` +
+      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}${storeSel}</div>` +
       `<div class="mt-row">${mtUploadControl()}</div></div>`;
   }
 
@@ -336,6 +364,8 @@
   document.addEventListener("change", e => {
     const el = e.target && e.target.dataset ? e.target : null;
     if (el && el.dataset.mtFile) { mtPickFile(el.files && el.files[0]); return; }
+    if (el && el.dataset.mtcSrc) { MT.chart[el.dataset.mtcSrc].src = el.value; render(); return; }
+    if (el && el.dataset.mtcShow) { MT.chart[el.dataset.mtcShow].show[el.dataset.metric] = el.checked; render(); return; }
     if (!el || !el.dataset.mt) return;
     const k = el.dataset.mt;
     if (k.indexOf(".") > 0) {
@@ -358,7 +388,10 @@
     st.textContent = `.mt-bar{display:flex;flex-direction:column;gap:10px;margin:8px 0}
 .mt-row{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
 .mt-f{display:flex;flex-direction:column;gap:4px;font-size:13px}
-.mt-f select,.mt-f input{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}`;
+.mt-f select,.mt-f input{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.mt-head{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px}
+.mt-chips{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:6px 0}
+.mt-chips label{display:flex;gap:6px;align-items:center;cursor:pointer}`;
     document.head.appendChild(st);
   })();
 
