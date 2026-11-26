@@ -100,6 +100,8 @@ jobs:
           EXTRA=""
           if [ -f data/new_sales.csv.gz ]; then EXTRA="$EXTRA --new data/new_sales.csv.gz"; fi
           if [ -f data/new_hourly.csv.gz ]; then EXTRA="$EXTRA --new-hourly data/new_hourly.csv.gz"; fi
+          if [ -f data/metrics.json.gz ]; then EXTRA="$EXTRA --metrics data/metrics.json.gz"; fi
+          if [ -f data/product_mix.json.gz ]; then EXTRA="$EXTRA --product-mix data/product_mix.json.gz"; fi
           python build_groups.py --access data/access.csv --history historical_data/historical_sales.csv.gz $EXTRA \
             --live data/live_sales.csv --ratings data/ratings.csv --kpt data/kpt_orders.csv --discounts data/discount_rows.csv
 
@@ -121,3 +123,4 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy site --project-name=frozenbottle-sales --branch=main
+
