@@ -1,12 +1,8 @@
 const fs = require('fs'), vm = require('vm'), zlib = require('zlib');
-const path = require('path');
-const SITE = path.join(__dirname, '..', 'site');
-const FIX = path.join(__dirname, 'fixtures');
-
 let pass = 0, fail = 0;
 const check = (n, c, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (x ? '  [' + x + ']' : '')); };
-const PMD = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FIX, 'product_mix_test.json.gz'))).toString('utf8'));
-const E = JSON.parse(fs.readFileSync(path.join(FIX, 'pm_expected.json'), 'utf8'));
+const PMD = JSON.parse(zlib.gunzipSync(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'product_mix.json.gz'))).toString('utf8'));
+const E = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'pm_expected.json'), 'utf8'));
 let loadImpl = async () => PMD;
 const EPOCH_MS = Date.UTC(2025, 0, 1);
 const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout,
@@ -18,7 +14,7 @@ const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date
   document: { addEventListener() {} }, Blob, Response, DecompressionStream, TextDecoder, TextEncoder };
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(SITE, 'productmix.js'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'site', 'productmix.js'), 'utf8'), ctx);
 const run = s => vm.runInContext(s, ctx);
 (async () => {
   // a failed fetch
@@ -29,7 +25,7 @@ const run = s => vm.runInContext(s, ctx);
   check('a failed fetch says the file could not be reached, with what to do', errA && errA.includes('could not reach data/product_mix.json.gz') && /load the file below/i.test(errA), errA);
   check('the Morning Call offers the product mix file control when there is no data', run("salesPeriodView('morning')").includes('data-pm-file="1"'));
   // upload the file (gzip), as the page would
-  const gz = fs.readFileSync(path.join(FIX, 'product_mix_test.json.gz'));
+  const gz = fs.readFileSync(require('path').join(__dirname, 'fixtures', 'product_mix.json.gz'));
   run('FB_PM.PM.data = null; FB_PM.PM.error = null');
   const parsed = await run(`FB_PM.pmParse(new Uint8Array(${JSON.stringify(Array.from(gz))}).buffer, 'product_mix.json.gz')`);
   run(`FB_PM.pmUse(${JSON.stringify(parsed)})`);
