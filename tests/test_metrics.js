@@ -1,10 +1,8 @@
 const fs = require('fs'), vm = require('vm'), zlib = require('zlib');
 let pass = 0, fail = 0;
 const check = (n, c, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (x ? '  [' + x + ']' : '')); };
-const path = require('path');
-const FIX = path.join(__dirname, 'fixtures');
-const DATA = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FIX, 'metrics.json.gz'))).toString('utf8'));
-const E = JSON.parse(fs.readFileSync(path.join(FIX, 'metrics_expected.json'), 'utf8'));
+const DATA = JSON.parse(zlib.gunzipSync(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'metrics.json.gz'))).toString('utf8'));
+const E = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'metrics_expected.json'), 'utf8'));
 const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout,
   SUBS: { sales: [['live', 'Live'], ['daily', 'Daily']] }, renders: 0, num: n => Math.round(n).toLocaleString('en-IN'),
   loadGz: async () => DATA, render() { ctx.renders++; },
@@ -12,7 +10,7 @@ const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date
   document: { addEventListener() {}, getElementById: () => null, createElement: () => ({}), head: { appendChild() {} } } };
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'site', 'metrics.js'), 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'site', 'metrics.js'), 'utf8'), ctx);
 const run = s => vm.runInContext(s, ctx);
 const close = (x, y, tol = 1e-6) => (x === null || x === undefined || y === null || y === undefined) ? (x === y) : Math.abs(x - y) <= tol * Math.max(1, Math.abs(y));
 (async () => {

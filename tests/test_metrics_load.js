@@ -1,8 +1,8 @@
 const fs = require('fs'), vm = require('vm'), zlib = require('zlib');
 let pass = 0, fail = 0;
 const check = (n, c, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (x ? '  [' + x + ']' : '')); };
-const DATA = JSON.parse(zlib.gunzipSync(fs.readFileSync('/tmp/met/metrics.json.gz')).toString('utf8'));
-const E = JSON.parse(fs.readFileSync('/tmp/met/metrics_expected.json', 'utf8'));
+const DATA = JSON.parse(zlib.gunzipSync(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'metrics.json.gz'))).toString('utf8'));
+const E = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'fixtures', 'metrics_expected.json'), 'utf8'));
 let loadImpl = async () => DATA;
 const mk = () => ({ children: [], id: '', appendChild(c) { this.children.push(c); return c; } });
 const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date, Intl, Infinity, isFinite, RegExp, Error, Promise, setTimeout,
@@ -12,7 +12,7 @@ const ctx = { console, Map, Set, Math, Number, String, Array, Object, JSON, Date
   Blob, Response, DecompressionStream, TextDecoder, TextEncoder };
 ctx.window = ctx;
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync('/tmp/met/metrics.js', 'utf8'), ctx);
+vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'site', 'metrics.js'), 'utf8'), ctx);
 const run = s => vm.runInContext(s, ctx);
 (async () => {
   // a failed fetch: the browser never got a response
@@ -27,7 +27,7 @@ const run = s => vm.runInContext(s, ctx);
   run('FB_MT.mtLoad()'); await new Promise(r => setTimeout(r, 20));
   check('a 404 says the file is not on the server yet', run('FB_MT.MT.error').includes('not on the server yet'), run('FB_MT.MT.error'));
   // upload a gzip file: read the data straight from the file
-  const gz = fs.readFileSync('/tmp/met/metrics.json.gz');
+  const gz = fs.readFileSync(require('path').join(__dirname, 'fixtures', 'metrics.json.gz'));
   run('FB_MT.MT.error = null; FB_MT.MT.data = null');
   const parsed = await run(`FB_MT.mtParse(new Uint8Array(${JSON.stringify(Array.from(gz))}).buffer, 'metrics.json.gz')`);
   run(`FB_MT.mtUse(${JSON.stringify(parsed)})`);
