@@ -237,12 +237,18 @@ def probe_candidates(branch, day):
                 row["orders"] = len(data)
                 if data:
                     flat = [flatten(d) for d in data]
-                    keys = sorted(flat[0].keys())
+                    keys = sorted({k for f in flat for k in f})           # every field seen in the orders
                     row["fields"] = ",".join(keys)
-                    row["reason_fields"] = ",".join(k for k in keys if "reason" in k.lower() or "remark" in k.lower()
-                                                    or "status" in k.lower())
+                    row["reason_fields"] = ",".join(k for k in keys if any(w in k.lower() for w in
+                                                    ("reason", "remark", "status", "cancel")))
                     row["statuses"] = ";".join(f"{s}={n}" for s, n in Counter(
-                        status_label(d) for d in flat).most_common())
+                        status_label(f) for f in flat).most_common())
+                    cancelled_here = [f for f in flat if is_cancelled(f, "auto", ("cancel", "void"))]
+                    if cancelled_here:
+                        # the fields of one cancelled order, so the cancel reason can be seen
+                        row["cancelled_sample"] = {k: v for k, v in cancelled_here[0].items()
+                                                   if any(w in k.lower() for w in
+                                                          ("status", "reason", "remark", "cancel", "invoice"))}
                 row["message"] = "" if data else "200 with no orders for this branch and day"
             else:
                 row["message"] = (r.text or "")[:300]
@@ -285,11 +291,12 @@ REMARK_KEYS = ("statusInfo.remarks", "remarks")
 
 
 def status_fields(flat, status_field="auto"):
-    """The fields that hold an order status: a field named status, top-level or nested (statusInfo.status).
-    With a name given, only that field."""
+    """The fields that hold an order status: any field with 'status' in its name (status, statusInfo.status,
+    fulfillmentStatus). With a name given, only that field."""
     if status_field != "auto":
         return [status_field] if status_field in flat else []
-    return [k for k in flat if k.lower() == "status" or k.lower().endswith(".status")]
+    # the reason, its source reason and the remarks are text, not the status, even though their names contain "status"
+    return [k for k in flat if "status" in k.lower() and not any(w in k.lower() for w in ("reason", "remark"))]
 
 
 def is_cancelled(flat, status_field, cancel_words):
