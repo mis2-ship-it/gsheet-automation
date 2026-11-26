@@ -278,8 +278,9 @@
     const { series, a, b, st } = mtChartData(def);
     const srcOpts = [["all", "Swiggy + Zomato"], ["Swiggy", "Swiggy"], ["Zomato", "Zomato"]]
       .map(([v, l]) => `<option value="${v}"${st.src === v ? " selected" : ""}>${l}</option>`).join("");
-    const chips = def.list.map(m => `<label><input type="checkbox" data-mtc-show="${def.key}" data-metric="${mtEsc(m.name)}"` +
-      `${st.show[m.name] ? " checked" : ""}> ${mtEsc(m.name)}</label>`).join("");
+    const chips = def.list.map(m => `<button type="button" class="mt-chip${st.show[m.name] ? " on" : ""}" ` +
+      `aria-pressed="${st.show[m.name] ? "true" : "false"}" data-mtc-toggle="${def.key}" data-metric="${mtEsc(m.name)}">` +
+      `${st.show[m.name] ? "✓ " : ""}${mtEsc(m.name)}</button>`).join("");
     const fmt = def.kind === "pct" ? (v => v.toFixed(1) + "%") : (v => Math.round(v).toLocaleString("en-IN"));
     const body = series.length
       ? mtChart(series, fmt, fmt, a.days.map(d => mtLabel(d.day))) + mtLegend(series)
@@ -321,15 +322,26 @@
       `<option value="all"${MT[key] === "all" ? " selected" : ""}>All</option>` +
       opts.map(o => `<option value="${mtEsc(o)}"${MT[key] === o ? " selected" : ""}>${mtEsc(o)}</option>`).join("") + `</select></label>`;
     const storeNames = d.stores ? [...new Set(d.stores)].sort() : [];
-    const storeSel = storeNames.length ? sel("store", "Store name", storeNames) : "";
+    const storeSel = sel("store", "Store name", storeNames);
+    const storeNote = storeNames.length ? "" : `<p class="muted">This file has no store names. Build it from the Google Sheet (build_metrics.py --gsheet).</p>`;
     const date = (key, label, v) => `<label class="mt-f"><span class="muted">${label}</span><input type="date" data-mt="${key}" value="${mtIso(v)}"></label>`;
     return `<div class="mt-bar"><div class="mt-row"><b>Comparison A</b>${date("a.from", "From", MT.a.from)}${date("a.to", "To", MT.a.to)}` +
       `<b>Comparison B</b>${date("b.from", "From", MT.b.from)}${date("b.to", "To", MT.b.to)}</div>` +
       `<div class="mt-row">${sel("source", "Source", ["Swiggy", "Zomato"])}${sel("brand", "Brand", d.brands)}` +
-      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}${storeSel}</div>` +
+      `${sel("type", "Store type", d.storeTypes)}${sel("region", "Region", d.regions)}${storeSel}</div>${storeNote}` +
       `<div class="mt-row">${mtUploadControl()}</div></div>`;
   }
 
+  // The dates the file covers, and a warning for a comparison period that is partly outside them.
+  function mtCoverageNote() {
+    const lo = mtDay(MT.data.dateMin), hi = mtDay(MT.data.dateMax);
+    if (!isFinite(lo) || !isFinite(hi)) return "";
+    const warn = [["Comparison A", MT.a], ["Comparison B", MT.b]]
+      .filter(([, p]) => p.from < lo || p.to > hi)
+      .map(([name, p]) => `${name} (${mtLabel(p.from)} to ${mtLabel(p.to)}) is partly outside the data in this file.`);
+    return `<p class="muted">Data in this file: ${mtLabel(lo)} to ${mtLabel(hi)}.</p>` +
+      warn.map(w => `<p class="muted" style="color:#E07A3F">${mtEsc(w)}</p>`).join("");
+  }
   function mtSavedNote() {
     if (!MT.savedName) return "";
     return `<p class="muted">Using the file saved in this browser: ${mtEsc(MT.savedName)}. ` +
@@ -343,11 +355,21 @@
       return `<section class="block"><h2>Metrics</h2>${note}<div class="mt-bar">${mtUploadControl()}</div></section>`;
     }
     const sum = mtSummary();
-    return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters. The Sales tab's brand, region, store type, source and store filters apply too.</p>${mtSavedNote()}${mtFilters()}</section>` +
+    return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters. The Sales tab's brand, region, store type, source and store filters apply too.</p>${mtSavedNote()}${mtFilters()}${mtCoverageNote()}</section>` +
       `<section class="block"><h2>Comparison A and B</h2>${mtSummaryTable(sum)}</section>` +
       mtCharts(sum) +
       mtDayTable("Comparison A", sum.a) + mtDayTable("Comparison B", sum.b);
   }
+
+  // The metric buttons of a chart: a click shows the metric, or hides it.
+  document.addEventListener("click", e => {
+    const tg = e.target && e.target.closest ? e.target.closest("[data-mtc-toggle]") : null;
+    if (!tg) return;
+    const st = MT.chart[tg.dataset.mtcToggle];
+    const m = tg.dataset.metric;
+    st.show[m] = !st.show[m];
+    render();
+  });
 
   // Remove the saved file: the page then tries the server again.
   document.addEventListener("click", e => {
@@ -391,7 +413,9 @@
 .mt-f select,.mt-f input{padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
 .mt-head{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px}
 .mt-chips{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin:6px 0}
-.mt-chips label{display:flex;gap:6px;align-items:center;cursor:pointer}`;
+.mt-chips label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.mt-chip{padding:5px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink-2);cursor:pointer;font-size:13px}
+.mt-chip.on{background:var(--surface);color:var(--ink);border-color:var(--ink-2)}`;
     document.head.appendChild(st);
   })();
 
