@@ -387,13 +387,13 @@ function renderOverview() {
   var html;
   if (d.meta.kind === "live") {
     html = liveKpiBlock(d) +
-      offersHtml(d, "By offer type", "Today so far, against the same hours last week. Click an offer type to see its codes.") +
+      offersHtml(d, "By offer type", "Today so far, against the same hours last week. Click an offer type to see its codes. Zomato is grouped by the first code entered; codes with fewer than 5 orders are not counted.") +
       codeBlock(d) + liveHourBlock(d) +
       catBlockHtml("overview", d.cats, OPTS.categories, "By category: today so far, against the same hours last week",
         "Click a category to see its products. Txn counts each order once in the category.");
   } else {
     html = "<p class='note'>Discount codes: Swiggy and Zomato orders only.</p>" + overviewKpis(d) + overviewCharts(d) +
-      offersHtml(d, "By offer type", "Discount codes grouped by offer type, like the Swiggy offer-type sheet. Click an offer type to see its codes.") +
+      offersHtml(d, "By offer type", "Discount codes grouped by offer type, like the Swiggy offer-type sheet. Click an offer type to see its codes. Zomato is grouped by the first code entered; codes with fewer than 5 orders are not counted.") +
       codeBlock(d) + trendBlock(d) +
       catBlockHtml("overview", d.cats, OPTS.categories, "By category",
         "Click a category to see its items. Txn counts each order once in the category.");

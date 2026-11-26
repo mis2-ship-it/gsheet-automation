@@ -339,9 +339,30 @@ function attachPrev_(curCats, prvCats) {
   });
 }
 
-// Zomato is shown by voucher code, as on the Zomato sheet: one row per code, no offer-type grouping.
+// A codes or offer-type row counts only with at least this many orders in the period (offer-type performance).
+const OFFER_MIN_ORDERS = 5;
+// Zomato: the customer enters the first code, then may add more codes. The voucher is the first code of the label:
+// "Gold Discount GOLD + Menu Discount" counts under "Gold Discount GOLD".
+function firstCode_(label) {
+  const first = String(label || "").split(" + ")[0].trim();
+  return first || "No code";
+}
+// Zomato by voucher (first code). The voucher counts only with OFFER_MIN_ORDERS orders; the codes inside it (with
+// their own orders) are listed when they have OFFER_MIN_ORDERS orders too. The voucher's totals include all its codes.
 function groupCodes_(entries) {
-  return entries.map(e => ({ type: e.label, cur: e.cur, prev: e.prev, labels: [] }))
+  const m = new Map();
+  for (const e of entries) {
+    const key = firstCode_(e.label);
+    if (!m.has(key)) m.set(key, { type: key, cur: blank_(), prev: blank_(), labels: [] });
+    const g = m.get(key);
+    add_(g.cur, e.cur);
+    add_(g.prev, e.prev);
+    g.labels.push({ label: e.label, cur: e.cur, prev: e.prev });
+  }
+  return [...m.values()]
+    .filter(g => g.cur.inv >= OFFER_MIN_ORDERS)
+    .map(g => ({ type: g.type, cur: g.cur, prev: g.prev,
+                 labels: g.labels.filter(x => x.cur.inv >= OFFER_MIN_ORDERS).sort((a, b) => b.cur.net - a.cur.net) }))
     .sort((a, b) => b.cur.net - a.cur.net);
 }
 // Offer types by platform (Swiggy by offer type, Zomato by voucher code). rows need d, label and source;
@@ -361,7 +382,8 @@ function offersBySource_(rows, curWin, prevWin, keep) {
   [...sources.keys()].sort((x, y) => (x === "Swiggy" ? -1 : y === "Swiggy" ? 1 : x.localeCompare(y)))
     .forEach(src => {
       const entries = [...sources.get(src).values()];
-      out[src] = src === "Zomato" ? groupCodes_(entries) : groupOffers_(entries);
+      // Swiggy: a code with under OFFER_MIN_ORDERS orders is not counted in its offer type.
+      out[src] = src === "Zomato" ? groupCodes_(entries) : groupOffers_(entries.filter(e => e.cur.inv >= OFFER_MIN_ORDERS));
     });
   return out;
 }
@@ -521,18 +543,20 @@ function computeCompare_(labelRows, p) {
     .map(src => {
       const types = new Map();
       for (const [label, cells] of sources.get(src)) {
-        const t = src === "Zomato" ? label : offerTypeOf_(label);
+        if (src !== "Zomato" && cells[0].inv < OFFER_MIN_ORDERS) continue;   // Swiggy: a code under 5 orders is not counted
+        const t = src === "Zomato" ? firstCode_(label) : offerTypeOf_(label);
         if (!types.has(t)) types.set(t, cols.map(() => blank_()));
         const tv = types.get(t);
         cells.forEach((cell, i) => add_(tv[i], cell));
       }
-      // The total counts every code and offer type, so each period's total is the real total for that source.
+      // Counted: Zomato vouchers with at least OFFER_MIN_ORDERS orders in the latest period; Swiggy offer types with orders.
+      const counted = [...types.entries()]
+        .filter(([, cells]) => (src === "Zomato" ? cells[0].inv >= OFFER_MIN_ORDERS : cells[0].inv > 0));
+      // The total is the sum of the counted codes and offer types, for each period.
       const totalCells = cols.map(() => blank_());
-      for (const cells of types.values()) cells.forEach((cell, i) => add_(totalCells[i], cell));
+      for (const [, cells] of counted) cells.forEach((cell, i) => add_(totalCells[i], cell));
       const total = totalCells.map(c => metricOf_(c, metric));
-      // Shown: only codes and offer types with orders in the latest period, highest to lowest on the selected metric.
-      const rows = [...types.entries()]
-        .filter(([, cells]) => cells[0].inv > 0)
+      const rows = counted
         .map(([type, cells]) => ({ type: type, values: cells.map(c => metricOf_(c, metric)) }))
         .sort((x, y) => { const a = rank(x.values[0]), b = rank(y.values[0]); return a === b ? 0 : (b > a ? 1 : -1); });
       return { source: src, types: rows, total: total };
