@@ -48,6 +48,35 @@
     }
     return JSON.parse(text);
   }
+  // The uploaded file is kept in this browser (localStorage), so it is still there after a refresh.
+  const MT_KEY = "fb-metrics-file";
+  function mtB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let s = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function mtUnB64(text) {
+    const bin = atob(text);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  function mtRemember(buf, name) {
+    try { localStorage.setItem(MT_KEY, JSON.stringify({ name, data: mtB64(buf), saved: new Date().toISOString() })); } catch (e) { /* no storage: the file is used for this visit only */ }
+  }
+  function mtForget() {
+    try { localStorage.removeItem(MT_KEY); } catch (e) { /* nothing to remove */ }
+  }
+  async function mtFromStorage() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(MT_KEY) || "null"); } catch (e) { saved = null; }
+    if (!saved || !saved.data) return false;
+    mtUse(await mtParse(mtUnB64(saved.data), saved.name));
+    MT.savedName = saved.name;
+    MT.savedAt = saved.saved;
+    return true;
+  }
   async function mtLoad() {
     if (MT.data || MT.loading) return;
     MT.loading = true;
@@ -55,6 +84,7 @@
       mtUse(await loadGz("data/metrics.json.gz"));
     } catch (err) {
       MT.error = mtErrorText(err);
+      try { if (await mtFromStorage()) MT.error = null; } catch (e2) { /* the saved file cannot be used */ }
     }
     MT.loading = false;
     render();
@@ -64,7 +94,11 @@
     MT.loading = true;
     MT.error = null;
     try {
-      mtUse(await mtParse(await file.arrayBuffer(), file.name));
+      const buf = await file.arrayBuffer();
+      mtUse(await mtParse(buf, file.name));
+      mtRemember(buf, file.name);
+      MT.savedName = file.name;
+      MT.savedAt = new Date().toISOString();
     } catch (err) {
       MT.error = "That file could not be read as metrics data: " + err.message;
     }
@@ -77,19 +111,50 @@
   }
 
   // Does a row pass the filters? Row: [day, source, brand, region, storeType, menuOpen, cart, orders, clicks, adOrders].
-  function mtPass(r) {
-    const d = MT.data;
+  // The Sales tab's own filters (brand, region, store type, source and store), by name. A filter the data does not
+  // have (for example Session, or Offline) is left out.
+  function mtPageFilters() {
+    // The page's own filter values and manifest, read through local names (a top-level let or const on the page
+    // is not a property of window, so window.S would be empty).
+    const pageS = (typeof S !== "undefined" && S) || {};
+    const pageM = (typeof M !== "undefined" && M) || {};
+    const pick = (v, list) => {
+      if (v === undefined || v === null || v === "all" || v === "") return null;
+      if (!isNaN(+v) && list && list[+v] !== undefined) return list[+v];
+      return String(v);
+    };
+    let store = null;
+    if (pageS.store !== undefined && pageS.store !== null && pageS.store !== "all" && pageS.store !== "") {
+      if (!isNaN(+pageS.store) && pageM.stores) {
+        const s = pageM.stores.find(x => x.i === +pageS.store);
+        store = s ? s.name : null;
+      } else {
+        store = String(pageS.store);
+      }
+    }
+    return { source: pick(pageS.source, pageM.sources), brand: pick(pageS.brand, pageM.brands),
+             region: pick(pageS.region, pageM.regions), type: pick(pageS.type, pageM.storeTypes), store };
+  }
+  // Does a row pass the filters? Row: [day, source, brand, region, storeType, menuOpen, cart, orders, clicks, adOrders, store].
+  function mtPass(r, pf) {
+    const d = MT.data, p = pf || mtPageFilters();
     if (MT.source !== "all" && d.sources[r[1]] !== MT.source) return false;
     if (MT.brand !== "all" && d.brands[r[2]] !== MT.brand) return false;
     if (MT.region !== "all" && d.regions[r[3]] !== MT.region) return false;
     if (MT.type !== "all" && d.storeTypes[r[4]] !== MT.type) return false;
+    if (p.source && d.sources.includes(p.source) && d.sources[r[1]] !== p.source) return false;
+    if (p.brand && d.brands.includes(p.brand) && d.brands[r[2]] !== p.brand) return false;
+    if (p.region && d.regions.includes(p.region) && d.regions[r[3]] !== p.region) return false;
+    if (p.type && d.storeTypes.includes(p.type) && d.storeTypes[r[4]] !== p.type) return false;
+    if (p.store && d.stores && r[10] !== undefined && d.stores[r[10]] !== p.store) return false;
     return true;
   }
   // Sums per day for the filtered rows.
   function mtByDay() {
     const m = new Map();
+    const pf = mtPageFilters();
     for (const r of MT.data.rows) {
-      if (!mtPass(r)) continue;
+      if (!mtPass(r, pf)) continue;
       const x = m.get(r[0]) || { menuOpen: 0, cart: 0, orders: 0, clicks: 0, adOrders: 0 };
       x.menuOpen += r[5]; x.cart += r[6]; x.orders += r[7]; x.clicks += r[8]; x.adOrders += r[9];
       m.set(r[0], x);
@@ -134,6 +199,7 @@
     const ext = { L: extent("L"), R: extent("R") };
     const x = k => L + (n <= 1 ? 0 : (k / (n - 1)) * pw);
     const y = (axis, v) => { const [lo, hi] = ext[axis]; return T + (1 - (v - lo) / (hi - lo)) * ph; };
+    const fmtFor = s => (s.name.indexOf("%") >= 0 ? v => v.toFixed(2) + "%" : v => Math.round(v).toLocaleString("en-IN"));
     let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img">`;
     for (let g = 0; g <= 4; g++) {
       const yy = T + (g / 4) * ph;
@@ -148,7 +214,8 @@
     for (let k = 0; k < n; k += Math.max(1, Math.floor(n / 7))) {
       svg += `<text x="${x(k)}" y="${H - 10}" text-anchor="middle" font-size="10" style="fill:var(--ink-2)">Day ${k + 1}</text>`;
     }
-    for (const s of series) {
+    series.forEach((s, si) => {
+      const f = fmtFor(s);
       let path = "", pen = false;
       s.values.forEach((v, k) => {
         if (v === null || !isFinite(v)) { pen = false; return; }
@@ -156,7 +223,14 @@
         pen = true;
       });
       if (path) svg += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" ${s.dash ? 'stroke-dasharray="6 4"' : ""}/>`;
-    }
+      s.values.forEach((v, k) => {
+        if (v === null || !isFinite(v)) return;
+        const px = x(k).toFixed(1), py = y(s.axis, v);
+        const tip = mtEsc(`${s.name}${s.dash ? " (B)" : " (A)"} · Day ${k + 1}: ${f(v)}`);
+        svg += `<circle cx="${px}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"><title>${tip}</title></circle>`;
+        svg += `<text x="${px}" y="${(py - 7 - (si % 2) * 10).toFixed(1)}" text-anchor="middle" font-size="9" style="fill:${s.color}">${mtEsc(f(v))}</text>`;
+      });
+    });
     return svg + "</svg>";
   }
   function mtLegend(series) {
@@ -222,6 +296,11 @@
       `<div class="mt-row">${mtUploadControl()}</div></div>`;
   }
 
+  function mtSavedNote() {
+    if (!MT.savedName) return "";
+    return `<p class="muted">Using the file saved in this browser: ${mtEsc(MT.savedName)}. ` +
+      `<button class="ghost" data-mt-forget="1">Remove this file</button></p>`;
+  }
   function metricsView() {
     setPeriodBar("metrics", null, null);
     if (!MT.data) {
@@ -230,11 +309,22 @@
       return `<section class="block"><h2>Metrics</h2>${note}<div class="mt-bar">${mtUploadControl()}</div></section>`;
     }
     const sum = mtSummary();
-    return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters.</p>${mtFilters()}</section>` +
+    return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters. The Sales tab's brand, region, store type, source and store filters apply too.</p>${mtSavedNote()}${mtFilters()}</section>` +
       `<section class="block"><h2>Comparison A and B</h2>${mtSummaryTable(sum)}</section>` +
       mtCharts(sum) +
       mtDayTable("Comparison A", sum.a) + mtDayTable("Comparison B", sum.b);
   }
+
+  // Remove the saved file: the page then tries the server again.
+  document.addEventListener("click", e => {
+    if (!(e.target && e.target.closest && e.target.closest("[data-mt-forget]"))) return;
+    mtForget();
+    MT.data = null;
+    MT.savedName = null;
+    MT.savedAt = null;
+    MT.error = null;
+    render();
+  });
 
   // Filters and dates change the page.
   document.addEventListener("change", e => {
@@ -275,5 +365,6 @@
     SUBS.sales.push(["metrics", "Metrics"]);
   }
 
-  window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad, mtUse, mtParse, mtErrorText };
+  window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad, mtUse, mtParse, mtErrorText, mtPageFilters, mtPickFile,
+                   mtRemember, mtForget, mtFromStorage };
 })();
