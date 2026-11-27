@@ -14,6 +14,7 @@ text (case-insensitive; the first match in file order wins). Any other reason, o
 Output in --out:
   probe_report.json                     (--probe) each candidate request with its status, fields and statuses
   cancel_invoices_<from>_<to>.csv       one row per cancelled order (Date = business day, Orders = 1)
+  cancel_items_<from>_<to>.csv          one row per item line of each cancelled order (Item Name, Category, Qty, Item Net)
   cancel_summary_<from>_<to>.csv        orders by date, branch, brand, source, session, store type, region, bucket, status
   cancel_reasons_seen_<from>_<to>.csv   every reason text with its count and bucket
   status_seen_<from>_<to>.csv           every status value with its count, Closed included
@@ -374,6 +375,50 @@ def build_rows(raw, reasons, maps, status_field, reason_field, cancel_statuses):
     return cancelled, status_count, reason_count
 
 
+# The item lines of an order: sales/page sends the items as a list of dicts (shortName, categoryName, quantity,
+# baseGrossAmount, baseNetAmount), the same fields the discount job reads.
+ITEM_NAME, ITEM_CATEGORY = "shortName", "categoryName"
+
+
+def item_lines(rec):
+    """The items of one order, as (name, category, qty, gross, net) tuples. An order with no items gives one line
+    named '(no item)', so the order is still counted."""
+    items = None
+    for v in rec.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict) and (ITEM_NAME in v[0] or "quantity" in v[0]):
+            items = v
+            break
+    if not items:
+        return [("(no item)", "", 0, 0.0, 0.0)]
+    out = []
+    for it in items:
+        out.append((str(it.get(ITEM_NAME) or "(no item)").strip(), str(it.get(ITEM_CATEGORY) or "").strip(),
+                    float(it.get("quantity") or 0), float(it.get("baseGrossAmount") or 0), float(it.get("baseNetAmount") or 0)))
+    return out
+
+
+ITEM_COLS = ["Invoice No", "Date", "Branch", "Brand Name", "Source", "Session", "Store Type", "Region", "Channel",
+             "Status", "Reason", "Source Reason", "Remarks", "Bucket", "Listed", "Line", "Item Name", "Category",
+             "Qty", "Item Gross", "Item Net"]
+
+
+def build_item_rows(raw, reasons, maps, status_field, reason_field, cancel_statuses):
+    """One row per item line of each cancelled order. The order's own fields (reason, bucket, branch...) come from
+    build_rows, so an item row and its order row always agree."""
+    rows = []
+    for rec in raw:
+        orders, _, _ = build_rows([rec], reasons, maps, status_field, reason_field, cancel_statuses)
+        if not orders:
+            continue
+        o = orders[0]
+        for n, (name, category, qty, gross, net) in enumerate(item_lines(rec), 1):
+            rows.append({**{k: o.get(k, "") for k in ITEM_COLS if k not in ("Line", "Item Name", "Category", "Qty",
+                                                                             "Item Gross", "Item Net")},
+                         "Line": n, "Item Name": name, "Category": category, "Qty": qty,
+                         "Item Gross": gross, "Item Net": net})
+    return rows
+
+
 def write_errors(out, errors):
     pd.DataFrame(errors).to_csv(os.path.join(out, "cancel_errors.csv"), index=False)
 
@@ -450,6 +495,8 @@ def main(argv=None):
                                     "Region", "Channel", "Status", "Reason", "Bucket", "Listed", "Orders",
                                     "Net Sales", "Gross Sales", "Discount"])
     inv.to_csv(os.path.join(a.out, f"cancel_invoices_{tag}.csv"), index=False)
+    items = pd.DataFrame(build_item_rows(raw, reasons, maps, a.status_field, a.reason_field, cancel_set), columns=ITEM_COLS)
+    items.to_csv(os.path.join(a.out, f"cancel_items_{tag}.csv"), index=False)
     if not inv.empty:
         summary = (inv.groupby(["Date", "Branch", "Brand Name", "Source", "Session", "Store Type", "Region",
                                 "Bucket", "Status"], as_index=False)

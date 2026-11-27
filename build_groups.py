@@ -97,6 +97,7 @@ def main():
     ap.add_argument("--metrics", help="data/metrics.json.gz: cut to each login's stores")
     ap.add_argument("--product-mix", help="data/product_mix.json.gz: given to the all-stores login only")
     ap.add_argument("--cancel", help="data/cancel_orders.csv.gz: cut to each login's stores")
+    ap.add_argument("--cancel-items", help="data/cancel_items.csv.gz: cut to each login's stores")
     ap.add_argument("--discounts")
     ap.add_argument("--site", default="site")
     ap.add_argument("--functions", default="functions")
@@ -158,6 +159,8 @@ def main():
             print("product mix: all-stores login only")
         if args.cancel and os.path.exists(args.cancel):
             cancel_for_group(args.cancel, os.path.join(out, "cancel_orders.csv.gz"), stores)
+        if args.cancel_items and os.path.exists(args.cancel_items):
+            cancel_for_group(args.cancel_items, os.path.join(out, "cancel_items.csv.gz"), stores)
     refused = sum(1 for t in emails.values() if t is None)
     print(f"done: {len(groups)} data sets; {len(emails) - refused} logins with stores; {refused} refused")
 

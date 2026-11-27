@@ -10,7 +10,7 @@ import os
 
 import pandas as pd
 
-KEY = ["Invoice No", "Branch", "Date"]
+KEY = ["Invoice No", "Branch", "Date"]           # orders; the items file uses "Invoice No,Branch,Date,Line"
 
 
 def read_table(path):
@@ -20,26 +20,28 @@ def read_table(path):
     return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
-def merge(master, new):
+def merge(master, new, key=KEY):
     """The stored rows with the new rows added. A new row replaces a stored row with the same key."""
     if new.empty:
         return master
     combined = new if master.empty else pd.concat([master, new], ignore_index=True)
-    combined = combined.drop_duplicates(subset=KEY, keep="last")
-    return combined.sort_values(["Date", "Branch", "Invoice No"]).reset_index(drop=True)
+    combined = combined.drop_duplicates(subset=key, keep="last")
+    order = [c for c in ["Date", "Branch", "Invoice No", "Line"] if c in combined.columns]
+    return combined.sort_values(order).reset_index(drop=True)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--new", required=True, help="the invoices file of one Cancel run")
     ap.add_argument("--master", default="data/cancel_orders.csv.gz", help="the stored file")
+    ap.add_argument("--key", default=",".join(KEY), help="the columns that identify a row, comma separated")
     a = ap.parse_args(argv)
     master, new = read_table(a.master), read_table(a.new)
     if new.empty:
         print(f"no new cancelled orders in {a.new}; {a.master} unchanged")
         return 0
     before = len(master)
-    out = merge(master, new)
+    out = merge(master, new, [k.strip() for k in a.key.split(",") if k.strip()])
     os.makedirs(os.path.dirname(a.master) or ".", exist_ok=True)
     out.to_csv(a.master, index=False, compression="gzip")
     print(f"cancel orders stored: {len(out)} (before {before}, from this run {len(new)}) -> {a.master}")
