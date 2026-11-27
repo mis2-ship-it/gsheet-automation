@@ -51,6 +51,9 @@ on:
         required: false
         type: boolean
 
+  schedule:
+    - cron: "30 0 * * *"      # 06:00 IST every day: the last two business days
+
 permissions:
   contents: write
 
@@ -67,16 +70,27 @@ jobs:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-      FROM_DAY: ${{ inputs.from }}
-      TO_DAY: ${{ inputs.to }}
       BRANCHES: ${{ inputs.branches }}
-      ENDPOINT: ${{ inputs.endpoint }}
-      REASON_FIELD: ${{ inputs.reason_field }}
-      STATUS_FIELD: ${{ inputs.status_field }}
-      WORKERS: ${{ inputs.workers }}
-      FRESH: ${{ inputs.fresh }}
+      ENDPOINT: ${{ inputs.endpoint || '/sales/page' }}
+      REASON_FIELD: ${{ inputs.reason_field || 'auto' }}
+      STATUS_FIELD: ${{ inputs.status_field || 'auto' }}
+      WORKERS: ${{ inputs.workers || '12' }}
+      FRESH: ${{ inputs.fresh || 'false' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Work out the days
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TO=$(TZ=Asia/Kolkata date -d "yesterday" +%F)
+            FROM=$(date -d "$TO -1 day" +%F)
+          else
+            TO="${{ inputs.to }}"
+            FROM="${{ inputs.from }}"
+          fi
+          echo "FROM_DAY=$FROM" >> "$GITHUB_ENV"
+          echo "TO_DAY=$TO" >> "$GITHUB_ENV"
+          echo "Days: $FROM to $TO"
 
       - uses: actions/setup-python@v5
         with:
@@ -127,7 +141,7 @@ jobs:
         if: ${{ !inputs.probe }}
         run: |
           ARGS=(--from "$FROM_DAY" --to "$TO_DAY" --out data/cancel
-                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "${{ inputs.status_field }}"
+                --endpoint "$ENDPOINT" --reason-field "$REASON_FIELD" --status-field "$STATUS_FIELD"
                 --workers "$WORKERS")
           if [ -n "$BRANCHES" ]; then ARGS+=(--branches "$BRANCHES"); fi
           if [ "$FRESH" = "true" ]; then ARGS+=(--fresh); fi
@@ -160,7 +174,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cancel-${{ inputs.from }}-to-${{ inputs.to }}
+          name: cancel-${{ github.run_id }}
           path: |
             data/cancel/
             !data/cancel/raw/
@@ -169,18 +183,12 @@ jobs:
 
       - name: Add the cancelled orders to the stored file
         if: inputs.probe != true
-        env:
-          FROM_DAY: ${{ inputs.from }}
-          TO_DAY: ${{ inputs.to }}
         run: |
           python merge_cancel.py --new "data/cancel/cancel_invoices_${FROM_DAY}_${TO_DAY}.csv" --master data/cancel_orders.csv.gz
           python merge_cancel.py --new "data/cancel/cancel_items_${FROM_DAY}_${TO_DAY}.csv" --master data/cancel_items.csv.gz --key "Invoice No,Branch,Date,Line"
 
       - name: Commit the stored file to the repository
         if: inputs.probe != true
-        env:
-          FROM_DAY: ${{ inputs.from }}
-          TO_DAY: ${{ inputs.to }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
