@@ -42,7 +42,7 @@ on:
         type: boolean
       workers:
         description: "Parallel requests (raise only if the API allows it)"
-        default: "8"
+        default: "12"
         required: false
         type: string
       fresh:
@@ -62,7 +62,7 @@ concurrency:
 jobs:
   pull:
     runs-on: ubuntu-latest
-    timeout-minutes: 180          # a month of branch-days takes a while
+    timeout-minutes: 360          # the most GitHub allows: a long range takes hours; re-run the same range to continue
     env:
       API_KEY: ${{ secrets.API_KEY }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
