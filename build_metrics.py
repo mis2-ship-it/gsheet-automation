@@ -177,8 +177,9 @@ def main():
     frames = read_xlsx(a.xlsx) if a.xlsx else read_gsheet(a.gsheet, a.creds)
     data = build(frames)
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    with gzip.open(a.out, "wt", encoding="utf-8") as fh:
-        json.dump(data, fh, separators=(",", ":"))
+    # mtime=0: the same data always gives the same bytes, so the repository only changes when the data does
+    with open(a.out, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", mtime=0) as gz:
+        gz.write(json.dumps(data, separators=(",", ":")).encode("utf-8"))
     print(f"metrics: {len(data['rows'])} rows, {data['dateMin']} to {data['dateMax']}, "
           f"sources {data['sources']}, brands {len(data['brands'])}, regions {len(data['regions'])} -> {a.out}")
     write_step_summary(data)
