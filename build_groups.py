@@ -85,6 +85,26 @@ def cancel_for_group(path_in, path_out, stores):
     print(f"cancel orders for {label}: {len(df)} rows -> {path_out}")
 
 
+PRODUCT_COLS = ["Date", "Branch", "Brand", "Region", "Store Type", "Source", "Category", "Item",
+                "Orders", "Qty", "Gross", "Discount", "Net"]
+
+
+def product_for_group(folder, path_out, stores):
+    """One login's product sales: every day file in the folder, cut to the login's stores (by Branch). stores=None: all.
+    The file keeps its header even when there are no days yet."""
+    import glob
+    files = sorted(glob.glob(os.path.join(folder, "*.csv.gz")))
+    frames = [pd.read_csv(f, dtype=str, keep_default_na=False, compression="gzip") for f in files]
+    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=PRODUCT_COLS)
+    if stores is not None and len(df) and "Branch" in df.columns:
+        allowed = set(stores)
+        df = df[df["Branch"].map(clean).isin(allowed)]
+    os.makedirs(os.path.dirname(path_out) or ".", exist_ok=True)
+    df.to_csv(path_out, index=False, compression="gzip")
+    label = "all stores" if stores is None else f"{df['Branch'].nunique() if len(df) else 0} stores"
+    print(f"product sales for {label}: {len(df)} rows from {len(files)} day file(s) -> {path_out}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--access", required=True)
@@ -98,6 +118,7 @@ def main():
     ap.add_argument("--product-mix", help="data/product_mix.json.gz: given to the all-stores login only")
     ap.add_argument("--cancel", help="data/cancel_orders.csv.gz: cut to each login's stores")
     ap.add_argument("--cancel-items", help="data/cancel_items.csv.gz: cut to each login's stores")
+    ap.add_argument("--product", help="data/product: the day files of the product sales, cut to each login's stores")
     ap.add_argument("--discounts")
     ap.add_argument("--site", default="site")
     ap.add_argument("--functions", default="functions")
@@ -161,6 +182,8 @@ def main():
             cancel_for_group(args.cancel, os.path.join(out, "cancel_orders.csv.gz"), stores)
         if args.cancel_items and os.path.exists(args.cancel_items):
             cancel_for_group(args.cancel_items, os.path.join(out, "cancel_items.csv.gz"), stores)
+        if args.product and os.path.isdir(args.product):
+            product_for_group(args.product, os.path.join(out, "product_items.csv.gz"), stores)
     refused = sum(1 for t in emails.values() if t is None)
     print(f"done: {len(groups)} data sets; {len(emails) - refused} logins with stores; {refused} refused")
 
