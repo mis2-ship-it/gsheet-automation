@@ -3,6 +3,8 @@ out of stock,Storefront,Item OOS,RDC: store ran out of item
 ordered items unavailable,Storefront,Item OOS,RDC
 restaurant is now closed,Storefront,Closed in hours,RDC: closed during open hours
 outlet closed,Storefront,Closed in hours,RDC
+closed,Storefront,Closed in hours,RDC
+Rx Closed,Storefront,Closed in hours,RDC
 high number of rejections,Storefront,Auto-disabled,RDC: platform disabled store
 merchant device,Storefront,Device/Power,RDC: POS/device failure
 electricity issue,Storefront,Device/Power,RDC: power outage at store
