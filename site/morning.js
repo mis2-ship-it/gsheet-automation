@@ -5,7 +5,7 @@
    Loaded after insights.js. It wraps salesPeriodView() for the Morning Call tab only. */
 (function () {
   const MC = { hourly: null, hourlyDays: null, hourlyLoading: false, hourlyError: null, last: null,
-               srcPick: null, regOpen: new Set(), metric: "net" };
+               srcPick: null, regOpen: new Set(), amOpen: new Set(), metric: "net" };
   const MC_LATE_FROM = 15, MC_LATE_TO = 19;   // hour 0 is 9 AM, so hours 15 to 19 are 0 to 5 AM
   const MC_EPOCH = Date.UTC(2025, 0, 1);
   // The numbers each row carries: net sales (₹), gross (₹), discount (₹) and orders.
@@ -364,12 +364,19 @@
       a, name: (M.ams && M.ams[a]) || "Unassigned", stores: stores.slice().sort(byMetric), tot: mcTotals(stores)
     })).sort((x, y) => byMetric(x.tot, y.tot));
   }
-  function mcAmTable(c, s) {
-    const head = `<tr><th>Area manager / Store</th>${s.cols.map(x => `<th>${mcEsc(mcHead(x))}</th>`).join("")}</tr>`;
-    let body = `<tr class="reg-total"><td>All areas</td>${s.cols.map(x => mcCellHtml(mcTotals(c.list), x)).join("")}</tr>`;
+  // Area managers in one table: each manager is a row. Click it to show its stores underneath.
+  // id names the table ("top", or the table's id), so each table opens its own managers.
+  function mcAmBlock(id, c, cols) {
+    const head = `<tr><th>Area manager</th>${cols.map(x => `<th>${mcEsc(mcHead(x))}</th>`).join("")}</tr>`;
+    let body = `<tr class="reg-total"><td>All areas</td>${cols.map(x => mcCellHtml(mcTotals(c.list), x)).join("")}</tr>`;
     for (const g of mcAmGroups(c)) {
-      body += `<tr class="ins-am"><td><b>${mcEsc(g.name)}</b></td>${s.cols.map(x => mcCellHtml(g.tot, x)).join("")}</tr>`;
-      for (const st of g.stores) body += `<tr class="ins-st"><td>${mcEsc(st.name)}</td>${s.cols.map(x => mcCellHtml(st, x)).join("")}</tr>`;
+      const key = id + ":" + g.a;
+      const open = MC.amOpen.has(key);
+      body += `<tr class="ins-am"><td><button data-mc-am="${mcEsc(key)}">${open ? "▾" : "▸"} ${mcEsc(g.name)}</button></td>` +
+        `${cols.map(x => mcCellHtml(g.tot, x)).join("")}</tr>`;
+      if (open) {
+        for (const st of g.stores) body += `<tr class="ins-st"><td>${mcEsc(st.name)}</td>${cols.map(x => mcCellHtml(st, x)).join("")}</tr>`;
+      }
     }
     return `<div class="scroll"><table class="tbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
   }
@@ -434,12 +441,12 @@
       `<section class="block"><h2>Region wise summary</h2>` +
       `<p class="sub">One row per region, with the key figure from each table below.</p>${mcSummaryTable(summary)}</section>` +
       `<section class="block"><h2>Stores by area manager</h2>` +
-      `<p class="sub">Each area manager, with its stores listed underneath.</p>${mcAmTable(c, summary)}</section>` +
+      `<p class="sub">Click an area manager to see its stores.</p>${mcAmBlock("top", c, summary.cols)}</section>` +
       blocks.map(b => {
         const g = mcGroup(c.list, b);
         return `<section class="block"><h2>${mcEsc(b.title)}</h2><p class="sub">${mcEsc(b.sub)}</p>` +
           `<p class="sub"><b>Region wise</b> <span class="muted">(click a region to see its sources)</span></p>${mcRegionTable(b, g, srcT)}` +
-          `<p class="sub"><b>Region + store</b></p>${mcStoreTable(b, g)}</section>`;
+          `<p class="sub"><b>Area manager</b> <span class="muted">(click an area manager to see its stores)</span></p>${mcAmBlock(b.id, c, b.cols)}</section>`;
       }).join("");
   }
 
@@ -589,6 +596,7 @@
       if (m.outline) attrs += ` outlineLevel="${m.outline}"`;
       if (m.hidden) attrs += ` hidden="1"`;
       if (m.collapsed) attrs += ` collapsed="1"`;
+      if (m.ht) attrs += ` ht="${m.ht}" customHeight="1"`;
       return `<row r="${rn}"${attrs}>` + r.map((cell, ci) => mcCellXml(cell, mcCol(ci) + rn)).join("") + `</row>`;
     }).join("");
     const outlineOn = meta.some(m => m && m.outline);
@@ -620,50 +628,47 @@
     return mcBuild("Area manager", "Morning Call: stores by area manager",
       `${fmtLong(c.ref)}. Use the + beside an area manager to expand its stores.`, headers, body, meta);
   }
-  // Region wise sheet, every table side by side: each table's name above its columns.
+  // Region wise sheet: the tables one under another, each with its name across the top and one row per region.
+  // In Region + source, each region is followed by its sources, inside its own table.
+  function mcHeaderHeight(labels) {
+    const lines = Math.max(1, ...labels.map(h => Math.ceil(String(h).length / 12)));
+    return Math.max(30, 15 * lines + 6);
+  }
   function mcRegionWiseSheet(c, blocks, srcT) {
     const per = blocks.map(b => ({ b, g: mcGroup(c.list, b) }));
     const names = mcSummary(c).rows.map(r => r.name);
-    const groupRow = [xtext("", 10)], headerRow = [xtext("Region", 17)], merges = [];
-    let col = 1;
-    for (const { b } of per) {
-      groupRow.push(xtext(b.title, 10));
-      for (let i = 1; i < b.cols.length; i++) groupRow.push(xtext("", 10));
-      if (b.cols.length > 1) merges.push(`${mcCol(col)}4:${mcCol(col + b.cols.length - 1)}4`);
-      for (const cc of b.cols) headerRow.push(xtext(mcHead(cc), 10));
-      col += b.cols.length;
-    }
-    const body = [];
-    for (const name of names) {
-      const row = [xtext(name, 13)];
-      for (const { b, g } of per) {
+    const rows = [[xtext("Morning Call: region wise, all tables", 11)], [xtext(`${fmtLong(c.ref)}. One row per region.`, 12)], []];
+    const meta = [{}, {}, {}], merges = [];
+    for (const { b, g } of per) {
+      const band = rows.length + 1;
+      rows.push([xtext("", 10), ...b.cols.map((cc, i) => xtext(i === 0 ? b.title : "", 10))]);
+      meta.push({});
+      if (b.cols.length > 1) merges.push(`${mcCol(1)}${band}:${mcCol(b.cols.length)}${band}`);
+      rows.push([xtext("Region", 17), ...b.cols.map(cc => xtext(mcHead(cc), 10))]);
+      meta.push({ ht: mcHeaderHeight(b.cols.map(cc => mcHead(cc))) });
+      for (const name of names) {
         const obj = name === "All regions" ? g.all : ((g.groups.find(x => x.name === name) || { tot: { R: {}, P: {} } }).tot);
-        for (const cc of b.cols) row.push(mcXCell(mcCellVal(obj, cc), cc, "region"));
-      }
-      body.push(row);
-      if (srcT) {
-        for (const label of Object.keys(srcT)) {
-          const r2 = [xtext("   " + label, 0)];
-          for (const { b } of per) {
-            const obj = ((srcT[label][b.id] || {})[name]) || { R: {}, P: {} };
-            for (const cc of b.cols) r2.push(mcXCell(mcCellVal(obj, cc), cc, "store"));
+        rows.push([xtext(name, 13), ...b.cols.map(cc => mcXCell(mcCellVal(obj, cc), cc, "region"))]);
+        meta.push({});
+        if (srcT) {
+          for (const label of Object.keys(srcT)) {
+            const o2 = ((srcT[label][b.id] || {})[name]) || { R: {}, P: {} };
+            rows.push([xtext("   " + label, 0), ...b.cols.map(cc => mcXCell(mcCellVal(o2, cc), cc, "store"))]);
+            meta.push({});
           }
-          body.push(r2);
         }
       }
+      rows.push([]);
+      meta.push({});
     }
-    const headers = headerRow.map(h => h.v);
-    const widths = headers.map((h, ci) => {
-      let w = ci === 0 ? h.length + 2 : 12;
-      for (const r of body) if (r[ci]) w = Math.max(w, mcShown(r[ci]));
-      return Math.min(ci === 0 ? 42 : 26, Math.max(ci === 0 ? 16 : 12, w));
-    });
-    const lines = Math.max(...headers.map((h, ci) => Math.ceil(h.length / Math.max(6, widths[ci] - 1))));
-    return {
-      name: "Region wise",
-      rows: [[xtext("Morning Call: region wise, all tables", 11)], [xtext(`${fmtLong(c.ref)}. One row per region.`, 12)], [], groupRow, headerRow, ...body],
-      widths, headerRow: 5, headerHeight: Math.max(30, 15 * lines + 6), freeze: true, merges
-    };
+    const width = Math.max(...rows.map(r => r.length));
+    const widths = [];
+    for (let ci = 0; ci < width; ci++) {
+      let w = ci === 0 ? 16 : 12;
+      for (const r of rows) if (r[ci] && r[ci].v !== undefined && r[ci].v !== "") w = Math.max(w, mcShown(r[ci]));
+      widths.push(Math.min(ci === 0 ? 42 : 26, Math.max(ci === 0 ? 16 : 12, w)));
+    }
+    return { name: "Region wise", rows, widths, headerRow: 0, freeze: false, merges, rowMeta: meta };
   }
   // Region + source sheet: each region followed by its sources.
   function mcRegionSourceSheet(c, blocks, srcT) {
@@ -703,9 +708,7 @@
   function mcWorkbook(c, blocks) {
     const srcT = mcSourceTotals(blocks);
     const summary = mcSummary(c);
-    const sheets = [mcAmSheet(c, summary), mcRegionWiseSheet(c, blocks, null), mcRegionSourceSheet(c, blocks, srcT)];
-    for (const b of blocks) sheets.push(mcStoreSheet(b, mcGroup(c.list, b)));
-    return mcXlsx(sheets);
+    return mcXlsx([mcRegionWiseSheet(c, blocks, null), mcRegionSourceSheet(c, blocks, srcT), mcAmSheet(c, summary)]);
   }
   function mcDownload(bytes, name) {
     const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -722,6 +725,13 @@
   document.addEventListener("click", e => {
     const mm = e.target.closest && e.target.closest("[data-mc-metric]");
     if (mm) { MC.metric = mm.dataset.mcMetric; render(); return; }
+    const am = e.target.closest && e.target.closest("[data-mc-am]");
+    if (am) {
+      const key = am.dataset.mcAm;
+      if (MC.amOpen.has(key)) MC.amOpen.delete(key); else MC.amOpen.add(key);
+      render();
+      return;
+    }
     const rg = e.target.closest && e.target.closest("[data-mc-region]");
     if (rg) {
       const nm = rg.dataset.mcRegion;
@@ -745,5 +755,6 @@
 
   window.FB_MC_REF_DAY = () => mcRefDay();
   window.FB_MORNING = { MC, mcRefDay, mcCompute, mcBlocks, mcGroup, mcTotals, mcCellVal, mcVal, mcGrowth, mcSourceTotals, mcSourceGroups,
-                        mcSummary, mcSheetRows, mcXlsx, mcWorkbook, mcAmGroups, mcLateMap, mcLoadHourly: mcLoadHourlyOnce, morningView };
+                        mcSummary, mcSheetRows, mcXlsx, mcWorkbook, mcAmGroups, mcLateMap, mcLoadHourly: mcLoadHourlyOnce, morningView,
+                        mcAmBlock, mcRegionWiseSheet, mcRegionSourceSheet, mcAmSheet };
 })();
