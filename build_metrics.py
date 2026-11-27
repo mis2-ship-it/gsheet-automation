@@ -15,7 +15,7 @@ Definitions (ratios are taken from the sums, never averaged):
 Usage:  python build_metrics.py --xlsx Metrics_Data.xlsx --out data/metrics.json.gz
         (or --gsheet <sheet id> with a service account, see read_gsheet)
 """
-import argparse, datetime as dt, gzip, json, os, re
+import argparse, datetime as dt, gzip, json, os, re, tempfile
 
 import pandas as pd
 
@@ -123,48 +123,55 @@ def read_xlsx(path):
     return {name: pd.read_excel(path, sheet_name=name) for name in TABS}
 
 
-def read_gsheet(sheet_id, creds):
-    """Reads the four tabs from the Google Sheet with a service account. creds is the path to the key file, or the key
-    itself as text (the GOOGLE_CREDENTIALS secret). Values are read as the sheet stores them: dates as serial numbers."""
-    import gspread
+DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
+SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def drive_token(creds):
+    """A read-only access token for Google Drive, from the service account key: the key file path, or the key as text."""
+    from google.auth.transport.requests import Request
+    from google.oauth2.service_account import Credentials
+    scopes = ["https://www.googleapis.com/auth/drive.readonly"]
     if creds.strip().startswith("{"):
-        gc = gspread.service_account_from_dict(json.loads(creds))
+        c = Credentials.from_service_account_info(json.loads(creds), scopes=scopes)
     else:
-        gc = gspread.service_account(filename=creds)
-    try:
-        sh = gc.open_by_key(sheet_id)
-    except Exception as e:
-        raise SystemExit(f"could not open the Google Sheet {sheet_id}: {e}. "
-                         "Share the sheet with the service account email (Viewer is enough).")
-    names = [w.title for w in sh.worksheets()]
+        c = Credentials.from_service_account_file(creds, scopes=scopes)
+    c.refresh(Request())
+    return c.token
+
+
+def download_sheet(sheet_id, creds):
+    """The file as .xlsx bytes, through Google Drive. A Google Sheet is exported as .xlsx. An .xlsx file kept in Drive is
+    downloaded as it is: the Sheets API does not open that kind ('must not be an Office file'), Drive does."""
+    import requests
+    headers = {"Authorization": f"Bearer {drive_token(creds)}"}
+    meta = requests.get(f"{DRIVE_FILES}/{sheet_id}", params={"fields": "id,name,mimeType"}, headers=headers, timeout=60)
+    if meta.status_code != 200:
+        raise SystemExit(f"could not open the file {sheet_id} in Google Drive (HTTP {meta.status_code}): {meta.text[:200]}. "
+                         "Share it with the service account email (Viewer is enough), and enable the Google Drive API "
+                         "in the Google Cloud project of that service account.")
+    info = meta.json()
+    if info.get("mimeType") == SHEET_MIME:
+        r = requests.get(f"{DRIVE_FILES}/{sheet_id}/export", params={"mimeType": XLSX_MIME}, headers=headers, timeout=300)
+    else:
+        r = requests.get(f"{DRIVE_FILES}/{sheet_id}", params={"alt": "media"}, headers=headers, timeout=300)
+    if r.status_code != 200:
+        raise SystemExit(f"could not download the file {sheet_id} (HTTP {r.status_code}): {r.text[:200]}")
+    return r.content, info.get("name", sheet_id)
+
+
+def read_gsheet(sheet_id, creds):
+    """The four tabs of the file, read as the workbook is (dates as dates, numbers as numbers)."""
+    data, name = download_sheet(sheet_id, creds)
+    fd, path = tempfile.mkstemp(suffix=".xlsx")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    names = pd.ExcelFile(path).sheet_names
     missing = sorted(TABS - set(names))
     if missing:
-        raise SystemExit(f"tabs missing in the Google Sheet: {missing}. Tabs found: {names}")
-    out = {}
-    for name in sorted(TABS):
-        vals = sh.worksheet(name).get_all_values(value_render_option="UNFORMATTED_VALUE")
-        head = [str(h).strip() for h in vals[0]]
-        dup = sorted({h for h in head if h and head.count(h) > 1})
-        if dup:
-            raise SystemExit(f"{name}: duplicate column names {dup}")
-        rows = [list(r) + [""] * (len(head) - len(r)) for r in vals[1:]]
-        out[name] = pd.DataFrame(rows, columns=head)
-    return out
-
-
-def summary_text(data):
-    """The lines shown on the GitHub run page: how many rows, which days, how many stores."""
-    return ("### Metrics from the Google Sheet\n"
-            f"- rows: {len(data['rows'])}\n"
-            f"- days in the data: {data['dateMin']} to {data['dateMax']}\n"
-            f"- stores: {len(data.get('stores', []))}\n")
-
-
-def write_step_summary(data):
-    path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if path:
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(summary_text(data))
+        raise SystemExit(f"tabs missing in '{name}': {missing}. Tabs found: {names}")
+    return read_xlsx(path)
 
 
 def main():
