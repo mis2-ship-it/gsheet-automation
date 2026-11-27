@@ -1,0 +1,121 @@
+name: Product sales pull
+
+# The closed item lines of each day, by store, brand, region, store type, source, category and item. One file per
+# day in data/product/. The last 62 days are kept; older day files are removed. Feeds the Product Level tab.
+on:
+  schedule:
+    - cron: "45 0 * * *"        # 06:15 IST: the last two business days
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "First business day, YYYY-MM-DD"
+        default: ""
+        required: false
+        type: string
+      to:
+        description: "Last business day, YYYY-MM-DD"
+        default: ""
+        required: false
+        type: string
+      endpoint:
+        description: "Rista endpoint for orders"
+        default: "/sales/page"
+        required: false
+        type: string
+      workers:
+        description: "Parallel requests"
+        default: "12"
+        required: false
+        type: string
+      fresh:
+        description: "Ignore saved branch-days and pull again"
+        default: false
+        required: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: product-pull
+  cancel-in-progress: false
+
+jobs:
+  pull:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      API_KEY: ${{ secrets.API_KEY }}
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      ENDPOINT: ${{ inputs.endpoint || '/sales/page' }}
+      WORKERS: ${{ inputs.workers || '12' }}
+      FRESH: ${{ inputs.fresh || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the days
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            TO=$(TZ=Asia/Kolkata date -d "yesterday" +%F)
+            FROM=$(date -d "$TO -1 day" +%F)
+          else
+            TO="${{ inputs.to }}"
+            FROM="${{ inputs.from }}"
+          fi
+          echo "FROM_DAY=$FROM" >> "$GITHUB_ENV"
+          echo "TO_DAY=$TO" >> "$GITHUB_ENV"
+          echo "Days: $FROM to $TO"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy requests pyjwt gspread google-auth
+
+      - name: Check the script
+        run: python tests/test_product_sales.py
+
+      - name: Restore the saved branch-days
+        uses: actions/cache/restore@v4
+        with:
+          path: data/product_pull/raw
+          key: product-raw-${{ github.run_id }}
+          restore-keys: |
+            product-raw-
+
+      - name: Pull the closed item lines
+        run: |
+          ARGS=(--from "$FROM_DAY" --to "$TO_DAY" --out data/product --pull-dir data/product_pull
+                --endpoint "$ENDPOINT" --workers "$WORKERS")
+          if [ "$FRESH" = "true" ]; then ARGS+=(--fresh); fi
+          python product_sales.py "${ARGS[@]}"
+
+      - name: Save the branch-days for the next run
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/product_pull/raw
+          key: product-raw-${{ github.run_id }}
+
+      - name: Show the sizes
+        if: always()
+        run: |
+          echo "day files: $(ls data/product 2>/dev/null | wc -l)"
+          du -sh data/product 2>/dev/null || echo "no day files"
+
+      # Adds the new day files and removes the pruned ones. A day with a failed branch-day is not written, so it keeps its old file.
+      - name: Commit the day files to the repository
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A data/product
+          if git diff --cached --quiet; then
+            echo "no change to the product day files"
+            exit 0
+          fi
+          git commit -m "product sales ${FROM_DAY} to ${TO_DAY}"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
