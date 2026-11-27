@@ -1,37 +1,21 @@
-CANCELLATIONS: PRODUCTS (ITEM NAME AND CATEGORY) ON THE CANCELLATION TAB
+CANCELLATION TAB: NOT SHOWING ON THE DASHBOARD
 
-WHAT CHANGED
-  cancel_sales.py     writes cancel_items_<from>_<to>.csv: one row per item line of each cancelled order, with
-                      Item Name, Category, Qty, Item Gross and Item Net, and the order's reason, bucket and branch.
-  merge_cancel.py     can key rows by line (--key "Invoice No,Branch,Date,Line"), so each item line is kept.
-  cancel.yml          merges the item lines into data/cancel_items.csv.gz and commits it with the orders file.
-  build_groups.py     copies each login's item lines (cut to its stores) into the login folder.
-  update-sales-dashboard.yml   passes the item file to the build.
-  site/cancel.js      the Cancellation tab: "Products on cancellation" under the table. Grouped by category; click a
-                      category for its items. Columns: Cancelled orders | Cancel (RDC) | Other | Cancelled net sales.
-                      The day, the channel and the page's filters apply, as in the table above it.
+WHY IT IS MISSING (check in this order)
+  1. The page does not load cancel.js. The tab is added by that script, so without the script tag there is no tab.
+     Fix: run   python add_cancel_tab.py site/index.html    (adds <script src="cancel.js"></script> before </body>; safe to run twice)
+  2. site/cancel.js is not in the site folder. Copy cancel.js into site/ (the site folder is what is deployed).
+  3. The stored file is not in the repository yet. The tab reads data/cancel_orders.csv.gz. Run the Cancel workflow
+     once by hand (Actions > Cancellation pull > Run workflow), then check that data/cancel_orders.csv.gz is in the repo.
+  4. The login's data was built before the file existed. The cancellation file is copied into each login by the dashboard
+     build, so run "Update sales dashboard" once after step 3. The build log then shows "cancel orders for N stores".
+     The Cancel workflow does not start the dashboard build itself.
 
-IMPORTANT: EARLIER PERIODS HAVE NO ITEM LINES
-  The item lines exist only for cancel runs made with this version. Run the Cancel workflow again for the periods you
-  need (for example 1 April 2025 to 30 April 2025). Re-running a period adds its item lines and replaces nothing else.
+CHECK IN THE BROWSER (after the deploy)
+  Open the dashboard, press F12, and in the Console type:
+     typeof FB_CANCEL                -> "object" means cancel.js is loaded ("undefined" means step 1 or 2 is missing)
+     SUBS.sales.map(x => x[0])       -> includes "cancel" means the tab is registered
+  If the tab is registered but the page says the cancelled orders could not be read, step 3 or 4 is missing.
 
-STEPS
-  1. Replace cancel_sales.py, merge_cancel.py and build_groups.py; replace the two workflow files; replace site/cancel.js.
-  2. Run the Cancel workflow for a period (probe unticked). The step "Add the cancelled orders to the stored file" runs
-     twice: once for the orders, once for the item lines.
-  3. Run "Update sales dashboard".
-  4. Sales > Cancellation: the day chosen on the Daily tab; scroll to "Products on cancellation".
-
-LIMITS
-  - Products show the cancelled orders only. "Which products are down on cancellation" is read from these counts.
-    A cancel rate per product also needs the closed sales per product, which the dashboard does not store yet.
-  - Item Net is the item's base net amount from the Sales Page report, in rupees.
-
-TESTS (run from the repo root, where site/index.html and sync_sales.py exist)
-  python tests/test_cancel_items.py        (7)
-  python tests/test_cancel_nested.py       (10)
-  python tests/test_cancel_sales.py        (22)
-  python tests/test_cancel_speed.py        (10)
-  python tests/test_cancel_probe.py        (7)
-  node tests/test_cancel_products.js       (10)
-  node tests/test_cancel_tab.js            (19)
+FILES
+  add_cancel_tab.py                   run once, from the repo root
+  tests/test_add_cancel_tab.py        (4)   python tests/test_add_cancel_tab.py
