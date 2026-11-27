@@ -30,7 +30,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install pandas numpy gspread google-auth
+        run: pip install pandas numpy google-auth requests openpyxl
 
       # Reads the four tabs, and fails the run (with the reason) if the sheet cannot be read.
       - name: Read the Google Sheet
