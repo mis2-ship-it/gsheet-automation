@@ -6,7 +6,7 @@
    Data: data/metrics.json.gz, built by build_metrics.py from the Metrics sheet. Loaded after productmix.js.
    It wraps salesPeriodView() for the Metrics tab only. */
 (function () {
-  const MT = { data: null, loading: false, error: null, a: null, b: null, brand: "all", type: "all", region: "all", source: "all", store: "all", chart: { m2o: { src: "all", show: { "M2O%": true, "C2O%": true } }, org: { src: "all", show: { "Organic%": true, "In-Organic%": true } }, clk: { src: "all", show: { "Clicks": true, "Ad Orders": true } } } };
+  const MT = { data: null, loading: false, error: null, a: null, b: null, brand: "all", type: "all", region: "all", source: "all", store: "all", perf: { dim: "brand", open: new Set() }, gr: { day: null }, chart: { m2o: { src: "all", show: { "M2O%": true, "C2O%": true } }, org: { src: "all", show: { "Organic%": true, "In-Organic%": true } }, clk: { src: "all", show: { "Clicks": true, "Ad Orders": true } } } };
   const MT_EPOCH = Date.UTC(2025, 0, 1);
   const COL = { m2o: "#2D6A6E", c2o: "#E07A3F", org: "#7A5CC2", inorg: "#C4413B", clicks: "#3C8DBC", ad: "#8A9B0F" };
   const mtEsc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -308,7 +308,7 @@
            `<th>A vs B</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }
   function mtDayTable(label, period) {
-    const body = period.days.map(d => `<tr><td>${mtLabel(d.day)}</td><td>${mtNum(d.menuOpen)}</td><td>${mtNum(d.orders)}</td>` +
+    const body = period.days.map(d => `<tr><td>${mtLabel(d.day)}</td><td>${mtNum(d.menuOpen)}</td><td>${mtPerfNum(d.orders)}</td>` +
       `<td>${mtPct(d.m2o)}</td><td>${mtPct(d.c2o)}</td><td>${mtNum(d.clicks)}</td><td>${mtNum(d.adOrders)}</td>` +
       `<td>${mtPct(d.org)}</td><td>${mtPct(d.inOrg)}</td></tr>`).join("");
     return `<section class="block"><h2>${label} by day</h2><p class="sub">${mtLabel(period.days[0].day)} to ${mtLabel(period.days[period.days.length - 1].day)}</p>` +
@@ -347,6 +347,153 @@
     return `<p class="muted">Using the file saved in this browser: ${mtEsc(MT.savedName)}. ` +
       `<button class="ghost" data-mt-forget="1">Remove this file</button></p>`;
   }
+  // Performance by brand, region or area manager: Comparison A and B side by side. Click a row for its days.
+  const MT_PERF_DIMS = [["brand", "Brand"], ["region", "Region"], ["am", "Area manager"]];
+  const MT_ZERO = { menuOpen: 0, cart: 0, orders: 0, clicks: 0, adOrders: 0 };
+  function mtAmOf(storeName) {
+    const mm = typeof M !== "undefined" && M ? M : {};
+    const st = (mm.stores || []).find(s => s.name === storeName);
+    return st && mm.ams && mm.ams[st.a] ? mm.ams[st.a] : "Unassigned";
+  }
+  function mtPerfKey(dim, r) {
+    const d = MT.data;
+    if (dim === "brand") return d.brands[r[2]];
+    if (dim === "region") return d.regions[r[3]];
+    if (dim === "store") return d.stores && r[10] !== undefined ? d.stores[r[10]] : "(unknown)";
+    return mtAmOf(d.stores && r[10] !== undefined ? d.stores[r[10]] : "");
+  }
+  // key -> the sums of the rows in [from, to] that pass the filters
+  function mtPerfTotals(dim, from, to) {
+    const out = new Map(), pf = mtPageFilters();
+    for (const r of MT.data.rows) {
+      if (r[0] < from || r[0] > to || !mtPass(r, pf)) continue;
+      const k = mtPerfKey(dim, r);
+      const x = out.get(k) || { ...MT_ZERO };
+      x.menuOpen += r[5]; x.cart += r[6]; x.orders += r[7]; x.clicks += r[8]; x.adOrders += r[9];
+      out.set(k, x);
+    }
+    return out;
+  }
+  // One entity's days in a period, with its ratios (zeros on days with no rows).
+  function mtPerfDays(dim, key, period) {
+    const pf = mtPageFilters(), byDay = new Map();
+    for (const r of MT.data.rows) {
+      if (r[0] < period.from || r[0] > period.to || !mtPass(r, pf) || mtPerfKey(dim, r) !== key) continue;
+      const x = byDay.get(r[0]) || { ...MT_ZERO };
+      x.menuOpen += r[5]; x.cart += r[6]; x.orders += r[7]; x.clicks += r[8]; x.adOrders += r[9];
+      byDay.set(r[0], x);
+    }
+    const days = [];
+    for (let d = period.from; d <= period.to; d++) days.push({ day: d, ...mtRatios(byDay.get(d) || MT_ZERO) });
+    return days;
+  }
+  function mtPerfSection() {
+    const p = MT.perf, A = MT.a, B = MT.b;
+    const ta = mtPerfTotals(p.dim, A.from, A.to), tb = mtPerfTotals(p.dim, B.from, B.to);
+    const ordA = k => (ta.get(k) || MT_ZERO).orders, ordB = k => (tb.get(k) || MT_ZERO).orders;
+    const keys = [...new Set([...ta.keys(), ...tb.keys()])].filter(k => ordA(k) || ordB(k)).sort((x, y) => ordA(y) - ordA(x));
+    const pc = (x, y) => (y ? (x / y - 1) * 100 : null);
+    const fp = v => (v === null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%");
+    const fpt = v => (v === null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + " pts");
+    const line = (label, a, b, attr) => {
+      const ra = mtRatios(a), rb = mtRatios(b);
+      return `<tr><td>${attr || ""}${label}${attr ? "</button>" : ""}</td><td>${mtPerfNum(ra.orders)}</td><td>${mtPerfNum(rb.orders)}</td>` +
+        `<td>${fp(pc(ra.orders, rb.orders))}</td><td>${ra.m2o === null ? "—" : ra.m2o.toFixed(2) + "%"}</td>` +
+        `<td>${rb.m2o === null ? "—" : rb.m2o.toFixed(2) + "%"}</td>` +
+        `<td>${fpt(ra.m2o === null || rb.m2o === null ? null : ra.m2o - rb.m2o)}</td></tr>`;
+    };
+    const total = [...ta.values()].reduce((s, x) => { for (const k of Object.keys(MT_ZERO)) s[k] += x[k]; return s; }, { ...MT_ZERO });
+    const totalB = [...tb.values()].reduce((s, x) => { for (const k of Object.keys(MT_ZERO)) s[k] += x[k]; return s; }, { ...MT_ZERO });
+    let body = line("All", total, totalB, "");
+    for (const k of keys) {
+      const open = p.open.has(k);
+      body += line(`${open ? "▾" : "▸"} ${mtEsc(k)}`, ta.get(k) || MT_ZERO, tb.get(k) || MT_ZERO,
+                   `<button data-mtp-key="${mtEsc(k)}">`);
+      if (open) {
+        for (const d of mtPerfDays(p.dim, k, A)) body += `<tr class="ins-st"><td>A · ${mtLabel(d.day)}</td><td>${mtPerfNum(d.orders)}</td><td></td><td></td><td>${d.m2o === null ? "—" : d.m2o.toFixed(2) + "%"}</td><td></td><td></td></tr>`;
+        for (const d of mtPerfDays(p.dim, k, B)) body += `<tr class="ins-st"><td>B · ${mtLabel(d.day)}</td><td></td><td>${mtPerfNum(d.orders)}</td><td></td><td></td><td>${d.m2o === null ? "—" : d.m2o.toFixed(2) + "%"}</td><td></td></tr>`;
+      }
+    }
+    const label = (MT_PERF_DIMS.find(x => x[0] === p.dim) || MT_PERF_DIMS[0])[1];
+    const chips = MT_PERF_DIMS.map(([v, l]) => `<button type="button" class="mt-chip${p.dim === v ? " on" : ""}" data-mtp-dim="${v}">${l}</button>`).join("");
+    return `<section class="block"><h2>Performance by ${label.toLowerCase()}</h2>` +
+      `<p class="sub">Click a ${label.toLowerCase()} to see its days. Comparison A and B, with the same filters.</p>` +
+      `<div class="mt-chips">${chips}</div><div class="scroll"><table class="tbl"><thead><tr><th>${label}</th>` +
+      `<th>Orders A</th><th>Orders B</th><th>Orders change</th><th>M2O% A</th><th>M2O% B</th><th>M2O change</th></tr></thead>` +
+      `<tbody>${body}</tbody></table></div></section>`;
+  }
+  function mtPerfNum(v) { return v === null || v === undefined ? "—" : Math.round(v).toLocaleString("en-IN"); }
+
+  // ---- Top and bottom stores, and the growth tables for a chosen date ----
+  const MT_RANK_MIN = 10;
+  const MT_DAY_MS = 86400000;
+  const mtgDayOf = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - MT_EPOCH) / MT_DAY_MS);
+  const mtgYmd = day => { const x = new Date(MT_EPOCH + day * MT_DAY_MS); return [x.getUTCFullYear(), x.getUTCMonth() + 1, x.getUTCDate()]; };
+  const mtgIso = day => { const [y, m, d] = mtgYmd(day); return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`; };
+  const mtgMonthStart = day => { const [y, m] = mtgYmd(day); return mtgDayOf(y, m, 1); };
+  // The same day of the previous month (the last day of that month, when it is shorter).
+  const mtgPrevMonthSameDay = day => {
+    const [y, m, d] = mtgYmd(day);
+    const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
+    return mtgDayOf(py, pm, Math.min(d, new Date(Date.UTC(py, pm, 0)).getUTCDate()));
+  };
+  const mtgDataStart = () => MT.data.rows.reduce((mn, r) => Math.min(mn, r[0]), Infinity);
+  const mtgDataEnd = () => MT.data.rows.reduce((mx, r) => Math.max(mx, r[0]), -Infinity);
+  const mtgPct = v => (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+
+  // Top 5 and bottom 5 stores by orders, Comparison A against B. Stores under MT_RANK_MIN orders in either period are left out.
+  function mtRankSection() {
+    const ta = mtPerfTotals("store", MT.a.from, MT.a.to), tb = mtPerfTotals("store", MT.b.from, MT.b.to);
+    const rows = [...new Set([...ta.keys(), ...tb.keys()])]
+      .map(k => ({ k, a: ta.get(k) || MT_ZERO, b: tb.get(k) || MT_ZERO }))
+      .filter(x => x.a.orders >= MT_RANK_MIN && x.b.orders >= MT_RANK_MIN)
+      .map(x => ({ ...x, change: (x.a.orders / x.b.orders - 1) * 100 }));
+    const top = [...rows].sort((x, y) => y.change - x.change).slice(0, 5);
+    const bottom = [...rows].sort((x, y) => x.change - y.change).slice(0, 5);
+    const line = x => {
+      const ra = mtRatios(x.a), rb = mtRatios(x.b);
+      return `<tr><td>${mtEsc(x.k)}</td><td>${mtPerfNum(ra.orders)}</td><td>${mtPerfNum(rb.orders)}</td><td>${mtgPct(x.change)}</td>` +
+        `<td>${ra.m2o === null ? "—" : ra.m2o.toFixed(2) + "%"}</td><td>${rb.m2o === null ? "—" : rb.m2o.toFixed(2) + "%"}</td></tr>`;
+    };
+    const table = (title, list) => `<h3>${title}</h3><div class="scroll"><table class="tbl"><thead><tr><th>Store</th>` +
+      `<th>Orders A</th><th>Orders B</th><th>Orders change</th><th>M2O% A</th><th>M2O% B</th></tr></thead><tbody>` +
+      (list.length ? list.map(line).join("") : `<tr><td colspan="6" class="muted">No store with ${MT_RANK_MIN}+ orders in both periods.</td></tr>`) +
+      `</tbody></table></div>`;
+    return `<section class="block"><h2>Top and bottom stores</h2><p class="sub">By orders, Comparison A against B. ` +
+      `Stores with fewer than ${MT_RANK_MIN} orders in either period are left out.</p>${table("Top 5", top)}${table("Bottom 5", bottom)}</section>`;
+  }
+
+  // Growth for the chosen day: against the same day last week (WoW), two weeks ago (L2W) and last month (MoM); and the
+  // month to date (MTD) against the same days of last month. Orders, by brand, region and area manager.
+  function mtgSection() {
+    const min = mtgDataStart(), end = MT.gr.day != null ? MT.gr.day : mtgDataEnd();
+    const pm = mtgPrevMonthSameDay(end), ms = mtgMonthStart(end), pms = mtgMonthStart(pm);
+    const W = { day: [end, end], wow: [end - 7, end - 7], l2w: [end - 14, end - 14], mom: [pm, pm], mtd: [ms, end], mtdPrev: [pms, pm] };
+    const valOf = (map, k, w) => (w[0] < min ? null : (map.get(k) || MT_ZERO).orders);
+    const g = (cur, prev) => (cur === null || prev === null || !prev ? "—" : mtgPct((cur / prev - 1) * 100));
+    const block = (dim, label) => {
+      const maps = {};
+      for (const k of Object.keys(W)) maps[k] = mtPerfTotals(dim, W[k][0], W[k][1]);
+      const keys = [...new Set([...maps.day.keys(), ...maps.mtd.keys()])]
+        .sort((x, y) => (maps.mtd.get(y) || MT_ZERO).orders - (maps.mtd.get(x) || MT_ZERO).orders);
+      const rows = keys.map(k => {
+        const day = valOf(maps.day, k, W.day), wow = valOf(maps.wow, k, W.wow), l2w = valOf(maps.l2w, k, W.l2w);
+        const mom = valOf(maps.mom, k, W.mom), mtd = valOf(maps.mtd, k, W.mtd), mtdP = valOf(maps.mtdPrev, k, W.mtdPrev);
+        return `<tr><td>${mtEsc(k)}</td><td>${mtPerfNum(day)}</td><td>${g(day, wow)}</td><td>${g(day, l2w)}</td>` +
+          `<td>${g(day, mom)}</td><td>${mtPerfNum(mtd)}</td><td>${g(mtd, mtdP)}</td></tr>`;
+      }).join("");
+      return `<h3>${label}</h3><div class="scroll"><table class="tbl"><thead><tr><th>${label}</th><th>Day orders</th>` +
+        `<th>WoW %</th><th>L2W %</th><th>MoM %</th><th>MTD orders</th><th>MTD %</th></tr></thead><tbody>` +
+        (rows || `<tr><td colspan="7" class="muted">No orders.</td></tr>`) + `</tbody></table></div>`;
+    };
+    const note = pm < min ? `<p class="muted">The data starts ${mtLabel(min)}, so comparisons with earlier days show a dash.</p>` : "";
+    return `<section class="block"><h2>Growth</h2><p class="sub">Pick the day. It is compared with the same day last week (WoW), ` +
+      `two weeks ago (L2W) and last month (MoM); the month to date (MTD) with the same days of last month.</p>` +
+      `<div class="mt-bar"><label class="mt-f"><span class="muted">Date</span><input type="date" data-mtg-day="1" value="${mtgIso(end)}"></label></div>` +
+      `<p class="muted">Day: ${mtLabel(end)} · MTD: ${mtLabel(ms)} to ${mtLabel(end)}</p>${note}` +
+      block("brand", "Brand") + block("region", "Region") + block("am", "Area manager") + `</section>`;
+  }
+
   function metricsView() {
     setPeriodBar("metrics", null, null);
     if (!MT.data) {
@@ -357,6 +504,9 @@
     const sum = mtSummary();
     return `<section class="block"><h2>Metrics: Swiggy and Zomato</h2><p class="sub">Funnel and ads by day. Pick the two comparison periods and the filters. The Sales tab's brand, region, store type, source and store filters apply too.</p>${mtSavedNote()}${mtFilters()}${mtCoverageNote()}</section>` +
       `<section class="block"><h2>Comparison A and B</h2>${mtSummaryTable(sum)}</section>` +
+      mtPerfSection() +
+      mtRankSection() +
+      mtgSection() +
       mtCharts(sum) +
       mtDayTable("Comparison A", sum.a) + mtDayTable("Comparison B", sum.b);
   }
@@ -369,6 +519,19 @@
     const m = tg.dataset.metric;
     st.show[m] = !st.show[m];
     render();
+  });
+
+  // The performance table: a click on a dimension, or on a row (its days).
+  document.addEventListener("click", e => {
+    const t = e.target;
+    const d = t && t.closest ? t.closest("[data-mtp-dim]") : null;
+    if (d) { MT.perf.dim = d.dataset.mtpDim; MT.perf.open.clear(); render(); return; }
+    const k = t && t.closest ? t.closest("[data-mtp-key]") : null;
+    if (k) {
+      const key = k.dataset.mtpKey;
+      if (MT.perf.open.has(key)) MT.perf.open.delete(key); else MT.perf.open.add(key);
+      render();
+    }
   });
 
   // Remove the saved file: the page then tries the server again.
@@ -386,6 +549,11 @@
   document.addEventListener("change", e => {
     const el = e.target && e.target.dataset ? e.target : null;
     if (el && el.dataset.mtFile) { mtPickFile(el.files && el.files[0]); return; }
+    if (el && el.dataset.mtgDay) {
+      const v = String(el.value || "").split("-").map(Number);
+      if (v.length === 3 && v[0]) { MT.gr.day = mtgDayOf(v[0], v[1], v[2]); render(); }
+      return;
+    }
     if (el && el.dataset.mtcSrc) { MT.chart[el.dataset.mtcSrc].src = el.value; render(); return; }
     if (el && el.dataset.mtcShow) { MT.chart[el.dataset.mtcShow].show[el.dataset.metric] = el.checked; render(); return; }
     if (!el || !el.dataset.mt) return;
@@ -429,5 +597,6 @@
   }
 
   window.FB_MT = { MT, mtSummary, mtByDay, mtRatios, mtPass, mtLoad, mtUse, mtParse, mtErrorText, mtPageFilters, mtPickFile,
-                   mtRemember, mtForget, mtFromStorage, mtChart };
+                   mtRemember, mtForget, mtFromStorage, mtChart, mtPerfSection, mtPerfTotals, mtPerfDays,
+                       mtRankSection, mtgSection, mtgDayOf, mtgDataEnd, mtgDataStart, mtgPrevMonthSameDay, mtgMonthStart };
 })();
