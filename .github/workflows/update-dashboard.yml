@@ -104,6 +104,7 @@ jobs:
           if [ -f data/product_mix.json.gz ]; then EXTRA="$EXTRA --product-mix data/product_mix.json.gz"; fi
           if [ -f data/cancel_orders.csv.gz ]; then EXTRA="$EXTRA --cancel data/cancel_orders.csv.gz"; fi
           if [ -f data/cancel_items.csv.gz ]; then EXTRA="$EXTRA --cancel-items data/cancel_items.csv.gz"; fi
+          if [ -d data/product ]; then EXTRA="$EXTRA --product data/product"; fi
           python build_groups.py --access data/access.csv --history historical_data/historical_sales.csv.gz $EXTRA \
             --live data/live_sales.csv --ratings data/ratings.csv --kpt data/kpt_orders.csv --discounts data/discount_rows.csv
 
