@@ -174,6 +174,21 @@ def read_gsheet(sheet_id, creds):
     return read_xlsx(path)
 
 
+def summary_text(data):
+    """The lines shown on the GitHub run page: how many rows, which days, how many stores."""
+    return ("### Metrics from the Google Sheet\n"
+            f"- rows: {len(data['rows'])}\n"
+            f"- days in the data: {data['dateMin']} to {data['dateMax']}\n"
+            f"- stores: {len(data.get('stores', []))}\n")
+
+
+def write_step_summary(data):
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(summary_text(data))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--xlsx")
