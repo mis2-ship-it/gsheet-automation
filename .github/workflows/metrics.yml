@@ -1,0 +1,57 @@
+name: Metrics from the Google Sheet
+
+# Reads the metrics from the Google Sheet, stores them in the repository as data/metrics.json.gz, and starts the
+# dashboard build. Runs every morning (06:00 IST) and on demand from the Actions tab.
+on:
+  schedule:
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: metrics
+  cancel-in-progress: false
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      METRICS_SHEET_ID: 1s9tNe9QnlOzbOgsrus-pvlZzulRDxGft
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install pandas numpy gspread google-auth
+
+      # Reads the four tabs, and fails the run (with the reason) if the sheet cannot be read.
+      - name: Read the Google Sheet
+        run: python build_metrics.py --gsheet "$METRICS_SHEET_ID" --out data/metrics.json.gz
+
+      - name: Store the metrics in the repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/metrics.json.gz
+          if git diff --cached --quiet; then
+            echo "no change to the metrics"
+            exit 0
+          fi
+          git commit -m "metrics: data to $(date -u +%F)"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      # Starts the dashboard build with the new data. If it cannot start, the next scheduled build uses the file anyway.
+      - name: Start the dashboard build
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run update-sales-dashboard.yml --ref "$GITHUB_REF_NAME"
